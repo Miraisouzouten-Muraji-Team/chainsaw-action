@@ -104,3 +104,7 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# R3
+# https://qiita.com/toRisouP/items/25ab6dbf5efbbc13e0f9
+/Packages/nuget-packages/InstalledPackages*

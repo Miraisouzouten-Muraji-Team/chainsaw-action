@@ -1,0 +1,1527 @@
+# ============================================================
+# Unity Repository Quality Gate
+# ============================================================
+#
+# Unity Editorを起動せずに確認できる
+# 「リポジトリそのものの品質」を検査するWorkflow。
+#
+# Unity Testとは役割が異なる。
+#
+# Quality Gate
+#   ↓
+# EditMode Test
+#   ↓
+# PlayMode Test
+#   ↓
+# Build
+#
+# という順番で考える。
+#
+#
+# 主なチェック内容
+#
+# 1. Git差分の正常性
+# 2. マージコンフリクト残骸
+# 3. .gitattributes設定
+# 4. CRLF / LF
+# 5. Git LFS
+# 6. 巨大ファイル
+# 7. Unity生成フォルダの混入
+# 8. Unity .metaの対応関係
+# 9. Unity .meta GUIDの妥当性
+# 10. Unity GUID重複
+# 11. Windowsで利用できないファイル名
+# 12. 大文字小文字だけ異なるパス
+# 13. Unity ProjectSettings
+# 14. Packages/manifest.json
+# 15. 不要・機密ファイルの混入
+#
+# ============================================================
+
+
+# GitHub Actions画面に表示されるWorkflow名。
+name: Quality Gate
+
+
+# ============================================================
+# Workflowを実行する条件
+# ============================================================
+
+on:
+
+  # ----------------------------------------------------------
+  # mainへPull Requestを出したとき。
+  #
+  # PR作成時だけでなく、
+  # PRへ新しいcommitをpushした場合も再実行される。
+  # ----------------------------------------------------------
+  pull_request:
+    branches:
+      - main
+
+
+  # ----------------------------------------------------------
+  # mainへ変更が入った後にも確認する。
+  #
+  # 基本はPRで検査するが、
+  # main自体が正常な状態か確認するためにも実行する。
+  # ----------------------------------------------------------
+  push:
+    branches:
+      - main
+
+
+  # ----------------------------------------------------------
+  # GitHub Merge Queueを使用する場合のチェック。
+  #
+  # Merge Queueを使わない場合でも、
+  # 設定しておいて問題ない。
+  #
+  # Merge QueueでRequired Checkを使う場合は、
+  # merge_groupへの対応が必要。
+  # ----------------------------------------------------------
+  merge_group:
+    types:
+      - checks_requested
+
+
+  # ----------------------------------------------------------
+  # GitHub Actions画面から手動実行できるようにする。
+  #
+  # CI設定を調整した直後などの確認に使える。
+  # ----------------------------------------------------------
+  workflow_dispatch:
+
+
+# ============================================================
+# Workflowへ与えるGitHub権限
+# ============================================================
+
+permissions:
+
+  # Quality Gateはリポジトリを読むだけなので、
+  # 書き込み権限は与えない。
+  contents: read
+
+
+# ============================================================
+# 同じPRで古いQuality Gateが動いていた場合の処理
+# ============================================================
+
+concurrency:
+
+  # 同じPR・同じMerge Group・同じBranch単位でまとめる。
+  group: >-
+    ${{ github.workflow }}-${{
+      github.event.pull_request.number
+      || github.event.merge_group.head_sha
+      || github.ref
+    }}
+
+  # 新しいcommitがpushされた場合、
+  # 古いcommitに対するQuality Gateは不要なので停止する。
+  #
+  # GitHub Actionsの実行時間削減にもなる。
+  cancel-in-progress: true
+
+
+# ============================================================
+# Job
+# ============================================================
+
+jobs:
+
+  quality-gate:
+
+    # GitHub上に表示されるJob名。
+    name: Quality Gate
+
+    # Unity Editorを起動しないためUbuntuで十分。
+    runs-on: ubuntu-latest
+
+    # 何らかの理由で処理が停止しても、
+    # 永遠にActionsを消費しないよう制限する。
+    timeout-minutes: 15
+
+
+    # --------------------------------------------------------
+    # run: を使用するStepではBashを使用する。
+    # --------------------------------------------------------
+
+    defaults:
+      run:
+        shell: bash
+
+
+    steps:
+
+      # ======================================================
+      # 1. Repository Checkout
+      # ======================================================
+
+      - name: Checkout repository
+
+        # GitHub公式のCheckout Action。
+        uses: actions/checkout@v7
+
+        with:
+
+          # --------------------------------------------------
+          # PRの場合:
+          # PRのHEADそのものを取得する。
+          #
+          # Merge Queueの場合:
+          # Merge GroupのHEADを取得する。
+          #
+          # それ以外:
+          # 通常のgithub.shaを取得。
+          # --------------------------------------------------
+          ref: >-
+            ${{
+              github.event.pull_request.head.sha
+              || github.event.merge_group.head_sha
+              || github.sha
+            }}
+
+
+          # --------------------------------------------------
+          # 差分計算に過去commitが必要なので、
+          # shallow cloneではなく全履歴を取得する。
+          # --------------------------------------------------
+          fetch-depth: 0
+
+
+          # --------------------------------------------------
+          # ここではLFSの実体をダウンロードしない。
+          #
+          # Quality Gateでは、
+          #
+          # 「LFS対象ファイルが
+          #   Git上ではLFSポインタになっているか」
+          #
+          # を確認したいため。
+          # --------------------------------------------------
+          lfs: false
+
+
+          # --------------------------------------------------
+          # このWorkflowではpushなどを行わないため、
+          # GitHub TokenをGit設定へ残さない。
+          # --------------------------------------------------
+          persist-credentials: false
+
+
+      # ======================================================
+      # 2. 比較するCommit範囲を決定
+      # ======================================================
+
+      - name: Resolve diff range
+
+        id: range
+
+        run: |
+          set -euo pipefail
+
+          event_name="${{ github.event_name }}"
+
+          # 空Repositoryなど、
+          # 比較元commitが存在しない場合に使用する空Tree。
+          empty_tree="$(git hash-object -t tree /dev/null)"
+
+          is_initial="false"
+
+
+          # --------------------------------------------------
+          # Pull Request
+          # --------------------------------------------------
+          if [[ "$event_name" == "pull_request" ]]; then
+
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+
+            # PR作成後にmainが進んでいる可能性もあるため、
+            # 共通祖先を比較元とする。
+            from="$(git merge-base "$base" "$head")"
+            to="$head"
+
+
+          # --------------------------------------------------
+          # Merge Queue
+          # --------------------------------------------------
+          elif [[ "$event_name" == "merge_group" ]]; then
+
+            # Merge Queueが生成した
+            # 「現在のmain」と「マージ後候補」の差分を確認する。
+            from="${{ github.event.merge_group.base_sha }}"
+            to="${{ github.event.merge_group.head_sha }}"
+
+
+          # --------------------------------------------------
+          # mainへのPush
+          # --------------------------------------------------
+          elif [[ "$event_name" == "push" ]]; then
+
+            before="${{ github.event.before }}"
+            to="${{ github.sha }}"
+
+            # 最初のpushなどではbeforeが
+            # 000000...になることがある。
+            if [[ "$before" =~ ^0+$ ]]; then
+              from="$empty_tree"
+              is_initial="true"
+            else
+              from="$before"
+            fi
+
+
+          # --------------------------------------------------
+          # workflow_dispatch
+          # --------------------------------------------------
+          else
+
+            to="${{ github.sha }}"
+
+            # HEAD^が存在するなら1つ前のcommitと比較する。
+            if git rev-parse "${to}^" >/dev/null 2>&1; then
+              from="$(git rev-parse "${to}^")"
+            else
+              from="$empty_tree"
+              is_initial="true"
+            fi
+
+          fi
+
+
+          # --------------------------------------------------
+          # GitHub Actionsの後続Stepへ値を渡す。
+          # --------------------------------------------------
+
+          echo "from=$from" >> "$GITHUB_OUTPUT"
+          echo "to=$to" >> "$GITHUB_OUTPUT"
+          echo "is_initial=$is_initial" >> "$GITHUB_OUTPUT"
+
+
+          echo "FROM=$from"
+          echo "TO=$to"
+
+
+      # ======================================================
+      # 3. Quality Gate本体
+      # ======================================================
+
+      - name: Run quality gate
+
+        env:
+
+          # 前Stepで決定した比較範囲。
+          FROM: ${{ steps.range.outputs.from }}
+          TO: ${{ steps.range.outputs.to }}
+
+          IS_INITIAL: ${{ steps.range.outputs.is_initial }}
+
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+
+          echo "========================================"
+          echo " Unity Quality Gate"
+          echo "========================================"
+          echo "FROM=$FROM"
+          echo "TO=$TO"
+          echo ""
+
+
+          # ==================================================
+          # 設定値
+          # ==================================================
+
+          # 10MBを超える通常Gitファイルは警告。
+          readonly LFS_WARN_SIZE=$((10 * 1024 * 1024))
+
+          # 50MBを超える通常Gitファイルはエラー。
+          readonly LFS_ERROR_SIZE=$((50 * 1024 * 1024))
+
+          # GitHub自体の通常Gitファイル上限を考慮。
+          readonly ABSOLUTE_ERROR_SIZE=$((100 * 1024 * 1024))
+
+
+          # --------------------------------------------------
+          # 最後にまとめて失敗させるため、
+          # 発見したエラー数を保存する。
+          # --------------------------------------------------
+
+          error_count=0
+
+
+          # ==================================================
+          # GitHub ActionsへError / Warningを表示する関数
+          # ==================================================
+
+          err() {
+            echo "::error::$*"
+            error_count=$((error_count + 1))
+          }
+
+
+          errf() {
+            local path="$1"
+            shift
+
+            echo "::error file=$path::$*"
+            error_count=$((error_count + 1))
+          }
+
+
+          warnf() {
+            local path="$1"
+            shift
+
+            echo "::warning file=$path::$*"
+          }
+
+
+          # ==================================================
+          # Git Object操作用関数
+          # ==================================================
+
+          # TO commit側のファイル内容を表示する。
+          show_to_path() {
+            local path="$1"
+
+            git cat-file -p "$TO:$path" 2>/dev/null
+          }
+
+
+          # TO commitに指定パスが存在するか。
+          commit_has_entry() {
+            local path="$1"
+
+            git cat-file -e "$TO:$path" 2>/dev/null
+          }
+
+
+          # Git Objectの種類を取得。
+          #
+          # 通常ファイルなら blob。
+          commit_entry_type() {
+            local path="$1"
+
+            git cat-file -t "$TO:$path" 2>/dev/null || true
+          }
+
+
+          # ==================================================
+          # TO側の.gitattributesを利用するためTemporary Index作成
+          # ==================================================
+
+          TMP_INDEX="$(mktemp)"
+
+          trap 'rm -f "$TMP_INDEX"' EXIT
+
+
+          # TO commitのTreeをTemporary Indexへ読み込む。
+          GIT_INDEX_FILE="$TMP_INDEX" git read-tree "$TO"
+
+
+          # --------------------------------------------------
+          # .gitattributesから指定属性を取得する。
+          #
+          # 例:
+          #
+          # text
+          # eol
+          # filter
+          #
+          # --------------------------------------------------
+
+          git_attr_value() {
+
+            local path="$1"
+            local attribute="$2"
+
+            local attr_path
+            local attr_name
+            local attr_value
+
+
+            while IFS= read -r -d '' attr_path \
+              && IFS= read -r -d '' attr_name \
+              && IFS= read -r -d '' attr_value; do
+
+              if [[ "$attr_name" == "$attribute" ]]; then
+
+                printf '%s\n' "$attr_value"
+                return 0
+
+              fi
+
+            done < <(
+              GIT_INDEX_FILE="$TMP_INDEX" \
+              git check-attr --cached -z "$attribute" -- "$path" \
+              2>/dev/null || true
+            )
+
+
+            printf 'unspecified\n'
+          }
+
+
+          # ==================================================
+          # ファイルがテキストか簡易判定
+          # ==================================================
+
+          blob_is_probably_text() {
+
+            local path="$1"
+            local size
+
+
+            if ! commit_has_entry "$path"; then
+              return 1
+            fi
+
+
+            if [[ "$(commit_entry_type "$path")" != "blob" ]]; then
+              return 1
+            fi
+
+
+            size="$(git cat-file -s "$TO:$path" 2>/dev/null || echo 0)"
+
+
+            # 空ファイルもテキスト扱い。
+            if (( size == 0 )); then
+              return 0
+            fi
+
+
+            # grep -Iでバイナリ判定する。
+            LC_ALL=C grep -Iq '' < <(show_to_path "$path")
+          }
+
+
+          # ==================================================
+          # .gitattributesにtext/eol設定があるか
+          # ==================================================
+
+          has_text_attribute() {
+
+            local path="$1"
+
+            local text_attr
+            local eol_attr
+
+
+            text_attr="$(git_attr_value "$path" text)"
+            eol_attr="$(git_attr_value "$path" eol)"
+
+
+            [[ "$text_attr" != "unspecified" \
+              || "$eol_attr" != "unspecified" ]]
+          }
+
+
+          # ==================================================
+          # eol=lfが設定されているか
+          # ==================================================
+
+          should_use_lf() {
+
+            local path="$1"
+
+            [[ "$(git_attr_value "$path" eol)" == "lf" ]]
+          }
+
+
+          # ==================================================
+          # LFS対象か
+          # ==================================================
+
+          is_lfs_path() {
+
+            local path="$1"
+
+            [[ "$(git_attr_value "$path" filter)" == "lfs" ]]
+          }
+
+
+          # ==================================================
+          # 変更ファイル一覧を作成
+          # ==================================================
+
+          declare -A changed=()
+          declare -A deleted=()
+
+
+          while IFS= read -r -d '' status; do
+
+            case "$status" in
+
+              # ----------------------------------------------
+              # Rename
+              # ----------------------------------------------
+              R*)
+
+                IFS= read -r -d '' old_path
+                IFS= read -r -d '' new_path
+
+                deleted["$old_path"]=1
+                changed["$new_path"]=1
+                ;;
+
+
+              # ----------------------------------------------
+              # Copy
+              # ----------------------------------------------
+              C*)
+
+                IFS= read -r -d '' old_path
+                IFS= read -r -d '' new_path
+
+                changed["$new_path"]=1
+                ;;
+
+
+              # ----------------------------------------------
+              # 通常変更
+              # ----------------------------------------------
+              *)
+
+                IFS= read -r -d '' path
+
+                case "$status" in
+
+                  D)
+                    deleted["$path"]=1
+                    ;;
+
+
+                  A|M|T)
+                    changed["$path"]=1
+                    ;;
+
+
+                  # Git上でまだConflict状態。
+                  U|AA|AU|UA|DD|DU|UD|UU)
+
+                    errf "$path" \
+                      "unmerged状態のファイルがあります: status=$status"
+                    ;;
+
+
+                  *)
+
+                    err \
+                      "未対応のGit statusです: status=$status path=$path"
+                    ;;
+
+                esac
+
+                ;;
+
+            esac
+
+          done < <(
+            git diff \
+              --find-renames \
+              --find-copies \
+              --name-status \
+              -z \
+              "$FROM" \
+              "$TO"
+          )
+
+
+          # ==================================================
+          # A) Git whitespaceチェック
+          # ==================================================
+
+          echo ""
+          echo "[A] Git whitespace"
+
+
+          # 行末空白など、
+          # git diff --checkで検出できる問題を確認する。
+          if ! git diff --check "$FROM" "$TO"; then
+
+            err "git diff --check に失敗しました"
+
+          fi
+
+
+          # ==================================================
+          # B) Git LFSチェック
+          # ==================================================
+
+          echo ""
+          echo "[B] Git LFS"
+
+
+          # GitHub-hosted Ubuntu RunnerにはGit LFSが入っている。
+          if ! git lfs version; then
+
+            err "Git LFSが利用できません"
+
+          else
+
+            # 初回commitの場合は単一commitを確認。
+            if [[ "$IS_INITIAL" == "true" ]]; then
+
+              if ! git lfs fsck --pointers "$TO"; then
+                err "Git LFS pointer検査に失敗しました"
+              fi
+
+            else
+
+              # .gitattributesでLFS指定されたファイルが
+              # 通常Gitの実体として入っていないか検査する。
+              if ! git lfs fsck --pointers "$FROM..$TO"; then
+                err "Git LFS pointer検査に失敗しました"
+              fi
+
+            fi
+
+          fi
+
+
+          # ==================================================
+          # C) Unity生成物・不要ファイル混入
+          # ==================================================
+
+          echo ""
+          echo "[C] Forbidden repository files"
+
+
+          # 最終状態TOをすべて確認する。
+          while IFS= read -r -d '' path; do
+
+            case "$path" in
+
+              # ----------------------------------------------
+              # Unity生成フォルダ
+              # ----------------------------------------------
+              Library/*|\
+              Temp/*|\
+              Logs/*|\
+              obj/*|\
+              UserSettings/*|\
+              MemoryCaptures/*|\
+              Recordings/*)
+
+                errf "$path" \
+                  "Unity生成フォルダをGit管理しないでください"
+                ;;
+
+
+              # ----------------------------------------------
+              # Visual Studio生成ファイル
+              # ----------------------------------------------
+              .vs/*)
+
+                errf "$path" \
+                  ".vsフォルダをGit管理しないでください"
+                ;;
+
+
+              # ----------------------------------------------
+              # OS生成ファイル
+              # ----------------------------------------------
+              */.DS_Store|\
+              .DS_Store|\
+              */Thumbs.db|\
+              Thumbs.db)
+
+                errf "$path" \
+                  "OSが生成した不要ファイルです"
+                ;;
+
+
+              # ----------------------------------------------
+              # Unityライセンス
+              #
+              # CI用Unityライセンスは
+              # Repository Secretsで管理する。
+              # ----------------------------------------------
+              *.ulf)
+
+                errf "$path" \
+                  "UnityライセンスファイルをGitへ入れないでください"
+                ;;
+
+            esac
+
+          done < <(
+            git ls-tree -r -z --name-only "$TO"
+          )
+
+
+          # ==================================================
+          # D) Unityプロジェクト必須ファイル
+          # ==================================================
+
+          echo ""
+          echo "[D] Required Unity files"
+
+
+          required_files=(
+
+            ".gitignore"
+
+            ".gitattributes"
+
+            "Packages/manifest.json"
+
+            "ProjectSettings/ProjectVersion.txt"
+
+            "ProjectSettings/EditorSettings.asset"
+          )
+
+
+          for path in "${required_files[@]}"; do
+
+            if ! commit_has_entry "$path"; then
+
+              errf "$path" \
+                "Unityチーム開発で必要なファイルがありません"
+
+            fi
+
+          done
+
+
+          # packages-lock.jsonは基本的にGit管理推奨だが、
+          # Projectによって生成状況が異なるためWarningとする。
+          if ! commit_has_entry "Packages/packages-lock.json"; then
+
+            warnf "Packages/packages-lock.json" \
+              "packages-lock.jsonがGit管理されていません"
+
+          fi
+
+
+          # ==================================================
+          # E) manifest.json / packages-lock.json
+          # ==================================================
+
+          echo ""
+          echo "[E] Package JSON"
+
+
+          # Python標準ライブラリを使ってJSONとして読めるか確認する。
+          #
+          # マージコンフリクト等でJSONが壊れている場合に検出できる。
+          if ! python3 <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          files = [
+              pathlib.Path("Packages/manifest.json"),
+              pathlib.Path("Packages/packages-lock.json"),
+          ]
+
+          failed = False
+
+          for path in files:
+              if not path.exists():
+                  continue
+
+              try:
+                  with path.open(
+                      "r",
+                      encoding="utf-8-sig",
+                  ) as f:
+                      json.load(f)
+
+              except Exception as exc:
+                  print(
+                      f"::error file={path}::"
+                      f"JSONとして読み込めません: {exc}"
+                  )
+                  failed = True
+
+          sys.exit(1 if failed else 0)
+          PY
+          then
+
+            error_count=$((error_count + 1))
+
+          fi
+
+
+          # ==================================================
+          # F) マージコンフリクト残骸
+          # ==================================================
+
+          echo ""
+          echo "[F] Conflict markers"
+
+
+          for path in "${!changed[@]}"; do
+
+            # バイナリファイルは調べない。
+            if ! blob_is_probably_text "$path"; then
+              continue
+            fi
+
+
+            conflict_start=0
+            conflict_end=0
+
+
+            if LC_ALL=C grep -aqE \
+              '^<<<<<<< ' \
+              < <(show_to_path "$path"); then
+
+              conflict_start=1
+
+            fi
+
+
+            if LC_ALL=C grep -aqE \
+              '^>>>>>>> ' \
+              < <(show_to_path "$path"); then
+
+              conflict_end=1
+
+            fi
+
+
+            if (( conflict_start || conflict_end )); then
+
+              errf "$path" \
+                "マージコンフリクトの残骸が含まれています"
+
+            fi
+
+          done
+
+
+          # ==================================================
+          # G) .gitattributesチェック
+          # ==================================================
+
+          echo ""
+          echo "[G] .gitattributes"
+
+
+          for path in "${!changed[@]}"; do
+
+            # バイナリなら対象外。
+            if ! blob_is_probably_text "$path"; then
+              continue
+            fi
+
+
+            # テキストファイルなのに
+            # textまたはeol属性が一切指定されていない場合。
+            if ! has_text_attribute "$path"; then
+
+              errf "$path" \
+                ".gitattributesでtext/eolが指定されていません"
+
+            fi
+
+          done
+
+
+          # ==================================================
+          # H) CRLFチェック
+          # ==================================================
+
+          echo ""
+          echo "[H] Line endings"
+
+
+          for path in "${!changed[@]}"; do
+
+            # .gitattributesでeol=lfを指定したファイルだけ確認。
+            if ! should_use_lf "$path"; then
+              continue
+            fi
+
+
+            if ! blob_is_probably_text "$path"; then
+              continue
+            fi
+
+
+            # CR(\r)が含まれていた場合、
+            # CRLFが混ざっている可能性がある。
+            if LC_ALL=C grep -aq $'\r' \
+              < <(show_to_path "$path"); then
+
+              errf "$path" \
+                "CRLFが含まれています。.gitattributesではLF指定です"
+
+            fi
+
+          done
+
+
+          # ==================================================
+          # I) 巨大ファイル
+          # ==================================================
+
+          echo ""
+          echo "[I] Large files"
+
+
+          for path in "${!changed[@]}"; do
+
+            # Gitの通常ファイルのみ確認。
+            if [[ "$(commit_entry_type "$path")" != "blob" ]]; then
+              continue
+            fi
+
+
+            size="$(
+              git cat-file -s "$TO:$path" \
+              2>/dev/null \
+              || echo 0
+            )"
+
+
+            # LFS対象ならGit上では小さなPointerになるので、
+            # 通常ここには到達しない。
+            lfs="false"
+
+            if is_lfs_path "$path"; then
+              lfs="true"
+            fi
+
+
+            # ----------------------------------------------
+            # 100MB超
+            # ----------------------------------------------
+            if (( size > ABSOLUTE_ERROR_SIZE )); then
+
+              errf "$path" \
+                "100MBを超えるGit Blobです: ${size} bytes"
+
+              continue
+
+            fi
+
+
+            # ----------------------------------------------
+            # 50MB超の非LFS
+            # ----------------------------------------------
+            if (( size > LFS_ERROR_SIZE )) \
+              && [[ "$lfs" == "false" ]]; then
+
+              errf "$path" \
+                "50MBを超えるファイルはGit LFSで管理してください: ${size} bytes"
+
+              continue
+
+            fi
+
+
+            # ----------------------------------------------
+            # 10MB超の非LFS
+            # ----------------------------------------------
+            if (( size > LFS_WARN_SIZE )) \
+              && [[ "$lfs" == "false" ]]; then
+
+              warnf "$path" \
+                "10MBを超えています。Git LFS管理を検討してください: ${size} bytes"
+
+            fi
+
+          done
+
+
+          # ==================================================
+          # J) Unity .meta / GUID
+          # ==================================================
+
+          echo ""
+          echo "[J] Unity meta / GUID"
+
+
+          # --------------------------------------------------
+          # BashよりPythonの方が、
+          #
+          # ・ファイル名に空白がある
+          # ・大量のmetaがある
+          # ・GUID重複を調べる
+          #
+          # といった処理を安全に行いやすいためPythonを使用する。
+          # --------------------------------------------------
+
+          if ! python3 <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          assets = Path("Assets")
+
+          failed = False
+
+
+          def error(path: Path, message: str) -> None:
+              global failed
+
+              print(
+                  f"::error file={path.as_posix()}::{message}"
+              )
+
+              failed = True
+
+
+          # --------------------------------------------------
+          # Assetsフォルダ存在確認
+          # --------------------------------------------------
+
+          if not assets.exists():
+
+              error(
+                  assets,
+                  "Assetsフォルダが存在しません",
+              )
+
+              sys.exit(1)
+
+
+          # --------------------------------------------------
+          # 本体 → .meta
+          #
+          # Assets以下の全ファイル・フォルダには
+          # 対応する.metaが必要。
+          # --------------------------------------------------
+
+          for path in assets.rglob("*"):
+
+              # .meta自身はここでは対象外。
+              if path.name.endswith(".meta"):
+                  continue
+
+
+              meta = Path(str(path) + ".meta")
+
+
+              if not meta.exists():
+
+                  error(
+                      meta,
+                      f"{path.as_posix()} に対応する.metaがありません",
+                  )
+
+
+          # --------------------------------------------------
+          # .meta → 本体
+          # --------------------------------------------------
+
+          guid_owner: dict[str, Path] = {}
+
+
+          guid_pattern = re.compile(
+              r"^guid:\s*([0-9a-fA-F]{32})\s*$",
+              re.MULTILINE,
+          )
+
+
+          for meta in assets.rglob("*.meta"):
+
+              # .metaの拡張子を外したパス。
+              original = Path(
+                  str(meta)[:-5]
+              )
+
+
+              # 本体が存在しない.meta。
+              if not original.exists():
+
+                  error(
+                      meta,
+                      "対応する本体ファイルまたはフォルダがありません",
+                  )
+
+
+              try:
+
+                  text = meta.read_text(
+                      encoding="utf-8-sig",
+                      errors="replace",
+                  )
+
+              except Exception as exc:
+
+                  error(
+                      meta,
+                      f".metaを読み込めません: {exc}",
+                  )
+
+                  continue
+
+
+              # ------------------------------------------------
+              # GUID取得
+              # ------------------------------------------------
+
+              guids = guid_pattern.findall(text)
+
+
+              # Unity .metaにはGUIDが1つ必要。
+              if len(guids) != 1:
+
+                  error(
+                      meta,
+                      f"有効なGUIDが1つ必要です。検出数={len(guids)}",
+                  )
+
+                  continue
+
+
+              guid = guids[0].lower()
+
+
+              # ------------------------------------------------
+              # GUID重複確認
+              # ------------------------------------------------
+
+              previous = guid_owner.get(guid)
+
+
+              if previous is not None:
+
+                  error(
+                      meta,
+                      (
+                          "Unity GUIDが重複しています。"
+                          f"同じGUIDを使用しているmeta: "
+                          f"{previous.as_posix()}"
+                      ),
+                  )
+
+              else:
+
+                  guid_owner[guid] = meta
+
+
+          sys.exit(1 if failed else 0)
+          PY
+          then
+
+            error_count=$((error_count + 1))
+
+          fi
+
+
+          # ==================================================
+          # K) Windows / macOSで危険なファイル名
+          # ==================================================
+
+          echo ""
+          echo "[K] Path portability"
+
+
+          if ! python3 <<'PY'
+          import os
+          import subprocess
+          import sys
+          import unicodedata
+
+
+          to = os.environ["TO"]
+
+
+          result = subprocess.run(
+              [
+                  "git",
+                  "ls-tree",
+                  "-r",
+                  "-z",
+                  "--name-only",
+                  to,
+              ],
+              check=True,
+              stdout=subprocess.PIPE,
+          )
+
+
+          paths = [
+              p.decode(
+                  "utf-8",
+                  errors="surrogateescape",
+              )
+              for p in result.stdout.split(b"\0")
+              if p
+          ]
+
+
+          failed = False
+
+
+          def error(path: str, message: str) -> None:
+              global failed
+
+              print(
+                  f"::error file={path}::{message}"
+              )
+
+              failed = True
+
+
+          def warning(path: str, message: str) -> None:
+              print(
+                  f"::warning file={path}::{message}"
+              )
+
+
+          # Windows予約名。
+          reserved = {
+              "CON",
+              "PRN",
+              "AUX",
+              "NUL",
+              *(f"COM{i}" for i in range(1, 10)),
+              *(f"LPT{i}" for i in range(1, 10)),
+          }
+
+
+          # 大文字小文字とUnicode正規化後のパスを保存する。
+          normalized_paths: dict[str, str] = {}
+
+
+          # ファイルだけでなく、
+          # 親ディレクトリについてもCase Collisionを調べる。
+          all_entries: set[str] = set()
+
+
+          for path in paths:
+
+              parts = path.split("/")
+
+              for i in range(1, len(parts) + 1):
+
+                  all_entries.add(
+                      "/".join(parts[:i])
+                  )
+
+
+          for path in sorted(all_entries):
+
+              parts = path.split("/")
+
+
+              # ------------------------------------------------
+              # 各フォルダ名・ファイル名を確認
+              # ------------------------------------------------
+
+              for component in parts:
+
+                  # Windowsで禁止されている文字。
+                  if any(
+                      c in component
+                      for c in '<>:"\\|?*'
+                  ):
+
+                      error(
+                          path,
+                          "Windowsで使用できない文字を含んでいます",
+                      )
+
+
+                  # 末尾のSpace / DotはWindowsで問題になる。
+                  if component.endswith(" ") \
+                      or component.endswith("."):
+
+                      error(
+                          path,
+                          "ファイル名/フォルダ名の末尾がSpaceまたはDotです",
+                      )
+
+
+                  # CON.txtなどもWindowsでは利用不可。
+                  stem = component.split(".", 1)[0].upper()
+
+                  if stem in reserved:
+
+                      error(
+                          path,
+                          f"Windows予約名です: {component}",
+                      )
+
+
+                  # 制御文字。
+                  if any(ord(c) < 32 for c in component):
+
+                      error(
+                          path,
+                          "制御文字を含むファイル名です",
+                      )
+
+
+              # ------------------------------------------------
+              # Case Collision
+              #
+              # 例:
+              #
+              # Player.cs
+              # player.cs
+              #
+              # Linuxでは別ファイルとして扱えるが、
+              # Windowsでは衝突する。
+              #
+              # Unicodeの正規化差も同時に見る。
+              # ------------------------------------------------
+
+              normalized = unicodedata.normalize(
+                  "NFC",
+                  path,
+              ).casefold()
+
+
+              previous = normalized_paths.get(
+                  normalized
+              )
+
+
+              if previous is not None \
+                  and previous != path:
+
+                  error(
+                      path,
+                      (
+                          "大文字小文字またはUnicode正規化後に"
+                          "別パスと衝突します: "
+                          f"{previous}"
+                      ),
+                  )
+
+              else:
+
+                  normalized_paths[normalized] = path
+
+
+              # ------------------------------------------------
+              # Windows / Unityで長すぎるPathはトラブル原因になる。
+              #
+              # 必ず失敗させるほどではないためWarning。
+              # ------------------------------------------------
+
+              if len(path) > 240:
+
+                  warning(
+                      path,
+                      f"パスが非常に長いです: {len(path)} characters",
+                  )
+
+
+          sys.exit(1 if failed else 0)
+          PY
+          then
+
+            error_count=$((error_count + 1))
+
+          fi
+
+
+          # ==================================================
+          # L) Unity Editor Settings
+          # ==================================================
+
+          echo ""
+          echo "[L] Unity Editor Settings"
+
+
+          editor_settings="ProjectSettings/EditorSettings.asset"
+
+
+          if commit_has_entry "$editor_settings"; then
+
+
+            # ------------------------------------------------
+            # Force Text
+            #
+            # Scene / Prefab / ScriptableObjectなどを
+            # Gitで差分確認・Mergeしやすくするため必須。
+            # ------------------------------------------------
+
+            if ! LC_ALL=C grep -qE \
+              '^  m_SerializationMode: 2$' \
+              < <(show_to_path "$editor_settings"); then
+
+              errf "$editor_settings" \
+                "Asset Serialization ModeがForce Textではありません"
+
+              echo \
+                "Edit > Project Settings > Editor > Asset Serialization > Mode = Force Text"
+
+            fi
+
+
+            # ------------------------------------------------
+            # Visible Meta Files
+            #
+            # Gitのような外部VCSで
+            # .metaを管理するための設定。
+            # ------------------------------------------------
+
+            if ! LC_ALL=C grep -qE \
+              '^  m_ExternalVersionControlSupport: Visible Meta Files$' \
+              < <(show_to_path "$editor_settings"); then
+
+              errf "$editor_settings" \
+                "Version Control ModeがVisible Meta Filesではありません"
+
+              echo \
+                "Edit > Project Settings > Version Control > Mode = Visible Meta Files"
+
+            fi
+
+          fi
+
+
+          # ==================================================
+          # M) ProjectVersion.txt
+          # ==================================================
+
+          echo ""
+          echo "[M] Unity version"
+
+
+          version_file="ProjectSettings/ProjectVersion.txt"
+
+
+          if commit_has_entry "$version_file"; then
+
+            # Unityバージョン情報が存在しているかだけ確認する。
+            if ! LC_ALL=C grep -qE \
+              '^m_EditorVersion: .+$' \
+              < <(show_to_path "$version_file"); then
+
+              errf "$version_file" \
+                "Unity Editor Versionを取得できません"
+
+            fi
+
+          fi
+
+
+          # ==================================================
+          # 結果
+          # ==================================================
+
+          echo ""
+          echo "========================================"
+
+
+          if (( error_count > 0 )); then
+
+            echo "Quality Gate FAILED"
+            echo "Errors: $error_count"
+            echo "========================================"
+
+            exit 1
+
+          fi
+
+
+          echo "Quality Gate PASSED"
+          echo "========================================"
+
+          exit 0

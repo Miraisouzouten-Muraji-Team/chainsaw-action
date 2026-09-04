@@ -1,0 +1,90 @@
+# ============================================================
+# Git Attributes
+# ============================================================
+#
+# チーム内での
+# ・改行コード
+# ・テキスト / バイナリ判定
+# ・Git LFS
+# を統一する。
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 基本設定
+# ------------------------------------------------------------
+
+# 基本はGitにテキスト / バイナリを自動判定させる。
+* text=auto
+
+
+# ------------------------------------------------------------
+# テキストファイル
+# ------------------------------------------------------------
+#
+# Windows / macOS / Linuxに関係なく、
+# リポジトリ上ではLFで統一する。
+# ------------------------------------------------------------
+
+*.cs        text eol=lf
+
+*.shader    text eol=lf
+*.hlsl      text eol=lf
+*.compute   text eol=lf
+*.cginc     text eol=lf
+
+*.asmdef    text eol=lf
+*.asmref    text eol=lf
+
+*.json      text eol=lf
+*.xml       text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.md        text eol=lf
+*.txt       text eol=lf
+
+*.bat       text eol=crlf
+
+
+# ------------------------------------------------------------
+# Unityがテキストとして保存するファイル
+# ------------------------------------------------------------
+#
+# Unity側の
+# Asset Serialization Mode = Force Text
+# を前提にする。
+# ------------------------------------------------------------
+
+*.meta        text eol=lf
+*.unity       text eol=lf
+*.prefab      text eol=lf
+*.asset       text eol=lf
+*.mat         text eol=lf
+*.anim        text eol=lf
+*.controller  text eol=lf
+*.overrideController text eol=lf
+
+
+# ------------------------------------------------------------
+# Git LFS
+# ------------------------------------------------------------
+#
+# 容量が大きくなりやすいバイナリ素材を
+# 通常GitではなくGit LFSで管理する。
+# ------------------------------------------------------------
+
+# 3Dモデル
+*.fbx   filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text
+
+# 編集用画像
+*.psd   filter=lfs diff=lfs merge=lfs -text
+
+# 音声
+*.wav   filter=lfs diff=lfs merge=lfs -text
+*.mp3   filter=lfs diff=lfs merge=lfs -text
+*.ogg   filter=lfs diff=lfs merge=lfs -text
+
+# 動画
+*.mp4   filter=lfs diff=lfs merge=lfs -text
+*.mov   filter=lfs diff=lfs merge=lfs -text

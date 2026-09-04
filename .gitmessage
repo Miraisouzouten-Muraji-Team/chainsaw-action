@@ -1,0 +1,38 @@
+
+Issue:
+- 
+
+Reason:
+- 
+
+Notes:
+- 
+
+
+# <type>(<scope>): <変更内容>
+#
+# 例:
+# feature(lobby): キャラ選択ボタンを追加
+# fix(player): 移動できない問題を修正
+# refactor(settings): 設定処理を整理
+# ci: Unity Testを追加
+#
+# type:
+# feature  機能追加
+# fix      不具合修正
+# refactor コード整理
+# chore    その他作業
+# docs     ドキュメント
+# test     テスト
+# ci       CI/CD
+#
+# scopeは必要なときだけ付ける。
+#
+# ブランチ名:
+# <type>(<scope>)/<Issue番号>-<内容>
+#
+# 例:
+# feature(lobby)/175-add-lobby-ui
+#
+# Issueを閉じるときはPRに
+# Fixes #123

@@ -1,0 +1,102 @@
+# ============================================================
+# Unity Build Check
+# ============================================================
+#
+# main向けPull Requestで、
+# Unityプロジェクトが実際にビルドできるか確認する。
+#
+# ビルドに失敗した場合、このWorkflowも失敗する。
+# ============================================================
+
+name: Unity Build Check
+
+
+# ------------------------------------------------------------
+# main向けPRで実行
+# ------------------------------------------------------------
+
+on:
+  pull_request:
+    branches:
+      - main
+
+
+# ------------------------------------------------------------
+# 同じPRに新しいcommitが来た場合、
+# 古いBuild Checkを停止する
+# ------------------------------------------------------------
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+
+jobs:
+
+  build:
+
+    name: Windows Build
+
+    runs-on: ubuntu-latest
+
+    # ビルドが異常に長時間続くのを防ぐ
+    timeout-minutes: 30
+
+
+    steps:
+
+      # ------------------------------------------------------
+      # Repository取得
+      # ------------------------------------------------------
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+        with:
+          # FBX / WAVなどGit LFS管理のファイルも取得する
+          lfs: true
+
+
+      # ------------------------------------------------------
+      # Unity Libraryキャッシュ
+      # ------------------------------------------------------
+
+      - name: Cache Unity Library
+        uses: actions/cache@v4
+
+        with:
+          path: Library
+
+          key: Library-Build-${{ hashFiles(
+            'Assets/**',
+            'Packages/**',
+            'ProjectSettings/**'
+          ) }}
+
+          restore-keys: |
+            Library-Build-
+            Library-
+
+
+      # ------------------------------------------------------
+      # Windows向けUnity Build
+      # ------------------------------------------------------
+
+      - name: Build Unity project
+        uses: game-ci/unity-builder@v4
+
+        env:
+
+          # Repository Secretsに登録済みのUnity認証情報
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+        with:
+
+          # ProjectSettings/ProjectVersion.txtから
+          # Unityバージョンを自動取得
+          unityVersion: auto
+
+          # Windows 64bit向けビルド
+          targetPlatform: StandaloneWindows64

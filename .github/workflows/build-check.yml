@@ -67,11 +67,7 @@ jobs:
         with:
           path: Library
 
-          key: Library-Build-${{ hashFiles(
-            'Assets/**',
-            'Packages/**',
-            'ProjectSettings/**'
-          ) }}
+          key: Library-Build-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
 
           restore-keys: |
             Library-Build-

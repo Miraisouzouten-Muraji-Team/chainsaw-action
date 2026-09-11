@@ -1461,15 +1461,33 @@ jobs:
             # .metaを管理するための設定。
             # ------------------------------------------------
 
-            if ! LC_ALL=C grep -qE \
-              '^  m_ExternalVersionControlSupport: Visible Meta Files$' \
-              < <(show_to_path "$editor_settings"); then
+            version_control_settings="ProjectSettings/VersionControlSettings.asset"
 
-              errf "$editor_settings" \
-                "Version Control ModeがVisible Meta Filesではありません"
+            if commit_has_entry "$version_control_settings"; then
 
-              echo \
-                "Edit > Project Settings > Version Control > Mode = Visible Meta Files"
+              if ! LC_ALL=C grep -qE \
+                '^  m_Mode: Visible Meta Files$' \
+                < <(show_to_path "$version_control_settings"); then
+
+                errf "$version_control_settings" \
+                  "Version Control ModeがVisible Meta Filesではありません"
+
+                echo \
+                  "Edit > Project Settings > Version Control > Mode = Visible Meta Files"
+
+              fi
+
+            else
+
+              # 古いUnity形式も考慮
+              if ! LC_ALL=C grep -qE \
+                '^  m_ExternalVersionControlSupport: Visible Meta Files$' \
+                < <(show_to_path "$editor_settings"); then
+
+                errf "$editor_settings" \
+                  "Version Control ModeがVisible Meta Filesではありません"
+
+              fi
 
             fi
 

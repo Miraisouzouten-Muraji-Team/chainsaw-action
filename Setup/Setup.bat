@@ -9,10 +9,11 @@ rem Clone後に1回だけ実行する。
 rem
 rem 設定内容:
 rem   1. .gitmessage をコミットテンプレートとして設定
-rem   2. 改行コード変換を .gitattributes に任せる
-rem   3. Git LFSをこのRepositoryで有効化
+rem   2. .githooks をGit Hooksの共有フォルダとして設定
+rem   3. 改行コード変換を .gitattributes に任せる
+rem   4. Git LFSをこのRepositoryで有効化
 rem
-rem 設定は --local なので、
+rem すべて --local 設定なので、
 rem 他のRepositoryには影響しない。
 rem ============================================================
 
@@ -29,6 +30,7 @@ for %%I in ("%~dp0..") do set "REPO_ROOT=%%~fI"
 
 cd /d "%REPO_ROOT%"
 
+
 echo.
 echo ========================================
 echo Unity Project Git Setup
@@ -40,22 +42,7 @@ echo.
 
 
 rem ============================================================
-rem 1. Git Repositoryか確認
-rem ============================================================
-
-if not exist ".git" (
-    echo [ERROR] .git が見つかりません。
-    echo.
-    echo ForkなどでRepositoryをCloneしてから
-    echo このbatを実行してください。
-    echo.
-    pause
-    exit /b 1
-)
-
-
-rem ============================================================
-rem 2. Gitが使用可能か確認
+rem 1. Gitが使用可能か確認
 rem ============================================================
 
 where git >nul 2>&1
@@ -74,7 +61,27 @@ echo.
 
 
 rem ============================================================
-rem 3. Commit Message Template
+rem 2. Git Repositoryか確認
+rem ============================================================
+
+git rev-parse --is-inside-work-tree >nul 2>&1
+
+if errorlevel 1 (
+    echo [ERROR] Git Repositoryではありません。
+    echo.
+    echo ForkなどでRepositoryをCloneしてから
+    echo このbatを実行してください。
+    echo.
+    pause
+    exit /b 1
+)
+
+echo [OK] Git Repository
+echo.
+
+
+rem ============================================================
+rem 3. 必要な共有設定ファイルを確認
 rem ============================================================
 
 if not exist ".gitmessage" (
@@ -87,7 +94,42 @@ if not exist ".gitmessage" (
     exit /b 1
 )
 
-rem このRepositoryだけで.gitmessageを使用する。
+if not exist ".gitattributes" (
+    echo [ERROR] .gitattributes が見つかりません。
+    echo.
+    echo Repository Rootに
+    echo .gitattributes を配置してください。
+    echo.
+    pause
+    exit /b 1
+)
+
+if not exist ".githooks" (
+    echo [ERROR] .githooks フォルダが見つかりません。
+    echo.
+    pause
+    exit /b 1
+)
+
+if not exist ".githooks\commit-msg" (
+    echo [ERROR] .githooks\commit-msg が見つかりません。
+    echo.
+    pause
+    exit /b 1
+)
+
+echo [OK] Shared Git Files
+echo.
+
+
+rem ============================================================
+rem 4. Commit Message Template
+rem ============================================================
+rem
+rem ForkなどからCommitするときに
+rem Repository Rootの.gitmessageを表示する。
+rem ============================================================
+
 git config --local commit.template ".gitmessage"
 
 if errorlevel 1 (
@@ -103,17 +145,43 @@ echo.
 
 
 rem ============================================================
-rem 4. 改行コード設定
+rem 5. Git Hooks
+rem ============================================================
+rem
+rem 通常Gitは .git/hooks を使用する。
+rem
+rem チームでHooksを共有できるよう、
+rem Repository管理されている .githooks を使用する。
+rem ============================================================
+
+git config --local core.hooksPath ".githooks"
+
+if errorlevel 1 (
+    echo [ERROR] Git Hooksの設定に失敗しました。
+    echo.
+    pause
+    exit /b 1
+)
+
+echo [OK] Git Hooks
+echo      .githooks
+echo.
+
+
+rem ============================================================
+rem 6. 改行コード設定
 rem ============================================================
 rem
 rem Windows Gitではcore.autocrlf=trueになっている場合がある。
 rem
-rem このプロジェクトでは.gitattributes側で
+rem このRepositoryでは.gitattributes側で
 rem
-rem *.cs text eol=lf
+rem *.cs  text eol=lf
+rem *.bat text eol=crlf
 rem
-rem のように改行コードを管理するため、
-rem Git側の自動CRLF変換を無効にする。
+rem のように改行コードを管理する。
+rem
+rem そのためGit側による自動変換は無効にする。
 rem ============================================================
 
 git config --local core.autocrlf false
@@ -131,13 +199,13 @@ echo.
 
 
 rem ============================================================
-rem 5. Git LFS
+rem 7. Git LFS
 rem ============================================================
 rem
 rem .gitattributesで
 rem
 rem *.fbx filter=lfs ...
-rem *.psd filter=lfs ...
+rem *.wav filter=lfs ...
 rem
 rem などを使用する場合に必要。
 rem ============================================================
@@ -152,7 +220,6 @@ if errorlevel 1 (
     echo.
 ) else (
 
-    rem --local により、このRepositoryだけにLFS設定を適用する。
     git lfs install --local >nul 2>&1
 
     if errorlevel 1 (
@@ -166,9 +233,10 @@ if errorlevel 1 (
 
 
 rem ============================================================
-rem 6. 設定結果表示
+rem 8. 設定結果表示
 rem ============================================================
 
+echo.
 echo ========================================
 echo Setup Complete
 echo ========================================
@@ -178,13 +246,22 @@ echo Commit Template:
 git config --local --get commit.template
 
 echo.
+echo Git Hooks:
+git config --local --get core.hooksPath
+
+echo.
 echo core.autocrlf:
 git config --local --get core.autocrlf
 
 echo.
+echo ----------------------------------------
 echo 初回セットアップが完了しました。
+echo ----------------------------------------
+echo.
 echo Forkを起動済みの場合は、
-echo 一度再起動してください。
+echo 一度終了して再起動してください。
 echo.
 
 pause
+
+endlocal

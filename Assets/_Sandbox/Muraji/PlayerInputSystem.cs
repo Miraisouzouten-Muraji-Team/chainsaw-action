@@ -131,16 +131,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                     ""interactions"": """",
                     ""initialStateCheck"": false,
                     ""priority"": 0
-                },
-                {
-                    ""name"": ""Slash"",
-                    ""type"": ""Button"",
-                    ""id"": ""76cc5316-932b-4a59-95a5-8c92274167b8"",
-                    ""expectedControlType"": """",
-                    ""processors"": """",
-                    ""interactions"": """",
-                    ""initialStateCheck"": false,
-                    ""priority"": 0
                 }
             ],
             ""bindings"": [
@@ -289,6 +279,17 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                 },
                 {
                     ""name"": """",
+                    ""id"": ""677dbe05-febf-46d7-8fd6-f60b993595f9"",
+                    ""path"": ""<SwitchProControllerHID>/buttonWest"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Attack"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
                     ""id"": ""fd6827bf-7e6a-43f8-8444-5008e387b1f5"",
                     ""path"": ""<XInputController>/buttonWest"",
                     ""interactions"": """",
@@ -308,28 +309,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                     ""action"": ""Jump"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
-                },
-                {
-                    ""name"": """",
-                    ""id"": ""c09368d1-3286-47c7-a0fa-ba2ed9b100f3"",
-                    ""path"": ""<Keyboard>/e"",
-                    ""interactions"": """",
-                    ""processors"": """",
-                    ""groups"": """",
-                    ""action"": ""Slash"",
-                    ""isComposite"": false,
-                    ""isPartOfComposite"": false
-                },
-                {
-                    ""name"": """",
-                    ""id"": ""f7ce4d92-1e97-420c-90b2-f53e9933dd26"",
-                    ""path"": ""<SwitchProControllerHID>/buttonWest"",
-                    ""interactions"": """",
-                    ""processors"": """",
-                    ""groups"": """",
-                    ""action"": ""Slash"",
-                    ""isComposite"": false,
-                    ""isPartOfComposite"": false
                 }
             ]
         }
@@ -342,7 +321,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
         m_Player_Wedgie = m_Player.FindAction("Wedgie", throwIfNotFound: true);
         m_Player_Attack = m_Player.FindAction("Attack", throwIfNotFound: true);
         m_Player_Jump = m_Player.FindAction("Jump", throwIfNotFound: true);
-        m_Player_Slash = m_Player.FindAction("Slash", throwIfNotFound: true);
     }
 
     ~@PlayerInputSystem()
@@ -427,7 +405,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
     private readonly InputAction m_Player_Wedgie;
     private readonly InputAction m_Player_Attack;
     private readonly InputAction m_Player_Jump;
-    private readonly InputAction m_Player_Slash;
     /// <summary>
     /// Provides access to input actions defined in input action map "Player".
     /// </summary>
@@ -455,10 +432,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
         /// Provides access to the underlying input action "Player/Jump".
         /// </summary>
         public InputAction @Jump => m_Wrapper.m_Player_Jump;
-        /// <summary>
-        /// Provides access to the underlying input action "Player/Slash".
-        /// </summary>
-        public InputAction @Slash => m_Wrapper.m_Player_Slash;
         /// <summary>
         /// Provides access to the underlying input action map instance.
         /// </summary>
@@ -497,9 +470,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
             @Jump.started += instance.OnJump;
             @Jump.performed += instance.OnJump;
             @Jump.canceled += instance.OnJump;
-            @Slash.started += instance.OnSlash;
-            @Slash.performed += instance.OnSlash;
-            @Slash.canceled += instance.OnSlash;
         }
 
         /// <summary>
@@ -523,9 +493,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
             @Jump.started -= instance.OnJump;
             @Jump.performed -= instance.OnJump;
             @Jump.canceled -= instance.OnJump;
-            @Slash.started -= instance.OnSlash;
-            @Slash.performed -= instance.OnSlash;
-            @Slash.canceled -= instance.OnSlash;
         }
 
         /// <summary>
@@ -594,12 +561,5 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnJump(InputAction.CallbackContext context);
-        /// <summary>
-        /// Method invoked when associated input action "Slash" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
-        /// </summary>
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
-        void OnSlash(InputAction.CallbackContext context);
     }
 }

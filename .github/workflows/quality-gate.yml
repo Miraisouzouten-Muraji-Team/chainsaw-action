@@ -1128,14 +1128,50 @@ jobs:
 
           for meta in assets.rglob("*.meta"):
 
-              # .metaの拡張子を外したパス。
-              original = Path(
-                  str(meta)[:-5]
+          # .metaの拡張子を外したパス。
+          original = Path(
+              str(meta)[:-5]
+          )
+
+
+          try:
+
+              text = meta.read_text(
+                  encoding="utf-8-sig",
+                  errors="replace",
               )
 
+          except Exception as exc:
 
-              # 本体が存在しない.meta。
-              if not original.exists():
+              error(
+                  meta,
+                  f".metaを読み込めません: {exc}",
+              )
+
+              continue
+
+
+          # ------------------------------------------------
+          # .meta → 本体
+          # ------------------------------------------------
+          #
+          # Gitは空フォルダを管理できないため、
+          # Unityの空フォルダ用metaだけがRepositoryに
+          # 残る場合がある。
+          #
+          # folderAsset: yes のmetaについては、
+          # 対応するフォルダが存在しなくても許可する。
+          # ------------------------------------------------
+
+          if not original.exists():
+
+              is_folder_meta = re.search(
+                  r"^folderAsset:\s*yes\s*$",
+                  text,
+                  re.MULTILINE,
+              )
+
+              if not is_folder_meta:
 
                   error(
                       meta,
@@ -1143,65 +1179,48 @@ jobs:
                   )
 
 
-              try:
+          # ------------------------------------------------
+          # GUID取得
+          # ------------------------------------------------
 
-                  text = meta.read_text(
-                      encoding="utf-8-sig",
-                      errors="replace",
-                  )
-
-              except Exception as exc:
-
-                  error(
-                      meta,
-                      f".metaを読み込めません: {exc}",
-                  )
-
-                  continue
+          guids = guid_pattern.findall(text)
 
 
-              # ------------------------------------------------
-              # GUID取得
-              # ------------------------------------------------
+          # Unity .metaにはGUIDが1つ必要。
+          if len(guids) != 1:
 
-              guids = guid_pattern.findall(text)
+              error(
+                  meta,
+                  f"有効なGUIDが1つ必要です。検出数={len(guids)}",
+              )
 
-
-              # Unity .metaにはGUIDが1つ必要。
-              if len(guids) != 1:
-
-                  error(
-                      meta,
-                      f"有効なGUIDが1つ必要です。検出数={len(guids)}",
-                  )
-
-                  continue
+              continue
 
 
-              guid = guids[0].lower()
+          guid = guids[0].lower()
 
 
-              # ------------------------------------------------
-              # GUID重複確認
-              # ------------------------------------------------
+          # ------------------------------------------------
+          # GUID重複確認
+          # ------------------------------------------------
 
-              previous = guid_owner.get(guid)
+          previous = guid_owner.get(guid)
 
 
-              if previous is not None:
+          if previous is not None:
 
-                  error(
-                      meta,
-                      (
-                          "Unity GUIDが重複しています。"
-                          f"同じGUIDを使用しているmeta: "
-                          f"{previous.as_posix()}"
-                      ),
-                  )
+              error(
+                  meta,
+                  (
+                      "Unity GUIDが重複しています。"
+                      f"同じGUIDを使用しているmeta: "
+                      f"{previous.as_posix()}"
+                  ),
+              )
 
-              else:
+          else:
 
-                  guid_owner[guid] = meta
+              guid_owner[guid] = meta
 
 
           sys.exit(1 if failed else 0)

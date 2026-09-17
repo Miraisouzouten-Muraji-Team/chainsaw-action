@@ -1,0 +1,94 @@
+name: EditMode CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  test-editmode:
+
+    name: Run EditMode Tests
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 20
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+        with:
+          lfs: false
+
+
+      - name: Restore NuGetForUnity packages
+        shell: bash
+
+        run: |
+          set -euo pipefail
+
+          dotnet tool install --global NuGetForUnity.Cli
+
+          export PATH="$PATH:$HOME/.dotnet/tools"
+
+          nugetforunity restore .
+
+
+      - name: Cache Unity Library
+        uses: actions/cache@v4
+
+        with:
+
+          path: Library
+
+          key: >-
+            Library-EditMode-${{ runner.os }}-${{
+              hashFiles(
+                'Assets/**',
+                'Packages/manifest.json',
+                'Packages/packages-lock.json',
+                'Packages/nuget-packages/packages.config',
+                'ProjectSettings/**'
+              )
+            }}
+
+          restore-keys: |
+            Library-EditMode-${{ runner.os }}-
+            Library-EditMode-
+            Library-
+
+
+      - name: Run EditMode tests
+        id: tests
+        uses: game-ci/unity-test-runner@v4
+
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+        with:
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          testMode: editmode
+
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+
+        with:
+          name: editmode-test-results
+          path: ${{ steps.tests.outputs.artifactsPath }}

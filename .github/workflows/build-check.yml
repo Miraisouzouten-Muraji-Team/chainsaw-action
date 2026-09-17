@@ -2,32 +2,61 @@
 # Unity Build Check
 # ============================================================
 #
-# main向けPull Requestで、
-# Unityプロジェクトが実際にビルドできるか確認する。
+# Unityプロジェクトが実際にWindows向けに
+# ビルドできるか確認するWorkflow。
 #
-# ビルドに失敗した場合、このWorkflowも失敗する。
+# 重い処理なのでPRごとには実行せず、
+#
+# ・GitHub Actions画面から手動実行
+# ・毎日 03:00 JST に自動実行
+#
+# とする。
 # ============================================================
 
 name: Unity Build Check
 
 
-# ------------------------------------------------------------
-# main向けPRで実行
-# ------------------------------------------------------------
+# ============================================================
+# Workflow実行条件
+# ============================================================
 
 on:
-  pull_request:
-    branches:
-      - main
+
+  # ----------------------------------------------------------
+  # GitHub Actions画面から手動実行
+  # ----------------------------------------------------------
+
+  workflow_dispatch:
 
 
-# ------------------------------------------------------------
-# 同じPRに新しいcommitが来た場合、
-# 古いBuild Checkを停止する
-# ------------------------------------------------------------
+  # ----------------------------------------------------------
+  # 毎日 03:00 JST に自動実行
+  #
+  # GitHub ActionsのcronはUTC。
+  #
+  # 18:00 UTC
+  #   ↓
+  # 03:00 JST
+  # ----------------------------------------------------------
+
+  schedule:
+    - cron: "0 18 * * *"
+
+
+# ============================================================
+# 権限
+# ============================================================
+
+permissions:
+  contents: read
+
+
+# ============================================================
+# 同じBranchで古いBuildが実行中の場合は停止
+# ============================================================
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 
@@ -39,48 +68,41 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    # ビルドが異常に長時間続くのを防ぐ
-    timeout-minutes: 30
+    # Unity Buildは時間がかかるため少し余裕を持たせる
+    timeout-minutes: 45
 
 
     steps:
 
-      # ------------------------------------------------------
+      # ======================================================
       # Repository取得
-      # ------------------------------------------------------
+      # ======================================================
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
         with:
-          # FBX / WAVなどGit LFS管理のファイルも取得する
+
+          # FBX / WAVなどGit LFS管理のファイルも取得
           lfs: true
 
+          # 必要に応じてGit履歴も利用できるようにする
+          fetch-depth: 0
 
-      # ------------------------------------------------------
-      # GitHub Actions Runnerの空き容量を確保
-      # ------------------------------------------------------
+
+      # ======================================================
+      # Runnerの空き容量確保
+      # ======================================================
       #
-      # GameCIはUnity EditorのDocker Imageを取得する。
+      # Unity 6のGameCI Docker Imageはサイズが大きいため、
+      # GitHub-hosted Runnerの不要なSDK等を削除する。
       #
-      # Unity 6のImageはサイズが大きく、
-      # GitHub-hosted Runnerの初期状態では
-      # Docker Image展開中に
-      #
-      #   no space left on device
-      #
-      # になる場合がある。
-      #
-      # 今回のWindows向けUnity Buildでは使用しない
-      # Android / Haskell / CodeQL / Swiftなどを削除して
-      # Build前に空き容量を増やす。
-      #
-      # RunnerはJob終了後に破棄されるため、
-      # Repositoryや開発者PCのファイルには影響しない。
-      # ------------------------------------------------------
+      # Repositoryや開発者PCには影響しない。
+      # ======================================================
 
       - name: Free disk space
         shell: bash
+
         run: |
           set -euo pipefail
 
@@ -105,7 +127,7 @@ jobs:
           # apt cache
           sudo apt-get clean
 
-          # Runnerに残っている未使用Dockerデータがあれば削除する。
+          # 不要なDockerデータがあれば削除
           docker system prune -af || true
 
           echo ""
@@ -115,46 +137,83 @@ jobs:
           df -h
 
 
-      # ------------------------------------------------------
-      # Unity Libraryキャッシュ
-      # ------------------------------------------------------
+      # ======================================================
+      # NuGetForUnity Package Restore
+      # ======================================================
       #
-      # 初回はLibraryが存在しないためCache Missになる。
-      # 2回目以降に同じ内容をビルドするときの高速化用。
-      # ------------------------------------------------------
+      # R3 Coreなど、
+      # NuGetForUnityで管理しているPackageを復元する。
+      #
+      # ローカルPCでは既にPackageが存在していても、
+      # GitHub Actions Runnerは毎回ほぼ空の環境から始まる。
+      #
+      # そのためBuild前にrestoreが必要。
+      # ======================================================
+
+      - name: Restore NuGetForUnity packages
+        shell: bash
+
+        run: |
+          set -euo pipefail
+
+          dotnet tool install --global NuGetForUnity.Cli
+
+          export PATH="$PATH:$HOME/.dotnet/tools"
+
+          nugetforunity restore .
+
+
+      # ======================================================
+      # Unity Library Cache
+      # ======================================================
+      #
+      # LibraryをCacheして、
+      # Asset ImportやScript Compileの時間を短縮する。
+      #
+      # 初回はCacheが無いため通常通り生成される。
+      # ======================================================
 
       - name: Cache Unity Library
         uses: actions/cache@v4
 
         with:
+
           path: Library
 
-          key: Library-Build-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          key: >-
+            Library-Build-${{ runner.os }}-${{
+              hashFiles(
+                'Assets/**',
+                'Packages/manifest.json',
+                'Packages/packages-lock.json',
+                'Packages/nuget-packages/packages.config',
+                'ProjectSettings/**'
+              )
+            }}
 
           restore-keys: |
+            Library-Build-${{ runner.os }}-
             Library-Build-
             Library-
 
 
-      # ------------------------------------------------------
+      # ======================================================
       # Windows向けUnity Build
-      # ------------------------------------------------------
+      # ======================================================
 
       - name: Build Unity project
         uses: game-ci/unity-builder@v4
 
         env:
 
-          # Repository Secretsに登録済みのUnity認証情報
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
         with:
 
-          # ProjectSettings/ProjectVersion.txtから
-          # Unityバージョンを自動取得
+          # ProjectSettings/ProjectVersion.txtから取得
           unityVersion: auto
 
-          # Windows 64bit向けビルド
+          # Windows 64bit向け
           targetPlatform: StandaloneWindows64

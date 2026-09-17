@@ -58,7 +58,69 @@ jobs:
 
 
       # ------------------------------------------------------
+      # GitHub Actions Runnerの空き容量を確保
+      # ------------------------------------------------------
+      #
+      # GameCIはUnity EditorのDocker Imageを取得する。
+      #
+      # Unity 6のImageはサイズが大きく、
+      # GitHub-hosted Runnerの初期状態では
+      # Docker Image展開中に
+      #
+      #   no space left on device
+      #
+      # になる場合がある。
+      #
+      # 今回のWindows向けUnity Buildでは使用しない
+      # Android / Haskell / CodeQL / Swiftなどを削除して
+      # Build前に空き容量を増やす。
+      #
+      # RunnerはJob終了後に破棄されるため、
+      # Repositoryや開発者PCのファイルには影響しない。
+      # ------------------------------------------------------
+
+      - name: Free disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo " Disk space before cleanup"
+          echo "========================================"
+          df -h
+
+          # Android SDK / NDK
+          sudo rm -rf /usr/local/lib/android
+
+          # Haskell
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/.ghcup
+
+          # CodeQL
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
+          # Swift
+          sudo rm -rf /usr/share/swift
+
+          # apt cache
+          sudo apt-get clean
+
+          # Runnerに残っている未使用Dockerデータがあれば削除する。
+          docker system prune -af || true
+
+          echo ""
+          echo "========================================"
+          echo " Disk space after cleanup"
+          echo "========================================"
+          df -h
+
+
+      # ------------------------------------------------------
       # Unity Libraryキャッシュ
+      # ------------------------------------------------------
+      #
+      # 初回はLibraryが存在しないためCache Missになる。
+      # 2回目以降に同じ内容をビルドするときの高速化用。
       # ------------------------------------------------------
 
       - name: Cache Unity Library

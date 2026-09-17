@@ -1,19 +1,77 @@
+# ============================================================
+# EditMode CI
+# ============================================================
+#
+# main向けPull Requestで、
+# Unityプロジェクトのコンパイルと
+# EditMode Testを確認するWorkflow。
+#
+# 主な目的:
+#
+# ・NuGetForUnity Packageの復元
+# ・Unity Scriptのコンパイル確認
+# ・EditMode Testの実行
+#
+# Build Checkより軽いため、
+# PRごとに実行する。
+# ============================================================
+
 name: EditMode CI
 
+
+# ============================================================
+# Workflow実行条件
+# ============================================================
+
 on:
+
+  # ----------------------------------------------------------
+  # main向けPull Requestで実行
+  # ----------------------------------------------------------
+
   pull_request:
     branches:
       - main
 
+
+  # ----------------------------------------------------------
+  # GitHub Actions画面から手動実行
+  # ----------------------------------------------------------
+
   workflow_dispatch:
 
+
+# ============================================================
+# 権限
+# ============================================================
+
 permissions:
+
+  # Repositoryを読み込むため
   contents: read
+
+  # Unity Test RunnerがCheck結果を書き込むため
   checks: write
 
+
+# ============================================================
+# 同じPRに新しいcommitが来た場合、
+# 古いEditMode CIを停止する
+# ============================================================
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+
+  group: >-
+    ${{ github.workflow }}-${{
+      github.event.pull_request.number || github.ref
+    }}
+
   cancel-in-progress: true
+
+
+# ============================================================
+# Jobs
+# ============================================================
 
 jobs:
 
@@ -23,16 +81,126 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    timeout-minutes: 20
+    # 異常に長時間実行されるのを防ぐ
+    timeout-minutes: 30
+
 
     steps:
 
-      - name: Checkout
+      # ======================================================
+      # Repository取得
+      # ======================================================
+
+      - name: Checkout repository
         uses: actions/checkout@v4
 
         with:
+
+          # EditModeのコンパイル確認では、
+          # FBX / WAVなどLFS実体は基本不要。
+          #
+          # そのため取得せず、
+          # ディスク使用量とDownload時間を抑える。
           lfs: false
 
+
+      # ======================================================
+      # GitHub Actions Runnerの空き容量確保
+      # ======================================================
+      #
+      # GameCIはUnity EditorのDocker Imageを使用する。
+      #
+      # Unity 6のDocker Imageは非常に大きいため、
+      # GitHub-hosted Runnerの初期状態では
+      #
+      #   no space left on device
+      #
+      # が発生する場合がある。
+      #
+      # EditMode CIで使用しないSDK等を削除して、
+      # Unity Docker Imageを展開する容量を確保する。
+      #
+      # RunnerはJob終了後に破棄されるため、
+      # Repositoryや開発者PCには影響しない。
+      # ======================================================
+
+      - name: Free disk space
+        shell: bash
+
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo " Disk space before cleanup"
+          echo "========================================"
+
+          df -h
+
+
+          # --------------------------------------------------
+          # Android SDK / NDK
+          #
+          # EditMode Testでは使用しない。
+          # --------------------------------------------------
+
+          sudo rm -rf /usr/local/lib/android
+
+
+          # --------------------------------------------------
+          # Haskell
+          # --------------------------------------------------
+
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/.ghcup
+
+
+          # --------------------------------------------------
+          # CodeQL
+          # --------------------------------------------------
+
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
+
+          # --------------------------------------------------
+          # Swift
+          # --------------------------------------------------
+
+          sudo rm -rf /usr/share/swift
+
+
+          # --------------------------------------------------
+          # apt cache
+          # --------------------------------------------------
+
+          sudo apt-get clean
+
+
+          # --------------------------------------------------
+          # Runner上に未使用Dockerデータがあれば削除
+          # --------------------------------------------------
+
+          docker system prune -af || true
+
+
+          echo ""
+          echo "========================================"
+          echo " Disk space after cleanup"
+          echo "========================================"
+
+          df -h
+
+
+      # ======================================================
+      # NuGetForUnity Package Restore
+      # ======================================================
+      #
+      # R3 Coreなど、
+      # NuGetForUnityで管理しているPackageを復元する。
+      #
+      # GitHub Actions Runnerは毎回ほぼ空の環境なので、
+      # ローカルでPackageが入っていても
+      # CIではrestoreが必要。
+      # ======================================================
 
       - name: Restore NuGetForUnity packages
         shell: bash
@@ -46,6 +214,29 @@ jobs:
 
           nugetforunity restore .
 
+
+      # ======================================================
+      # Unity Library Cache
+      # ======================================================
+      #
+      # LibraryをCacheして、
+      #
+      # ・Asset Import
+      # ・Package Import
+      # ・Script Compile
+      #
+      # の時間を短縮する。
+      #
+      # 初回実行時はLibraryが存在しないため、
+      # Cache Missになっても問題ない。
+      #
+      # もし今後また
+      #
+      #   no space left on device
+      #
+      # が出る場合は、
+      # このCache Stepを削除する。
+      # ======================================================
 
       - name: Cache Unity Library
         uses: actions/cache@v4
@@ -71,24 +262,56 @@ jobs:
             Library-
 
 
+      # ======================================================
+      # EditMode Test
+      # ======================================================
+      #
+      # Unityを起動して、
+      #
+      # 1. Packageを読み込む
+      # 2. Scriptをコンパイルする
+      # 3. EditMode Testを実行する
+      #
+      # ため、
+      #
+      # ・CSxxxx Compiler Error
+      # ・asmdef参照エラー
+      # ・Package依存関係エラー
+      #
+      # などもこの段階で検出できる。
+      # ======================================================
+
       - name: Run EditMode tests
         id: tests
         uses: game-ci/unity-test-runner@v4
 
         env:
+
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
 
         with:
+
           githubToken: ${{ secrets.GITHUB_TOKEN }}
+
           testMode: editmode
 
+
+      # ======================================================
+      # Test Result保存
+      # ======================================================
+      #
+      # Testが失敗した場合でも、
+      # 結果をGitHub ActionsのArtifactsへ保存する。
+      # ======================================================
 
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
 
         with:
+
           name: editmode-test-results
+
           path: ${{ steps.tests.outputs.artifactsPath }}

@@ -643,10 +643,13 @@ jobs:
 
           # 行末空白など、
           # git diff --checkで検出できる問題を確認する。
-          if ! git diff --check "$FROM" "$TO"; then
+          # Unityが自動生成する.metaとFontAssetsの.assetは除外する。
+          if ! git diff --check "$FROM" "$TO" -- \
+            . \
+            ':(exclude)**/*.meta' \
+            ':(exclude)Assets/FontAssets/**/*.asset'; then
 
             err "git diff --check に失敗しました"
-
           fi
 
 

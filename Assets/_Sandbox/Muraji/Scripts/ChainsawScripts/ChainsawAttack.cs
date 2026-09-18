@@ -32,7 +32,6 @@ public class ChainsawAttack : MonoBehaviour
     {
         hitBox.enabled = true;
 
-        Debug.Log("HitBox ON");
     }
 
 
@@ -40,8 +39,6 @@ public class ChainsawAttack : MonoBehaviour
     public void DisableHitBox()
     {
         hitBox.enabled = false;
-
-        Debug.Log("HitBox OFF");
     }
 
     // ìGÇ…ìñÇΩÇ¡ÇΩèuä‘
@@ -81,6 +78,5 @@ public class ChainsawAttack : MonoBehaviour
                 Destroy(particle, 2.0f);
             }
         }
-        Debug.Log("ìGÇ…ñΩíÜÅI");
     }
 }

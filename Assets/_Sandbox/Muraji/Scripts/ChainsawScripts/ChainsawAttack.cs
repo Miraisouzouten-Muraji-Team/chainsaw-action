@@ -17,6 +17,15 @@ public class ChainsawAttack : MonoBehaviour
     [Header("縦揺れの強さ")]
     [SerializeField] float magnitude;
 
+    [Header("ヒットストップ")]
+    [SerializeField] HitStop_System hitStopSystem;
+
+    [Header("ヒットストップの時間")]
+    [SerializeField] float hitStopDuration;
+
+    [Header("プレイヤーコントローラー")]
+    [SerializeField] PlayerController playerController;
+
 
     void Awake()
     {
@@ -25,6 +34,12 @@ public class ChainsawAttack : MonoBehaviour
 
         // CameraShake取得
         CameraShake cameraShake = FindAnyObjectByType<CameraShake>();
+
+        // HitStop_System取得
+        HitStop_System hitstopSystem = FindAnyObjectByType<HitStop_System>();
+
+        // PlayerController取得
+        PlayerController playerController = FindAnyObjectByType<PlayerController>();
     }
 
     // Animation Eventから呼ぶ
@@ -34,7 +49,7 @@ public class ChainsawAttack : MonoBehaviour
 
     }
 
-
+    
     // Animation Eventから呼ぶ
     public void DisableHitBox()
     {
@@ -55,6 +70,13 @@ public class ChainsawAttack : MonoBehaviour
 
         // カメラシェイク
         cameraShake.Shake(duration, magnitude);
+
+        // 攻撃データの取得
+        
+
+        // ヒットストップ
+        AttackData data=playerController.CurrentAttackData;
+        hitStopSystem.StopTime(data.hitStopTime);
 
         // パーティクル生成
         if (hitParticle != null)

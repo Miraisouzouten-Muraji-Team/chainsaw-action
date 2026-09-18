@@ -15,6 +15,9 @@ TagManager:
   - Enemy
   - 
   - 
+  - PixelNear
+  - PixelMiddle
+  - PixelFar
   - 
   - 
   - 

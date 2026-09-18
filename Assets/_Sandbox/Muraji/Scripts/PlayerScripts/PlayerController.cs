@@ -20,11 +20,16 @@ public class PlayerController : MonoBehaviour
     [Header("ジャンプ設定")]
     [SerializeField] float jumpForce = 5.0f;
 
+    // ここ後に修正すること2026年9月18日byムラジ
+    [SerializeField] AttackData slash1;
+    [SerializeField] AttackData slash2;
+    [SerializeField] AttackData slash3; 
+    /*------------------------------------*/
+    public AttackData CurrentAttackData { get; private set; }
+
     float verticalSpeed = 0.0f;
     bool isGrounded = true;
     private int slashStep = 0;
-
-
 
     void Awake()
     {
@@ -78,9 +83,7 @@ public class PlayerController : MonoBehaviour
 
 
 
-    /*
-     * 移動処理
-     */
+    /* 移動処理 */
     void Move()
     {
         float moveInput = input.MoveInput;
@@ -139,23 +142,32 @@ public class PlayerController : MonoBehaviour
         // カウントリセット
         if(slashStep >= 3)
         {
+            CurrentAttackData = slash1;
             slashStep = 0;
         }
 
         if (slashStep == 0)
         {
+            CurrentAttackData = slash1;
             slashStep = 1;
             playerAnimator.PlaySlash();
         }
         else if (slashStep == 1)
         {
+            CurrentAttackData = slash2;
             slashStep = 2;
             playerAnimator.PlaySlash2();
         }
         else if (slashStep == 2)
         {
+            CurrentAttackData = slash3;
             slashStep = 3;
             playerAnimator.PlaySlash3();
         }
+    }
+
+    public void GetSlashCount()
+    {
+
     }
 }

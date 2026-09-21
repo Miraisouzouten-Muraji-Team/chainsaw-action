@@ -1,61 +1,183 @@
 using UnityEngine;
 
-/* Playerのアニメーションをセットして動かす */
+[RequireComponent(typeof(Animator))]
 public class PlayerAnimator : MonoBehaviour
 {
     Animator animator;
-    [SerializeField] ChainsawAttack attackHitBox; // チェーンソーのヒットボックス
 
-    // animatorの取得
+    [SerializeField] ChainsawAttack attackHitBox;
+
+    [Header("Animatorステートのフルパス")]
+    [SerializeField] string slash1State = "Base Layer.Slash1";
+    [SerializeField] string slash2State = "Base Layer.Slash2";
+    [SerializeField] string slash3State = "Base Layer.Slash3";
+    [SerializeField] string idleState = "Base Layer.Idle";
+
+    [Header("攻撃トレイル")]
+    [SerializeField] SlashTrailEffect slashTrailEffect;
+
+    int activeHash;
+    bool attackActive;
+
     void Awake()
     {
         animator = GetComponent<Animator>();
-
     }
 
-    /* ↓Playerアニメーション↓ */
-    public void SetSpeed(float speed) // 移動
+    public void SetSpeed(float speed)
     {
         animator.SetFloat("Speed", Mathf.Abs(speed));
     }
 
-    //public void PlayAttack() // 3段攻撃
-    //{
-    //    animator.SetTrigger("Attack");
-    //}
-
-    public void PlaySlash() // 単発攻撃
-    {
-        animator.SetTrigger("Slash");
-    }
-
-    public void PlaySlash2() // 2段攻撃
-    {
-        animator.SetTrigger("Slash2");
-    }
-
-    public void PlaySlash3() // 3段攻撃
-    {
-        animator.SetTrigger("Slash3");
-    }
-
-    public void PlayWedgie() // 食い込み
-    {
-        animator.SetTrigger("Wedgie");
-    }
-
-    public void PlayJump() // ジャンプ
+    public void PlayJump()
     {
         animator.SetTrigger("Jump");
     }
 
-    public void EnableAttackHitBox() // 攻撃判定有効化
+    public void PlayWedgie()
     {
-        attackHitBox.EnableHitBox();
+        animator.SetTrigger("Wedgie");
     }
 
-    public void DisableAttackHitBox() // 攻撃判定無効化
+    // 入力予約時ではなく、実際に次段へ進むときに呼ぶ。
+    public bool StartSlash(int step, AttackData data)
     {
-        attackHitBox.DisableHitBox();
+        if (animator == null)
+        {
+            animator = GetComponent<Animator>();
+        }
+
+        if (attackHitBox == null ||
+            data == null ||
+            step < 1 ||
+            step > 3)
+        {
+            Debug.LogError(
+                "攻撃判定またはAttackDataの参照を確認してください。",
+                this
+            );
+
+            return false;
+        }
+
+        string path =
+            step == 1 ? slash1State :
+            step == 2 ? slash2State :
+            slash3State;
+
+        int hash = Animator.StringToHash(path);
+        int idleHash = Animator.StringToHash(idleState);
+
+        if (!animator.HasState(0, hash) ||
+            !animator.HasState(0, idleHash))
+        {
+            Debug.LogError(
+                "攻撃またはIdleのステート名・レイヤー名が一致しません：" + path,
+                this
+            );
+
+            return false;
+        }
+
+        if (slashTrailEffect != null)
+        {
+            slashTrailEffect.ClearTrail();
+        }
+
+        // 前段の判定を閉じ、次段のヒットストップ時間を固定。
+        attackHitBox.BeginAttack(data);
+
+        activeHash = hash;
+        attackActive = true;
+
+        // 古いTriggerを残さない。
+        animator.ResetTrigger("Slash");
+        animator.ResetTrigger("Slash2");
+        animator.ResetTrigger("Slash3");
+        animator.ResetTrigger("Jump");
+        animator.ResetTrigger("Wedgie");
+
+        // 遷移条件を待たず、指定ステートを先頭から再生。
+        animator.Play(hash, 0, 0f);
+
+        return true;
+    }
+
+    public bool TryGetAttackProgress(out float progress)
+    {
+        AnimatorStateInfo state =
+            animator.GetCurrentAnimatorStateInfo(0);
+
+        progress = state.normalizedTime;
+
+        return attackActive &&
+               !animator.IsInTransition(0) &&
+               state.fullPathHash == activeHash;
+    }
+
+    public void EndSlash(bool returnToIdle)
+    {
+        attackActive = false;
+
+        if (slashTrailEffect != null)
+        {
+            slashTrailEffect.ClearTrail();
+        }
+
+        if (attackHitBox != null)
+        {
+            attackHitBox.EndAttack();
+        }
+
+        if (returnToIdle &&
+            animator != null &&
+            animator.isActiveAndEnabled)
+        {
+            animator.Play(idleState, 0, 0f);
+        }
+    }
+
+    // プレイヤーの攻撃Animation Eventから呼ぶ。
+    // int引数で1・2・3段目を指定する。
+    public void PlayAttackTrail(int step)
+    {
+        if (!attackActive || slashTrailEffect == null)
+        {
+            return;
+        }
+
+        slashTrailEffect.PlayEffect(step);
+    }
+
+    // プレイヤーの攻撃Animation Eventから呼ぶ。
+    public void StopAttackTrail()
+    {
+        if (slashTrailEffect != null)
+        {
+            slashTrailEffect.StopTrail();
+        }
+    }
+
+    // Animation Eventから呼ぶ。
+    public void EnableAttackHitBox()
+    {
+        if (attackActive && TryGetAttackProgress(out _))
+        {
+            attackHitBox.EnableHitBox();
+        }
+    }
+
+    // Animation Eventから呼ぶ。
+    public void DisableAttackHitBox()
+    {
+        if (attackHitBox != null)
+        {
+            attackHitBox.DisableHitBox();
+        }
+    }
+
+    void OnDisable()
+    {
+        EndSlash(false);
     }
 }

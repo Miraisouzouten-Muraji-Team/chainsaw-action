@@ -1,12 +1,9 @@
 using UnityEngine;
 
-/* Playerの移動や行動を管理するクラス */
-
 public class PlayerController : MonoBehaviour
 {
     PlayerInputHandler input;
     PlayerAnimator playerAnimator;
-
 
     [Header("移動設定")]
     [SerializeField] float moveSpeed = 5.0f;
@@ -15,88 +12,89 @@ public class PlayerController : MonoBehaviour
 
     float currentSpeed = 0.0f;
 
-
-
     [Header("ジャンプ設定")]
     [SerializeField] float jumpForce = 5.0f;
 
-    // ここ後に修正すること2026年9月18日byムラジ
-    [SerializeField] AttackData slash1;
-    [SerializeField] AttackData slash2;
-    [SerializeField] AttackData slash3; 
-    /*------------------------------------*/
-    public AttackData CurrentAttackData { get; private set; }
-
+    // ジャンプは元の処理を維持しています。
+    // 上下移動・接地回復・2段ジャンプは別途実装が必要です。
     float verticalSpeed = 0.0f;
     bool isGrounded = true;
-    private int slashStep = 0;
+
+    [Header("攻撃データ")]
+    [SerializeField] AttackData slash1;
+    [SerializeField] AttackData slash2;
+    [SerializeField] AttackData slash3;
+
+    public AttackData CurrentAttackData { get; private set; }
+
+    [Header("コンボ設定")]
+    [Tooltip("次段へ移れる再生位置。1なら現在の攻撃を最後まで再生します。")]
+    [Range(0.1f, 1f)]
+    [SerializeField] float comboAdvanceTime = 1f;
+
+    public bool IsAttacking { get; private set; }
+
+    int slashStep = 0;
+    bool nextSlashReserved;
+
+    int attackStartFrame;
+    bool attackStateObserved;
+    float stateWaitTime;
 
     void Awake()
     {
         input = GetComponent<PlayerInputHandler>();
         playerAnimator = GetComponent<PlayerAnimator>();
+
+        if (input == null || playerAnimator == null)
+        {
+            Debug.LogError(
+                "PlayerInputHandlerとPlayerAnimatorを同じGameObjectに配置してください。",
+                this
+            );
+
+            enabled = false;
+        }
     }
-
-
 
     void Update()
     {
-        // 移動処理
         Move();
 
-
-        // ジャンプ
-        if (input.JumpInput)
-        {
-            Jump();
-        }
-
-
-        //// 攻撃
-        //if (input.AttackInput)
-        //{
-        //    playerAnimator.PlayAttack();
-        //}
-
-
-        // スラッシュ
+        // 攻撃中の追加入力は、次の1段の予約として扱う。
         if (input.SlashInput)
         {
             Slash();
         }
 
-
-        // 食い込み
-        if (input.WedgieInput)
+        // 攻撃中のジャンプ・食い込みによる中断を一旦禁止。
+        if (!IsAttacking)
         {
-            playerAnimator.PlayWedgie();
+            if (input.JumpInput)
+            {
+                Jump();
+            }
+            else if (input.WedgieInput)
+            {
+                playerAnimator.PlayWedgie();
+            }
         }
 
+        UpdateSlash();
 
-        // 移動速度をAnimatorへ渡す
         playerAnimator.SetSpeed(currentSpeed);
 
-
-        // 一回入力をリセット
         input.ResetInput();
     }
 
-
-
-    /* 移動処理 */
     void Move()
     {
         float moveInput = input.MoveInput;
 
-
-        // 加速
         if (moveInput != 0)
         {
             currentSpeed +=
-                moveInput *
-                acceleration *
-                Time.deltaTime;
-
+                moveInput * acceleration * Time.deltaTime;
 
             currentSpeed = Mathf.Clamp(
                 currentSpeed,
@@ -106,68 +104,155 @@ public class PlayerController : MonoBehaviour
         }
         else
         {
-            // 減速
             currentSpeed = Mathf.MoveTowards(
                 currentSpeed,
                 0,
-                deceleration *
-                Time.deltaTime
+                deceleration * Time.deltaTime
             );
         }
 
-
-
         transform.position +=
-            Vector3.right *
-            currentSpeed *
-            Time.deltaTime;
+            Vector3.right * currentSpeed * Time.deltaTime;
     }
 
-    /* ジャンプ処理 */
     void Jump()
     {
         if (isGrounded)
         {
             verticalSpeed = jumpForce;
-
             isGrounded = false;
 
             playerAnimator.PlayJump();
         }
     }
 
-    /* 多段攻撃処理 */
+    // 攻撃ボタンを押したときに呼ぶ。
     void Slash()
     {
-        // カウントリセット
-        if(slashStep >= 3)
+        if (!IsAttacking)
         {
-            CurrentAttackData = slash1;
-            slashStep = 0;
+            StartSlash(1);
+        }
+        else if (slashStep < 3)
+        {
+            // 連打されても、次の1段だけを予約する。
+            // ここでは攻撃段数・攻撃データを変更しない。
+            nextSlashReserved = true;
         }
 
-        if (slashStep == 0)
+        // 3段目中は、新しいコンボを予約しない。
+    }
+
+    // アニメーションの進行に合わせて次段・終了を判断。
+    void UpdateSlash()
+    {
+        if (!IsAttacking || Time.frameCount == attackStartFrame)
         {
-            CurrentAttackData = slash1;
-            slashStep = 1;
-            playerAnimator.PlaySlash();
+            return;
         }
-        else if (slashStep == 1)
+
+        // ヒットストップ中もSlash()で予約は受け付ける。
+        // ただし、停止中には次段へ進めない。
+        if (Time.timeScale <= 0f)
         {
-            CurrentAttackData = slash2;
-            slashStep = 2;
-            playerAnimator.PlaySlash2();
+            return;
         }
-        else if (slashStep == 2)
+
+        if (!playerAnimator.TryGetAttackProgress(out float progress))
         {
-            CurrentAttackData = slash3;
-            slashStep = 3;
-            playerAnimator.PlaySlash3();
+            stateWaitTime += Time.deltaTime;
+
+            if (attackStateObserved || stateWaitTime > 0.5f)
+            {
+                Debug.LogWarning(
+                    "攻撃が中断されたか、攻撃ステートを再生できませんでした。" +
+                    "Animator設定を確認してください。",
+                    this
+                );
+
+                CancelAttack();
+            }
+
+            return;
+        }
+
+        attackStateObserved = true;
+
+        if (slashStep < 3 &&
+            nextSlashReserved &&
+            progress >= comboAdvanceTime)
+        {
+            StartSlash(slashStep + 1);
+        }
+        else if (progress >= 1f)
+        {
+            FinishSlash();
         }
     }
 
-    public void GetSlashCount()
+    // 実際に攻撃を開始するときだけ、段数とデータを更新。
+    void StartSlash(int step)
     {
+        AttackData data =
+            step == 1 ? slash1 :
+            step == 2 ? slash2 :
+            slash3;
 
+        if (!playerAnimator.StartSlash(step, data))
+        {
+            CancelAttack();
+            return;
+        }
+
+        slashStep = step;
+        CurrentAttackData = data;
+
+        IsAttacking = true;
+        nextSlashReserved = false;
+
+        attackStartFrame = Time.frameCount;
+        attackStateObserved = false;
+        stateWaitTime = 0f;
+    }
+
+    void FinishSlash()
+    {
+        playerAnimator.EndSlash(true);
+        ClearSlashState();
+    }
+
+    // 被ダメージ・死亡を追加するときは、
+    // 別モーションの再生前にこの関数を呼ぶ。
+    public void CancelAttack()
+    {
+        if (playerAnimator != null)
+        {
+            playerAnimator.EndSlash(false);
+        }
+
+        ClearSlashState();
+    }
+
+    void ClearSlashState()
+    {
+        IsAttacking = false;
+        nextSlashReserved = false;
+        slashStep = 0;
+        CurrentAttackData = null;
+    }
+
+    void OnDisable()
+    {
+        if (playerAnimator != null)
+        {
+            playerAnimator.EndSlash(true);
+        }
+
+        ClearSlashState();
+
+        if (input != null)
+        {
+            input.ResetInput();
+        }
     }
 }

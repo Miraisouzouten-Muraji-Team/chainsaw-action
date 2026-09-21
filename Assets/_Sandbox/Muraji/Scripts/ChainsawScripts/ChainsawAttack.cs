@@ -11,74 +11,134 @@ public class ChainsawAttack : MonoBehaviour
     [Header("カメラシェイク")]
     [SerializeField] CameraShake cameraShake;
 
-    [Header("横揺れの強さ")]
     [SerializeField] float duration;
-
-    [Header("縦揺れの強さ")]
     [SerializeField] float magnitude;
 
     [Header("ヒットストップ")]
     [SerializeField] HitStop_System hitStopSystem;
 
-    [Header("ヒットストップの時間")]
-    [SerializeField] float hitStopDuration;
+    // その攻撃の開始時に値をコピーして保持する。
+    float attackHitStopTime;
 
-    [Header("プレイヤーコントローラー")]
-    [SerializeField] PlayerController playerController;
-
+    bool attackPrepared;
+    bool hitWindowOpen;
 
     void Awake()
     {
-        // 最初は攻撃判定OFF
+        if (hitBox == null)
+        {
+            Debug.LogError(
+                "ChainsawAttackのHit Boxを設定してください。",
+                this
+            );
+
+            enabled = false;
+            return;
+        }
+
         hitBox.enabled = false;
 
-        // CameraShake取得
-        CameraShake cameraShake = FindAnyObjectByType<CameraShake>();
+        // 同名のローカル変数を作らず、フィールドへ代入。
+        // Inspectorに設定済みなら、そちらを優先する。
+        if (cameraShake == null)
+        {
+            cameraShake = FindAnyObjectByType<CameraShake>();
+        }
 
-        // HitStop_System取得
-        HitStop_System hitstopSystem = FindAnyObjectByType<HitStop_System>();
+        if (hitStopSystem == null)
+        {
+            hitStopSystem = FindAnyObjectByType<HitStop_System>();
+        }
 
-        // PlayerController取得
-        PlayerController playerController = FindAnyObjectByType<PlayerController>();
+        if (hitStopSystem == null)
+        {
+            Debug.LogWarning(
+                "HitStop Systemを設定してください。",
+                this
+            );
+        }
     }
 
-    // Animation Eventから呼ぶ
-    public void EnableHitBox()
+    // 各段の攻撃開始時に呼ぶ。
+    public void BeginAttack(AttackData data)
     {
-        hitBox.enabled = true;
+        EndAttack();
 
-    }
-
-    
-    // Animation Eventから呼ぶ
-    public void DisableHitBox()
-    {
-        hitBox.enabled = false;
-    }
-
-    // 敵に当たった瞬間
-    private void OnTriggerEnter(Collider other)
-    {
-        if (!other.CompareTag("Enemy"))
+        if (data == null ||
+            hitBox == null ||
+            !isActiveAndEnabled)
         {
             return;
         }
 
-        // 敵のCollider表面に一番近い位置を取得
+        attackHitStopTime = Mathf.Max(0f, data.hitStopTime);
+        attackPrepared = true;
+    }
+
+    public void EnableHitBox()
+    {
+        if (!attackPrepared ||
+            !isActiveAndEnabled ||
+            hitBox == null)
+        {
+            return;
+        }
+
+        hitWindowOpen = true;
+        hitBox.enabled = true;
+    }
+
+    public void DisableHitBox()
+    {
+        hitWindowOpen = false;
+
+        if (hitBox != null)
+        {
+            hitBox.enabled = false;
+        }
+    }
+
+    public void EndAttack()
+    {
+        DisableHitBox();
+
+        attackPrepared = false;
+        attackHitStopTime = 0f;
+    }
+
+    void OnDisable()
+    {
+        EndAttack();
+    }
+
+    void OnTriggerEnter(Collider other)
+    {
+        if (!isActiveAndEnabled ||
+            !attackPrepared ||
+            !hitWindowOpen ||
+            hitBox == null ||
+            !hitBox.enabled ||
+            !other.CompareTag("Enemy"))
+        {
+            return;
+        }
+
         Vector3 hitPosition =
             other.ClosestPoint(transform.position);
 
-        // カメラシェイク
-        cameraShake.Shake(duration, magnitude);
+        if (cameraShake != null)
+        {
+            cameraShake.Shake(duration, magnitude);
+        }
 
-        // 攻撃データの取得
-        
+        // 命中時にController.CurrentAttackDataを読み直さない。
+        // 攻撃開始時に確定した時間を使う。
+        // 0秒の場合はStopTime自体を呼ばない。
+        if (hitStopSystem != null && attackHitStopTime > 0f)
+        {
+            hitStopSystem.StopTime(attackHitStopTime);
+        }
 
-        // ヒットストップ
-        AttackData data=playerController.CurrentAttackData;
-        hitStopSystem.StopTime(data.hitStopTime);
-
-        // パーティクル生成
         if (hitParticle != null)
         {
             GameObject particle = Instantiate(
@@ -86,19 +146,16 @@ public class ChainsawAttack : MonoBehaviour
                 hitPosition,
                 Quaternion.identity
             );
-            // パーティクルの再生時間が終わったら自動で削除する
-            ParticleSystem particleSystem =particle.GetComponent<ParticleSystem>();
-            if (particleSystem != null)
-            {
-                Destroy(
-                    particle,
-                    particleSystem.main.duration + particleSystem.main.startLifetime.constantMax
-                    );
-            }
-            else
-            {
-                Destroy(particle, 2.0f);
-            }
+
+            ParticleSystem particleSystem =
+                particle.GetComponent<ParticleSystem>();
+
+            float lifetime = particleSystem != null
+                ? particleSystem.main.duration +
+                  particleSystem.main.startLifetime.constantMax
+                : 2f;
+
+            Destroy(particle, lifetime);
         }
     }
 }

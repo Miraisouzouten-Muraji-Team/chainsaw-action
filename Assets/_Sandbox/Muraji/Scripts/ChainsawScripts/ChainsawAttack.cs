@@ -9,7 +9,7 @@ public class ChainsawAttack : MonoBehaviour
     [SerializeField] GameObject hitParticle;
 
     [Header("カメラシェイク")]
-    [SerializeField] CameraShake cameraShake;
+    [SerializeField] CameraShake_System cameraShake;
 
     [SerializeField] float duration;
     [SerializeField] float magnitude;
@@ -42,7 +42,7 @@ public class ChainsawAttack : MonoBehaviour
         // Inspectorに設定済みなら、そちらを優先する。
         if (cameraShake == null)
         {
-            cameraShake = FindAnyObjectByType<CameraShake>();
+            cameraShake = FindAnyObjectByType<CameraShake_System>();
         }
 
         if (hitStopSystem == null)

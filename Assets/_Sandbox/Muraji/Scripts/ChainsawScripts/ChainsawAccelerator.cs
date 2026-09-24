@@ -44,7 +44,7 @@ public class ChainsawAccelerator : MonoBehaviour
     [SerializeField] private float minPitch = 0.8f;
     [SerializeField] private float maxPitch = 1.8f;
 
-    [Header("Console‚Ö‚Ì•\¦ŠÔŠui•bj")]
+    [Header("Console‚Ö‚Ì•\¦ŠÔŠu(•b)")]
     [SerializeField, Min(0.05f)]
     private float logInterval = 0.2f;
 

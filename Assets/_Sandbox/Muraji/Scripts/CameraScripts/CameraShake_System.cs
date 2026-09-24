@@ -1,7 +1,7 @@
 using UnityEngine;
 using System.Collections;
 
-public class CameraShake : MonoBehaviour
+public class CameraShake_System : MonoBehaviour
 {
     Vector3 basicPosition;
     Coroutine shakeCoroutine;

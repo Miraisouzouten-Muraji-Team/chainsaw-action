@@ -618,7 +618,8 @@ MonoBehaviour:
   moveSpeed: 3
   acceleration: 15
   deceleration: 25
-  jumpForce: 10
+  jumpForce: 20
+  gravityScale: 10
   slash1: {fileID: 11400000, guid: 8607520c691a1314eb0173541cd3397a, type: 2}
   slash2: {fileID: 11400000, guid: 5ea1d1f77eb496b498c1ab9404279355, type: 2}
   slash3: {fileID: 11400000, guid: e540abe81fcc379418b2cdafb563b6e8, type: 2}
@@ -653,6 +654,7 @@ MonoBehaviour:
   slash3State: Base Layer.Slash3
   idleState: Base Layer.Idle
   slashTrailEffect: {fileID: 101750464}
+  diggingState: Base Layer.Digging
 --- !u!54 &583300428
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -675,7 +677,7 @@ Rigidbody:
     m_Bits: 0
   m_ImplicitCom: 1
   m_ImplicitTensor: 1
-  m_UseGravity: 1
+  m_UseGravity: 0
   m_IsKinematic: 0
   m_Interpolate: 0
   m_Constraints: 120

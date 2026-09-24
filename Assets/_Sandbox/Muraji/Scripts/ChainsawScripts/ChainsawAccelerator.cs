@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class ChainsawRotation : MonoBehaviour
+public class ChainsawAccelerator : MonoBehaviour
 {
     private const float TRIGGER_THRESHOLD = 0.1f;
     private const float MIN_TRANSITION_DURATION = 0.01f;
@@ -149,16 +149,16 @@ public class ChainsawRotation : MonoBehaviour
         {
             logTimer = 0f;
 
-            Debug.Log(
-                $"[チェーンソー] " +
-                $"RT:{(accelerating ? "ON" : "OFF")} | " +
-                $"食い込み:{(isBiting ? "ON" : "OFF")} | " +
-                $"抵抗力:{(isBiting ? resistance : 1f):F2} | " +
-                $"回転速度:{CurrentSpeed:F2} 回転/秒 | " +
-                $"目標:{targetSpeed:F2} | " +
-                $"SEピッチ:{CurrentPitch:F2}",
-                this
-            );
+            //Debug.Log(
+            //    $"[チェーンソー] " +
+            //    $"RT:{(accelerating ? "ON" : "OFF")} | " +
+            //    $"食い込み:{(isBiting ? "ON" : "OFF")} | " +
+            //    $"抵抗力:{(isBiting ? resistance : 1f):F2} | " +
+            //    $"回転速度:{CurrentSpeed:F2} 回転/秒 | " +
+            //    $"目標:{targetSpeed:F2} | " +
+            //    $"SEピッチ:{CurrentPitch:F2}",
+            //    this
+            //);
         }
     }
 

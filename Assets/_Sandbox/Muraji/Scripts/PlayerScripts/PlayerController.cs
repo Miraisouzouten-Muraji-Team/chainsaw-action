@@ -1,5 +1,5 @@
 using UnityEngine;
-
+using System.Collections.Generic;
 public class PlayerController : MonoBehaviour
 {
     PlayerInputHandler input;
@@ -15,10 +15,27 @@ public class PlayerController : MonoBehaviour
     [Header("ジャンプ設定")]
     [SerializeField] float jumpForce = 5.0f;
 
-    // ジャンプは元の処理を維持しています。
-    // 上下移動・接地回復・2段ジャンプは別途実装が必要です。
-    float verticalSpeed = 0.0f;
-    bool isGrounded = true;
+    private const float MIN_GROUND_NORMAL_Y = 0.7f;
+
+    private Rigidbody playerRigidbody;
+
+    // 複数の床にまたがっていても接地を保持する。
+    private readonly HashSet<Collider> groundColliders =
+        new HashSet<Collider>();
+
+    [Header("重力設定")]
+    [Min(0f)]
+    [SerializeField] private float gravityScale = 2f;
+
+    private void FixedUpdate()
+    {
+        // Use Gravityで通常の重力がかかるため、
+        // 指定倍率との差分だけ追加する。
+        playerRigidbody.AddForce(
+            Physics.gravity * (gravityScale - 1f),
+            ForceMode.Acceleration
+        );
+    }
 
     [Header("攻撃データ")]
     [SerializeField] AttackData slash1;
@@ -45,18 +62,22 @@ public class PlayerController : MonoBehaviour
     {
         input = GetComponent<PlayerInputHandler>();
         playerAnimator = GetComponent<PlayerAnimator>();
+        playerRigidbody = GetComponent<Rigidbody>();
 
-        if (input == null || playerAnimator == null)
+        if (input == null ||
+            playerAnimator == null ||
+            playerRigidbody == null)
         {
             Debug.LogError(
-                "PlayerInputHandlerとPlayerAnimatorを同じGameObjectに配置してください。",
+                "PlayerInputHandler・PlayerAnimator・Rigidbodyを" +
+                "同じGameObjectに配置してください。",
                 this
             );
 
             enabled = false;
+            return;
         }
     }
-
     void Update()
     {
         Move();
@@ -76,7 +97,17 @@ public class PlayerController : MonoBehaviour
             }
             else if (input.WedgieInput)
             {
-                playerAnimator.PlayWedgie();
+                //playerAnimator.PlayWedgie();
+                if (!playerAnimator.IsDiggingAnimationActive)
+                {
+                    // 食い込みアニメーションを開始する。
+                    playerAnimator.StartDiggingAnimation();
+                }
+                else
+                {
+                    // 停止を解除し、続きから再生する。
+                    playerAnimator.ReleaseDiggingAnimation();
+                }
             }
         }
 
@@ -117,12 +148,77 @@ public class PlayerController : MonoBehaviour
 
     void Jump()
     {
-        if (isGrounded)
-        {
-            verticalSpeed = jumpForce;
-            isGrounded = false;
+        // 削除・無効化された床を接地対象から外す。
+        groundColliders.RemoveWhere(
+            groundCollider =>
+                groundCollider == null ||
+                !groundCollider.enabled ||
+                !groundCollider.gameObject.activeInHierarchy
+        );
 
-            playerAnimator.PlayJump();
+        if (groundColliders.Count == 0 || Time.timeScale <= 0f)
+        {
+            return;
+        }
+
+        // 食い込みで停止していたアニメーションを解除。
+        playerAnimator.CancelDiggingAnimation();
+
+        // Rigidbodyに上向きの速度を設定する。
+        Vector3 velocity = playerRigidbody.linearVelocity;
+        velocity.y = jumpForce;
+        playerRigidbody.linearVelocity = velocity;
+
+        // 着地するまで再ジャンプできないようにする。
+        groundColliders.Clear();
+
+        playerAnimator.PlayJump();
+    }
+
+    void OnCollisionEnter(Collision collision)
+    {
+        UpdateGroundContact(collision);
+    }
+
+    void OnCollisionStay(Collision collision)
+    {
+        UpdateGroundContact(collision);
+    }
+
+    void OnCollisionExit(Collision collision)
+    {
+        groundColliders.Remove(collision.collider);
+    }
+
+    void UpdateGroundContact(Collision collision)
+    {
+        if (!isActiveAndEnabled)
+        {
+            return;
+        }
+
+        Collider otherCollider = collision.collider;
+        groundColliders.Remove(otherCollider);
+
+        // ジャンプ直後の接触を着地と誤認しない。
+        if (playerRigidbody.linearVelocity.y > 0.1f)
+        {
+            return;
+        }
+
+        for (int contactIndex = 0;
+             contactIndex < collision.contactCount;
+             contactIndex++)
+        {
+            ContactPoint contact = collision.GetContact(contactIndex);
+
+            // 上向きの面に乗ったときだけ接地扱い。
+            // 壁や天井に触れただけでは接地扱いにしない。
+            if (contact.normal.y >= MIN_GROUND_NORMAL_Y)
+            {
+                groundColliders.Add(otherCollider);
+                break;
+            }
         }
     }
 
@@ -221,8 +317,7 @@ public class PlayerController : MonoBehaviour
         ClearSlashState();
     }
 
-    // 被ダメージ・死亡を追加するときは、
-    // 別モーションの再生前にこの関数を呼ぶ。
+    // ムラジmemo:被ダメージ・死亡を追加するときは、別モーションの再生前にこの関数を呼ぶ。
     public void CancelAttack()
     {
         if (playerAnimator != null)
@@ -243,6 +338,7 @@ public class PlayerController : MonoBehaviour
 
     void OnDisable()
     {
+        groundColliders.Clear();
         if (playerAnimator != null)
         {
             playerAnimator.EndSlash(true);

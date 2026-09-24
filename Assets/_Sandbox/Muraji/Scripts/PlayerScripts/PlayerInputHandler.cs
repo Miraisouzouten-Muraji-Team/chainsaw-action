@@ -1,17 +1,17 @@
 using UnityEngine;
 
-/* Player‚Ì“ü—Í‚ğˆ—‚·‚éƒNƒ‰ƒX */
+/* Playerã®å…¥åŠ›ã‚’å‡¦ç†ã™ã‚‹ã‚¯ãƒ©ã‚¹ */
 
 public class PlayerInputHandler : MonoBehaviour
 {
-    PlayerInputSystem inputSystem; // ƒCƒ“ƒXƒ^ƒ“ƒX•Û‚·‚é•Ï”
+    PlayerInputSystem inputSystem; // ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ä¿æŒã™ã‚‹å¤‰æ•°
     public float MoveInput { get; private set; }
     public bool JumpInput { get; private set; }
     public bool AttackInput { get; private set; }
     public bool SlashInput { get; private set; }
     public bool WedgieInput { get; private set; }
 
-    /* InputSystem‚Ì‰Šú‰» */
+    /* InputSystemã®åˆæœŸåŒ– */
     void Awake()
     {
         inputSystem = new PlayerInputSystem();
@@ -23,19 +23,19 @@ public class PlayerInputHandler : MonoBehaviour
         inputSystem.Player.Wedgie.performed += ctx => WedgieInput = true;
     }
 
-    /* InputSystem‚Ì—LŒø‰» */
+    /* InputSystemã®æœ‰åŠ¹åŒ– */
     void OnEnable()
     {
         inputSystem.Enable();
     }
 
-    /* InputSystem‚Ì–³Œø‰» */
+    /* InputSystemã®ç„¡åŠ¹åŒ– */
     void OnDisable()
     {
         inputSystem.Disable();
     }
 
-    /* “ü—Í‚ÌƒŠƒZƒbƒg */
+    /* å…¥åŠ›ã®ãƒªã‚»ãƒƒãƒˆ */
     public void ResetInput()
     {
         JumpInput = false;

@@ -5,7 +5,7 @@ public class SlashTrailEffect : MonoBehaviour
 {
     [SerializeField] TrailRenderer trail;
 
-    [Header("ƒGƒtƒFƒNƒg—pAnimator‚ÌƒXƒe[ƒg–¼")]
+    [Header("ã‚¨ãƒ•ã‚§ã‚¯ãƒˆç”¨Animatorã®ã‚¹ãƒ†ãƒ¼ãƒˆå")]
     [SerializeField] string effect1State = "Base Layer.SlashEffect1";
     [SerializeField] string effect2State = "Base Layer.SlashEffect2";
     [SerializeField] string effect3State = "Base Layer.SlashEffect3";
@@ -50,28 +50,28 @@ public class SlashTrailEffect : MonoBehaviour
         if (!effectAnimator.HasState(0, stateHash))
         {
             Debug.LogError(
-                "ƒgƒŒƒCƒ‹—pƒXƒe[ƒg‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñF" + stateName,
+                "ãƒˆãƒ¬ã‚¤ãƒ«ç”¨ã‚¹ãƒ†ãƒ¼ãƒˆãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ï¼š" + stateName,
                 this
             );
             return;
         }
 
-        // n“_‚Ö–ß‚·ŠÔ‚Í‹OÕ‚ğo‚³‚È‚¢B
+        // å§‹ç‚¹ã¸æˆ»ã™é–“ã¯è»Œè·¡ã‚’å‡ºã•ãªã„ã€‚
         trail.emitting = false;
 
-        // ‘Î‰‚·‚éƒGƒtƒFƒNƒg‚ğæ“ª‚©‚çÄ¶B
+        // å¯¾å¿œã™ã‚‹ã‚¨ãƒ•ã‚§ã‚¯ãƒˆã‚’å…ˆé ­ã‹ã‚‰å†ç”Ÿã€‚
         effectAnimator.Play(stateHash, 0, 0f);
 
-        // ƒGƒtƒFƒNƒgê—pAnimator‚Ìn“_‚ğ”½‰f‚·‚éB
+        // ã‚¨ãƒ•ã‚§ã‚¯ãƒˆå°‚ç”¨Animatorã®å§‹ç‚¹ã‚’åæ˜ ã™ã‚‹ã€‚
         effectAnimator.Update(0f);
 
-        // ‘O‰ñ‚Ì‹OÕ‚ğÁ‚µ‚Ä‚©‚çAV‚µ‚­¶¬‚·‚éB
+        // å‰å›ã®è»Œè·¡ã‚’æ¶ˆã—ã¦ã‹ã‚‰ã€æ–°ã—ãç”Ÿæˆã™ã‚‹ã€‚
         trail.Clear();
         trail.emitting = true;
     }
 
-    // V‚µ‚¢‹OÕ‚Ì¶¬‚ğ~‚ß‚éB
-    // c‚Á‚Ä‚¢‚é‹OÕ‚ÍTrail Renderer‚ÌTime‚Å©‘R‚ÉÁ‚¦‚éB
+    // æ–°ã—ã„è»Œè·¡ã®ç”Ÿæˆã‚’æ­¢ã‚ã‚‹ã€‚
+    // æ®‹ã£ã¦ã„ã‚‹è»Œè·¡ã¯Trail Rendererã®Timeã§è‡ªç„¶ã«æ¶ˆãˆã‚‹ã€‚
     public void StopTrail()
     {
         if (trail != null)
@@ -80,7 +80,7 @@ public class SlashTrailEffect : MonoBehaviour
         }
     }
 
-    // ’†’fE–³Œø‰»EŸ’iŠJn—pB
+    // ä¸­æ–­ãƒ»ç„¡åŠ¹åŒ–ãƒ»æ¬¡æ®µé–‹å§‹ç”¨ã€‚
     public void ClearTrail()
     {
         if (trail != null)

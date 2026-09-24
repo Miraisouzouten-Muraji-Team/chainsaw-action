@@ -5,47 +5,47 @@ public class PlayerController : MonoBehaviour
     PlayerInputHandler input;
     PlayerAnimator playerAnimator;
 
-    [Header("ˆÚ“®İ’è")]
+    [Header("ç§»å‹•è¨­å®š")]
     [SerializeField] float moveSpeed = 5.0f;
     [SerializeField] float acceleration = 20.0f;
     [SerializeField] float deceleration = 30.0f;
 
     float currentSpeed = 0.0f;
 
-    [Header("ƒWƒƒƒ“ƒvİ’è")]
+    [Header("ã‚¸ãƒ£ãƒ³ãƒ—è¨­å®š")]
     [SerializeField] float jumpForce = 5.0f;
 
     private const float MIN_GROUND_NORMAL_Y = 0.7f;
 
     private Rigidbody playerRigidbody;
 
-    // •¡”‚Ì°‚É‚Ü‚½‚ª‚Á‚Ä‚¢‚Ä‚àÚ’n‚ğ•Û‚·‚éB
+    // è¤‡æ•°ã®åºŠã«ã¾ãŸãŒã£ã¦ã„ã¦ã‚‚æ¥åœ°ã‚’ä¿æŒã™ã‚‹ã€‚
     private readonly HashSet<Collider> groundColliders =
         new HashSet<Collider>();
 
-    [Header("d—Íİ’è")]
+    [Header("é‡åŠ›è¨­å®š")]
     [Min(0f)]
     [SerializeField] private float gravityScale = 2f;
 
     private void FixedUpdate()
     {
-        // Use Gravity‚Å’Êí‚Ìd—Í‚ª‚©‚©‚é‚½‚ßA
-        // w’è”{—¦‚Æ‚Ì·•ª‚¾‚¯’Ç‰Á‚·‚éB
+        // Use Gravityã§é€šå¸¸ã®é‡åŠ›ãŒã‹ã‹ã‚‹ãŸã‚ã€
+        // æŒ‡å®šå€ç‡ã¨ã®å·®åˆ†ã ã‘è¿½åŠ ã™ã‚‹ã€‚
         playerRigidbody.AddForce(
             Physics.gravity * (gravityScale - 1f),
             ForceMode.Acceleration
         );
     }
 
-    [Header("UŒ‚ƒf[ƒ^")]
+    [Header("æ”»æ’ƒãƒ‡ãƒ¼ã‚¿")]
     [SerializeField] AttackData slash1;
     [SerializeField] AttackData slash2;
     [SerializeField] AttackData slash3;
 
     public AttackData CurrentAttackData { get; private set; }
 
-    [Header("ƒRƒ“ƒ{İ’è")]
-    [Tooltip("Ÿ’i‚ÖˆÚ‚ê‚éÄ¶ˆÊ’uB1‚È‚çŒ»İ‚ÌUŒ‚‚ğÅŒã‚Ü‚ÅÄ¶‚µ‚Ü‚·B")]
+    [Header("ã‚³ãƒ³ãƒœè¨­å®š")]
+    [Tooltip("æ¬¡æ®µã¸ç§»ã‚Œã‚‹å†ç”Ÿä½ç½®ã€‚1ãªã‚‰ç¾åœ¨ã®æ”»æ’ƒã‚’æœ€å¾Œã¾ã§å†ç”Ÿã—ã¾ã™ã€‚")]
     [Range(0.1f, 1f)]
     [SerializeField] float comboAdvanceTime = 1f;
 
@@ -69,8 +69,8 @@ public class PlayerController : MonoBehaviour
             playerRigidbody == null)
         {
             Debug.LogError(
-                "PlayerInputHandlerEPlayerAnimatorERigidbody‚ğ" +
-                "“¯‚¶GameObject‚É”z’u‚µ‚Ä‚­‚¾‚³‚¢B",
+                "PlayerInputHandlerãƒ»PlayerAnimatorãƒ»Rigidbodyã‚’" +
+                "åŒã˜GameObjectã«é…ç½®ã—ã¦ãã ã•ã„ã€‚",
                 this
             );
 
@@ -82,13 +82,13 @@ public class PlayerController : MonoBehaviour
     {
         Move();
 
-        // UŒ‚’†‚Ì’Ç‰Á“ü—Í‚ÍAŸ‚Ì1’i‚Ì—\–ñ‚Æ‚µ‚Äˆµ‚¤B
+        // æ”»æ’ƒä¸­ã®è¿½åŠ å…¥åŠ›ã¯ã€æ¬¡ã®1æ®µã®äºˆç´„ã¨ã—ã¦æ‰±ã†ã€‚
         if (input.SlashInput)
         {
             Slash();
         }
 
-        // UŒ‚’†‚ÌƒWƒƒƒ“ƒvEH‚¢‚İ‚É‚æ‚é’†’f‚ğˆê’U‹Ö~B
+        // æ”»æ’ƒä¸­ã®ã‚¸ãƒ£ãƒ³ãƒ—ãƒ»é£Ÿã„è¾¼ã¿ã«ã‚ˆã‚‹ä¸­æ–­ã‚’ä¸€æ—¦ç¦æ­¢ã€‚
         if (!IsAttacking)
         {
             if (input.JumpInput)
@@ -100,12 +100,12 @@ public class PlayerController : MonoBehaviour
                 //playerAnimator.PlayWedgie();
                 if (!playerAnimator.IsDiggingAnimationActive)
                 {
-                    // H‚¢‚İƒAƒjƒ[ƒVƒ‡ƒ“‚ğŠJn‚·‚éB
+                    // é£Ÿã„è¾¼ã¿ã‚¢ãƒ‹ãƒ¡ãƒ¼ã‚·ãƒ§ãƒ³ã‚’é–‹å§‹ã™ã‚‹ã€‚
                     playerAnimator.StartDiggingAnimation();
                 }
                 else
                 {
-                    // ’â~‚ğ‰ğœ‚µA‘±‚«‚©‚çÄ¶‚·‚éB
+                    // åœæ­¢ã‚’è§£é™¤ã—ã€ç¶šãã‹ã‚‰å†ç”Ÿã™ã‚‹ã€‚
                     playerAnimator.ReleaseDiggingAnimation();
                 }
             }
@@ -148,7 +148,7 @@ public class PlayerController : MonoBehaviour
 
     void Jump()
     {
-        // íœE–³Œø‰»‚³‚ê‚½°‚ğÚ’n‘ÎÛ‚©‚çŠO‚·B
+        // å‰Šé™¤ãƒ»ç„¡åŠ¹åŒ–ã•ã‚ŒãŸåºŠã‚’æ¥åœ°å¯¾è±¡ã‹ã‚‰å¤–ã™ã€‚
         groundColliders.RemoveWhere(
             groundCollider =>
                 groundCollider == null ||
@@ -161,15 +161,15 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // H‚¢‚İ‚Å’â~‚µ‚Ä‚¢‚½ƒAƒjƒ[ƒVƒ‡ƒ“‚ğ‰ğœB
+        // é£Ÿã„è¾¼ã¿ã§åœæ­¢ã—ã¦ã„ãŸã‚¢ãƒ‹ãƒ¡ãƒ¼ã‚·ãƒ§ãƒ³ã‚’è§£é™¤ã€‚
         playerAnimator.CancelDiggingAnimation();
 
-        // Rigidbody‚ÉãŒü‚«‚Ì‘¬“x‚ğİ’è‚·‚éB
+        // Rigidbodyã«ä¸Šå‘ãã®é€Ÿåº¦ã‚’è¨­å®šã™ã‚‹ã€‚
         Vector3 velocity = playerRigidbody.linearVelocity;
         velocity.y = jumpForce;
         playerRigidbody.linearVelocity = velocity;
 
-        // ’…’n‚·‚é‚Ü‚ÅÄƒWƒƒƒ“ƒv‚Å‚«‚È‚¢‚æ‚¤‚É‚·‚éB
+        // ç€åœ°ã™ã‚‹ã¾ã§å†ã‚¸ãƒ£ãƒ³ãƒ—ã§ããªã„ã‚ˆã†ã«ã™ã‚‹ã€‚
         groundColliders.Clear();
 
         playerAnimator.PlayJump();
@@ -200,7 +200,7 @@ public class PlayerController : MonoBehaviour
         Collider otherCollider = collision.collider;
         groundColliders.Remove(otherCollider);
 
-        // ƒWƒƒƒ“ƒv’¼Œã‚ÌÚG‚ğ’…’n‚ÆŒë”F‚µ‚È‚¢B
+        // ã‚¸ãƒ£ãƒ³ãƒ—ç›´å¾Œã®æ¥è§¦ã‚’ç€åœ°ã¨èª¤èªã—ãªã„ã€‚
         if (playerRigidbody.linearVelocity.y > 0.1f)
         {
             return;
@@ -212,8 +212,8 @@ public class PlayerController : MonoBehaviour
         {
             ContactPoint contact = collision.GetContact(contactIndex);
 
-            // ãŒü‚«‚Ì–Ê‚Éæ‚Á‚½‚Æ‚«‚¾‚¯Ú’nˆµ‚¢B
-            // •Ç‚â“Vˆä‚ÉG‚ê‚½‚¾‚¯‚Å‚ÍÚ’nˆµ‚¢‚É‚µ‚È‚¢B
+            // ä¸Šå‘ãã®é¢ã«ä¹—ã£ãŸã¨ãã ã‘æ¥åœ°æ‰±ã„ã€‚
+            // å£ã‚„å¤©äº•ã«è§¦ã‚ŒãŸã ã‘ã§ã¯æ¥åœ°æ‰±ã„ã«ã—ãªã„ã€‚
             if (contact.normal.y >= MIN_GROUND_NORMAL_Y)
             {
                 groundColliders.Add(otherCollider);
@@ -222,7 +222,7 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // UŒ‚ƒ{ƒ^ƒ“‚ğ‰Ÿ‚µ‚½‚Æ‚«‚ÉŒÄ‚ÔB
+    // æ”»æ’ƒãƒœã‚¿ãƒ³ã‚’æŠ¼ã—ãŸã¨ãã«å‘¼ã¶ã€‚
     void Slash()
     {
         if (!IsAttacking)
@@ -231,15 +231,15 @@ public class PlayerController : MonoBehaviour
         }
         else if (slashStep < 3)
         {
-            // ˜A‘Å‚³‚ê‚Ä‚àAŸ‚Ì1’i‚¾‚¯‚ğ—\–ñ‚·‚éB
-            // ‚±‚±‚Å‚ÍUŒ‚’i”EUŒ‚ƒf[ƒ^‚ğ•ÏX‚µ‚È‚¢B
+            // é€£æ‰“ã•ã‚Œã¦ã‚‚ã€æ¬¡ã®1æ®µã ã‘ã‚’äºˆç´„ã™ã‚‹ã€‚
+            // ã“ã“ã§ã¯æ”»æ’ƒæ®µæ•°ãƒ»æ”»æ’ƒãƒ‡ãƒ¼ã‚¿ã‚’å¤‰æ›´ã—ãªã„ã€‚
             nextSlashReserved = true;
         }
 
-        // 3’i–Ú’†‚ÍAV‚µ‚¢ƒRƒ“ƒ{‚ğ—\–ñ‚µ‚È‚¢B
+        // 3æ®µç›®ä¸­ã¯ã€æ–°ã—ã„ã‚³ãƒ³ãƒœã‚’äºˆç´„ã—ãªã„ã€‚
     }
 
-    // ƒAƒjƒ[ƒVƒ‡ƒ“‚Ìis‚É‡‚í‚¹‚ÄŸ’iEI—¹‚ğ”»’fB
+    // ã‚¢ãƒ‹ãƒ¡ãƒ¼ã‚·ãƒ§ãƒ³ã®é€²è¡Œã«åˆã‚ã›ã¦æ¬¡æ®µãƒ»çµ‚äº†ã‚’åˆ¤æ–­ã€‚
     void UpdateSlash()
     {
         if (!IsAttacking || Time.frameCount == attackStartFrame)
@@ -247,8 +247,8 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // ƒqƒbƒgƒXƒgƒbƒv’†‚àSlash()‚Å—\–ñ‚Íó‚¯•t‚¯‚éB
-        // ‚½‚¾‚µA’â~’†‚É‚ÍŸ’i‚Öi‚ß‚È‚¢B
+        // ãƒ’ãƒƒãƒˆã‚¹ãƒˆãƒƒãƒ—ä¸­ã‚‚Slash()ã§äºˆç´„ã¯å—ã‘ä»˜ã‘ã‚‹ã€‚
+        // ãŸã ã—ã€åœæ­¢ä¸­ã«ã¯æ¬¡æ®µã¸é€²ã‚ãªã„ã€‚
         if (Time.timeScale <= 0f)
         {
             return;
@@ -261,8 +261,8 @@ public class PlayerController : MonoBehaviour
             if (attackStateObserved || stateWaitTime > 0.5f)
             {
                 Debug.LogWarning(
-                    "UŒ‚‚ª’†’f‚³‚ê‚½‚©AUŒ‚ƒXƒe[ƒg‚ğÄ¶‚Å‚«‚Ü‚¹‚ñ‚Å‚µ‚½B" +
-                    "Animatorİ’è‚ğŠm”F‚µ‚Ä‚­‚¾‚³‚¢B",
+                    "æ”»æ’ƒãŒä¸­æ–­ã•ã‚ŒãŸã‹ã€æ”»æ’ƒã‚¹ãƒ†ãƒ¼ãƒˆã‚’å†ç”Ÿã§ãã¾ã›ã‚“ã§ã—ãŸã€‚" +
+                    "Animatorè¨­å®šã‚’ç¢ºèªã—ã¦ãã ã•ã„ã€‚",
                     this
                 );
 
@@ -286,7 +286,7 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // ÀÛ‚ÉUŒ‚‚ğŠJn‚·‚é‚Æ‚«‚¾‚¯A’i”‚Æƒf[ƒ^‚ğXVB
+    // å®Ÿéš›ã«æ”»æ’ƒã‚’é–‹å§‹ã™ã‚‹ã¨ãã ã‘ã€æ®µæ•°ã¨ãƒ‡ãƒ¼ã‚¿ã‚’æ›´æ–°ã€‚
     void StartSlash(int step)
     {
         AttackData data =
@@ -317,7 +317,7 @@ public class PlayerController : MonoBehaviour
         ClearSlashState();
     }
 
-    // ƒ€ƒ‰ƒWmemo:”íƒ_ƒ[ƒWE€–S‚ğ’Ç‰Á‚·‚é‚Æ‚«‚ÍA•Êƒ‚[ƒVƒ‡ƒ“‚ÌÄ¶‘O‚É‚±‚ÌŠÖ”‚ğŒÄ‚ÔB
+    // ãƒ ãƒ©ã‚¸memo:è¢«ãƒ€ãƒ¡ãƒ¼ã‚¸ãƒ»æ­»äº¡ã‚’è¿½åŠ ã™ã‚‹ã¨ãã¯ã€åˆ¥ãƒ¢ãƒ¼ã‚·ãƒ§ãƒ³ã®å†ç”Ÿå‰ã«ã“ã®é–¢æ•°ã‚’å‘¼ã¶ã€‚
     public void CancelAttack()
     {
         if (playerAnimator != null)

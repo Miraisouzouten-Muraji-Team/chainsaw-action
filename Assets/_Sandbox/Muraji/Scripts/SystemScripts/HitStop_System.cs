@@ -5,7 +5,7 @@ public class HitStop_System : MonoBehaviour
 {
     Coroutine hitStopCoroutine;
 
-    /* ƒqƒbƒgƒXƒgƒbƒvˆ—(ˆø”‚É‚ÍŠÔ) */
+    /* ãƒ’ãƒƒãƒˆã‚¹ãƒˆãƒƒãƒ—å‡¦ç†(å¼•æ•°ã«ã¯æ™‚é–“) */
     public void StopTime(float duration)
     {
         if (hitStopCoroutine != null)
@@ -17,8 +17,8 @@ public class HitStop_System : MonoBehaviour
     IEnumerator HitStopCoroutine(float duration)
     {
         Time.timeScale = 0f;
-        yield return new WaitForSecondsRealtime(duration); // Œ»À‚ÌŠÔƒx[ƒX‚Å‘Ò‚¿
-        Time.timeScale = 1f; // ŠÔ‚ª“®‚«o‚·
+        yield return new WaitForSecondsRealtime(duration); // ç¾å®Ÿã®æ™‚é–“ãƒ™ãƒ¼ã‚¹ã§å¾…ã¡
+        Time.timeScale = 1f; // æ™‚é–“ãŒå‹•ãå‡ºã™
         hitStopCoroutine = null;
     }
 }

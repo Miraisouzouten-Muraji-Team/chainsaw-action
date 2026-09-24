@@ -3,11 +3,11 @@ using UnityEngine;
 [CreateAssetMenu(menuName ="Player/AttackData")]
 public class AttackData : ScriptableObject
 {
-    public int damage; // UŒ‚—Í
+    public int damage; // æ”»æ’ƒåŠ›
 
-    public float hitStopTime; // ƒqƒbƒgƒXƒgƒbƒvŠÔ
+    public float hitStopTime; // ãƒ’ãƒƒãƒˆã‚¹ãƒˆãƒƒãƒ—æ™‚é–“
 
-    public float attackVector; // UŒ‚ƒxƒNƒgƒ‹
+    public float attackVector; // æ”»æ’ƒãƒ™ã‚¯ãƒˆãƒ«
 
-    public float attackMoveRange; // UŒ‚ˆÚ“®‹——£
+    public float attackMoveRange; // æ”»æ’ƒç§»å‹•è·é›¢
 }

@@ -7,19 +7,19 @@ public class PlayerAnimator : MonoBehaviour
 
     [SerializeField] ChainsawAttack attackHitBox;
 
-    [Header("AnimatorƒXƒe[ƒg‚Ìƒtƒ‹ƒpƒX")]
+    [Header("Animatorã‚¹ãƒ†ãƒ¼ãƒˆã®ãƒ•ãƒ«ãƒ‘ã‚¹")]
     [SerializeField] string slash1State = "Base Layer.Slash1";
     [SerializeField] string slash2State = "Base Layer.Slash2";
     [SerializeField] string slash3State = "Base Layer.Slash3";
     [SerializeField] string idleState = "Base Layer.Idle";
 
-    [Header("UŒ‚ƒgƒŒƒCƒ‹")]
+    [Header("æ”»æ’ƒãƒˆãƒ¬ã‚¤ãƒ«")]
     [SerializeField] SlashTrailEffect slashTrailEffect;
 
     int activeHash;
     bool attackActive;
 
-    // ===== H‚¢‚İƒAƒjƒ[ƒVƒ‡ƒ“ =====
+    // ===== é£Ÿã„è¾¼ã¿ã‚¢ãƒ‹ãƒ¡ãƒ¼ã‚·ãƒ§ãƒ³ =====
 
     private const string DIGGING_PLAYBACK_SPEED = "DiggingPlaybackSpeed";
 
@@ -31,7 +31,7 @@ public class PlayerAnimator : MonoBehaviour
         Ending
     }
 
-    [Header("H‚¢‚İƒAƒjƒ[ƒVƒ‡ƒ“")]
+    [Header("é£Ÿã„è¾¼ã¿ã‚¢ãƒ‹ãƒ¡ãƒ¼ã‚·ãƒ§ãƒ³")]
     [SerializeField]
     private string diggingState = "Base Layer.Digging";
 
@@ -39,13 +39,13 @@ public class PlayerAnimator : MonoBehaviour
     private int diggingStateHash;
     private int diggingStartFrame;
 
-    // I—¹ƒ‚[ƒVƒ‡ƒ“’†‚àtrueB
-    // ÀÛ‚ÉH‚¢‚ñ‚Å‚¢‚é‚©‚Ç‚¤‚©‚Æ‚Í•Ê‚ÌA‰‰o—p‚Ìó‘ÔB
+    // çµ‚äº†ãƒ¢ãƒ¼ã‚·ãƒ§ãƒ³ä¸­ã‚‚trueã€‚
+    // å®Ÿéš›ã«é£Ÿã„è¾¼ã‚“ã§ã„ã‚‹ã‹ã©ã†ã‹ã¨ã¯åˆ¥ã®ã€æ¼”å‡ºç”¨ã®çŠ¶æ…‹ã€‚
     public bool IsDiggingAnimationActive =>
         diggingAnimationPhase != DiggingAnimationPhase.None;
 
 
-    // H‚¢‚İŠJn‚ÉController‚©‚çŒÄ‚ÔB
+    // é£Ÿã„è¾¼ã¿é–‹å§‹æ™‚ã«Controllerã‹ã‚‰å‘¼ã¶ã€‚
     public bool StartDiggingAnimation()
     {
         if (animator == null)
@@ -58,7 +58,7 @@ public class PlayerAnimator : MonoBehaviour
             return false;
         }
 
-        // Ä¶’†‚É‰½“x‚àæ“ª‚Ö–ß‚³‚È‚¢B
+        // å†ç”Ÿä¸­ã«ä½•åº¦ã‚‚å…ˆé ­ã¸æˆ»ã•ãªã„ã€‚
         if (IsDiggingAnimationActive)
         {
             return false;
@@ -70,14 +70,14 @@ public class PlayerAnimator : MonoBehaviour
             !animator.HasState(0, Animator.StringToHash(idleState)))
         {
             Debug.LogError(
-                "H‚¢‚İ‚Ü‚½‚ÍIdle‚ÌƒXƒe[ƒg–¼‚ğŠm”F‚µ‚Ä‚­‚¾‚³‚¢B",
+                "é£Ÿã„è¾¼ã¿ã¾ãŸã¯Idleã®ã‚¹ãƒ†ãƒ¼ãƒˆåã‚’ç¢ºèªã—ã¦ãã ã•ã„ã€‚",
                 this
             );
 
             return false;
         }
 
-        // ˆÈ‘O‚ÌH‚¢‚İTrigger‚ğc‚³‚È‚¢B
+        // ä»¥å‰ã®é£Ÿã„è¾¼ã¿Triggerã‚’æ®‹ã•ãªã„ã€‚
         animator.ResetTrigger("Wedgie");
 
         animator.SetFloat(DIGGING_PLAYBACK_SPEED, 1f);
@@ -91,11 +91,11 @@ public class PlayerAnimator : MonoBehaviour
     }
 
 
-    // ~‚ß‚½‚¢ˆÊ’u‚ÌAnimation Event‚©‚çŒÄ‚ÔB
+    // æ­¢ã‚ãŸã„ä½ç½®ã®Animation Eventã‹ã‚‰å‘¼ã¶ã€‚
     public void HoldDiggingAnimation()
     {
-        // ‰ğœÏ‚İ‚È‚ç’â~‚µ‚È‚¢B
-        // ’â~ˆÊ’u‚æ‚è‘O‚É‰ğœ‚µ‚½ê‡‚É‚à‘Î‰‚·‚éB
+        // è§£é™¤æ¸ˆã¿ãªã‚‰åœæ­¢ã—ãªã„ã€‚
+        // åœæ­¢ä½ç½®ã‚ˆã‚Šå‰ã«è§£é™¤ã—ãŸå ´åˆã«ã‚‚å¯¾å¿œã™ã‚‹ã€‚
         if (diggingAnimationPhase != DiggingAnimationPhase.Starting)
         {
             return;
@@ -116,7 +116,7 @@ public class PlayerAnimator : MonoBehaviour
     }
 
 
-    // ’Êí‚ÌH‚¢‚İ‰ğœ‚ÉController‚©‚çŒÄ‚ÔB
+    // é€šå¸¸ã®é£Ÿã„è¾¼ã¿è§£é™¤æ™‚ã«Controllerã‹ã‚‰å‘¼ã¶ã€‚
     public void ReleaseDiggingAnimation()
     {
         if (!IsDiggingAnimationActive)
@@ -126,12 +126,12 @@ public class PlayerAnimator : MonoBehaviour
 
         diggingAnimationPhase = DiggingAnimationPhase.Ending;
 
-        // Play‚µ’¼‚³‚¸AŒ»İˆÊ’u‚©‚ç‘±‚«‚ğÄ¶‚·‚éB
+        // Playã—ç›´ã•ãšã€ç¾åœ¨ä½ç½®ã‹ã‚‰ç¶šãã‚’å†ç”Ÿã™ã‚‹ã€‚
         animator.SetFloat(DIGGING_PLAYBACK_SPEED, 1f);
     }
 
 
-    // ”í’eE€–SEƒWƒƒƒ“ƒv‚È‚Ç‚ÅAI—¹ƒ‚[ƒVƒ‡ƒ“‚ğÈ—ª‚·‚é‚Æ‚«‚ÉŒÄ‚ÔB
+    // è¢«å¼¾ãƒ»æ­»äº¡ãƒ»ã‚¸ãƒ£ãƒ³ãƒ—ãªã©ã§ã€çµ‚äº†ãƒ¢ãƒ¼ã‚·ãƒ§ãƒ³ã‚’çœç•¥ã™ã‚‹ã¨ãã«å‘¼ã¶ã€‚
     public void CancelDiggingAnimation()
     {
         diggingAnimationPhase = DiggingAnimationPhase.None;
@@ -143,8 +143,8 @@ public class PlayerAnimator : MonoBehaviour
     }
 
 
-    // ‘—‚Á‚Ä‚­‚ê‚½PlayerAnimator‚É‚ÍLateUpdate‚ª‚È‚¢‚½‚ß’Ç‰Á‚Å‚«‚éB
-    // Šù‚É’Ç‰ÁÏ‚İ‚Ìê‡‚ÍA‚±‚Ì’†g‚ğŠù‘¶‚ÌLateUpdate‚Ö‚Ü‚Æ‚ß‚éB
+    // é€ã£ã¦ãã‚ŒãŸPlayerAnimatorã«ã¯LateUpdateãŒãªã„ãŸã‚è¿½åŠ ã§ãã‚‹ã€‚
+    // æ—¢ã«è¿½åŠ æ¸ˆã¿ã®å ´åˆã¯ã€ã“ã®ä¸­èº«ã‚’æ—¢å­˜ã®LateUpdateã¸ã¾ã¨ã‚ã‚‹ã€‚
     private void LateUpdate()
     {
         UpdateDiggingAnimation();
@@ -162,8 +162,8 @@ public class PlayerAnimator : MonoBehaviour
         AnimatorStateInfo state =
             animator.GetCurrentAnimatorStateInfo(0);
 
-        // •Ê‚Ìƒ‚[ƒVƒ‡ƒ“‚ÖØ‚è‘Ö‚í‚Á‚½ê‡‚ÍA
-        // H‚¢‚İ—p‚Ì’â~İ’è‚ğ‰ğœ‚·‚éB
+        // åˆ¥ã®ãƒ¢ãƒ¼ã‚·ãƒ§ãƒ³ã¸åˆ‡ã‚Šæ›¿ã‚ã£ãŸå ´åˆã¯ã€
+        // é£Ÿã„è¾¼ã¿ç”¨ã®åœæ­¢è¨­å®šã‚’è§£é™¤ã™ã‚‹ã€‚
         if (state.fullPathHash != diggingStateHash ||
             animator.IsInTransition(0))
         {
@@ -171,7 +171,7 @@ public class PlayerAnimator : MonoBehaviour
             return;
         }
 
-        // I—¹•”•ª‚ğÅŒã‚Ü‚ÅÄ¶‚µ‚½‚çIdle‚Ö–ß‚·B
+        // çµ‚äº†éƒ¨åˆ†ã‚’æœ€å¾Œã¾ã§å†ç”Ÿã—ãŸã‚‰Idleã¸æˆ»ã™ã€‚
         if (diggingAnimationPhase == DiggingAnimationPhase.Ending &&
             state.normalizedTime >= 1f)
         {
@@ -181,8 +181,8 @@ public class PlayerAnimator : MonoBehaviour
     }
 
 
-    // Inspector‚©‚ç‚Ì“®ìŠm”F—pB
-    // Às’†‚ÉƒRƒ“ƒ|[ƒlƒ“ƒg‚Ìƒƒjƒ…[‚©‚çŒÄ‚Ño‚·B
+    // Inspectorã‹ã‚‰ã®å‹•ä½œç¢ºèªç”¨ã€‚
+    // å®Ÿè¡Œä¸­ã«ã‚³ãƒ³ãƒãƒ¼ãƒãƒ³ãƒˆã®ãƒ¡ãƒ‹ãƒ¥ãƒ¼ã‹ã‚‰å‘¼ã³å‡ºã™ã€‚
     [ContextMenu("Test/Start Digging Animation")]
     private void TestStartDiggingAnimation()
     {
@@ -221,7 +221,7 @@ public class PlayerAnimator : MonoBehaviour
         animator.SetTrigger("Wedgie");
     }
 
-    // “ü—Í—\–ñ‚Å‚Í‚È‚­AÀÛ‚ÉŸ’i‚Öi‚Ş‚Æ‚«‚ÉŒÄ‚ÔB
+    // å…¥åŠ›äºˆç´„æ™‚ã§ã¯ãªãã€å®Ÿéš›ã«æ¬¡æ®µã¸é€²ã‚€ã¨ãã«å‘¼ã¶ã€‚
     public bool StartSlash(int step, AttackData data)
     {
         if (animator == null)
@@ -235,7 +235,7 @@ public class PlayerAnimator : MonoBehaviour
             step > 3)
         {
             Debug.LogError(
-                "UŒ‚”»’è‚Ü‚½‚ÍAttackData‚ÌQÆ‚ğŠm”F‚µ‚Ä‚­‚¾‚³‚¢B",
+                "æ”»æ’ƒåˆ¤å®šã¾ãŸã¯AttackDataã®å‚ç…§ã‚’ç¢ºèªã—ã¦ãã ã•ã„ã€‚",
                 this
             );
 
@@ -254,7 +254,7 @@ public class PlayerAnimator : MonoBehaviour
             !animator.HasState(0, idleHash))
         {
             Debug.LogError(
-                "UŒ‚‚Ü‚½‚ÍIdle‚ÌƒXƒe[ƒg–¼EƒŒƒCƒ„[–¼‚ªˆê’v‚µ‚Ü‚¹‚ñF" + path,
+                "æ”»æ’ƒã¾ãŸã¯Idleã®ã‚¹ãƒ†ãƒ¼ãƒˆåãƒ»ãƒ¬ã‚¤ãƒ¤ãƒ¼åãŒä¸€è‡´ã—ã¾ã›ã‚“ï¼š" + path,
                 this
             );
 
@@ -266,20 +266,20 @@ public class PlayerAnimator : MonoBehaviour
             slashTrailEffect.ClearTrail();
         }
 
-        // ‘O’i‚Ì”»’è‚ğ•Â‚¶AŸ’i‚ÌƒqƒbƒgƒXƒgƒbƒvŠÔ‚ğŒÅ’èB
+        // å‰æ®µã®åˆ¤å®šã‚’é–‰ã˜ã€æ¬¡æ®µã®ãƒ’ãƒƒãƒˆã‚¹ãƒˆãƒƒãƒ—æ™‚é–“ã‚’å›ºå®šã€‚
         attackHitBox.BeginAttack(data);
 
         activeHash = hash;
         attackActive = true;
 
-        // ŒÃ‚¢Trigger‚ğc‚³‚È‚¢B
+        // å¤ã„Triggerã‚’æ®‹ã•ãªã„ã€‚
         animator.ResetTrigger("Slash");
         animator.ResetTrigger("Slash2");
         animator.ResetTrigger("Slash3");
         animator.ResetTrigger("Jump");
         animator.ResetTrigger("Wedgie");
 
-        // ‘JˆÚğŒ‚ğ‘Ò‚½‚¸Aw’èƒXƒe[ƒg‚ğæ“ª‚©‚çÄ¶B
+        // é·ç§»æ¡ä»¶ã‚’å¾…ãŸãšã€æŒ‡å®šã‚¹ãƒ†ãƒ¼ãƒˆã‚’å…ˆé ­ã‹ã‚‰å†ç”Ÿã€‚
         animator.Play(hash, 0, 0f);
 
         return true;
@@ -319,8 +319,8 @@ public class PlayerAnimator : MonoBehaviour
         }
     }
 
-    // ƒvƒŒƒCƒ„[‚ÌUŒ‚Animation Event‚©‚çŒÄ‚ÔB
-    // intˆø”‚Å1E2E3’i–Ú‚ğw’è‚·‚éB
+    // ãƒ—ãƒ¬ã‚¤ãƒ¤ãƒ¼ã®æ”»æ’ƒAnimation Eventã‹ã‚‰å‘¼ã¶ã€‚
+    // intå¼•æ•°ã§1ãƒ»2ãƒ»3æ®µç›®ã‚’æŒ‡å®šã™ã‚‹ã€‚
     public void PlayAttackTrail(int step)
     {
         if (!attackActive || slashTrailEffect == null)
@@ -331,7 +331,7 @@ public class PlayerAnimator : MonoBehaviour
         slashTrailEffect.PlayEffect(step);
     }
 
-    // ƒvƒŒƒCƒ„[‚ÌUŒ‚Animation Event‚©‚çŒÄ‚ÔB
+    // ãƒ—ãƒ¬ã‚¤ãƒ¤ãƒ¼ã®æ”»æ’ƒAnimation Eventã‹ã‚‰å‘¼ã¶ã€‚
     public void StopAttackTrail()
     {
         if (slashTrailEffect != null)
@@ -340,21 +340,21 @@ public class PlayerAnimator : MonoBehaviour
         }
     }
 
-    // Animation Event‚©‚çŒÄ‚ÔB
+    // Animation Eventã‹ã‚‰å‘¼ã¶ã€‚
     public void EnableAttackHitBox()
     {
         if (attackActive && TryGetAttackProgress(out _))
         {
-            attackHitBox.EnableHitBox(); // ƒqƒbƒg”»’èŠJn
+            attackHitBox.EnableHitBox(); // ãƒ’ãƒƒãƒˆåˆ¤å®šé–‹å§‹
         }
     }
 
-    // Animation Event‚©‚çŒÄ‚ÔB
+    // Animation Eventã‹ã‚‰å‘¼ã¶ã€‚
     public void DisableAttackHitBox()
     {
         if (attackHitBox != null)
         {
-            attackHitBox.DisableHitBox(); // ƒqƒbƒg”»’èI—¹
+            attackHitBox.DisableHitBox(); // ãƒ’ãƒƒãƒˆåˆ¤å®šçµ‚äº†
         }
     }
 

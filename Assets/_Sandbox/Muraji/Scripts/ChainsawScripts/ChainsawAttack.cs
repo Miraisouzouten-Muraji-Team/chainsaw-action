@@ -2,22 +2,22 @@ using UnityEngine;
 
 public class ChainsawAttack : MonoBehaviour
 {
-    [Header("UŒ‚”»’è")]
+    [Header("æ”»æ’ƒåˆ¤å®š")]
     [SerializeField] Collider hitBox;
 
-    [Header("ƒqƒbƒgƒGƒtƒFƒNƒg")]
+    [Header("ãƒ’ãƒƒãƒˆã‚¨ãƒ•ã‚§ã‚¯ãƒˆ")]
     [SerializeField] GameObject hitParticle;
 
-    [Header("ƒJƒƒ‰ƒVƒFƒCƒN")]
+    [Header("ã‚«ãƒ¡ãƒ©ã‚·ã‚§ã‚¤ã‚¯")]
     [SerializeField] CameraShake_System cameraShake;
 
     [SerializeField] float duration;
     [SerializeField] float magnitude;
 
-    [Header("ƒqƒbƒgƒXƒgƒbƒv")]
+    [Header("ãƒ’ãƒƒãƒˆã‚¹ãƒˆãƒƒãƒ—")]
     [SerializeField] HitStop_System hitStopSystem;
 
-    // ‚»‚ÌUŒ‚‚ÌŠJn‚É’l‚ğƒRƒs[‚µ‚Ä•Û‚·‚éB
+    // ãã®æ”»æ’ƒã®é–‹å§‹æ™‚ã«å€¤ã‚’ã‚³ãƒ”ãƒ¼ã—ã¦ä¿æŒã™ã‚‹ã€‚
     float attackHitStopTime;
 
     bool attackPrepared;
@@ -28,7 +28,7 @@ public class ChainsawAttack : MonoBehaviour
         if (hitBox == null)
         {
             Debug.LogError(
-                "ChainsawAttack‚ÌHit Box‚ğİ’è‚µ‚Ä‚­‚¾‚³‚¢B",
+                "ChainsawAttackã®Hit Boxã‚’è¨­å®šã—ã¦ãã ã•ã„ã€‚",
                 this
             );
 
@@ -38,8 +38,8 @@ public class ChainsawAttack : MonoBehaviour
 
         hitBox.enabled = false;
 
-        // “¯–¼‚Ìƒ[ƒJƒ‹•Ï”‚ğì‚ç‚¸AƒtƒB[ƒ‹ƒh‚Ö‘ã“üB
-        // Inspector‚Éİ’èÏ‚İ‚È‚çA‚»‚¿‚ç‚ğ—Dæ‚·‚éB
+        // åŒåã®ãƒ­ãƒ¼ã‚«ãƒ«å¤‰æ•°ã‚’ä½œã‚‰ãšã€ãƒ•ã‚£ãƒ¼ãƒ«ãƒ‰ã¸ä»£å…¥ã€‚
+        // Inspectorã«è¨­å®šæ¸ˆã¿ãªã‚‰ã€ãã¡ã‚‰ã‚’å„ªå…ˆã™ã‚‹ã€‚
         if (cameraShake == null)
         {
             cameraShake = FindAnyObjectByType<CameraShake_System>();
@@ -53,13 +53,13 @@ public class ChainsawAttack : MonoBehaviour
         if (hitStopSystem == null)
         {
             Debug.LogWarning(
-                "HitStop System‚ğİ’è‚µ‚Ä‚­‚¾‚³‚¢B",
+                "HitStop Systemã‚’è¨­å®šã—ã¦ãã ã•ã„ã€‚",
                 this
             );
         }
     }
 
-    // Še’i‚ÌUŒ‚ŠJn‚ÉŒÄ‚ÔB
+    // å„æ®µã®æ”»æ’ƒé–‹å§‹æ™‚ã«å‘¼ã¶ã€‚
     public void BeginAttack(AttackData data)
     {
         EndAttack();
@@ -131,9 +131,9 @@ public class ChainsawAttack : MonoBehaviour
             cameraShake.Shake(duration, magnitude);
         }
 
-        // –½’†‚ÉController.CurrentAttackData‚ğ“Ç‚İ’¼‚³‚È‚¢B
-        // UŒ‚ŠJn‚ÉŠm’è‚µ‚½ŠÔ‚ğg‚¤B
-        // 0•b‚Ìê‡‚ÍStopTime©‘Ì‚ğŒÄ‚Î‚È‚¢B
+        // å‘½ä¸­æ™‚ã«Controller.CurrentAttackDataã‚’èª­ã¿ç›´ã•ãªã„ã€‚
+        // æ”»æ’ƒé–‹å§‹æ™‚ã«ç¢ºå®šã—ãŸæ™‚é–“ã‚’ä½¿ã†ã€‚
+        // 0ç§’ã®å ´åˆã¯StopTimeè‡ªä½“ã‚’å‘¼ã°ãªã„ã€‚
         if (hitStopSystem != null && attackHitStopTime > 0f)
         {
             hitStopSystem.StopTime(attackHitStopTime);

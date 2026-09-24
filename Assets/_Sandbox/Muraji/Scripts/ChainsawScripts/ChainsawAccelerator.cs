@@ -6,18 +6,18 @@ public class ChainsawAccelerator : MonoBehaviour
     private const float TRIGGER_THRESHOLD = 0.1f;
     private const float MIN_TRANSITION_DURATION = 0.01f;
 
-    [Header("‰ñ“]‘¬“xi‰ñ“] / •bj")]
+    [Header("å›è»¢é€Ÿåº¦ï¼ˆå›è»¢ / ç§’ï¼‰")]
     [SerializeField] private float minSpeed = 5f;
     [SerializeField] private float maxSpeed = 50f;
 
-    [Header("•Ï‰»‚É‚©‚©‚éŠÔi•bj")]
+    [Header("å¤‰åŒ–ã«ã‹ã‹ã‚‹æ™‚é–“ï¼ˆç§’ï¼‰")]
     [SerializeField, Min(MIN_TRANSITION_DURATION)]
     private float accelerationTime = 2f;
 
     [SerializeField, Min(MIN_TRANSITION_DURATION)]
     private float decelerationTime = 2.5f;
 
-    [Header("‰Á‘¬ƒJ[ƒuF¶‰º(0,0) ¨ ‰Eã(1,1)")]
+    [Header("åŠ é€Ÿã‚«ãƒ¼ãƒ–ï¼šå·¦ä¸‹(0,0) â†’ å³ä¸Š(1,1)")]
     [SerializeField]
     private AnimationCurve accelerationCurve = new AnimationCurve(
         new Keyframe(0f, 0f, 0f, 0f),
@@ -25,7 +25,7 @@ public class ChainsawAccelerator : MonoBehaviour
         new Keyframe(1f, 1f, 0f, 0f)
     );
 
-    [Header("Œ¸‘¬‚ÌisƒJ[ƒuF¶‰º(0,0) ¨ ‰Eã(1,1)")]
+    [Header("æ¸›é€Ÿã®é€²è¡Œã‚«ãƒ¼ãƒ–ï¼šå·¦ä¸‹(0,0) â†’ å³ä¸Š(1,1)")]
     [SerializeField]
     private AnimationCurve decelerationCurve = new AnimationCurve(
         new Keyframe(0f, 0f, 0f, 0f),
@@ -33,18 +33,18 @@ public class ChainsawAccelerator : MonoBehaviour
         new Keyframe(1f, 1f, 5f, 5f)
     );
 
-    [Header("H‚¢‚İ‚ÌƒeƒXƒgİ’è")]
+    [Header("é£Ÿã„è¾¼ã¿ã®ãƒ†ã‚¹ãƒˆè¨­å®š")]
     [SerializeField] private bool isBiting;
 
-    // Å‚‘¬“x‚ÉŠ|‚¯‚é”{—¦B
+    // æœ€é«˜é€Ÿåº¦ã«æ›ã‘ã‚‹å€ç‡ã€‚
     [SerializeField, Range(0f, 1f)]
     private float resistance = 0.7f;
 
-    [Header("SEƒsƒbƒ`‚ÌŒvZ—p")]
+    [Header("SEãƒ”ãƒƒãƒã®è¨ˆç®—ç”¨")]
     [SerializeField] private float minPitch = 0.8f;
     [SerializeField] private float maxPitch = 1.8f;
 
-    [Header("Console‚Ö‚Ì•\¦ŠÔŠu(•b)")]
+    [Header("Consoleã¸ã®è¡¨ç¤ºé–“éš”(ç§’)")]
     [SerializeField, Min(0.05f)]
     private float logInterval = 0.2f;
 
@@ -78,13 +78,13 @@ public class ChainsawAccelerator : MonoBehaviour
         Gamepad gamepad = Gamepad.current;
         Keyboard keyboard = Keyboard.current;
 
-        // RTA‚Ü‚½‚ÍRƒL[’·‰Ÿ‚µ‚Å‰Á‘¬B
+        // RTã€ã¾ãŸã¯Rã‚­ãƒ¼é•·æŠ¼ã—ã§åŠ é€Ÿã€‚
         bool accelerating =
             (gamepad != null &&
              gamepad.rightTrigger.ReadValue() > TRIGGER_THRESHOLD) ||
             (keyboard != null && keyboard.rKey.isPressed);
 
-        // Bƒ{ƒ^ƒ“A‚Ü‚½‚ÍEƒL[‚ÅH‚¢‚İó‘Ô‚ğØ‚è‘Ö‚¦‚éB
+        // Bãƒœã‚¿ãƒ³ã€ã¾ãŸã¯Eã‚­ãƒ¼ã§é£Ÿã„è¾¼ã¿çŠ¶æ…‹ã‚’åˆ‡ã‚Šæ›¿ãˆã‚‹ã€‚
         if ((gamepad != null &&
              gamepad.buttonEast.wasPressedThisFrame) ||
             (keyboard != null && keyboard.eKey.wasPressedThisFrame))
@@ -92,7 +92,7 @@ public class ChainsawAccelerator : MonoBehaviour
             isBiting = !isBiting;
         }
 
-        // “ü—ÍEH‚¢‚İó‘ÔE’ïR—Í‚ª•Ï‚í‚Á‚½‚Æ‚«‚ÉŠJn‚·‚éB
+        // å…¥åŠ›ãƒ»é£Ÿã„è¾¼ã¿çŠ¶æ…‹ãƒ»æŠµæŠ—åŠ›ãŒå¤‰ã‚ã£ãŸã¨ãã«é–‹å§‹ã™ã‚‹ã€‚
         if (accelerating != previousAccelerating ||
             isBiting != previousBiting ||
             !Mathf.Approximately(resistance, previousResistance))
@@ -124,13 +124,13 @@ public class ChainsawAccelerator : MonoBehaviour
             curveValue
         );
 
-        // I—¹‚ÍŠmÀ‚É–Ú•W‘¬“x‚Ö‡‚í‚¹‚éB
+        // çµ‚äº†æ™‚ã¯ç¢ºå®Ÿã«ç›®æ¨™é€Ÿåº¦ã¸åˆã‚ã›ã‚‹ã€‚
         if (progress >= 1f)
         {
             CurrentSpeed = targetSpeed;
         }
 
-        // ‰ñ“]‘¬“x‚©‚çSE—p‚Ìƒsƒbƒ`’l‚ğŒvZ‚·‚éB
+        // å›è»¢é€Ÿåº¦ã‹ã‚‰SEç”¨ã®ãƒ”ãƒƒãƒå€¤ã‚’è¨ˆç®—ã™ã‚‹ã€‚
         float speedRatio = Mathf.InverseLerp(
             minSpeed,
             maxSpeed,
@@ -150,13 +150,13 @@ public class ChainsawAccelerator : MonoBehaviour
             logTimer = 0f;
 
             //Debug.Log(
-            //    $"[ƒ`ƒF[ƒ“ƒ\[] " +
+            //    $"[ãƒã‚§ãƒ¼ãƒ³ã‚½ãƒ¼] " +
             //    $"RT:{(accelerating ? "ON" : "OFF")} | " +
-            //    $"H‚¢‚İ:{(isBiting ? "ON" : "OFF")} | " +
-            //    $"’ïR—Í:{(isBiting ? resistance : 1f):F2} | " +
-            //    $"‰ñ“]‘¬“x:{CurrentSpeed:F2} ‰ñ“]/•b | " +
-            //    $"–Ú•W:{targetSpeed:F2} | " +
-            //    $"SEƒsƒbƒ`:{CurrentPitch:F2}",
+            //    $"é£Ÿã„è¾¼ã¿:{(isBiting ? "ON" : "OFF")} | " +
+            //    $"æŠµæŠ—åŠ›:{(isBiting ? resistance : 1f):F2} | " +
+            //    $"å›è»¢é€Ÿåº¦:{CurrentSpeed:F2} å›è»¢/ç§’ | " +
+            //    $"ç›®æ¨™:{targetSpeed:F2} | " +
+            //    $"SEãƒ”ãƒƒãƒ:{CurrentPitch:F2}",
             //    this
             //);
         }
@@ -166,13 +166,13 @@ public class ChainsawAccelerator : MonoBehaviour
     {
         float multiplier = isBiting ? resistance : 1f;
 
-        // H‚¢‚İ’†‚Å‚àÅ’á‘¬“x‚Í‰º‰ñ‚ç‚È‚¢B
+        // é£Ÿã„è¾¼ã¿ä¸­ã§ã‚‚æœ€ä½é€Ÿåº¦ã¯ä¸‹å›ã‚‰ãªã„ã€‚
         float speedLimit = Mathf.Max(
             minSpeed,
             maxSpeed * multiplier
         );
 
-        // ƒeƒXƒg”Å‚Å‚ÍH‚¢‚ñ‚¾uŠÔ‚É‘¬“xãŒÀ‚ğ“K—p‚·‚éB
+        // ãƒ†ã‚¹ãƒˆç‰ˆã§ã¯é£Ÿã„è¾¼ã‚“ã ç¬é–“ã«é€Ÿåº¦ä¸Šé™ã‚’é©ç”¨ã™ã‚‹ã€‚
         CurrentSpeed = Mathf.Clamp(
             CurrentSpeed,
             minSpeed,
@@ -183,7 +183,7 @@ public class ChainsawAccelerator : MonoBehaviour
         targetSpeed = accelerating ? speedLimit : minSpeed;
         increasing = targetSpeed > startSpeed;
 
-        // H‚¢‚İ’†‚ÌŒ¸‘¬ŠÔ‚ÍA’Êí‚ÌŒ¸‘¬ŠÔ ~ ’ïR—ÍB
+        // é£Ÿã„è¾¼ã¿ä¸­ã®æ¸›é€Ÿæ™‚é–“ã¯ã€é€šå¸¸ã®æ¸›é€Ÿæ™‚é–“ Ã— æŠµæŠ—åŠ›ã€‚
         transitionDuration = accelerating
             ? accelerationTime
             : decelerationTime * multiplier;

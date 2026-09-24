@@ -643,11 +643,22 @@ jobs:
 
           # 行末空白など、
           # git diff --checkで検出できる問題を確認する。
-          # Unityが自動生成する.metaとFontAssetsの.assetは除外する。
+          #
+          # Unityが自動生成するScene / Prefab / Material /
+          # Animator ControllerなどのYAMLには、
+          # 空値を表す末尾Spaceが含まれる場合がある。
+          #
+          # そのためUnity生成ファイル全体を検査するのではなく、
+          # 人が直接編集するソース・設定ファイルのみ確認する。
           if ! git diff --check "$FROM" "$TO" -- \
-            . \
-            ':(exclude)**/*.meta' \
-            ':(exclude)Assets/FontAssets/**/*.asset'; then
+            '*.cs' \
+            '*.shader' \
+            '*.hlsl' \
+            '*.compute' \
+            '*.json' \
+            '*.yml' \
+            '*.yaml' \
+            '*.md'; then
 
             err "git diff --check に失敗しました"
           fi

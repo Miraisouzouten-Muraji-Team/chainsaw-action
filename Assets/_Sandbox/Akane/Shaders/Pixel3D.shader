@@ -5,11 +5,11 @@ Shader "Custom/Pixel3D"
         _BaseMap("Base Texture", 2D) = "white" {}
         _BaseColor("Base Color", Color) = (1,1,1,1)
 
-        // ‰¼‘z“I‚È•`‰æ‰ğ‘œ“x
-        // 320x180‚­‚ç‚¢‚É‚·‚é‚Æ‚©‚È‚èƒhƒbƒgŠ´‚ªo‚é
+        // ä»®æƒ³çš„ãªæç”»è§£åƒåº¦
+        // 320x180ãã‚‰ã„ã«ã™ã‚‹ã¨ã‹ãªã‚Šãƒ‰ãƒƒãƒˆæ„ŸãŒå‡ºã‚‹
         _PixelResolution("Pixel Resolution", Vector) = (320, 180, 0, 0)
 
-        // –¾‚é‚³‚ğ‰½’iŠK‚É•ª‚¯‚é‚©
+        // æ˜ã‚‹ã•ã‚’ä½•æ®µéšã«åˆ†ã‘ã‚‹ã‹
         _LightSteps("Light Steps", Range(2, 16)) = 4
     }
 
@@ -61,35 +61,35 @@ Shader "Custom/Pixel3D"
             {
                 Varyings output;
 
-                // ƒIƒuƒWƒFƒNƒgÀ•W ¨ ƒNƒŠƒbƒvÀ•W
+                // ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆåº§æ¨™ â†’ ã‚¯ãƒªãƒƒãƒ—åº§æ¨™
                 float4 positionCS =
                     TransformObjectToHClip(input.positionOS.xyz);
 
                 // -------------------------------------------------
-                // ’¸“_ˆÊ’u‚ğ‰¼‘zƒsƒNƒZƒ‹‚ÉƒXƒiƒbƒv
+                // é ‚ç‚¹ä½ç½®ã‚’ä»®æƒ³ãƒ”ã‚¯ã‚»ãƒ«ã«ã‚¹ãƒŠãƒƒãƒ—
                 // -------------------------------------------------
 
-                // ƒNƒŠƒbƒvÀ•W ¨ NDC
+                // ã‚¯ãƒªãƒƒãƒ—åº§æ¨™ â†’ NDC
                 float2 ndc = positionCS.xy / positionCS.w;
 
-                // -1`1 ¨ 0`1
+                // -1ï½1 â†’ 0ï½1
                 float2 screenUV = ndc * 0.5 + 0.5;
 
-                // ‰¼‘z‰ğ‘œ“xã‚ÌƒsƒNƒZƒ‹ˆÊ’u
+                // ä»®æƒ³è§£åƒåº¦ä¸Šã®ãƒ”ã‚¯ã‚»ãƒ«ä½ç½®
                 float2 pixelPos =
                     screenUV * _PixelResolution.xy;
 
-                // ƒsƒNƒZƒ‹’PˆÊ‚ÉŠÛ‚ß‚é
+                // ãƒ”ã‚¯ã‚»ãƒ«å˜ä½ã«ä¸¸ã‚ã‚‹
                 pixelPos = floor(pixelPos + 0.5);
 
-                // ƒsƒNƒZƒ‹ˆÊ’u ¨ 0`1
+                // ãƒ”ã‚¯ã‚»ãƒ«ä½ç½® â†’ 0ï½1
                 screenUV =
                     pixelPos / _PixelResolution.xy;
 
-                // 0`1 ¨ -1`1
+                // 0ï½1 â†’ -1ï½1
                 ndc = screenUV * 2.0 - 1.0;
 
-                // NDC ¨ ƒNƒŠƒbƒvÀ•W
+                // NDC â†’ ã‚¯ãƒªãƒƒãƒ—åº§æ¨™
                 positionCS.xy =
                     ndc * positionCS.w;
 
@@ -106,7 +106,7 @@ Shader "Custom/Pixel3D"
 
             half4 Frag(Varyings input) : SV_Target
             {
-                // ƒeƒNƒXƒ`ƒƒæ“¾
+                // ãƒ†ã‚¯ã‚¹ãƒãƒ£å–å¾—
                 half4 texColor =
                     SAMPLE_TEXTURE2D(
                         _BaseMap,
@@ -117,7 +117,7 @@ Shader "Custom/Pixel3D"
                 float3 normal =
                     normalize(input.normalWS);
 
-                // URP‚ÌƒƒCƒ“ƒ‰ƒCƒg
+                // URPã®ãƒ¡ã‚¤ãƒ³ãƒ©ã‚¤ãƒˆ
                 Light mainLight =
                     GetMainLight();
 
@@ -129,14 +129,14 @@ Shader "Custom/Pixel3D"
                     saturate(dot(normal, lightDir));
 
                 // -------------------------------------------------
-                // –¾‚é‚³‚ğ’iŠK‰»
+                // æ˜ã‚‹ã•ã‚’æ®µéšåŒ–
                 // -------------------------------------------------
 
                 NdotL =
                     floor(NdotL * _LightSteps)
                     / _LightSteps;
 
-                // ˆÃ‚·‚¬‚È‚¢‚æ‚¤‚ÉŠÂ‹«Œõ‚ğ­‚µ‘«‚·
+                // æš—ã™ããªã„ã‚ˆã†ã«ç’°å¢ƒå…‰ã‚’å°‘ã—è¶³ã™
                 float lighting =
                     0.25 + NdotL * 0.75;
 

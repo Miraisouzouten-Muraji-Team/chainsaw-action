@@ -1,0 +1,190 @@
+# ============================================================
+# EditorConfig
+# ============================================================
+
+root = true
+
+
+# ============================================================
+# 共通設定
+# ============================================================
+
+[*]
+
+# 文字コードをUTF-8へ統一する。
+charset = utf-8
+
+# GitHub Actions / Linux環境との違いを減らすためLFへ統一する。
+end_of_line = lf
+
+# ファイル末尾に改行を入れる。
+insert_final_newline = true
+
+# 基本はSpaceを使用する。
+indent_style = space
+
+
+# ============================================================
+# Markdown
+# ============================================================
+
+[*.md]
+
+# Markdownでは行末Spaceが意味を持つ場合があるため削除しない。
+trim_trailing_whitespace = false
+
+
+# ============================================================
+# YAML / JSON
+# ============================================================
+
+[*.{yml,yaml,json}]
+
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = true
+
+
+# ============================================================
+# Unityが生成するYAML
+# ============================================================
+#
+# Unity自身が生成するファイルはEditor側で
+# 行末Spaceを含む場合があるため、
+# 自動整形の対象にしすぎない。
+# ============================================================
+
+[*.{meta,unity,prefab,asset,mat,controller}]
+
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false
+
+
+# ============================================================
+# C#
+# ============================================================
+
+[*.cs]
+
+indent_style = space
+indent_size = 4
+tab_width = 4
+trim_trailing_whitespace = true
+
+
+# ============================================================
+# Shader
+# ============================================================
+
+[*.{shader,hlsl,compute,cginc}]
+
+indent_style = space
+indent_size = 4
+tab_width = 4
+trim_trailing_whitespace = true
+
+
+# ============================================================
+# C# 命名規則
+# ============================================================
+
+# ------------------------------------------------------------
+# Naming Style
+# ------------------------------------------------------------
+
+# PascalCase
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+
+# camelCase
+dotnet_naming_style.camel_case.capitalization = camel_case
+
+# UPPER_SNAKE_CASE
+dotnet_naming_style.upper_snake_case.capitalization = all_upper
+dotnet_naming_style.upper_snake_case.word_separator = _
+
+# Interface
+dotnet_naming_style.interface_pascal_case.capitalization = pascal_case
+dotnet_naming_style.interface_pascal_case.required_prefix = I
+
+
+# ------------------------------------------------------------
+# Symbol
+# ------------------------------------------------------------
+
+# class / struct / enum
+dotnet_naming_symbols.types.applicable_kinds = class, struct, enum
+dotnet_naming_symbols.types.applicable_accessibilities = *
+
+# interface
+dotnet_naming_symbols.interfaces.applicable_kinds = interface
+dotnet_naming_symbols.interfaces.applicable_accessibilities = *
+
+# method
+dotnet_naming_symbols.methods.applicable_kinds = method
+dotnet_naming_symbols.methods.applicable_accessibilities = *
+
+# property / event
+dotnet_naming_symbols.properties_events.applicable_kinds = property, event
+dotnet_naming_symbols.properties_events.applicable_accessibilities = *
+
+# const
+dotnet_naming_symbols.constants.applicable_kinds = field, local
+dotnet_naming_symbols.constants.applicable_accessibilities = *
+dotnet_naming_symbols.constants.required_modifiers = const
+
+# parameter
+dotnet_naming_symbols.parameters.applicable_kinds = parameter
+dotnet_naming_symbols.parameters.applicable_accessibilities = *
+
+# local
+dotnet_naming_symbols.locals.applicable_kinds = local
+dotnet_naming_symbols.locals.applicable_accessibilities = *
+
+
+# ------------------------------------------------------------
+# Rule
+# ------------------------------------------------------------
+
+# class / struct / enum
+dotnet_naming_rule.types_pascal_case.symbols = types
+dotnet_naming_rule.types_pascal_case.style = pascal_case
+dotnet_naming_rule.types_pascal_case.severity = warning
+
+# interface
+dotnet_naming_rule.interfaces_pascal_case.symbols = interfaces
+dotnet_naming_rule.interfaces_pascal_case.style = interface_pascal_case
+dotnet_naming_rule.interfaces_pascal_case.severity = warning
+
+# method
+dotnet_naming_rule.methods_pascal_case.symbols = methods
+dotnet_naming_rule.methods_pascal_case.style = pascal_case
+dotnet_naming_rule.methods_pascal_case.severity = warning
+
+# property / event
+dotnet_naming_rule.properties_events_pascal_case.symbols = properties_events
+dotnet_naming_rule.properties_events_pascal_case.style = pascal_case
+dotnet_naming_rule.properties_events_pascal_case.severity = warning
+
+# const
+dotnet_naming_rule.constants_upper_snake_case.symbols = constants
+dotnet_naming_rule.constants_upper_snake_case.style = upper_snake_case
+dotnet_naming_rule.constants_upper_snake_case.severity = warning
+
+# parameter
+dotnet_naming_rule.parameters_camel_case.symbols = parameters
+dotnet_naming_rule.parameters_camel_case.style = camel_case
+dotnet_naming_rule.parameters_camel_case.severity = warning
+
+# local
+dotnet_naming_rule.locals_camel_case.symbols = locals
+dotnet_naming_rule.locals_camel_case.style = camel_case
+dotnet_naming_rule.locals_camel_case.severity = warning
+
+
+# ============================================================
+# Naming diagnostic
+# ============================================================
+
+# 命名違反はWarningとして表示する。
+dotnet_diagnostic.IDE1006.severity = warning

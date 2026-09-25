@@ -2,7 +2,7 @@
 # EditMode CI
 # ============================================================
 #
-# main向けPull Requestで、
+# prototype向けPull Requestで、
 # Unityプロジェクトのコンパイルと
 # EditMode Testを確認するWorkflow。
 #
@@ -26,12 +26,12 @@ name: EditMode CI
 on:
 
   # ----------------------------------------------------------
-  # main向けPull Requestで実行
+  # prototype向けPull Requestで実行
   # ----------------------------------------------------------
 
   pull_request:
     branches:
-      - main
+      - prototype
 
 
   # ----------------------------------------------------------

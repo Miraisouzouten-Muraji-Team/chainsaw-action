@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 setlocal EnableExtensions
 
 rem ============================================================
@@ -208,6 +209,9 @@ rem *.fbx filter=lfs ...
 rem *.wav filter=lfs ...
 rem
 rem などを使用する場合に必要。
+rem
+rem Git Hooksは.githooksで共有管理するため、
+rem git lfs installにはHookを書き換えさせない。
 rem ============================================================
 
 git lfs version >nul 2>&1
@@ -219,8 +223,7 @@ if errorlevel 1 (
     echo Git LFSをインストールしてください。
     echo.
 ) else (
-
-    git lfs install --local >nul 2>&1
+    git lfs install --local --skip-repo
 
     if errorlevel 1 (
         echo [WARNING] Git LFSの設定に失敗しました。

@@ -1,0 +1,87 @@
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
+
+public class MenuButtonEffect : MonoBehaviour,
+    ISelectHandler, IDeselectHandler
+{
+    private Vector3 originalScale;
+    private Image image;
+
+    [SerializeField] private float selectedScale = 1.1f;
+    [SerializeField] private float normalAlpha = 0.5f;
+    [SerializeField] private float selectedAlpha = 1.0f;
+    [SerializeField] private float speed = 10f;
+    [SerializeField] private GameObject selectMark;
+
+    private Vector3 targetScale;
+    private float targetAlpha;
+
+    private void Start()
+    {
+        originalScale = transform.localScale;
+        image = GetComponent<Image>();
+
+        targetScale = originalScale;
+        targetAlpha = normalAlpha;
+
+        SetAlpha(normalAlpha);
+
+        if (selectMark != null)
+        {
+            selectMark.SetActive(false);
+        }
+    }
+
+    private void Update()
+    {
+        transform.localScale = Vector3.Lerp(
+            transform.localScale,
+            targetScale,
+            Time.unscaledDeltaTime * speed
+        );
+
+        if (image != null)
+        {
+            Color color = image.color;
+            color.a = Mathf.Lerp(
+                color.a,
+                targetAlpha,
+                Time.unscaledDeltaTime * speed
+            );
+            image.color = color;
+        }
+    }
+
+    public void OnSelect(BaseEventData eventData)
+    {
+        targetScale = originalScale * selectedScale;
+        targetAlpha = selectedAlpha;
+
+        if (selectMark != null)
+        {
+            selectMark.SetActive(true);
+        }
+    }
+
+    public void OnDeselect(BaseEventData eventData)
+    {
+        targetScale = originalScale;
+        targetAlpha = normalAlpha;
+
+        if (selectMark != null)
+        {
+            selectMark.SetActive(false);
+        }
+    }
+
+    private void SetAlpha(float alpha)
+    {
+        if (image != null)
+        {
+            Color color = image.color;
+            color.a = alpha;
+            image.color = color;
+        }
+    }
+}

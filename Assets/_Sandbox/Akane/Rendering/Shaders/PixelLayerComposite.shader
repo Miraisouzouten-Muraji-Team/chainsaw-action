@@ -4,12 +4,17 @@ Shader "Custom/PixelLayerComposite"
     {
         [HideInInspector]
         _PixelNearTex("Near", 2D) = "black" {}
-
+    
         [HideInInspector]
         _PixelMiddleTex("Middle", 2D) = "black" {}
-
+    
         [HideInInspector]
         _PixelFarTex("Far", 2D) = "black" {}
+    
+        [HideInInspector]
+        _PixelEffectEnabled(
+            "Pixel Effect Enabled",
+            Float) = 1
     }
 
     SubShader
@@ -39,6 +44,8 @@ Shader "Custom/PixelLayerComposite"
             TEXTURE2D(_PixelMiddleTex);
             TEXTURE2D(_PixelFarTex);
 
+            float _PixelEffectEnabled;
+
             half4 AlphaOver(
                 half4 background,
                 half4 foreground)
@@ -60,46 +67,56 @@ Shader "Custom/PixelLayerComposite"
             half4 Frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-
-                float2 uv = input.texcoord;
-
-                // Main CameraÇ™ï`Ç¢ÇΩîwåiÅB
+            
+                float2 uv =
+                    input.texcoord;
+            
                 half4 result =
                     SAMPLE_TEXTURE2D_X_LOD(
                         _BlitTexture,
                         sampler_LinearClamp,
                         uv,
                         _BlitMipLevel);
-
-                // RenderTextureÇÕPoint SamplingÅB
+            
+                // Pixel OFF„Å™„ÇâMain Camera„ÅÆÁµêÊûú„Çí„Åù„ÅÆ„Åæ„ÅæËøî„Åô
+                if (_PixelEffectEnabled < 0.5)
+                {
+                    return result;
+                }
+            
                 half4 farColor =
                     SAMPLE_TEXTURE2D(
                         _PixelFarTex,
                         sampler_PointClamp,
                         uv);
-
+            
                 half4 middleColor =
                     SAMPLE_TEXTURE2D(
                         _PixelMiddleTex,
                         sampler_PointClamp,
                         uv);
-
+            
                 half4 nearColor =
                     SAMPLE_TEXTURE2D(
                         _PixelNearTex,
                         sampler_PointClamp,
                         uv);
-
-                // âúÇ©ÇÁéËëOÇÃèáî‘Ç≈çáê¨ÅB
+            
                 result =
-                    AlphaOver(result, farColor);
-
+                    AlphaOver(
+                        result,
+                        farColor);
+            
                 result =
-                    AlphaOver(result, middleColor);
-
+                    AlphaOver(
+                        result,
+                        middleColor);
+            
                 result =
-                    AlphaOver(result, nearColor);
-
+                    AlphaOver(
+                        result,
+                        nearColor);
+            
                 return result;
             }
 

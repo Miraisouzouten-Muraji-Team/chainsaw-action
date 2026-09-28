@@ -16,6 +16,10 @@ Shader "Custom/RetroPixelPost"
         _DitherScale(
             "Dither Scale",
             Range(1, 8)) = 1
+
+        _PixelEffectEnabled(
+            "Pixel Effect Enabled",
+            Float) = 1
     }
 
     SubShader
@@ -47,6 +51,7 @@ Shader "Custom/RetroPixelPost"
                 float _ColorSteps;
                 float _DitherStrength;
                 float _DitherScale;
+                float _PixelEffectEnabled;
             CBUFFER_END
 
             // ------------------------------------------------------------
@@ -112,65 +117,49 @@ Shader "Custom/RetroPixelPost"
             half4 Frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-
+            
                 float2 uv =
                     input.texcoord.xy;
-
-                // --------------------------------------------------------
-                // 1. 合成済み画面をそのまま取得
-                //
-                // ここでは低解像度化しない。
-                // Near / Middle / Farの解像度差を維持する。
-                // --------------------------------------------------------
-
+            
                 half4 color =
                     SAMPLE_TEXTURE2D_X_LOD(
                         _BlitTexture,
                         sampler_PointClamp,
                         uv,
                         _BlitMipLevel);
-
-                // --------------------------------------------------------
-                // 2. ディザリング用の画面座標を作る
-                // --------------------------------------------------------
-
+            
+                // ピクセル表現OFFなら、そのまま返す
+                if (_PixelEffectEnabled < 0.5)
+                {
+                    return color;
+                }
+            
                 float ditherScale =
                     max(
                         _DitherScale,
                         1.0);
-
+            
                 float2 screenPixelPosition =
                     floor(
                         uv *
                         _ScreenParams.xy /
                         ditherScale);
-
-                // --------------------------------------------------------
-                // 3. Bayerディザリング
-                // --------------------------------------------------------
-
+            
                 float dither =
                     Bayer4x4(
                         (int2)screenPixelPosition);
-
-                // 0 ～ 1
-                // ↓
-                // -0.5 ～ +0.5
+            
                 dither -= 0.5;
-
+            
                 dither *=
                     _DitherStrength;
-
-                // --------------------------------------------------------
-                // 4. 色数削減
-                // --------------------------------------------------------
-
+            
                 color.rgb =
                     QuantizeColor(
                         color.rgb,
                         _ColorSteps,
                         dither);
-
+            
                 return color;
             }
 

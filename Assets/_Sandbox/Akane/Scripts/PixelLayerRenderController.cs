@@ -5,6 +5,9 @@ namespace Project.Rendering.Pixel
 {
     public sealed class PixelLayerRenderController : MonoBehaviour
     {
+        private const string PIXEL_EFFECT_ENABLED =
+            "_PixelEffectEnabled";
+
         [Header("Cameras")]
         [SerializeField]
         private Camera _mainCamera;
@@ -18,9 +21,12 @@ namespace Project.Rendering.Pixel
         [SerializeField]
         private Camera _farCamera;
 
-        [Header("Composite")]
+        [Header("Materials")]
         [SerializeField]
         private Material _compositeMaterial;
+
+        [SerializeField]
+        private Material _retroPixelMaterial;
 
         [Header("Resolution")]
         [SerializeField]
@@ -46,9 +52,15 @@ namespace Project.Rendering.Pixel
         private string _farLayerName = "PixelFar";
 
         [Header("URP")]
-        [Tooltip("URP Asset �� Renderer List �ɂ����� PixelCaptureRenderer �̔ԍ�")]
+        [Tooltip(
+            "URP Asset の Renderer List における " +
+            "PixelCaptureRenderer の番号")]
         [SerializeField]
         private int _captureRendererIndex = 1;
+
+        [Header("Pixel Rendering")]
+        [SerializeField]
+        private bool _pixelRenderingEnabled = true;
 
         private RenderTexture _nearTexture;
         private RenderTexture _middleTexture;
@@ -58,25 +70,20 @@ namespace Project.Rendering.Pixel
         private int _middleLayer;
         private int _farLayer;
 
+        private int _pixelLayerMask;
+        private int _originalMainCameraMask;
+
+        // 実際に現在適用されている状態。
+        // Inspectorから値を直接変えたか判定するために使用する。
+        private bool _appliedPixelRenderingEnabled;
+
+        public bool PixelRenderingEnabled =>
+            _pixelRenderingEnabled;
+
         private void Awake()
         {
-            _nearLayer =
-                LayerMask.NameToLayer(_nearLayerName);
-
-            _middleLayer =
-                LayerMask.NameToLayer(_middleLayerName);
-
-            _farLayer =
-                LayerMask.NameToLayer(_farLayerName);
-
-            if (_nearLayer < 0 ||
-                _middleLayer < 0 ||
-                _farLayer < 0)
+            if (!Initialize())
             {
-                Debug.LogError(
-                    "PixelNear / PixelMiddle / PixelFar Layer���m�F���Ă��������B",
-                    this);
-
                 enabled = false;
                 return;
             }
@@ -101,32 +108,120 @@ namespace Project.Rendering.Pixel
                 _farLayer,
                 -1.0f);
 
-            ConfigureMainCamera();
-
             ApplyTexturesToMaterial();
+
+            SetPixelRenderingEnabled(
+                _pixelRenderingEnabled);
         }
 
         private void LateUpdate()
         {
-            // Main Camera�������̂ŁA
-            // �`�撼�O��3��𓯊�����B
-            SyncCamera(
-                _nearCamera,
-                _nearTexture,
-                _nearLayer,
-                -3.0f);
+            // ---------------------------------------------------------
+            // Play中にInspectorからチェックボックスを変更した場合、
+            // SetPixelRenderingEnabledを通して実際の描画状態にも反映する。
+            // ---------------------------------------------------------
+            if (_pixelRenderingEnabled !=
+                _appliedPixelRenderingEnabled)
+            {
+                SetPixelRenderingEnabled(
+                    _pixelRenderingEnabled);
+            }
 
-            SyncCamera(
-                _middleCamera,
-                _middleTexture,
-                _middleLayer,
-                -2.0f);
+            // Pixel RenderingがOFFなら、
+            // Capture Cameraを同期する必要はない。
+            if (!_pixelRenderingEnabled)
+            {
+                return;
+            }
 
-            SyncCamera(
-                _farCamera,
-                _farTexture,
-                _farLayer,
-                -1.0f);
+            SyncAllCaptureCameras();
+        }
+
+        /// <summary>
+        /// Pixel Rendering全体のON/OFFを設定する。
+        /// </summary>
+        public void SetPixelRenderingEnabled(
+            bool isEnabled)
+        {
+            _pixelRenderingEnabled =
+                isEnabled;
+
+            SetCaptureCamerasEnabled(
+                isEnabled);
+
+            SetMainCameraMask(
+                isEnabled);
+
+            SetMaterialState(
+                isEnabled);
+
+            // ONへ切り替えた瞬間から
+            // Capture CameraをMain Cameraへ合わせる。
+            if (isEnabled)
+            {
+                SyncAllCaptureCameras();
+            }
+
+            // 現在実際に適用されている値を保存する。
+            _appliedPixelRenderingEnabled =
+                isEnabled;
+        }
+
+        /// <summary>
+        /// 現在のPixel Rendering状態を反転する。
+        /// </summary>
+        public void TogglePixelRendering()
+        {
+            SetPixelRenderingEnabled(
+                !_pixelRenderingEnabled);
+        }
+
+        private bool Initialize()
+        {
+            if (_mainCamera == null)
+            {
+                Debug.LogError(
+                    "Main Cameraが設定されていません。",
+                    this);
+
+                return false;
+            }
+
+            _nearLayer =
+                LayerMask.NameToLayer(
+                    _nearLayerName);
+
+            _middleLayer =
+                LayerMask.NameToLayer(
+                    _middleLayerName);
+
+            _farLayer =
+                LayerMask.NameToLayer(
+                    _farLayerName);
+
+            if (_nearLayer < 0 ||
+                _middleLayer < 0 ||
+                _farLayer < 0)
+            {
+                Debug.LogError(
+                    "PixelNear / PixelMiddle / PixelFar " +
+                    "Layerを確認してください。",
+                    this);
+
+                return false;
+            }
+
+            _pixelLayerMask =
+                (1 << _nearLayer) |
+                (1 << _middleLayer) |
+                (1 << _farLayer);
+
+            // Pixel Rendering OFF時に
+            // 元のCulling Maskへ戻すため保存する。
+            _originalMainCameraMask =
+                _mainCamera.cullingMask;
+
+            return true;
         }
 
         private void CreateRenderTextures()
@@ -151,8 +246,7 @@ namespace Project.Rendering.Pixel
             string textureName,
             Vector2Int resolution)
         {
-            // HDR�l��ێ��������̂�ARGBHalf�B
-            // Bloom�Ȃǂ�1.0�𒴂��閾�邳���c����B
+            // HDR値を保持するためARGBHalfを使用する。
             RenderTexture texture =
                 new(
                     resolution.x,
@@ -162,10 +256,12 @@ namespace Project.Rendering.Pixel
                 {
                     name = textureName,
 
-                    // �s�N�Z����Ԃ��Ȃ��B
-                    filterMode = FilterMode.Point,
+                    // 補間せずピクセルの形を維持する。
+                    filterMode =
+                        FilterMode.Point,
 
-                    wrapMode = TextureWrapMode.Clamp,
+                    wrapMode =
+                        TextureWrapMode.Clamp,
 
                     useMipMap = false,
                     autoGenerateMips = false
@@ -188,21 +284,29 @@ namespace Project.Rendering.Pixel
             }
 
             UniversalAdditionalCameraData cameraData =
-                captureCamera.GetUniversalAdditionalCameraData();
+                captureCamera
+                    .GetUniversalAdditionalCameraData();
 
-            // Full Screen Pass�������Ă��Ȃ�
-            // PixelCaptureRenderer���g�p����B
-            cameraData.SetRenderer(_captureRendererIndex);
+            // Full Screen Passを持たない
+            // PixelCaptureRendererを使用する。
+            cameraData.SetRenderer(
+                _captureRendererIndex);
 
-            // Bloom�Ȃǂ͍������Main Camera�ōs���B
-            cameraData.renderPostProcessing = false;
+            // BloomやFogなどは
+            // 合成後にMain Camera側で処理する。
+            cameraData.renderPostProcessing =
+                false;
 
             captureCamera.clearFlags =
                 CameraClearFlags.SolidColor;
 
-            // �I�u�W�F�N�g�̂Ȃ������𓧖��ɂ���B
+            // 合成時に背景部分を透過させる。
             captureCamera.backgroundColor =
-                new Color(0, 0, 0, 0);
+                new Color(
+                    0.0f,
+                    0.0f,
+                    0.0f,
+                    0.0f);
 
             captureCamera.cullingMask =
                 1 << layer;
@@ -210,10 +314,33 @@ namespace Project.Rendering.Pixel
             captureCamera.targetTexture =
                 targetTexture;
 
-            captureCamera.allowHDR = true;
+            captureCamera.allowHDR =
+                true;
 
             captureCamera.depth =
-                _mainCamera.depth + depthOffset;
+                _mainCamera.depth +
+                depthOffset;
+        }
+
+        private void SyncAllCaptureCameras()
+        {
+            SyncCamera(
+                _nearCamera,
+                _nearTexture,
+                _nearLayer,
+                -3.0f);
+
+            SyncCamera(
+                _middleCamera,
+                _middleTexture,
+                _middleLayer,
+                -2.0f);
+
+            SyncCamera(
+                _farCamera,
+                _farTexture,
+                _farLayer,
+                -1.0f);
         }
 
         private void SyncCamera(
@@ -228,20 +355,27 @@ namespace Project.Rendering.Pixel
                 return;
             }
 
-            // Main Camera�Ɖ�p�Ȃǂ����킹��B
-            captureCamera.CopyFrom(_mainCamera);
+            // FOV、Near/Far Clipなどを
+            // Main Cameraからコピーする。
+            captureCamera.CopyFrom(
+                _mainCamera);
 
-            captureCamera.transform.SetPositionAndRotation(
-                _mainCamera.transform.position,
-                _mainCamera.transform.rotation);
+            captureCamera.transform
+                .SetPositionAndRotation(
+                    _mainCamera.transform.position,
+                    _mainCamera.transform.rotation);
 
-            // CopyFrom�ŏ㏑�����ꂽ
-            // Capture�p�ݒ��߂��B
+            // CopyFromで上書きされた
+            // Capture Camera固有設定を戻す。
             captureCamera.clearFlags =
                 CameraClearFlags.SolidColor;
 
             captureCamera.backgroundColor =
-                new Color(0, 0, 0, 0);
+                new Color(
+                    0.0f,
+                    0.0f,
+                    0.0f,
+                    0.0f);
 
             captureCamera.cullingMask =
                 1 << layer;
@@ -249,33 +383,99 @@ namespace Project.Rendering.Pixel
             captureCamera.targetTexture =
                 targetTexture;
 
-            captureCamera.allowHDR = true;
+            captureCamera.allowHDR =
+                true;
 
             captureCamera.depth =
-                _mainCamera.depth + depthOffset;
+                _mainCamera.depth +
+                depthOffset;
 
             UniversalAdditionalCameraData cameraData =
-                captureCamera.GetUniversalAdditionalCameraData();
+                captureCamera
+                    .GetUniversalAdditionalCameraData();
 
-            cameraData.SetRenderer(_captureRendererIndex);
-            cameraData.renderPostProcessing = false;
+            cameraData.SetRenderer(
+                _captureRendererIndex);
+
+            cameraData.renderPostProcessing =
+                false;
         }
 
-        private void ConfigureMainCamera()
+        private void SetCaptureCamerasEnabled(
+            bool isEnabled)
+        {
+            if (_nearCamera != null)
+            {
+                _nearCamera.enabled =
+                    isEnabled;
+            }
+
+            if (_middleCamera != null)
+            {
+                _middleCamera.enabled =
+                    isEnabled;
+            }
+
+            if (_farCamera != null)
+            {
+                _farCamera.enabled =
+                    isEnabled;
+            }
+        }
+
+        private void SetMainCameraMask(
+            bool isEnabled)
         {
             if (_mainCamera == null)
             {
                 return;
             }
 
-            int pixelLayers =
-                (1 << _nearLayer) |
-                (1 << _middleLayer) |
-                (1 << _farLayer);
+            if (isEnabled)
+            {
+                // Pixel ON
+                //
+                // Near / Middle / Farは
+                // Main Cameraでは直接描画せず、
+                // 各Capture CameraからRTへ描画する。
+                _mainCamera.cullingMask =
+                    _originalMainCameraMask &
+                    ~_pixelLayerMask;
 
-            // Main Camera�ł�3�O���[�v�𒼐ڕ`���Ȃ��B
-            // RenderTexture�����ō�������B
-            _mainCamera.cullingMask &= ~pixelLayers;
+                return;
+            }
+
+            // Pixel OFF
+            //
+            // Pixel用LayerもMain Cameraから
+            // 通常解像度で直接描画する。
+            _mainCamera.cullingMask =
+                _originalMainCameraMask;
+        }
+
+        private void SetMaterialState(
+            bool isEnabled)
+        {
+            float value =
+                isEnabled
+                    ? 1.0f
+                    : 0.0f;
+
+            // Near / Middle / Farの合成。
+            if (_compositeMaterial != null)
+            {
+                _compositeMaterial.SetFloat(
+                    PIXEL_EFFECT_ENABLED,
+                    value);
+            }
+
+            // 色数削減・ディザリング。
+            if (_retroPixelMaterial != null)
+            {
+                _retroPixelMaterial.SetFloat(
+                    PIXEL_EFFECT_ENABLED,
+                    value);
+            }
         }
 
         private void ApplyTexturesToMaterial()
@@ -300,9 +500,21 @@ namespace Project.Rendering.Pixel
 
         private void OnDestroy()
         {
-            ReleaseRenderTexture(_nearTexture);
-            ReleaseRenderTexture(_middleTexture);
-            ReleaseRenderTexture(_farTexture);
+            // Main Cameraを元の状態へ戻す。
+            if (_mainCamera != null)
+            {
+                _mainCamera.cullingMask =
+                    _originalMainCameraMask;
+            }
+
+            ReleaseRenderTexture(
+                _nearTexture);
+
+            ReleaseRenderTexture(
+                _middleTexture);
+
+            ReleaseRenderTexture(
+                _farTexture);
         }
 
         private static void ReleaseRenderTexture(
@@ -314,6 +526,7 @@ namespace Project.Rendering.Pixel
             }
 
             texture.Release();
+
             Destroy(texture);
         }
     }

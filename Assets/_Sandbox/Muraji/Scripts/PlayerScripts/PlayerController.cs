@@ -34,8 +34,39 @@ public class PlayerController : MonoBehaviour
         new HashSet<Collider>();
 
     [Header("重力設定")]
-    [Min(0f)]
-    [SerializeField] private float gravityScale = 2f;
+    [SerializeField, Min(0f)]
+    private float gravityScale = 2f;
+
+    [Tooltip("ジャンプ直後の重力倍率。頂点に近づくと1倍に戻ります。")]
+    [SerializeField, Range(0.1f, 1f)]
+    private float jumpStartGravityMultiplier = 0.7f;
+
+    [Tooltip("落下中に到達する最大の重力倍率。")]
+    [SerializeField, Min(1f)]
+    private float maxFallGravityMultiplier = 2.5f;
+
+    [Tooltip("落下開始から最大重力になるまでの秒数。")]
+    [SerializeField, Min(0.01f)]
+    private float fallGravityIncreaseTime = 0.2f;
+
+    [Tooltip("落下速度の上限。")]
+    [SerializeField, Min(0.1f)]
+    private float maxFallSpeed = 20f;
+
+    [Header("二段ジャンプ設定")]
+    [SerializeField, Min(0f)]
+    private float airJumpForce = 5f;
+
+    private const int MAX_JUMP_COUNT = 2;
+
+    // 実際に使用したジャンプ回数。
+    private int jumpsUsed;
+
+    // 次の物理更新で確定するジャンプ回数。
+    private int pendingJumpCount;
+
+    private float ascentStartSpeed;
+    private float fallElapsedTime;
 
     [Header("食い込み動作確認（実行中に自動更新）")]
     [SerializeField] private float debugRotationSpeed;
@@ -46,47 +77,91 @@ public class PlayerController : MonoBehaviour
     private void FixedUpdate()
     {
         float deltaTime = Time.fixedDeltaTime;
-        if (playerRigidbody == null || playerRigidbody.isKinematic) return;
+
+        if (playerRigidbody == null || playerRigidbody.isKinematic)
+        {
+            ascentStartSpeed = 0f;
+            fallElapsedTime = 0f;
+            return;
+        }
+
+        groundColliders.RemoveWhere(collider =>
+            collider == null ||
+            !collider.enabled ||
+            !collider.gameObject.activeInHierarchy);
+
         if (chainsawAccelerator.isActiveAndEnabled)
+        {
             chainsawAccelerator.Tick(input.AccelerateHeld, deltaTime);
+        }
+
         chainsawDigging.Tick(deltaTime);
+
         Move();
+
         Vector3 velocity = playerRigidbody.linearVelocity;
         velocity.x = currentSpeed;
+
         if (chainsawDigging.TryTakeDash(out float power))
         {
-            // 「パワー」は横速度への加算として実装。次フレーム以降は通常速度へ補間。
             currentSpeed += facingDirection * power;
             velocity.x = currentSpeed;
         }
-        if (chainsawDigging.SuppressGravity)
+
+        bool suppressGravity = chainsawDigging.SuppressGravity;
+
+        if (suppressGravity)
         {
+            // 食い込み中は、上昇・落下の経過をリセットする。
+            ascentStartSpeed = 0f;
+            fallElapsedTime = 0f;
+
             velocity.y = 0f;
+
             if (chainsawDigging.Surface == ChainsawSurface.Wall ||
                 chainsawDigging.Surface == ChainsawSurface.Enemy)
             {
                 currentSpeed = 0f;
                 velocity.x = 0f;
             }
+
             if (chainsawDigging.Surface == ChainsawSurface.Ceiling ||
                 chainsawDigging.Surface == ChainsawSurface.Wall)
+            {
                 velocity -= chainsawDigging.SurfaceNormal * surfaceStickSpeed;
+            }
         }
+
         if (jumpPending)
         {
             jumpPending = false;
+
+            // 落下中でも、上向きの速度に置き換えて跳び直す。
             velocity.y = pendingJumpPower;
+
+            // 実際に跳んだタイミングで回数を確定する。
+            jumpsUsed = pendingJumpCount;
+
+            // 2回目も、弱い上昇重力から開始する。
+            ascentStartSpeed = Mathf.Max(pendingJumpPower, 0f);
+            fallElapsedTime = 0f;
+
             groundColliders.Clear();
             ignoreGroundUntil = Time.time + 0.1f;
         }
+
+        if (!suppressGravity)
+        {
+            ApplyJumpGravity(ref velocity, deltaTime);
+        }
+
         velocity.z = 0f;
+
         playerRigidbody.linearVelocity = velocity;
-        debugCurrentSpeed = velocity.x;        // useGravityは無効にし、重力の適用箇所を1か所にする。
-        if (!chainsawDigging.SuppressGravity)
-            playerRigidbody.AddForce(Physics.gravity * gravityScale, ForceMode.Acceleration);
+
+        debugCurrentSpeed = velocity.x;
         playerAnimator.SetSpeed(currentSpeed);
     }
-
     [Header("攻撃データ")]
     [SerializeField] AttackData slash1;
     [SerializeField] AttackData slash2;
@@ -162,25 +237,34 @@ public class PlayerController : MonoBehaviour
     {
         float moveInput = Mathf.Clamp(input.MoveInput, -1f, 1f);
 
-        // 床への食い込み中は「回転速度 ÷ 5」が加算される。
-        // 食い込んでいないときは0。
+        // 床への食い込み中の速度ボーナス。
         float speedBonus = chainsawDigging.MoveSpeedBonus;
 
-        // 左右入力に応じて移動方向と目標速度を決定する。
         float targetSpeed = moveInput * (moveSpeed + speedBonus);
+
+        // 入力方向が現在の移動方向と逆なら、
+        // それまでの横方向の慣性を消す。
+        bool isReversing =
+            (moveInput > 0f && currentSpeed < 0f) ||
+            (moveInput < 0f && currentSpeed > 0f);
+
+        if (isReversing)
+        {
+            currentSpeed = 0f;
+        }
 
         float rate = Mathf.Abs(targetSpeed) > Mathf.Abs(currentSpeed)
             ? acceleration
             : deceleration;
 
-        // 目標速度へ滑らかに近づける。
+        // 切り返した場合も、このフレームから新しい方向へ加速する。
         currentSpeed = Mathf.MoveTowards(
             currentSpeed,
             targetSpeed,
             rate * Time.fixedDeltaTime
         );
 
-        // Inspectorで確認するための値。
+        // Inspector確認用。
         debugRotationSpeed = chainsawAccelerator.CurrentSpeed;
         debugSpeedBonus = speedBonus;
         debugTargetSpeed = targetSpeed;
@@ -189,16 +273,114 @@ public class PlayerController : MonoBehaviour
     void Jump()
     {
         if (jumpPending) return;
+
         bool wallJump = chainsawDigging.TryGetWallJump(out float wallPower);
-        // 接地していなくても、ジャンプ入力で食い込みは解除する。
+
+        // ジャンプ入力で食い込みを解除する。
         chainsawDigging.Cancel(true);
-        groundColliders.RemoveWhere(collider => collider == null ||
-            !collider.enabled || !collider.gameObject.activeInHierarchy);
-        if (!wallJump && (groundColliders.Count == 0 || Time.time < ignoreGroundUntil)) return;
-        pendingJumpPower = wallJump ? wallPower : jumpForce;
+
+        groundColliders.RemoveWhere(collider =>
+            collider == null ||
+            !collider.enabled ||
+            !collider.gameObject.activeInHierarchy);
+
+        bool isGrounded =
+            groundColliders.Count > 0 &&
+            Time.time >= ignoreGroundUntil;
+
+        if (wallJump)
+        {
+            // 壁ジャンプを1回目として扱い、空中ジャンプを回復する。
+            pendingJumpPower = wallPower;
+            pendingJumpCount = 1;
+        }
+        else if (isGrounded)
+        {
+            // 地上からの1回目。
+            pendingJumpPower = jumpForce;
+            pendingJumpCount = 1;
+        }
+        else
+        {
+            // 歩いて落ちた場合も、空中で使えるのは残り1回。
+            int effectiveJumpCount = Mathf.Max(jumpsUsed, 1);
+
+            if (effectiveJumpCount >= MAX_JUMP_COUNT)
+            {
+                return;
+            }
+
+            pendingJumpPower = airJumpForce;
+            pendingJumpCount = effectiveJumpCount + 1;
+        }
+
         jumpPending = true;
         groundColliders.Clear();
+
         playerAnimator.PlayJump();
+    }
+    private void ApplyJumpGravity(ref Vector3 velocity, float deltaTime)
+    {
+        bool isGrounded =
+            groundColliders.Count > 0 &&
+            Time.time >= ignoreGroundUntil &&
+            velocity.y <= 0.1f;
+
+        float gravityMultiplier;
+
+        if (isGrounded)
+        {
+            // 着地したら次のジャンプに備えてリセット。
+            ascentStartSpeed = 0f;
+            fallElapsedTime = 0f;
+
+            gravityMultiplier = 1f;
+        }
+        else if (velocity.y > 0f)
+        {
+            // 上昇中。
+            fallElapsedTime = 0f;
+
+            // ジャンプ以外の力で上昇した場合にも対応する。
+            ascentStartSpeed = Mathf.Max(ascentStartSpeed, velocity.y);
+
+            // 飛び出し直後は0、頂点に近づくほど1になる。
+            float ascentProgress = 1f - Mathf.Clamp01(
+                velocity.y / Mathf.Max(ascentStartSpeed, 0.001f)
+            );
+
+            gravityMultiplier = Mathf.SmoothStep(
+                jumpStartGravityMultiplier,
+                1f,
+                ascentProgress
+            );
+        }
+        else
+        {
+            // 落下中。時間とともに重力を強める。
+            ascentStartSpeed = 0f;
+
+            float fallProgress = Mathf.Clamp01(
+                fallElapsedTime / Mathf.Max(fallGravityIncreaseTime, 0.01f)
+            );
+
+            gravityMultiplier = Mathf.SmoothStep(
+                1f,
+                maxFallGravityMultiplier,
+                fallProgress
+            );
+
+            fallElapsedTime += deltaTime;
+        }
+
+        // 重力はここだけで適用する。
+        velocity += Physics.gravity
+            * gravityScale
+            * gravityMultiplier
+            * deltaTime;
+
+        // 下向きの速度に上限を設ける。
+        velocity.y = Mathf.Max(velocity.y, -maxFallSpeed);
     }
 
     void OnCollisionEnter(Collision collision)
@@ -243,6 +425,10 @@ public class PlayerController : MonoBehaviour
             if (contact.normal.y >= MIN_GROUND_NORMAL_Y)
             {
                 groundColliders.Add(otherCollider);
+
+                // 地面に着地したらジャンプ回数を回復。
+                jumpsUsed = 0;
+
                 break;
             }
         }
@@ -366,6 +552,8 @@ public class PlayerController : MonoBehaviour
 
     void OnDisable()
     {
+        jumpsUsed = 0;
+        pendingJumpCount = 0;
         jumpPending = false;
         currentSpeed = 0f;
         if (chainsawDigging != null) chainsawDigging.Cancel(true);

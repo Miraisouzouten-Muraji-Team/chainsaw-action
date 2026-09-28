@@ -4,6 +4,16 @@ public class PlayerController : MonoBehaviour
 {
     PlayerInputHandler input;
     PlayerAnimator playerAnimator;
+    [Header("食い込み")]
+    [SerializeField] private ChainsawDigging chainsawDigging;
+    [SerializeField] private ChainsawAccelerator chainsawAccelerator;
+    [SerializeField, Min(0f)] private float surfaceStickSpeed = 1f;
+    public bool CanTakeDamage => chainsawDigging == null || !chainsawDigging.IsEvading;
+    private float facingDirection = 1f;
+    private bool jumpPending;
+    private float pendingJumpPower;
+    private float ignoreGroundUntil;
+    private bool originalUseGravity;
 
     [Header("移動設定")]
     [SerializeField] float moveSpeed = 5.0f;
@@ -27,14 +37,54 @@ public class PlayerController : MonoBehaviour
     [Min(0f)]
     [SerializeField] private float gravityScale = 2f;
 
+    [Header("食い込み動作確認（実行中に自動更新）")]
+    [SerializeField] private float debugRotationSpeed;
+    [SerializeField] private float debugSpeedBonus;
+    [SerializeField] private float debugTargetSpeed;
+    [SerializeField] private float debugCurrentSpeed;
+
     private void FixedUpdate()
     {
-        // Use Gravityで通常の重力がかかるため、
-        // 指定倍率との差分だけ追加する。
-        playerRigidbody.AddForce(
-            Physics.gravity * (gravityScale - 1f),
-            ForceMode.Acceleration
-        );
+        float deltaTime = Time.fixedDeltaTime;
+        if (playerRigidbody == null || playerRigidbody.isKinematic) return;
+        if (chainsawAccelerator.isActiveAndEnabled)
+            chainsawAccelerator.Tick(input.AccelerateHeld, deltaTime);
+        chainsawDigging.Tick(deltaTime);
+        Move();
+        Vector3 velocity = playerRigidbody.linearVelocity;
+        velocity.x = currentSpeed;
+        if (chainsawDigging.TryTakeDash(out float power))
+        {
+            // 「パワー」は横速度への加算として実装。次フレーム以降は通常速度へ補間。
+            currentSpeed += facingDirection * power;
+            velocity.x = currentSpeed;
+        }
+        if (chainsawDigging.SuppressGravity)
+        {
+            velocity.y = 0f;
+            if (chainsawDigging.Surface == ChainsawSurface.Wall ||
+                chainsawDigging.Surface == ChainsawSurface.Enemy)
+            {
+                currentSpeed = 0f;
+                velocity.x = 0f;
+            }
+            if (chainsawDigging.Surface == ChainsawSurface.Ceiling ||
+                chainsawDigging.Surface == ChainsawSurface.Wall)
+                velocity -= chainsawDigging.SurfaceNormal * surfaceStickSpeed;
+        }
+        if (jumpPending)
+        {
+            jumpPending = false;
+            velocity.y = pendingJumpPower;
+            groundColliders.Clear();
+            ignoreGroundUntil = Time.time + 0.1f;
+        }
+        velocity.z = 0f;
+        playerRigidbody.linearVelocity = velocity;
+        debugCurrentSpeed = velocity.x;        // useGravityは無効にし、重力の適用箇所を1か所にする。
+        if (!chainsawDigging.SuppressGravity)
+            playerRigidbody.AddForce(Physics.gravity * gravityScale, ForceMode.Acceleration);
+        playerAnimator.SetSpeed(currentSpeed);
     }
 
     [Header("攻撃データ")]
@@ -63,115 +113,91 @@ public class PlayerController : MonoBehaviour
         input = GetComponent<PlayerInputHandler>();
         playerAnimator = GetComponent<PlayerAnimator>();
         playerRigidbody = GetComponent<Rigidbody>();
+        if (chainsawDigging == null) chainsawDigging = GetComponent<ChainsawDigging>();
+        if (chainsawAccelerator == null) chainsawAccelerator = GetComponentInChildren<ChainsawAccelerator>();
 
         if (input == null ||
             playerAnimator == null ||
-            playerRigidbody == null)
+            playerRigidbody == null || chainsawDigging == null || chainsawAccelerator == null)
         {
             Debug.LogError(
                 "PlayerInputHandler・PlayerAnimator・Rigidbodyを" +
-                "同じGameObjectに配置してください。",
+                "同じGameObjectに配置し、ChainsawDiggingとChainsawAcceleratorも設定してください。",
                 this
             );
 
             enabled = false;
             return;
         }
+        originalUseGravity = playerRigidbody.useGravity;
+        playerRigidbody.useGravity = false;
+        if (playerRigidbody.isKinematic)
+            Debug.LogError("PlayerのRigidbodyのIs KinematicをOFFにしてください。", this);
     }
+
+    void OnEnable()
+    {
+        if (playerRigidbody != null) playerRigidbody.useGravity = false;
+    }
+
     void Update()
     {
-        Move();
-
-        // 攻撃中の追加入力は、次の1段の予約として扱う。
-        if (input.SlashInput)
+        // ヒットストップ中はコンボ予約だけ受け付け、食い込み／ジャンプは変更しない。
+        if (Time.timeScale <= 0f)
         {
-            Slash();
+            if (IsAttacking && input.SlashInput) Slash();
+            input.ResetInput();
+            return;
         }
-
-        // 攻撃中のジャンプ・食い込みによる中断を一旦禁止。
-        if (!IsAttacking)
-        {
-            if (input.JumpInput)
-            {
-                Jump();
-            }
-            else if (input.WedgieInput)
-            {
-                //playerAnimator.PlayWedgie();
-                if (!playerAnimator.IsDiggingAnimationActive)
-                {
-                    // 食い込みアニメーションを開始する。
-                    playerAnimator.StartDiggingAnimation();
-                }
-                else
-                {
-                    // 停止を解除し、続きから再生する。
-                    playerAnimator.ReleaseDiggingAnimation();
-                }
-            }
-        }
-
+        if (input.MoveInput != 0f) facingDirection = Mathf.Sign(input.MoveInput);
+        chainsawDigging.HandleInput(input.WedgieInput, input.WedgieHeld, IsAttacking);
+        // 同時押しの優先順位：弱攻撃 > ジャンプ > 食い込み。
+        if (input.SlashInput) Slash();
+        else if (!IsAttacking && input.JumpInput) Jump();
         UpdateSlash();
-
-        playerAnimator.SetSpeed(currentSpeed);
-
         input.ResetInput();
     }
 
     void Move()
     {
-        float moveInput = input.MoveInput;
+        float moveInput = Mathf.Clamp(input.MoveInput, -1f, 1f);
 
-        if (moveInput != 0)
-        {
-            currentSpeed +=
-                moveInput * acceleration * Time.deltaTime;
+        // 床への食い込み中は「回転速度 ÷ 5」が加算される。
+        // 食い込んでいないときは0。
+        float speedBonus = chainsawDigging.MoveSpeedBonus;
 
-            currentSpeed = Mathf.Clamp(
-                currentSpeed,
-                -moveSpeed,
-                moveSpeed
-            );
-        }
-        else
-        {
-            currentSpeed = Mathf.MoveTowards(
-                currentSpeed,
-                0,
-                deceleration * Time.deltaTime
-            );
-        }
+        // 左右入力に応じて移動方向と目標速度を決定する。
+        float targetSpeed = moveInput * (moveSpeed + speedBonus);
 
-        transform.position +=
-            Vector3.right * currentSpeed * Time.deltaTime;
+        float rate = Mathf.Abs(targetSpeed) > Mathf.Abs(currentSpeed)
+            ? acceleration
+            : deceleration;
+
+        // 目標速度へ滑らかに近づける。
+        currentSpeed = Mathf.MoveTowards(
+            currentSpeed,
+            targetSpeed,
+            rate * Time.fixedDeltaTime
+        );
+
+        // Inspectorで確認するための値。
+        debugRotationSpeed = chainsawAccelerator.CurrentSpeed;
+        debugSpeedBonus = speedBonus;
+        debugTargetSpeed = targetSpeed;
     }
 
     void Jump()
     {
-        // 削除・無効化された床を接地対象から外す。
-        groundColliders.RemoveWhere(
-            groundCollider =>
-                groundCollider == null ||
-                !groundCollider.enabled ||
-                !groundCollider.gameObject.activeInHierarchy
-        );
-
-        if (groundColliders.Count == 0 || Time.timeScale <= 0f)
-        {
-            return;
-        }
-
-        // 食い込みで停止していたアニメーションを解除。
-        playerAnimator.CancelDiggingAnimation();
-
-        // Rigidbodyに上向きの速度を設定する。
-        Vector3 velocity = playerRigidbody.linearVelocity;
-        velocity.y = jumpForce;
-        playerRigidbody.linearVelocity = velocity;
-
-        // 着地するまで再ジャンプできないようにする。
+        if (jumpPending) return;
+        bool wallJump = chainsawDigging.TryGetWallJump(out float wallPower);
+        // 接地していなくても、ジャンプ入力で食い込みは解除する。
+        chainsawDigging.Cancel(true);
+        groundColliders.RemoveWhere(collider => collider == null ||
+            !collider.enabled || !collider.gameObject.activeInHierarchy);
+        if (!wallJump && (groundColliders.Count == 0 || Time.time < ignoreGroundUntil)) return;
+        pendingJumpPower = wallJump ? wallPower : jumpForce;
+        jumpPending = true;
         groundColliders.Clear();
-
         playerAnimator.PlayJump();
     }
 
@@ -201,7 +227,7 @@ public class PlayerController : MonoBehaviour
         groundColliders.Remove(otherCollider);
 
         // ジャンプ直後の接触を着地と誤認しない。
-        if (playerRigidbody.linearVelocity.y > 0.1f)
+        if (jumpPending || Time.time < ignoreGroundUntil || playerRigidbody.linearVelocity.y > 0.1f)
         {
             return;
         }
@@ -227,6 +253,8 @@ public class PlayerController : MonoBehaviour
     {
         if (!IsAttacking)
         {
+            jumpPending = false;
+            chainsawDigging.Cancel(true);
             StartSlash(1);
         }
         else if (slashStep < 3)
@@ -338,6 +366,10 @@ public class PlayerController : MonoBehaviour
 
     void OnDisable()
     {
+        jumpPending = false;
+        currentSpeed = 0f;
+        if (chainsawDigging != null) chainsawDigging.Cancel(true);
+        if (playerRigidbody != null) playerRigidbody.useGravity = originalUseGravity;
         groundColliders.Clear();
         if (playerAnimator != null)
         {

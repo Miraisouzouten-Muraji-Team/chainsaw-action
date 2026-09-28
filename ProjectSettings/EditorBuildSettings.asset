@@ -8,6 +8,15 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/_Sandbox/Muraji/Scenes/OrtCameraPlayerCreateScene.unity
     guid: 085b81433bd3c5e4d9cf19289f467990
+  - enabled: 1
+    path: Assets/_Sandbox/Yonekura/Scenes/TitleScene.unity
+    guid: 48dbd7c0696588e45b730ec47aaccd5b
+  - enabled: 1
+    path: Assets/_Sandbox/Yonekura/Scenes/StageSelectScene.unity
+    guid: a6053b63e74b99b48bed0e5f030bd185
+  - enabled: 1
+    path: Assets/_Sandbox/Yonekura/Scenes/Stage1Scene.unity
+    guid: d2d0ba0c3c3285a478d6c4f1094b2276
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: e52471430125d4b46a32fe8525f6523e, type: 3}
   m_UseUCBPForAssetBundles: 0

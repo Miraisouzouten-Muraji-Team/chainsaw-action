@@ -1,13 +1,14 @@
 using UnityEngine;
 using TMPro;
+using UnityEngine.UI;
 
 public class DebugAcceleration : MonoBehaviour
 {
     [SerializeField] private ChainsawAccelerator chainsawAccelerator;
-    [SerializeField] private TMP_Text tMP_Text;
+    [SerializeField] private Text TextAcceleration;
         // Update is called once per frame
     void Update()
     {
-        tMP_Text.text = $"Speed: {chainsawAccelerator.CurrentSpeed:F2}";
+        TextAcceleration.text = $"Speed: {chainsawAccelerator.CurrentSpeed:F2}";
     }
 }

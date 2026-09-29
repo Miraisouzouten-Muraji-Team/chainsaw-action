@@ -8,6 +8,8 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private ChainsawDigging chainsawDigging;
     [SerializeField] private ChainsawAccelerator chainsawAccelerator;
     [SerializeField, Min(0f)] private float surfaceStickSpeed = 1f;
+    [Header("壁への食い込み移動")]
+    [SerializeField, Min(0f)] private float wallClimbSpeed = 5f;
     public bool CanTakeDamage => chainsawDigging == null || !chainsawDigging.IsEvading;
     private float facingDirection = 1f;
     private bool jumpPending;
@@ -95,8 +97,7 @@ public class PlayerController : MonoBehaviour
             chainsawAccelerator.Tick(input.AccelerateHeld, deltaTime);
         }
 
-        chainsawDigging.Tick(deltaTime);
-
+        chainsawDigging.Tick(deltaTime, facingDirection);
         Move();
 
         Vector3 velocity = playerRigidbody.linearVelocity;
@@ -112,26 +113,46 @@ public class PlayerController : MonoBehaviour
 
         if (suppressGravity)
         {
-            // 食い込み中は、上昇・落下の経過をリセットする。
             ascentStartSpeed = 0f;
             fallElapsedTime = 0f;
 
-            velocity.y = 0f;
-
-            if (chainsawDigging.Surface == ChainsawSurface.Wall ||
-                chainsawDigging.Surface == ChainsawSurface.Enemy)
+            switch (chainsawDigging.Surface)
             {
-                currentSpeed = 0f;
-                velocity.x = 0f;
-            }
+                case ChainsawSurface.Wall:
+                    {
+                        currentSpeed = 0f;
 
-            if (chainsawDigging.Surface == ChainsawSurface.Ceiling ||
-                chainsawDigging.Surface == ChainsawSurface.Wall)
-            {
-                velocity -= chainsawDigging.SurfaceNormal * surfaceStickSpeed;
+                        // 壁へ軽く押し付けながら、一定速度で上昇する。
+                        // 法線のY成分で上昇速度が変わらないように、
+                        // 壁への押し付けはX方向だけに適用する。
+                        velocity.x =
+                            -chainsawDigging.SurfaceNormal.x * surfaceStickSpeed;
+
+                        velocity.y = wallClimbSpeed;
+
+                        // 上昇中に、以前の床の接地情報を残さない。
+                        groundColliders.Clear();
+                        break;
+                    }
+
+                case ChainsawSurface.Ceiling:
+                    {
+                        velocity.y = 0f;
+
+                        velocity -=
+                            chainsawDigging.SurfaceNormal * surfaceStickSpeed;
+                        break;
+                    }
+
+                case ChainsawSurface.Enemy:
+                    {
+                        currentSpeed = 0f;
+                        velocity.x = 0f;
+                        velocity.y = 0f;
+                        break;
+                    }
             }
         }
-
         if (jumpPending)
         {
             jumpPending = false;

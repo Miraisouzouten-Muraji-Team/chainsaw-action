@@ -5,39 +5,81 @@ public class ChainsawDigging : MonoBehaviour
     public enum InputMode { Toggle, Hold }
 
     [Header("参照（Player上の参照は未設定なら自動取得）")]
+    [Tooltip("接触先の判定")]
     [SerializeField] private ChainsawContactDetector detector;
+
+    [Tooltip("回転速度の管理")]
     [SerializeField] private ChainsawAccelerator accelerator;
+
+    [Tooltip("アニメーション制御")]
     [SerializeField] private PlayerAnimator playerAnimator;
+
+    [Tooltip("攻撃処理")]
     [SerializeField] private ChainsawAttack chainsawAttack;
+
+    [Tooltip("敵への食い込み攻撃データ")]
     [SerializeField] private AttackData diggingAttackData;
 
     [Header("操作と開始ボーナス")]
+    [Tooltip("Toggle：押すたび切替／Hold：長押し")]
     [SerializeField] private InputMode inputMode = InputMode.Toggle;
+
+    [Tooltip("開始ボーナスに必要な回転速度の割合")]
     [SerializeField, Range(0f, 1f)] private float bonusThreshold = 0.8f;
 
     [Header("床")]
+    [Tooltip("速度加算＝回転速度÷この値")]
     [SerializeField, Min(0.01f)] private float floorSpeedDivisor = 5f;
+
+    [Tooltip("ボーナス時のダッシュ加算速度")]
     [SerializeField, Min(0f)] private float floorDashPower = 10f;
+
+    [Tooltip("ボーナス時の回避時間（秒）")]
     [SerializeField, Min(0f)] private float floorEvadeTime = 0.5f;
 
     [Header("壁")]
+    [Tooltip("回転リソースの消費間隔（秒）")]
     [SerializeField, Min(0.01f)] private float wallConsumeInterval = 0.1f;
+
+    [Tooltip("1回あたりの消費量")]
     [SerializeField, Min(0f)] private float wallConsumeAmount = 20f;
+
+    [Tooltip("通常の壁ジャンプ速度")]
     [SerializeField, Min(0f)] private float wallJumpPower = 10f;
+
+    [Tooltip("ボーナス時の壁ジャンプ速度")]
     [SerializeField, Min(0f)] private float bonusWallJumpPower = 15f;
+
+    [Tooltip("ボーナス壁ジャンプの回避時間（秒）")]
     [SerializeField, Min(0f)] private float wallEvadeTime = 0.25f;
 
     [Header("天井")]
+    [Tooltip("速度加算＝回転速度÷この値")]
     [SerializeField, Min(0.01f)] private float ceilingSpeedDivisor = 7.5f;
+
+    [Tooltip("ボーナス時のダッシュ加算速度")]
     [SerializeField, Min(0f)] private float ceilingDashPower = 7.5f;
+
+    [Tooltip("ボーナス時の回避時間（秒）")]
     [SerializeField, Min(0f)] private float ceilingEvadeTime = 0.35f;
 
     [Header("敵：消費は攻撃1回ごと")]
+    [Tooltip("連続攻撃の間隔（秒）")]
     [SerializeField, Min(0.01f)] private float enemyAttackInterval = 0.1f;
+
+    [Tooltip("通常の攻撃1回の消費量")]
     [SerializeField, Min(0f)] private float enemyConsumeAmount = 1f;
+
+    [Tooltip("ボーナス時の攻撃1回の消費量")]
     [SerializeField, Min(0f)] private float bonusEnemyConsumeAmount = 2f;
+
+    [Tooltip("PowerRatioが0のときのダメージ倍率")]
     [SerializeField, Min(0f)] private float minDamageMultiplier = 0.9f;
+
+    [Tooltip("PowerRatioが1のときのダメージ倍率")]
     [SerializeField, Min(0f)] private float maxDamageMultiplier = 1.25f;
+
+    [Tooltip("ボーナス時に追加で掛ける倍率")]
     [SerializeField, Min(0f)] private float bonusDamageMultiplier = 1.5f;
 
     public bool IsRequested { get; private set; }
@@ -190,7 +232,7 @@ public class ChainsawDigging : MonoBehaviour
     }
 
     // PlayerControllerのFixedUpdateから呼ぶ。
-    public void Tick(float deltaTime)
+    public void Tick(float deltaTime, float facingDirection = 0f)
     {
         if (!isActiveAndEnabled || !IsRequested)
         {
@@ -206,8 +248,10 @@ public class ChainsawDigging : MonoBehaviour
         }
 
         if (!detector.TryGetContact(
-                contact.Collider,
-                out ChainsawContact next))
+            contact.Collider,
+            out ChainsawContact next,
+            Surface,
+            facingDirection))
         {
             if (IsDigging)
             {
@@ -219,19 +263,42 @@ public class ChainsawDigging : MonoBehaviour
         }
 
         if (IsDigging &&
-            (
-                next.Surface != Surface ||
-                (
-                    Surface == ChainsawSurface.Enemy &&
-                    next.Enemy != contact.Enemy
-                )
-            ))
+            (next.Surface != Surface ||
+             (Surface == ChainsawSurface.Enemy && next.Enemy != contact.Enemy)))
         {
-            // 別種の対象や別の敵に切り替わった場合は解除。
-            Cancel(false);
-            return;
-        }
+            bool isFloorToWall =
+                Surface == ChainsawSurface.Floor &&
+                next.Surface == ChainsawSurface.Wall;
 
+            if (isFloorToWall)
+            {
+                // 食い込み要求を維持したまま、壁の情報へ切り替える。
+                contact = next;
+                Surface = ChainsawSurface.None;
+
+                timer = 0f;
+
+                // 地面用の未使用ダッシュを壁へ持ち越さない。
+                pendingDash = 0f;
+
+                // 壁用のアニメーションとボーナス判定を開始する。
+                if (!BeginDigging())
+                {
+                    return;
+                }
+
+                Debug.Log(
+                    $"[チェーンソー食い込み] 地面 → 壁へ切り替え：{contact.Collider.name}",
+                    contact.Collider);
+            }
+            else
+            {
+                // 今回変更するのは地面から壁への切り替え。
+                // それ以外は既存の解除処理を使う。
+                Cancel(false);
+                return;
+            }
+        }
         // 同じ種類の地形の継ぎ目は、状態を維持して更新。
         contact = next;
 
@@ -327,6 +394,45 @@ public class ChainsawDigging : MonoBehaviour
         }
     }
 
+    private void LogDiggingContact()
+    {
+        string surfaceName;
+
+        switch (Surface)
+        {
+            case ChainsawSurface.Floor:
+                surfaceName = "地面";
+                break;
+
+            case ChainsawSurface.Wall:
+                surfaceName = "壁";
+                break;
+
+            case ChainsawSurface.Ceiling:
+                surfaceName = "天井";
+                break;
+
+            case ChainsawSurface.Enemy:
+                surfaceName = "敵";
+                break;
+
+            default:
+                return;
+        }
+
+        string targetName = contact.Collider != null
+            ? contact.Collider.gameObject.name
+            : "不明";
+
+        Debug.Log(
+            $"[チェーンソー食い込み] 種類：{surfaceName} | " +
+            $"対象：{targetName} | " +
+            $"接触位置：{contact.Point.ToString("F2")} | " +
+            $"面の向き：{contact.Normal.ToString("F2")} | " +
+            $"ボーナス：{HasBonus}",
+            contact.Collider != null ? (Object)contact.Collider : this);
+    }
+
     private bool BeginDigging()
     {
         if (contact.Surface == ChainsawSurface.Enemy &&
@@ -386,7 +492,7 @@ public class ChainsawDigging : MonoBehaviour
             GrantEvade(ceilingEvadeTime);
             pendingDash = ceilingDashPower;
         }
-
+        LogDiggingContact();
         return true;
     }
 

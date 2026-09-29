@@ -61,6 +61,12 @@ public class PlayerController : MonoBehaviour
 
     private const int MAX_JUMP_COUNT = 2;
 
+    [Header("見た目の向き")]
+    [Tooltip("モデルとチェーンソーを含む見た目の親")]
+    [SerializeField] private Transform visualRoot;
+
+    private Quaternion rightFacingRotation;
+
     // 実際に使用したジャンプ回数。
     private int jumpsUsed;
 
@@ -75,6 +81,9 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float debugSpeedBonus;
     [SerializeField] private float debugTargetSpeed;
     [SerializeField] private float debugCurrentSpeed;
+
+    // 壁に入ったときの移動速度を保持する。
+    private float wallTravelSpeed;
 
     private void FixedUpdate()
     {
@@ -94,10 +103,32 @@ public class PlayerController : MonoBehaviour
 
         if (chainsawAccelerator.isActiveAndEnabled)
         {
-            chainsawAccelerator.Tick(input.AccelerateHeld, deltaTime);
+            chainsawAccelerator.Tick(
+                input.AccelerateHeld,
+                deltaTime,
+                chainsawDigging.IsDigging
+            );
         }
 
+        ChainsawSurface previousSurface = chainsawDigging.Surface;
+
+        // 地面移動の速度を、壁への切り替え前に保存する。
+        float previousMoveSpeed = Mathf.Abs(currentSpeed);
+
         chainsawDigging.Tick(deltaTime, facingDirection);
+
+        bool enteredWall =
+            previousSurface != ChainsawSurface.Wall &&
+            chainsawDigging.Surface == ChainsawSurface.Wall;
+
+        if (enteredWall)
+        {
+            // 地面からなら横移動の速さを引き継ぐ。
+            // 直接壁へ食い込んだ場合は設定した上昇速度を使う。
+            wallTravelSpeed = previousSurface == ChainsawSurface.Floor
+                ? previousMoveSpeed
+                : wallClimbSpeed;
+        }
         Move();
 
         Vector3 velocity = playerRigidbody.linearVelocity;
@@ -120,21 +151,19 @@ public class PlayerController : MonoBehaviour
             {
                 case ChainsawSurface.Wall:
                     {
+                        // 横方向の自動移動を止める。
                         currentSpeed = 0f;
 
-                        // 壁へ軽く押し付けながら、一定速度で上昇する。
-                        // 法線のY成分で上昇速度が変わらないように、
-                        // 壁への押し付けはX方向だけに適用する。
+                        // 壁との接触を維持するため、壁側へ軽く押す。
                         velocity.x =
                             -chainsawDigging.SurfaceNormal.x * surfaceStickSpeed;
 
-                        velocity.y = wallClimbSpeed;
+                        // 地面での移動速度を上方向へ向ける。
+                        velocity.y = wallTravelSpeed;
 
-                        // 上昇中に、以前の床の接地情報を残さない。
                         groundColliders.Clear();
                         break;
                     }
-
                 case ChainsawSurface.Ceiling:
                     {
                         velocity.y = 0f;
@@ -229,6 +258,11 @@ public class PlayerController : MonoBehaviour
         playerRigidbody.useGravity = false;
         if (playerRigidbody.isKinematic)
             Debug.LogError("PlayerのRigidbodyのIs KinematicをOFFにしてください。", this);
+        if (visualRoot != null)
+        {
+            // 初期状態を右向きとして保存。
+            rightFacingRotation = visualRoot.localRotation;
+        }
     }
 
     void OnEnable()
@@ -245,7 +279,14 @@ public class PlayerController : MonoBehaviour
             input.ResetInput();
             return;
         }
-        if (input.MoveInput != 0f) facingDirection = Mathf.Sign(input.MoveInput);
+        // 地面食い込み中以外は、入力方向を向く。
+        if (chainsawDigging.Surface != ChainsawSurface.Floor &&
+            input.MoveInput != 0f)
+        {
+            facingDirection = Mathf.Sign(input.MoveInput);
+            ApplyFacingRotation();
+        }
+
         chainsawDigging.HandleInput(input.WedgieInput, input.WedgieHeld, IsAttacking);
         // 同時押しの優先順位：弱攻撃 > ジャンプ > 食い込み。
         if (input.SlashInput) Slash();
@@ -256,15 +297,17 @@ public class PlayerController : MonoBehaviour
 
     void Move()
     {
-        float moveInput = Mathf.Clamp(input.MoveInput, -1f, 1f);
+        bool isFloorDigging =
+            chainsawDigging.Surface == ChainsawSurface.Floor;
 
-        // 床への食い込み中の速度ボーナス。
+        // 地面食い込み中は向いている方向へ自動移動。
+        float moveInput = isFloorDigging
+            ? facingDirection
+            : Mathf.Clamp(input.MoveInput, -1f, 1f);
+
         float speedBonus = chainsawDigging.MoveSpeedBonus;
-
         float targetSpeed = moveInput * (moveSpeed + speedBonus);
 
-        // 入力方向が現在の移動方向と逆なら、
-        // それまでの横方向の慣性を消す。
         bool isReversing =
             (moveInput > 0f && currentSpeed < 0f) ||
             (moveInput < 0f && currentSpeed > 0f);
@@ -278,19 +321,16 @@ public class PlayerController : MonoBehaviour
             ? acceleration
             : deceleration;
 
-        // 切り返した場合も、このフレームから新しい方向へ加速する。
         currentSpeed = Mathf.MoveTowards(
             currentSpeed,
             targetSpeed,
             rate * Time.fixedDeltaTime
         );
 
-        // Inspector確認用。
         debugRotationSpeed = chainsawAccelerator.CurrentSpeed;
         debugSpeedBonus = speedBonus;
         debugTargetSpeed = targetSpeed;
     }
-
     void Jump()
     {
         if (jumpPending) return;
@@ -453,6 +493,15 @@ public class PlayerController : MonoBehaviour
                 break;
             }
         }
+    }
+
+    private void ApplyFacingRotation()
+    {
+        if (visualRoot == null) return;
+
+        float angle = facingDirection < 0f ? 180f : 0f;
+        visualRoot.localRotation =
+            rightFacingRotation * Quaternion.Euler(0f, angle, 0f);
     }
 
     // 攻撃ボタンを押したときに呼ぶ。

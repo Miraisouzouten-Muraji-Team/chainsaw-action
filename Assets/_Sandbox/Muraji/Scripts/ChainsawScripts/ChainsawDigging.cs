@@ -82,6 +82,12 @@ public class ChainsawDigging : MonoBehaviour
     [Tooltip("ボーナス時に追加で掛ける倍率")]
     [SerializeField, Min(0f)] private float bonusDamageMultiplier = 1.5f;
 
+    [Tooltip("壁を見失っても上昇を続ける時間（秒）")]
+    [SerializeField, Min(0f)]
+    private float wallContactGraceTime = 2f;
+
+    private float wallContactLostTime;
+
     public bool IsRequested { get; private set; }
 
     public bool IsDigging => Surface != ChainsawSurface.None;
@@ -239,28 +245,66 @@ public class ChainsawDigging : MonoBehaviour
             return;
         }
 
-        if (!detector.isActiveAndEnabled ||
-            !accelerator.isActiveAndEnabled ||
-            !chainsawAttack.isActiveAndEnabled)
-        {
-            Cancel(false);
-            return;
-        }
-
-        if (!detector.TryGetContact(
+        bool foundContact = detector.TryGetContact(
             contact.Collider,
             out ChainsawContact next,
             Surface,
-            facingDirection))
-        {
-            if (IsDigging)
-            {
-                Cancel(false);
-            }
+            facingDirection);
 
-            // まだ接触していなければ、構えたまま接触を待つ。
-            return;
+        if (Surface == ChainsawSurface.Wall)
+        {
+            bool foundWall =
+                foundContact &&
+                next.Surface == ChainsawSurface.Wall;
+
+            if (foundWall)
+            {
+                wallContactLostTime = 0f;
+            }
+            else
+            {
+                wallContactLostTime += deltaTime;
+
+                if (wallContactLostTime >= wallContactGraceTime)
+                {
+                    Debug.Log("[壁登り終了] 壁を見失って猶予時間が経過", this);
+
+                    Cancel(false);
+                    return;
+                }
+
+                // 接触が切れても、直前の壁情報で上昇を続ける。
+                next = contact;
+            }
         }
+        else
+        {
+            wallContactLostTime = 0f;
+
+            if (!foundContact)
+            {
+                if (IsDigging)
+                {
+                    Cancel(false);
+                }
+
+                return;
+            }
+        }
+        //if (!detector.TryGetContact(
+        //    contact.Collider,
+        //    out ChainsawContact next,
+        //    Surface,
+        //    facingDirection))
+        //{
+        //    if (IsDigging)
+        //    {
+        //        Cancel(false);
+        //    }
+
+        //    // まだ接触していなければ、構えたまま接触を待つ。
+        //    return;
+        //}
 
         if (IsDigging &&
             (next.Surface != Surface ||

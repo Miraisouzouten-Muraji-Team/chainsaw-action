@@ -768,6 +768,7 @@ MonoBehaviour:
   fallGravityIncreaseTime: 0.2
   maxFallSpeed: 20
   airJumpForce: 25
+  visualRoot: {fileID: 583300429}
   debugRotationSpeed: 0
   debugSpeedBonus: 0
   debugTargetSpeed: 0
@@ -887,7 +888,7 @@ MonoBehaviour:
   inputMode: 0
   bonusThreshold: 0.8
   floorSpeedDivisor: 5
-  floorDashPower: 10
+  floorDashPower: 30
   floorEvadeTime: 0.5
   wallConsumeInterval: 0.1
   wallConsumeAmount: 1
@@ -1604,7 +1605,7 @@ Transform:
   m_GameObject: {fileID: 1058200676}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -3.58, y: 0.25, z: 6.36}
+  m_LocalPosition: {x: -3.58, y: -0.67, z: 6.36}
   m_LocalScale: {x: 0.58752, y: 0.58752, z: 0.58752}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1686,8 +1687,8 @@ Transform:
   m_GameObject: {fileID: 1119529482}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 6.4825, y: -1.9871, z: 6.305}
-  m_LocalScale: {x: 3.7296298, y: 3.4576304, z: 1.7721}
+  m_LocalPosition: {x: 6.4825, y: -1.0675, z: 6.305}
+  m_LocalScale: {x: 3.7296298, y: 5.2967443, z: 1.7721}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 930024990}
@@ -1937,6 +1938,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawRotation
   minSpeed: 5
   maxSpeed: 50
+  diggingMaxSpeed: 35
   accelerationTime: 2
   decelerationTime: 2.5
   accelerationCurve:
@@ -1985,22 +1987,22 @@ MonoBehaviour:
       inWeight: 0
       outWeight: 0
     - serializedVersion: 3
-      time: 0.7
-      value: 0.3
-      inSlope: 1
-      outSlope: 1
+      time: 0.47221678
+      value: 0.31269532
+      inSlope: 1.9540911
+      outSlope: 1.9540911
       tangentMode: 0
       weightedMode: 0
-      inWeight: 0
-      outWeight: 0
+      inWeight: 0.09116605
+      outWeight: 1
     - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 5
-      outSlope: 5
+      time: 0.7041931
+      value: 0.9904785
+      inSlope: 4.213732
+      outSlope: 4.213732
       tangentMode: 0
       weightedMode: 0
-      inWeight: 0
+      inWeight: 0.077947706
       outWeight: 0
     m_PreInfinity: 2
     m_PostInfinity: 2

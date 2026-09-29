@@ -66,6 +66,8 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private Transform visualRoot;
 
     private Quaternion rightFacingRotation;
+    // 空中で攻撃を始めたときだけtrue。コンボ中は維持し、攻撃終了でfalseに戻す。
+    private bool attackGravityOff;
 
     // 実際に使用したジャンプ回数。
     private int jumpsUsed;
@@ -130,6 +132,12 @@ public class PlayerController : MonoBehaviour
                 : wallClimbSpeed;
         }
         Move();
+
+        // 空中で始めた攻撃の間は、左右に移動しない。
+        if (attackGravityOff)
+        {
+            currentSpeed = 0f;
+        }
 
         Vector3 velocity = playerRigidbody.linearVelocity;
         velocity.x = currentSpeed;
@@ -200,7 +208,14 @@ public class PlayerController : MonoBehaviour
             ignoreGroundUntil = Time.time + 0.1f;
         }
 
-        if (!suppressGravity)
+        if (attackGravityOff)
+        {
+            // 空中攻撃中はその場に留まる。
+            velocity.y = 0f;
+            ascentStartSpeed = 0f;
+            fallElapsedTime = 0f;
+        }
+        else if (!suppressGravity)
         {
             ApplyJumpGravity(ref velocity, deltaTime);
         }
@@ -444,6 +459,17 @@ public class PlayerController : MonoBehaviour
         velocity.y = Mathf.Max(velocity.y, -maxFallSpeed);
     }
 
+    private bool IsGrounded()
+    {
+        groundColliders.RemoveWhere(collider =>
+            collider == null ||
+            !collider.enabled ||
+            !collider.gameObject.activeInHierarchy);
+
+        return groundColliders.Count > 0 &&
+               Time.time >= ignoreGroundUntil;
+    }
+
     void OnCollisionEnter(Collision collision)
     {
         UpdateGroundContact(collision);
@@ -511,16 +537,16 @@ public class PlayerController : MonoBehaviour
         {
             jumpPending = false;
             chainsawDigging.Cancel(true);
+
+            // 空中で始めた攻撃だけ、無重力にする。
+            attackGravityOff = !IsGrounded();
+
             StartSlash(1);
         }
         else if (slashStep < 3)
         {
-            // 連打されても、次の1段だけを予約する。
-            // ここでは攻撃段数・攻撃データを変更しない。
             nextSlashReserved = true;
         }
-
-        // 3段目中は、新しいコンボを予約しない。
     }
 
     // アニメーションの進行に合わせて次段・終了を判断。
@@ -618,6 +644,7 @@ public class PlayerController : MonoBehaviour
         nextSlashReserved = false;
         slashStep = 0;
         CurrentAttackData = null;
+        attackGravityOff = false;
     }
 
     void OnDisable()

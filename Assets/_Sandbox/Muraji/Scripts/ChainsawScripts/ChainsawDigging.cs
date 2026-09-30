@@ -126,6 +126,14 @@ public class ChainsawDigging : MonoBehaviour
     private bool holdBlocked;
     private float pendingDash;
 
+    [Header("床から壁への切り替え")]
+    [Tooltip("壁を検出する直前に押していれば、壁登りになる猶予時間（秒）")]
+    [SerializeField, Min(0f)] private float wallClimbInputWindow = 0.2f;
+
+    private float lastPressTime = float.NegativeInfinity;
+    private bool hasPendingBounce;
+    private float pendingBounceDirection;
+
     private void Awake()
     {
         if (detector == null)
@@ -169,6 +177,11 @@ public class ChainsawDigging : MonoBehaviour
         if (!isActiveAndEnabled)
         {
             return;
+        }
+
+        if (pressed)
+        {
+            lastPressTime = Time.time;
         }
 
         if (!held)
@@ -316,6 +329,25 @@ public class ChainsawDigging : MonoBehaviour
 
             if (isFloorToWall)
             {
+                // 進行方向の前方にある壁かどうか。
+                bool isFrontWall = facingDirection * next.Normal.x < -0.1f;
+
+                bool timedPress =
+                    Time.time - lastPressTime <= wallClimbInputWindow;
+
+                if (isFrontWall && !timedPress)
+                {
+                    // 何もしていなければ壁登りに入らず、押し戻す。
+                    float bounceDirection = Mathf.Sign(next.Normal.x);
+
+                    // 食い込みを解除する。Cancelは予約もリセットするため、その後に設定する。
+                    Cancel(true);
+
+                    pendingBounceDirection = bounceDirection;
+                    hasPendingBounce = true;
+                    return;
+                }
+
                 // 食い込み要求を維持したまま、壁の情報へ切り替える。
                 contact = next;
                 Surface = ChainsawSurface.None;
@@ -437,6 +469,16 @@ public class ChainsawDigging : MonoBehaviour
             }
         }
     }
+    public bool TryTakeWallBounce(out float direction)
+    {
+        direction = pendingBounceDirection;
+
+        bool result = hasPendingBounce;
+        hasPendingBounce = false;
+        pendingBounceDirection = 0f;
+
+        return result;
+    }
 
     private void LogDiggingContact()
     {
@@ -544,7 +586,8 @@ public class ChainsawDigging : MonoBehaviour
     {
         power = pendingDash;
         pendingDash = 0f;
-
+        hasPendingBounce = false;
+        pendingBounceDirection = 0f;
         return power > 0f;
     }
 

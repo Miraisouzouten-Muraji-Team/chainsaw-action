@@ -87,6 +87,17 @@ public class PlayerController : MonoBehaviour
     // 壁に入ったときの移動速度を保持する。
     private float wallTravelSpeed;
 
+    [Header("壁に当たったときの押し戻し")]
+    [SerializeField, Min(0f)] private float knockbackSpeed = 8f;
+    [SerializeField, Min(0.01f)] private float knockbackDeceleration = 20f;
+
+    private float knockbackVelocity;
+
+    [Tooltip("跳ね返り時に上へ跳ぶ速さ。弧の高さになる")]
+    [SerializeField, Min(0f)] private float knockbackUpSpeed = 7f;
+
+    private bool knockbackHopPending;
+
     private void FixedUpdate()
     {
         float deltaTime = Time.fixedDeltaTime;
@@ -119,6 +130,13 @@ public class PlayerController : MonoBehaviour
 
         chainsawDigging.Tick(deltaTime, facingDirection);
 
+        if (chainsawDigging.TryTakeWallBounce(out float bounceDirection))
+        {
+            // 向きは変えず、壁から離れる方向へ押し戻し、上へ跳ぶ。
+            knockbackVelocity = bounceDirection * knockbackSpeed;
+            knockbackHopPending = true;
+        }
+
         bool enteredWall =
             previousSurface != ChainsawSurface.Wall &&
             chainsawDigging.Surface == ChainsawSurface.Wall;
@@ -133,6 +151,17 @@ public class PlayerController : MonoBehaviour
         }
         Move();
 
+        // 押し戻し中は、移動入力に関係なく押し戻し速度を優先する。
+        if (knockbackVelocity != 0f)
+        {
+            currentSpeed = knockbackVelocity;
+
+            knockbackVelocity = Mathf.MoveTowards(
+                knockbackVelocity,
+                0f,
+                knockbackDeceleration * deltaTime
+            );
+        }
         // 空中で始めた攻撃の間は、左右に移動しない。
         if (attackGravityOff)
         {
@@ -208,6 +237,20 @@ public class PlayerController : MonoBehaviour
             ignoreGroundUntil = Time.time + 0.1f;
         }
 
+        if (knockbackHopPending)
+        {
+            knockbackHopPending = false;
+
+            velocity.y = knockbackUpSpeed;
+
+            // 落下時の重力の加速をリセットし、上昇中の重力補正を効かせる。
+            ascentStartSpeed = knockbackUpSpeed;
+            fallElapsedTime = 0f;
+
+            groundColliders.Clear();
+            ignoreGroundUntil = Time.time + 0.1f;
+        }
+
         if (attackGravityOff)
         {
             // 空中攻撃中はその場に留まる。
@@ -225,7 +268,7 @@ public class PlayerController : MonoBehaviour
         playerRigidbody.linearVelocity = velocity;
 
         debugCurrentSpeed = velocity.x;
-        playerAnimator.SetSpeed(currentSpeed);
+        playerAnimator.SetSpeed(knockbackVelocity != 0f ? 0f : currentSpeed);
     }
     [Header("攻撃データ")]
     [SerializeField] AttackData slash1;

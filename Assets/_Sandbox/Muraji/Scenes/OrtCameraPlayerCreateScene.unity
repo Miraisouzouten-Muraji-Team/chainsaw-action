@@ -773,6 +773,9 @@ MonoBehaviour:
   debugSpeedBonus: 0
   debugTargetSpeed: 0
   debugCurrentSpeed: 0
+  knockbackSpeed: 12
+  knockbackDeceleration: 20
+  knockbackUpSpeed: 20
   slash1: {fileID: 11400000, guid: 8607520c691a1314eb0173541cd3397a, type: 2}
   slash2: {fileID: 11400000, guid: 5ea1d1f77eb496b498c1ab9404279355, type: 2}
   slash3: {fileID: 11400000, guid: e540abe81fcc379418b2cdafb563b6e8, type: 2}
@@ -905,6 +908,7 @@ MonoBehaviour:
   maxDamageMultiplier: 1.25
   bonusDamageMultiplier: 1.5
   wallContactGraceTime: 0.125
+  wallClimbInputWindow: 0.2
 --- !u!1 &598760721
 GameObject:
   m_ObjectHideFlags: 0

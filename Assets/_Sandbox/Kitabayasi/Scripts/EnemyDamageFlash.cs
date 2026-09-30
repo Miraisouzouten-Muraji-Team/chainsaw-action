@@ -14,7 +14,7 @@ using UnityEngine;
 /// 点滅中に再度PlayDamageFlashが呼ばれた場合は、
 /// 現在の点滅を停止し、白から点滅を再開始する。
 /// </remarks>
-/// 
+///
 public class EnemyDamageFlash : MonoBehaviour
 {
     [Header("参照")]

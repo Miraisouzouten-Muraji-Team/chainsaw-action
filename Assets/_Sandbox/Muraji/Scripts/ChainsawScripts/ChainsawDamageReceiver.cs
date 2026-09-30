@@ -1,8 +1,6 @@
 using System.Collections.ObjectModel;
 using UnityEngine;
-using UnityEngine.Events;
 
-// AttackDataのフィールドはhitStopTime以外が未提供なので、基礎ダメージは受信側で決定。
 public sealed class ChainsawHitInfo
 {
     public AttackData AttackData { get; }
@@ -10,7 +8,12 @@ public sealed class ChainsawHitInfo
     public Vector3 HitPoint { get; }
     public bool IsDigging { get; }
     public ReadOnlyCollection<ChainsawTrajectorySample> Trajectory { get; }
-    public ChainsawHitInfo(AttackData data, float multiplier, Vector3 point, bool digging,
+
+    public ChainsawHitInfo(
+        AttackData data,
+        float multiplier,
+        Vector3 point,
+        bool digging,
         ReadOnlyCollection<ChainsawTrajectorySample> trajectory)
     {
         AttackData = data;
@@ -21,34 +24,90 @@ public sealed class ChainsawHitInfo
     }
 }
 
-// 敵ルートに追加。既存HPへ接続する場合はUse Test HealthをOFFにする。
-// 独自クラスで継承しReceiveHitをoverrideすればSOと軌跡もそのまま利用可能。
+
 public class ChainsawDamageReceiver : MonoBehaviour
 {
-    [SerializeField, Min(0f)] private float baseDamage = 10f;
-    [SerializeField] private bool useTestHealth = true;
-    [SerializeField, Min(1f)] private float testMaxHealth = 100f;
-    [SerializeField] private UnityEvent<float> onDamage = new UnityEvent<float>();
-    [SerializeField] private UnityEvent onDefeated = new UnityEvent();
+    [SerializeField, Min(0f)]
+    private float baseDamage = 10f;
+
+    [SerializeField]
+    private bool useHealth = true;
+
+    [SerializeField, Min(1f)]
+    private float enemyMaxHealth = 100f;
+
+
     public float TestHealth { get; private set; }
+
     public ChainsawHitInfo LastHit { get; private set; }
-    public virtual bool CanReceiveHit => isActiveAndEnabled && (!useTestHealth || TestHealth > 0f);
-    protected virtual void Awake() { ResetTestHealth(); }
-    public void ResetTestHealth() { TestHealth = testMaxHealth; }
+
+
+    public virtual bool CanReceiveHit =>
+        isActiveAndEnabled &&
+        (!useHealth || TestHealth > 0f);
+
+
+    protected virtual void Awake()
+    {
+        ResetTestHealth();
+    }
+
+
+    public void ResetTestHealth()
+    {
+        TestHealth = enemyMaxHealth;
+    }
+
 
     public virtual bool ReceiveHit(ChainsawHitInfo hit)
     {
-        if (!CanReceiveHit) return false;
+        if (!CanReceiveHit)
+            return false;
+
+
         LastHit = hit;
-        float damage = baseDamage * Mathf.Max(0f, hit.DamageMultiplier);
-        bool defeated = false;
-        if (useTestHealth)
+
+
+        float damage =
+            baseDamage *
+            Mathf.Max(0f, hit.DamageMultiplier);
+
+
+        if (useHealth)
         {
-            TestHealth = Mathf.Max(0f, TestHealth - damage);
-            defeated = TestHealth <= 0f;
+            TestHealth =
+                Mathf.Max(0f, TestHealth - damage);
         }
-        onDamage.Invoke(damage);
-        if (defeated) onDefeated.Invoke();
+
+
+        bool defeated =
+            useHealth &&
+            TestHealth <= 0f;
+
+
+        // ここに直接処理を書く
+        if (defeated)
+        {
+            OnDefeated();
+        }
+        else
+        {
+            OnDamage(damage);
+        }
+
+
         return true;
+    }
+
+
+    protected virtual void OnDamage(float damage)
+    {
+        Debug.Log($"Enemy Damage : {damage}");
+    }
+
+
+    protected virtual void OnDefeated()
+    {
+        Debug.Log("Enemy Defeated");
     }
 }

@@ -1,4 +1,6 @@
-using System.Collections;
+using System;
+using System.Threading;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 
 /// <summary>
@@ -39,13 +41,13 @@ public class EnemyDamageFlash : MonoBehaviour
     private Material[][] whiteFlashMaterials;
     private Material[][] blackFlashMaterials;
 
-
-    private Coroutine flashCoroutine;
+    // 実行中の点滅処理をキャンセルするために使用する。
+    private CancellationTokenSource flashCts;
 
     /// <summary>
     /// 元のMaterialを退避済みかを示す。
     /// 点滅中に再度呼ばれた際、白・黒Materialを元Materialとして保存しないために使用する。
-    /// <summary>
+    /// </summary>
     private bool hasCapturedOriginalMaterials;
 
     private void Awake()
@@ -58,7 +60,6 @@ public class EnemyDamageFlash : MonoBehaviour
         StopActiveFlash();
         RestoreOriginalMaterials();
     }
-
 
     /// <summary>
     /// ダメージ点滅を開始する。
@@ -76,32 +77,61 @@ public class EnemyDamageFlash : MonoBehaviour
             CaptureOriginalMaterials();
         }
 
+        // 既に点滅中の場合は古い処理をキャンセルし、
+        // 新しい点滅処理へ切り替える。
         StopActiveFlash();
 
-        flashCoroutine = StartCoroutine(FlashCoroutine());
-    }
+        flashCts = new CancellationTokenSource();
 
+        PlayDamageFlashAsync(flashCts).Forget();
+    }
 
     /// <summary>
     /// 白→黒→元のMaterialへ戻す点滅処理を時間経過で実行する。
     /// </summary>
-    private IEnumerator FlashCoroutine()
+    private async UniTask PlayDamageFlashAsync(
+        CancellationTokenSource cts)
     {
         float halfDuration = flashDuration * 0.5f;
 
         ApplyFlashMaterials(whiteFlashMaterials);
 
-        yield return new WaitForSeconds(halfDuration);
+        // 元のWaitForSecondsと同様にTime.timeScaleの影響を受ける時間で待機する。
+        bool isCanceled = await UniTask.Delay(
+                TimeSpan.FromSeconds(halfDuration),
+                ignoreTimeScale: false,
+                cancellationToken: cts.Token)
+            .SuppressCancellationThrow();
+
+        // キャンセルされた処理、または既に新しい点滅処理へ
+        // 切り替わっている場合は以降のMaterial変更を行わない。
+        if (isCanceled ||
+            !ReferenceEquals(flashCts, cts))
+        {
+            return;
+        }
 
         ApplyFlashMaterials(blackFlashMaterials);
 
-        yield return new WaitForSeconds(halfDuration);
+        isCanceled = await UniTask.Delay(
+                TimeSpan.FromSeconds(halfDuration),
+                ignoreTimeScale: false,
+                cancellationToken: cts.Token)
+            .SuppressCancellationThrow();
+
+        // キャンセルされた処理、または既に新しい点滅処理へ
+        // 切り替わっている場合は元Materialへの復元を行わない。
+        if (isCanceled ||
+            !ReferenceEquals(flashCts, cts))
+        {
+            return;
+        }
 
         RestoreOriginalMaterials();
 
-        flashCoroutine = null;
+        flashCts = null;
+        cts.Dispose();
     }
-
 
     /// <summary>
     /// Renderer数と各RendererのMaterial数に合わせて、
@@ -135,7 +165,6 @@ public class EnemyDamageFlash : MonoBehaviour
                 CreateFlashMaterialArray(materialCount, blackFlashMaterial);
         }
     }
-
 
     /// <summary>
     /// 点滅開始前のMaterial構成を保存する。
@@ -174,7 +203,6 @@ public class EnemyDamageFlash : MonoBehaviour
         hasCapturedOriginalMaterials = true;
     }
 
-
     /// <summary>
     /// 指定された点滅用Material配列を対象Rendererへ適用する。
     /// </summary>
@@ -196,7 +224,6 @@ public class EnemyDamageFlash : MonoBehaviour
             targetRenderer.sharedMaterials = flashMaterials[i];
         }
     }
-
 
     /// <summary>
     /// 点滅前に保存したMaterial構成を各Rendererへ戻す。
@@ -225,21 +252,20 @@ public class EnemyDamageFlash : MonoBehaviour
         hasCapturedOriginalMaterials = false;
     }
 
-
     /// <summary>
-    /// 実行中の点滅Coroutineがあれば停止する。
+    /// 実行中の点滅処理があればキャンセルする。
     /// </summary>
     private void StopActiveFlash()
     {
-        if (flashCoroutine == null)
+        if (flashCts == null)
         {
             return;
         }
 
-        StopCoroutine(flashCoroutine);
-        flashCoroutine = null;
+        flashCts.Cancel();
+        flashCts.Dispose();
+        flashCts = null;
     }
-
 
     /// <summary>
     /// 点滅処理を実行するために必要な設定が揃っているか確認する。
@@ -279,7 +305,6 @@ public class EnemyDamageFlash : MonoBehaviour
 
         return true;
     }
-
 
     /// <summary>
     /// 指定されたMaterialを必要なスロット数だけ格納した配列を生成する。

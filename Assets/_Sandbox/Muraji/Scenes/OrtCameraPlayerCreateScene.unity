@@ -2081,8 +2081,8 @@ MonoBehaviour:
   hitBox: {fileID: 1474968308}
   hitParticle: {fileID: 6176228616533195752, guid: 8b653b8ed8f598c42baa0eca3fd64bea, type: 3}
   cameraShake: {fileID: 1850938001}
-  duration: 0.1
-  magnitude: 0.1
+  duration: 0.05
+  magnitude: 0.05
   hitStopSystem: {fileID: 630910035}
   trajectoryRecorder: {fileID: 0}
   diggingHitStopTime: 0

@@ -1,198 +1,226 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 
+// TickはPlayerController.FixedUpdateから1回だけ呼ぶ。
 public class ChainsawAccelerator : MonoBehaviour
 {
-    private const float TRIGGER_THRESHOLD = 0.1f;
     private const float MIN_TRANSITION_DURATION = 0.01f;
 
-    [Header("回転速度（回転 / 秒）")]
-    [SerializeField] private float minSpeed = 5f;
-    [SerializeField] private float maxSpeed = 50f;
+    private enum TransitionMode
+    {
+        Accelerating,
+        Decelerating,
+        SettlingToDiggingLimit
+    }
 
-    [Header("変化にかかる時間（秒）")]
+    [Header("回転速度（回転 / 秒）")]
+    [Tooltip("アクセルを離したときの目標値")]
+    [SerializeField, Min(0f)]
+    private float minSpeed = 5f;
+
+    [Tooltip("食い込んでいないときの上限")]
+    [SerializeField, Min(0.01f)]
+    private float maxSpeed = 50f;
+
+    [Tooltip("食い込み中の目標上限")]
+    [SerializeField, Min(0.01f)]
+    private float diggingMaxSpeed = 35f;
+
+    [Header("加速／減速にかかる時間")]
+    [Tooltip("加速曲線の再生時間（秒）")]
     [SerializeField, Min(MIN_TRANSITION_DURATION)]
     private float accelerationTime = 2f;
 
+    [Tooltip("減速曲線の再生時間（秒）。50→35にも使用")]
     [SerializeField, Min(MIN_TRANSITION_DURATION)]
     private float decelerationTime = 2.5f;
 
-    [Header("加速カーブ：左下(0,0) → 右上(1,1)")]
+    [Tooltip("横軸：時間、縦軸：加速の進み具合（0→1）")]
     [SerializeField]
     private AnimationCurve accelerationCurve = new AnimationCurve(
-        new Keyframe(0f, 0f, 0f, 0f),
+        new Keyframe(0f, 0f),
         new Keyframe(0.5f, 0.5f, 3f, 3f),
-        new Keyframe(1f, 1f, 0f, 0f)
+        new Keyframe(1f, 1f)
     );
 
-    [Header("減速の進行カーブ：左下(0,0) → 右上(1,1)")]
+    [Tooltip("横軸：時間、縦軸：減速の進み具合（0→1）")]
     [SerializeField]
     private AnimationCurve decelerationCurve = new AnimationCurve(
-        new Keyframe(0f, 0f, 0f, 0f),
+        new Keyframe(0f, 0f),
         new Keyframe(0.7f, 0.3f, 1f, 1f),
-        new Keyframe(1f, 1f, 5f, 5f)
+        new Keyframe(1f, 1f)
     );
 
-    [Header("食い込みのテスト設定")]
-    [SerializeField] private bool isBiting;
-
-    // 最高速度に掛ける倍率。
-    [SerializeField, Range(0f, 1f)]
-    private float resistance = 0.7f;
-
-    [Header("SEピッチの計算用")]
+    [Header("SEピッチ")]
     [SerializeField] private float minPitch = 0.8f;
     [SerializeField] private float maxPitch = 1.8f;
 
-    [Header("Consoleへの表示間隔(秒)")]
-    [SerializeField, Min(0.05f)]
-    private float logInterval = 0.2f;
-
     public float CurrentSpeed { get; private set; }
-    public float CurrentPitch { get; private set; }
 
-    private bool previousAccelerating;
-    private bool previousBiting;
-    private float previousResistance;
+    public float MaxSpeed => Mathf.Max(0.01f, maxSpeed);
 
-    private float startSpeed;
-    private float targetSpeed;
-    private float elapsedTime;
-    private float transitionDuration;
-    private bool increasing;
-    private float logTimer;
+    // ボーナス・威力・SEの基準は通常上限の50を維持する。
+    public float SpeedRatio =>
+        Mathf.Clamp01(CurrentSpeed / MaxSpeed);
 
-    private void Start()
+    public float PowerRatio =>
+        Mathf.InverseLerp(minSpeed, MaxSpeed, CurrentSpeed);
+
+    public float CurrentPitch =>
+        Mathf.Lerp(minPitch, maxPitch, PowerRatio);
+
+    private float transitionTime;
+    private float transitionRange;
+    private float previousLimit;
+
+    private bool wasDigging;
+    private bool transitionInitialized;
+
+    private TransitionMode transitionMode;
+
+    private void Awake()
     {
         CurrentSpeed = minSpeed;
-        CurrentPitch = minPitch;
-
-        previousBiting = isBiting;
-        previousResistance = resistance;
-
-        BeginTransition(false);
     }
 
-    private void Update()
+    public void Tick(
+        bool isAccelerating,
+        float deltaTime,
+        bool isDigging = false)
     {
-        Gamepad gamepad = Gamepad.current;
-        Keyboard keyboard = Keyboard.current;
-
-        // RT、またはRキー長押しで加速。
-        bool accelerating =
-            (gamepad != null &&
-             gamepad.rightTrigger.ReadValue() > TRIGGER_THRESHOLD) ||
-            (keyboard != null && keyboard.rKey.isPressed);
-
-        // Bボタン、またはEキーで食い込み状態を切り替える。
-        if ((gamepad != null &&
-             gamepad.buttonEast.wasPressedThisFrame) ||
-            (keyboard != null && keyboard.eKey.wasPressedThisFrame))
+        if (deltaTime <= 0f)
         {
-            isBiting = !isBiting;
+            return;
         }
 
-        // 入力・食い込み状態・抵抗力が変わったときに開始する。
-        if (accelerating != previousAccelerating ||
-            isBiting != previousBiting ||
-            !Mathf.Approximately(resistance, previousResistance))
-        {
-            BeginTransition(accelerating);
+        float limit = isDigging
+            ? Mathf.Clamp(diggingMaxSpeed, minSpeed, MaxSpeed)
+            : MaxSpeed;
 
-            previousAccelerating = accelerating;
-            previousBiting = isBiting;
-            previousResistance = resistance;
+        bool enteredDigging = isDigging && !wasDigging;
+        bool diggingChanged = isDigging != wasDigging;
+
+        TransitionMode nextMode;
+
+        if (!isAccelerating)
+        {
+            // アクセルを離した場合は最低速度へ減速。
+            nextMode = TransitionMode.Decelerating;
+        }
+        else if (isDigging && CurrentSpeed > limit)
+        {
+            // アクセルを踏んでいても、上限超過分は徐々に減速。
+            nextMode = TransitionMode.SettlingToDiggingLimit;
+        }
+        else
+        {
+            nextMode = TransitionMode.Accelerating;
         }
 
-        elapsedTime += Time.deltaTime;
+        bool restartTransition =
+            !transitionInitialized ||
+            diggingChanged ||
+            nextMode != transitionMode ||
+            !Mathf.Approximately(limit, previousLimit);
 
-        float progress = Mathf.Clamp01(
-            elapsedTime / transitionDuration
+        if (restartTransition)
+        {
+            transitionMode = nextMode;
+            transitionTime = 0f;
+
+            // 50→35の場合は、差の15を曲線に沿って減らす。
+            transitionRange =
+                transitionMode == TransitionMode.SettlingToDiggingLimit
+                    ? Mathf.Max(0f, CurrentSpeed - limit)
+                    : Mathf.Max(0.01f, limit - minSpeed);
+
+            previousLimit = limit;
+            transitionInitialized = true;
+        }
+
+        wasDigging = isDigging;
+
+        // 食い込み開始時は現在の値をそのまま引き継ぐ。
+        if (enteredDigging)
+        {
+            return;
+        }
+
+        bool increasing =
+            transitionMode == TransitionMode.Accelerating;
+
+        float duration = Mathf.Max(
+            MIN_TRANSITION_DURATION,
+            increasing ? accelerationTime : decelerationTime
         );
 
         AnimationCurve curve = increasing
             ? accelerationCurve
             : decelerationCurve;
 
-        float curveValue = Mathf.Clamp01(
-            curve.Evaluate(progress)
+        float previous = Mathf.Clamp01(transitionTime / duration);
+
+        transitionTime += deltaTime;
+
+        float next = Mathf.Clamp01(transitionTime / duration);
+
+        float difference = Mathf.Max(
+            0f,
+            Evaluate(curve, next) - Evaluate(curve, previous)
         );
 
-        CurrentSpeed = Mathf.Lerp(
-            startSpeed,
-            targetSpeed,
-            curveValue
-        );
-
-        // 終了時は確実に目標速度へ合わせる。
-        if (progress >= 1f)
+        // 曲線終了後も、消費した回転数を回復できるようにする。
+        if (previous >= 1f)
         {
-            CurrentSpeed = targetSpeed;
+            difference = deltaTime / duration;
         }
 
-        // 回転速度からSE用のピッチ値を計算する。
-        float speedRatio = Mathf.InverseLerp(
-            minSpeed,
-            maxSpeed,
-            CurrentSpeed
+        float amount = difference * transitionRange;
+
+        float target =
+            transitionMode == TransitionMode.Decelerating
+                ? minSpeed
+                : limit;
+
+        // 差分で更新し、攻撃などで消費した値を上書きしない。
+        CurrentSpeed = Mathf.MoveTowards(
+            CurrentSpeed,
+            target,
+            amount
         );
 
-        CurrentPitch = Mathf.Lerp(
-            minPitch,
-            maxPitch,
-            speedRatio
-        );
-
-        logTimer += Time.unscaledDeltaTime;
-
-        if (logTimer >= logInterval)
-        {
-            logTimer = 0f;
-
-            //Debug.Log(
-            //    $"[チェーンソー] " +
-            //    $"RT:{(accelerating ? "ON" : "OFF")} | " +
-            //    $"食い込み:{(isBiting ? "ON" : "OFF")} | " +
-            //    $"抵抗力:{(isBiting ? resistance : 1f):F2} | " +
-            //    $"回転速度:{CurrentSpeed:F2} 回転/秒 | " +
-            //    $"目標:{targetSpeed:F2} | " +
-            //    $"SEピッチ:{CurrentPitch:F2}",
-            //    this
-            //);
-        }
+        // 35ではClampしない。移行中は35を超える値を許可する。
+        CurrentSpeed = Mathf.Clamp(CurrentSpeed, 0f, MaxSpeed);
     }
 
-    private void BeginTransition(bool accelerating)
+    private static float Evaluate(AnimationCurve curve, float time)
     {
-        float multiplier = isBiting ? resistance : 1f;
+        return curve == null || curve.length == 0
+            ? time
+            : Mathf.Clamp01(curve.Evaluate(time));
+    }
 
-        // 食い込み中でも最低速度は下回らない。
-        float speedLimit = Mathf.Max(
+    public bool TryConsume(float amount)
+    {
+        amount = Mathf.Max(0f, amount);
+
+        if (CurrentSpeed + 0.0001f < amount)
+        {
+            return false;
+        }
+
+        CurrentSpeed = Mathf.Max(0f, CurrentSpeed - amount);
+        return true;
+    }
+
+    private void OnValidate()
+    {
+        minSpeed = Mathf.Max(0f, minSpeed);
+        maxSpeed = Mathf.Max(minSpeed + 0.01f, maxSpeed);
+
+        diggingMaxSpeed = Mathf.Clamp(
+            diggingMaxSpeed,
             minSpeed,
-            maxSpeed * multiplier
+            maxSpeed
         );
-
-        // テスト版では食い込んだ瞬間に速度上限を適用する。
-        CurrentSpeed = Mathf.Clamp(
-            CurrentSpeed,
-            minSpeed,
-            speedLimit
-        );
-
-        startSpeed = CurrentSpeed;
-        targetSpeed = accelerating ? speedLimit : minSpeed;
-        increasing = targetSpeed > startSpeed;
-
-        // 食い込み中の減速時間は、通常の減速時間 × 抵抗力。
-        transitionDuration = accelerating
-            ? accelerationTime
-            : decelerationTime * multiplier;
-
-        transitionDuration = Mathf.Max(
-            MIN_TRANSITION_DURATION,
-            transitionDuration
-        );
-
-        elapsedTime = 0f;
     }
 }

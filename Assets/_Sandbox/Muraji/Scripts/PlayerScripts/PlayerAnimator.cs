@@ -34,6 +34,11 @@ public class PlayerAnimator : MonoBehaviour
     [Header("食い込みアニメーション")]
     [SerializeField]
     private string diggingState = "Base Layer.Digging";
+    [Tooltip("空欄または未作成ならDiggingを使用")]
+    [SerializeField] private string wallDiggingState = "";
+    [SerializeField] private string ceilingDiggingState = "";
+    [SerializeField] private string enemyDiggingState = "";
+    [SerializeField] private string jumpState = "Base Layer.Jump";
 
     private DiggingAnimationPhase diggingAnimationPhase;
     private int diggingStateHash;
@@ -48,6 +53,11 @@ public class PlayerAnimator : MonoBehaviour
     // 食い込み開始時にControllerから呼ぶ。
     public bool StartDiggingAnimation()
     {
+        return StartDiggingAnimation(ChainsawSurface.Floor);
+    }
+
+    public bool StartDiggingAnimation(ChainsawSurface surface)
+    {
         if (animator == null)
         {
             animator = GetComponent<Animator>();
@@ -61,10 +71,26 @@ public class PlayerAnimator : MonoBehaviour
         // 再生中に何度も先頭へ戻さない。
         if (IsDiggingAnimationActive)
         {
-            return false;
+            CancelDiggingAnimation();
         }
 
-        diggingStateHash = Animator.StringToHash(diggingState);
+        bool hasPlaybackSpeed = false;
+        foreach (AnimatorControllerParameter parameter in animator.parameters)
+        {
+            if (parameter.name == DIGGING_PLAYBACK_SPEED && parameter.type == AnimatorControllerParameterType.Float)
+                hasPlaybackSpeed = true;
+        }
+        if (!hasPlaybackSpeed)
+        {
+            Debug.LogError("AnimatorにFloatのDiggingPlaybackSpeedを追加し、DiggingステートのSpeed Multiplierに設定してください。", this);
+            return false;
+        }
+        string path = surface == ChainsawSurface.Wall ? wallDiggingState :
+            surface == ChainsawSurface.Ceiling ? ceilingDiggingState :
+            surface == ChainsawSurface.Enemy ? enemyDiggingState : diggingState;
+        if (string.IsNullOrEmpty(path) || !animator.HasState(0, Animator.StringToHash(path)))
+            path = diggingState;
+        diggingStateHash = Animator.StringToHash(path);
 
         if (!animator.HasState(0, diggingStateHash) ||
             !animator.HasState(0, Animator.StringToHash(idleState)))
@@ -85,8 +111,8 @@ public class PlayerAnimator : MonoBehaviour
         diggingAnimationPhase = DiggingAnimationPhase.Starting;
         diggingStartFrame = Time.frameCount;
 
+        animator.SetBool("IsDigging", true);
         animator.Play(diggingStateHash, 0, 0f);
-
         return true;
     }
 
@@ -139,6 +165,7 @@ public class PlayerAnimator : MonoBehaviour
         if (animator != null)
         {
             animator.SetFloat(DIGGING_PLAYBACK_SPEED, 1f);
+            animator.SetBool("IsDigging", false);
         }
     }
 
@@ -208,12 +235,29 @@ public class PlayerAnimator : MonoBehaviour
 
     public void SetSpeed(float speed)
     {
+        // 移動速度を通知。
         animator.SetFloat("Speed", Mathf.Abs(speed));
+
+        // 食い込みアニメーション中かを通知。
+        // 終了モーション中もtrueを維持する。
+        animator.SetBool("IsDigging", IsDiggingAnimationActive);
     }
 
     public void PlayJump()
     {
-        animator.SetTrigger("Jump");
+        CancelDiggingAnimation();
+        int jumpHash = Animator.StringToHash(jumpState);
+        if (animator.HasState(0, jumpHash)) animator.Play(jumpHash, 0, 0f);
+        else animator.SetTrigger("Jump");
+    }
+
+    public void ExitDiggingImmediately()
+    {
+        bool wasDigging = IsDiggingAnimationActive;
+        CancelDiggingAnimation();
+        if (wasDigging && animator != null && animator.isActiveAndEnabled &&
+            animator.GetCurrentAnimatorStateInfo(0).fullPathHash == diggingStateHash)
+            animator.Play(idleState, 0, 0f);
     }
 
     public void PlayWedgie()
@@ -266,6 +310,7 @@ public class PlayerAnimator : MonoBehaviour
             slashTrailEffect.ClearTrail();
         }
 
+        CancelDiggingAnimation();
         // 前段の判定を閉じ、次段のヒットストップ時間を固定。
         attackHitBox.BeginAttack(data);
 

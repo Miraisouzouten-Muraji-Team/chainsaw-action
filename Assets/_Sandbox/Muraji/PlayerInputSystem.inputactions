@@ -55,6 +55,16 @@
                     "interactions": "",
                     "initialStateCheck": false,
                     "priority": 0
+                },
+                {
+                    "name": "Accelerate",
+                    "type": "Button",
+                    "id": "2024d991-d8fe-407c-baf9-48984c2ef433",
+                    "expectedControlType": "",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false,
+                    "priority": 0
                 }
             ],
             "bindings": [
@@ -225,6 +235,17 @@
                 },
                 {
                     "name": "",
+                    "id": "0354ffc5-df50-4a58-86bb-1ddecad948f5",
+                    "path": "<Gamepad>/buttonSouth",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Jump",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
                     "id": "c09368d1-3286-47c7-a0fa-ba2ed9b100f3",
                     "path": "<Keyboard>/e",
                     "interactions": "",
@@ -242,6 +263,28 @@
                     "processors": "",
                     "groups": "",
                     "action": "Slash",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "4c56e750-ad45-4b38-b4d9-666cffbb8a00",
+                    "path": "<Keyboard>/r",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Accelerate",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "f421cba0-7190-4cca-accc-0ca0f196ea82",
+                    "path": "<Gamepad>/rightTrigger",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Accelerate",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 50c86e8e8e4e07a4a81877cbc1e3f5ef, type: 3}
   m_Name: Slash1Data
   m_EditorClassIdentifier: Assembly-CSharp::AttackData
-  damage: 0
+  damage: 5
   hitStopTime: 0.05
   attackVector: 0
   attackMoveRange: 0

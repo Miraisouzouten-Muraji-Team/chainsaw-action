@@ -15,6 +15,16 @@ public class ChainsawAttack : MonoBehaviour
     [Header("食い込みの演出（0秒ならヒットストップなし）")]
     [SerializeField, Min(0f)] private float diggingHitStopTime = 0f;
     [SerializeField] private bool shakeOnDigging = false;
+
+    [Header("新軌跡記録（IAttackHitReceiver送信用）")]
+    [SerializeField] private ChainsawBladeTrajectoryRecorder bladeTrajectoryRecorder;
+    [Tooltip("ONにすると、軌跡記録と命中送信の状況をConsoleへ出力する。")]
+    [SerializeField] private bool enableTrajectoryDebugLog = true;
+    [Tooltip("RecordSampleのログを何回ごとに出すか。1なら毎回。")]
+    [SerializeField, Min(1)] private int sampleLogInterval = 10;
+    private int sampleCallCount;
+    private const string LogPrefix = "[ChainsawTrail] ";
+
     private AttackData currentData;
     private float attackHitStopTime;
     private bool attackPrepared;
@@ -30,6 +40,21 @@ public class ChainsawAttack : MonoBehaviour
         if (cameraShake == null) cameraShake = FindAnyObjectByType<CameraShake_System>();
         if (hitStopSystem == null) hitStopSystem = FindAnyObjectByType<HitStop_System>();
         if (trajectoryRecorder == null) trajectoryRecorder = GetComponent<ChainsawTrajectoryRecorder>();
+        if (bladeTrajectoryRecorder == null) bladeTrajectoryRecorder = GetComponent<ChainsawBladeTrajectoryRecorder>();
+    }
+
+    private void FixedUpdate()
+    {
+        // 記録中のみサンプルを追加する。
+        if (bladeTrajectoryRecorder == null || !bladeTrajectoryRecorder.IsRecording) return;
+
+        bladeTrajectoryRecorder.RecordSample();
+        sampleCallCount++;
+
+        if (enableTrajectoryDebugLog && sampleCallCount % sampleLogInterval == 0)
+        {
+            Debug.Log(LogPrefix + $"記録中: サンプル数={bladeTrajectoryRecorder.RecordedSampleCount}", this);
+        }
     }
 
     public void BeginAttack(AttackData data)
@@ -41,6 +66,7 @@ public class ChainsawAttack : MonoBehaviour
         attackHitStopTime = Mathf.Max(0f, data.hitStopTime);
         attackPrepared = true;
         trajectoryRecorder?.BeginRecording();
+        BeginBladeRecording("攻撃開始", data);
     }
     public void EnableHitBox()
     {
@@ -60,25 +86,32 @@ public class ChainsawAttack : MonoBehaviour
         currentData = null;
         attackHitStopTime = 0f;
         hitEnemies.Clear();
-        if (!diggingActive) trajectoryRecorder?.EndRecording();
+        if (!diggingActive)
+        {
+            trajectoryRecorder?.EndRecording();
+            EndBladeRecording("攻撃終了");
+        }
     }
     public void BeginDigging()
     {
         EndAttack();
         diggingActive = true;
         trajectoryRecorder?.BeginRecording();
+        BeginBladeRecording("食い込み開始", null);
     }
     public void EndDigging()
     {
         if (!diggingActive) return;
         diggingActive = false;
         trajectoryRecorder?.EndRecording();
+        EndBladeRecording("食い込み終了");
     }
     public bool HitDigging(ChainsawDamageReceiver enemy, AttackData data, float multiplier, Vector3 point)
     {
         if (!isActiveAndEnabled || !diggingActive || enemy == null || data == null) return false;
         ChainsawHitInfo hit = CreateHit(data, multiplier, point, true);
         if (!enemy.ReceiveHit(hit)) return false;
+        SendAttackHit(enemy, data);
         PlayHitEffects(point, diggingHitStopTime, shakeOnDigging);
         return true;
     }
@@ -101,6 +134,7 @@ public class ChainsawAttack : MonoBehaviour
         hitEnemies.Add(enemy);
         if (!enemy.ReceiveHit(CreateHit(currentData, 1f, point, false)))
         { hitEnemies.Remove(enemy); return; }
+        SendAttackHit(other, currentData);
         PlayHitEffects(point, attackHitStopTime, true);
     }
     private void PlayHitEffects(Vector3 point, float hitStop, bool shake)
@@ -114,5 +148,83 @@ public class ChainsawAttack : MonoBehaviour
             particleSystem.main.duration + particleSystem.main.startLifetime.constantMax;
         Destroy(particle, lifetime);
     }
+
+    /// <summary>新Recorderの記録を開始する。</summary>
+    private void BeginBladeRecording(string label, ScriptableObject attackData)
+    {
+        if (bladeTrajectoryRecorder == null) return;
+
+        sampleCallCount = 0;
+        bool started = bladeTrajectoryRecorder.BeginRecording();
+
+        if (enableTrajectoryDebugLog)
+        {
+            Debug.Log(
+                LogPrefix + $"{label}: 記録開始={(started ? "成功" : "失敗")}, " +
+                $"攻撃データ={(attackData != null ? attackData.name : "なし")}",
+                this);
+        }
+    }
+
+    /// <summary>新Recorderの記録を終了する。記録していなければ何もしない。</summary>
+    private void EndBladeRecording(string label)
+    {
+        if (bladeTrajectoryRecorder == null || !bladeTrajectoryRecorder.IsRecording) return;
+
+        ChainsawAttackTrajectory finalTrajectory = bladeTrajectoryRecorder.EndRecording();
+
+        if (enableTrajectoryDebugLog)
+        {
+            Debug.Log(
+                LogPrefix + (finalTrajectory != null
+                    ? $"{label}: 最終サンプル数={finalTrajectory.SampleCount}"
+                    : $"{label}: 軌跡サンプルなし"),
+                this);
+        }
+    }
+
+    /// <summary>
+    /// 命中対象のIAttackHitReceiverへ、PlayerAttackHitDataを送る。
+    /// 軌跡の記録自体は継続する。
+    /// </summary>
+    private void SendAttackHit(Component target, ScriptableObject attackData)
+    {
+        if (bladeTrajectoryRecorder == null || target == null) return;
+
+        if (!bladeTrajectoryRecorder.TryCreateTrajectorySnapshot(out ChainsawAttackTrajectory trajectory))
+        {
+            if (enableTrajectoryDebugLog)
+            {
+                Debug.LogWarning(
+                    LogPrefix + $"命中したが軌跡サンプルが0件のため送信しません: 対象={target.name}",
+                    target);
+            }
+            return;
+        }
+
+        IAttackHitReceiver receiver = target.GetComponentInParent<IAttackHitReceiver>();
+        if (receiver == null)
+        {
+            if (enableTrajectoryDebugLog)
+            {
+                Debug.LogWarning(
+                    LogPrefix + $"命中対象にIAttackHitReceiverがありません: 対象={target.name}",
+                    target);
+            }
+            return;
+        }
+
+        receiver.ReceiveAttackHit(new PlayerAttackHitData(attackData, trajectory));
+
+        if (enableTrajectoryDebugLog)
+        {
+            Debug.Log(
+                LogPrefix + $"命中情報を送信: 対象={target.name}, " +
+                $"攻撃データ={(attackData != null ? attackData.name : "なし")}, " +
+                $"軌跡サンプル数={trajectory.SampleCount}",
+                target);
+        }
+    }
+
     private void OnDisable() { EndDigging(); EndAttack(); }
 }

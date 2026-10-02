@@ -27,6 +27,7 @@ public sealed class ChainsawHitInfo
 
 public class ChainsawDamageReceiver : MonoBehaviour
 {
+    [Tooltip("AttackDataが無い場合のみ使用するフォールバックのダメージ。")]
     [SerializeField, Min(0f)]
     private float baseDamage = 10f;
 
@@ -69,7 +70,7 @@ public class ChainsawDamageReceiver : MonoBehaviour
 
 
         float damage =
-            baseDamage *
+            GetBaseDamage(hit) *
             Mathf.Max(0f, hit.DamageMultiplier);
 
 
@@ -97,6 +98,15 @@ public class ChainsawDamageReceiver : MonoBehaviour
 
 
         return true;
+    }
+
+
+    private float GetBaseDamage(ChainsawHitInfo hit)
+    {
+        if (hit.AttackData == null)
+            return baseDamage;
+
+        return hit.AttackData.damage;
     }
 
 

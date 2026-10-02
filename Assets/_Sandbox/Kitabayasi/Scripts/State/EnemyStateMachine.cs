@@ -1,93 +1,279 @@
 using System;
 using UnityEngine;
 
-
 /// <summary>
-/// EnemyのStateを保持し、Stateの遷移と実行を管理する。
+/// EnemyのStateを保持し、遷移・実行とStrategyの初期構成を管理する。
 /// </summary>
 /// <remarks>
-/// 責務:
-/// ・Stateの保持と切り替えを管理する。
-/// ・現在のStateを実行する。
-/// ・死亡通知を受けてDeadStateへ遷移する。
+/// 各State固有の行動・演出・HP処理は担当しない。
 ///
-/// 担当しない責務:
-/// ・各State固有の行動処理。
-/// ・HPや移動、攻撃などの個別機能。
+/// UnityからStateに関係するイベントを受信した場合は、
+/// 具体的なStateやStrategyを判定せず、
+/// 対応する受信interfaceを実装しているCurrentStateへ通知する。
+///
+/// Alert完了後はStateを終了し、通常攻撃側へAttackRequestedを通知する。
 /// </remarks>
-
-
-
-// EnemyHealthが無ければ自動で追加される。
 [RequireComponent(typeof(EnemyHealth))]
+[RequireComponent(typeof(EnemyDataReference))]
 public class EnemyStateMachine : MonoBehaviour
 {
-    private EnemyHealth enemyHealth;
+    [Header("索敵")]
+    [Tooltip("このEnemyが索敵Stateで使用するStrategy。")]
+    [SerializeReference]
+    private IEnemySearchStrategy searchStrategy;
 
-    private EnemyIdleState idleState;
-    private EnemyDeadState deadState;
+    [Header("攻撃予告")]
+    [Tooltip("このEnemyがAlert Stateで使用するStrategy。")]
+    [SerializeReference]
+    private IEnemyAlertStrategy alertStrategy;
+
+    [Header("デバッグ")]
+    [Tooltip("Sceneビューに索敵範囲と巡回範囲を表示する。")]
+    [SerializeField]
+    private bool showSearchDebugVisualization;
+
+    private EnemyHealth enemyHealth;
+    private EnemyDataReference enemyDataReference;
+    private EnemySearchState searchState;
+    private EnemyAlertState alertState;
+    private IEnemyState suspendedState;
+    private bool isInitialized;
 
     public IEnemyState CurrentState { get; private set; }
+
+    /// <summary>
+    /// Alertを終了した後、一度だけ通知する攻撃開始要求。
+    /// 購読側はOnEnable / OnDisable等で購読・解除する。
+    /// 現段階ではAttack Stateは生成せず、通知後のCurrentStateはnullとなる。
+    /// </summary>
+    public event Action AttackRequested;
 
     private void Awake()
     {
         enemyHealth = GetComponent<EnemyHealth>();
+        enemyDataReference = GetComponent<EnemyDataReference>();
 
-        // Enemy間でStateを共有しないように、StateMachineごとに生成する。
-        idleState = new EnemyIdleState();
-        deadState = new EnemyDeadState();
+        try
+        {
+            InitializeStates();
+            isInitialized = true;
+        }
+        catch (Exception exception)
+        {
+            Debug.LogException(exception, this);
+            enabled = false;
+        }
     }
 
     private void OnEnable()
     {
-        // EnemyHealthの死亡通知を受け、DeadStateへ遷移する。
+        if (!isInitialized)
+        {
+            return;
+        }
+
         enemyHealth.Died += HandleDied;
 
-        // 無効化中やイベント購読前に死亡していた場合でも、
-        // StateとHealthの状態が食い違わないようにする。
         if (enemyHealth.IsDead)
         {
-            ChangeState(deadState);
+            HandleDied();
+            return;
+        }
+
+        if (suspendedState != null)
+        {
+            IEnemyState stateToResume = suspendedState;
+
+            suspendedState = null;
+
+            ChangeState(stateToResume);
         }
     }
 
     private void Start()
     {
-        // 通常はIdleから開始する。
-        // Start以前に死亡が成立している特殊ケースではDeadを優先する。
-        ChangeState(enemyHealth.IsDead ? deadState : idleState);
+        if (isInitialized &&
+            !enemyHealth.IsDead &&
+            CurrentState == null &&
+            searchState != null)
+        {
+            ChangeState(searchState);
+        }
     }
 
-    private void Update()
+    /// <summary>
+    /// 既存の物理更新周期で現在のStateを実行する。
+    /// </summary>
+    private void FixedUpdate()
     {
         CurrentState?.Update();
     }
 
+    /// <summary>
+    /// UnityからCollision開始通知を受信し、
+    /// 対応可能なCurrentStateへそのまま転送する。
+    /// </summary>
+    /// <remarks>
+    /// EnemyStateMachine自身はCollisionの意味や、
+    /// どのStrategyが使用されているかを判断しない。
+    ///
+    /// 現時点ではMonoBehaviourでしか直接受信できないUnityイベントが
+    /// Collision系のみのため、このクラスをUnityイベントの入口として兼用する。
+    ///
+    /// 今後、Triggerやその他のMonoBehaviour依存イベントなど、
+    /// Stateへ転送するUnityイベントが増えてStateMachineの責務が肥大化した場合は、
+    /// Enemy専用のUnityイベント受信ハブとなるMonoBehaviourを別途作成し、
+    /// イベント受信・配送責務をこのクラスから分離する。
+    /// </remarks>
+    private void OnCollisionEnter(Collision collision)
+    {
+        // Unityは無効なMonoBehaviourにもCollisionを送るため、
+        // 無効中・初期化前・死亡後の通知は処理しない。
+        if (!isActiveAndEnabled ||
+            !isInitialized ||
+            enemyHealth.IsDead)
+        {
+            return;
+        }
+
+        if (CurrentState is IEnemyCollisionEnterReceiver receiver)
+        {
+            receiver.HandleCollisionEnter(collision);
+        }
+    }
+
+    /// <summary>
+    /// UnityからCollision継続通知を受信し、
+    /// 対応可能なCurrentStateへそのまま転送する。
+    /// </summary>
+    private void OnCollisionStay(Collision collision)
+    {
+        if (!isActiveAndEnabled ||
+            !isInitialized ||
+            enemyHealth.IsDead)
+        {
+            return;
+        }
+
+        if (CurrentState is IEnemyCollisionStayReceiver receiver)
+        {
+            receiver.HandleCollisionStay(collision);
+        }
+    }
+
     private void OnDisable()
     {
-        enemyHealth.Died -= HandleDied;
+        if (enemyHealth != null)
+        {
+            enemyHealth.Died -= HandleDied;
+        }
+
+        // 再有効化時は中断したStateへ入り直す。
+        // Alertの時間・接触記録も初期化される。
+        suspendedState =
+            enemyHealth != null && !enemyHealth.IsDead
+                ? CurrentState
+                : null;
+
+        ExitCurrentState();
+    }
+
+    private void InitializeStates()
+    {
+        // Searchを使わないEnemyの構成は従来通り許可する。
+        if (searchStrategy == null)
+        {
+            return;
+        }
+
+        EnemyData enemyData = enemyDataReference.Data;
+
+        if (enemyData == null)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(EnemyDataReference)}に" +
+                $"{nameof(EnemyData)}が設定されていません。");
+        }
+
+        if (alertStrategy == null)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(EnemyStateMachine)}の" +
+                "Alert Strategyを設定してください。");
+        }
+
+        searchStrategy.Initialize(
+            enemyData,
+            gameObject);
+
+        alertStrategy.Initialize(
+            enemyData,
+            gameObject);
+
+        searchState = new EnemySearchState(
+            searchStrategy,
+            RequestAlertState);
+
+        alertState = new EnemyAlertState(
+            alertStrategy,
+            RequestAttackState);
+    }
+
+    private void RequestAlertState()
+    {
+        if (isActiveAndEnabled &&
+            !enemyHealth.IsDead &&
+            ReferenceEquals(CurrentState, searchState))
+        {
+            ChangeState(alertState);
+        }
+    }
+
+    private void RequestAttackState()
+    {
+        if (!isActiveAndEnabled ||
+            enemyHealth.IsDead ||
+            !ReferenceEquals(CurrentState, alertState))
+        {
+            return;
+        }
+
+        // 受信側が攻撃を開始する時点で
+        // 赤色表示・接触ダメージは解除済みとする。
+        ExitCurrentState();
+
+        AttackRequested?.Invoke();
     }
 
     private void HandleDied()
     {
-        ChangeState(deadState);
+        suspendedState = null;
+
+        ExitCurrentState();
+    }
+
+    private void ExitCurrentState()
+    {
+        IEnemyState previousState = CurrentState;
+
+        CurrentState = null;
+
+        previousState?.Exit();
     }
 
     private void ChangeState(IEnemyState nextState)
     {
         if (nextState == null)
         {
-            // 引数がnullの場合は例外をスローする。
             throw new ArgumentNullException(nameof(nextState));
         }
 
-        //同じStateへの遷移を防ぐ
         if (ReferenceEquals(CurrentState, nextState))
         {
             return;
         }
 
-        CurrentState?.Exit();
+        ExitCurrentState();
 
         CurrentState = nextState;
 

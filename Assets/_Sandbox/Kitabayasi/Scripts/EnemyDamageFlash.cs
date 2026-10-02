@@ -10,13 +10,16 @@ using UnityEngine;
 /// 指定されたRendererのMaterialを一時的に白→黒へ切り替え、
 /// 点滅終了後に元のMaterialへ戻す。
 ///
+/// 点滅時間はEnemyDataReferenceからEnemyDataを取得し、
+/// EnemyDataに設定されたDamageFlashDurationを使用する。
+///
 /// このクラス自身はダメージ判定やHP管理を行わない。
 /// ダメージが成立したタイミングで、外部からPlayDamageFlashを呼び出して使用する。
 ///
 /// 点滅中に再度PlayDamageFlashが呼ばれた場合は、
 /// 現在の点滅を停止し、白から点滅を再開始する。
 /// </remarks>
-///
+[RequireComponent(typeof(EnemyDataReference))]
 public class EnemyDamageFlash : MonoBehaviour
 {
     [Header("参照")]
@@ -32,10 +35,7 @@ public class EnemyDamageFlash : MonoBehaviour
     [SerializeField]
     private Material blackFlashMaterial;
 
-    [Header("点滅設定")]
-    [Tooltip("白→黒の点滅全体にかける時間。")]
-    [SerializeField, Min(0.01f)]
-    private float flashDuration = 0.1f;
+    private EnemyDataReference enemyDataReference;
 
     private Material[][] originalMaterials;
     private Material[][] whiteFlashMaterials;
@@ -52,6 +52,8 @@ public class EnemyDamageFlash : MonoBehaviour
 
     private void Awake()
     {
+        enemyDataReference = GetComponent<EnemyDataReference>();
+
         InitializeMaterialArrays();
     }
 
@@ -72,6 +74,15 @@ public class EnemyDamageFlash : MonoBehaviour
             return;
         }
 
+        float flashDuration =
+            enemyDataReference.Data.DamageFlashDuration;
+
+        // 0秒の場合は点滅演出を行わない。
+        if (flashDuration <= 0f)
+        {
+            return;
+        }
+
         if (!hasCapturedOriginalMaterials)
         {
             CaptureOriginalMaterials();
@@ -83,15 +94,25 @@ public class EnemyDamageFlash : MonoBehaviour
 
         flashCts = new CancellationTokenSource();
 
-        PlayDamageFlashAsync(flashCts).Forget();
+        PlayDamageFlashAsync(
+            flashCts,
+            flashDuration).Forget();
     }
 
     /// <summary>
     /// 白→黒→元のMaterialへ戻す点滅処理を時間経過で実行する。
     /// </summary>
+    /// <param name="cts">
+    /// この点滅処理をキャンセルするためのCancellationTokenSource。
+    /// </param>
+    /// <param name="flashDuration">
+    /// EnemyDataから取得した点滅全体の時間。
+    /// </param>
     private async UniTask PlayDamageFlashAsync(
-        CancellationTokenSource cts)
+        CancellationTokenSource cts,
+        float flashDuration)
     {
+        // 全体時間を白表示と黒表示の2区間に分ける。
         float halfDuration = flashDuration * 0.5f;
 
         ApplyFlashMaterials(whiteFlashMaterials);
@@ -156,13 +177,18 @@ public class EnemyDamageFlash : MonoBehaviour
                 continue;
             }
 
-            int materialCount = targetRenderer.sharedMaterials.Length;
+            int materialCount =
+                targetRenderer.sharedMaterials.Length;
 
             whiteFlashMaterials[i] =
-                CreateFlashMaterialArray(materialCount, whiteFlashMaterial);
+                CreateFlashMaterialArray(
+                    materialCount,
+                    whiteFlashMaterial);
 
             blackFlashMaterials[i] =
-                CreateFlashMaterialArray(materialCount, blackFlashMaterial);
+                CreateFlashMaterialArray(
+                    materialCount,
+                    blackFlashMaterial);
         }
     }
 
@@ -181,7 +207,8 @@ public class EnemyDamageFlash : MonoBehaviour
                 continue;
             }
 
-            Material[] currentMaterials = targetRenderer.sharedMaterials;
+            Material[] currentMaterials =
+                targetRenderer.sharedMaterials;
 
             originalMaterials[i] = currentMaterials;
 
@@ -209,7 +236,8 @@ public class EnemyDamageFlash : MonoBehaviour
     /// <param name="flashMaterials">
     /// 各Rendererへ適用するMaterial配列。
     /// </param>
-    private void ApplyFlashMaterials(Material[][] flashMaterials)
+    private void ApplyFlashMaterials(
+        Material[][] flashMaterials)
     {
         for (int i = 0; i < targetRenderers.Length; i++)
         {
@@ -221,7 +249,8 @@ public class EnemyDamageFlash : MonoBehaviour
                 continue;
             }
 
-            targetRenderer.sharedMaterials = flashMaterials[i];
+            targetRenderer.sharedMaterials =
+                flashMaterials[i];
         }
     }
 
@@ -245,7 +274,9 @@ public class EnemyDamageFlash : MonoBehaviour
                 continue;
             }
 
-            targetRenderer.sharedMaterials = originalMaterials[i];
+            targetRenderer.sharedMaterials =
+                originalMaterials[i];
+
             originalMaterials[i] = null;
         }
 
@@ -275,11 +306,33 @@ public class EnemyDamageFlash : MonoBehaviour
     /// </returns>
     private bool CanPlayFlash()
     {
+        if (enemyDataReference == null)
+        {
+            Debug.LogError(
+                $"{nameof(EnemyDamageFlash)}: " +
+                $"{nameof(EnemyDataReference)} が見つかりません。",
+                this);
+
+            return false;
+        }
+
+        if (enemyDataReference.Data == null)
+        {
+            Debug.LogError(
+                $"{nameof(EnemyDamageFlash)}: " +
+                $"{nameof(EnemyDataReference)} に " +
+                $"{nameof(EnemyData)} が設定されていません。",
+                this);
+
+            return false;
+        }
+
         if (targetRenderers == null ||
             targetRenderers.Length == 0)
         {
             Debug.LogWarning(
-                $"{nameof(EnemyDamageFlash)}: 点滅対象のRendererが設定されていません。",
+                $"{nameof(EnemyDamageFlash)}: " +
+                "点滅対象のRendererが設定されていません。",
                 this);
 
             return false;
@@ -288,7 +341,8 @@ public class EnemyDamageFlash : MonoBehaviour
         if (whiteFlashMaterial == null)
         {
             Debug.LogWarning(
-                $"{nameof(EnemyDamageFlash)}: 白点滅用Materialが設定されていません。",
+                $"{nameof(EnemyDamageFlash)}: " +
+                "白点滅用Materialが設定されていません。",
                 this);
 
             return false;
@@ -297,7 +351,8 @@ public class EnemyDamageFlash : MonoBehaviour
         if (blackFlashMaterial == null)
         {
             Debug.LogWarning(
-                $"{nameof(EnemyDamageFlash)}: 黒点滅用Materialが設定されていません。",
+                $"{nameof(EnemyDamageFlash)}: " +
+                "黒点滅用Materialが設定されていません。",
                 this);
 
             return false;
@@ -322,7 +377,8 @@ public class EnemyDamageFlash : MonoBehaviour
         int materialCount,
         Material flashMaterial)
     {
-        Material[] materials = new Material[materialCount];
+        Material[] materials =
+            new Material[materialCount];
 
         for (int i = 0; i < materialCount; i++)
         {

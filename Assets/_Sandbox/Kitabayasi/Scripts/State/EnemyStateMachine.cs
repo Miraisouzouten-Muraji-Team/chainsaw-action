@@ -15,6 +15,7 @@ using UnityEngine;
 /// </remarks>
 [RequireComponent(typeof(EnemyHealth))]
 [RequireComponent(typeof(EnemyDataReference))]
+[RequireComponent(typeof(EnemyDamageFlash))]
 public class EnemyStateMachine : MonoBehaviour
 {
     [Header("索敵")]
@@ -27,6 +28,14 @@ public class EnemyStateMachine : MonoBehaviour
     [SerializeReference]
     private IEnemyAlertStrategy alertStrategy;
 
+    [Header("やられ")]
+    [Tooltip(
+        "やられ中に傾ける見た目用Transform。" +
+        "RigidbodyやColliderを持つEnemy本体ではなく、" +
+        "VisualRoot等の子Transformを設定する。")]
+    [SerializeField]
+    private Transform damageTiltTarget;
+
     [Header("デバッグ")]
     [Tooltip("Sceneビューに索敵範囲と巡回範囲を表示する。")]
     [SerializeField]
@@ -34,9 +43,14 @@ public class EnemyStateMachine : MonoBehaviour
 
     private EnemyHealth enemyHealth;
     private EnemyDataReference enemyDataReference;
+    private EnemyDamageFlash enemyDamageFlash;
+
     private EnemySearchState searchState;
     private EnemyAlertState alertState;
+    private EnemyDamageState damageState;
+
     private IEnemyState suspendedState;
+
     private bool isInitialized;
 
     public IEnemyState CurrentState { get; private set; }
@@ -50,8 +64,14 @@ public class EnemyStateMachine : MonoBehaviour
 
     private void Awake()
     {
-        enemyHealth = GetComponent<EnemyHealth>();
-        enemyDataReference = GetComponent<EnemyDataReference>();
+        enemyHealth =
+            GetComponent<EnemyHealth>();
+
+        enemyDataReference =
+            GetComponent<EnemyDataReference>();
+
+        enemyDamageFlash =
+            GetComponent<EnemyDamageFlash>();
 
         try
         {
@@ -60,7 +80,10 @@ public class EnemyStateMachine : MonoBehaviour
         }
         catch (Exception exception)
         {
-            Debug.LogException(exception, this);
+            Debug.LogException(
+                exception,
+                this);
+
             enabled = false;
         }
     }
@@ -82,7 +105,8 @@ public class EnemyStateMachine : MonoBehaviour
 
         if (suspendedState != null)
         {
-            IEnemyState stateToResume = suspendedState;
+            IEnemyState stateToResume =
+                suspendedState;
 
             suspendedState = null;
 
@@ -125,10 +149,9 @@ public class EnemyStateMachine : MonoBehaviour
     /// Enemy専用のUnityイベント受信ハブとなるMonoBehaviourを別途作成し、
     /// イベント受信・配送責務をこのクラスから分離する。
     /// </remarks>
-    private void OnCollisionEnter(Collision collision)
+    private void OnCollisionEnter(
+        Collision collision)
     {
-        // Unityは無効なMonoBehaviourにもCollisionを送るため、
-        // 無効中・初期化前・死亡後の通知は処理しない。
         if (!isActiveAndEnabled ||
             !isInitialized ||
             enemyHealth.IsDead)
@@ -136,9 +159,11 @@ public class EnemyStateMachine : MonoBehaviour
             return;
         }
 
-        if (CurrentState is IEnemyCollisionEnterReceiver receiver)
+        if (CurrentState
+            is IEnemyCollisionEnterReceiver receiver)
         {
-            receiver.HandleCollisionEnter(collision);
+            receiver.HandleCollisionEnter(
+                collision);
         }
     }
 
@@ -146,7 +171,8 @@ public class EnemyStateMachine : MonoBehaviour
     /// UnityからCollision継続通知を受信し、
     /// 対応可能なCurrentStateへそのまま転送する。
     /// </summary>
-    private void OnCollisionStay(Collision collision)
+    private void OnCollisionStay(
+        Collision collision)
     {
         if (!isActiveAndEnabled ||
             !isInitialized ||
@@ -155,9 +181,11 @@ public class EnemyStateMachine : MonoBehaviour
             return;
         }
 
-        if (CurrentState is IEnemyCollisionStayReceiver receiver)
+        if (CurrentState
+            is IEnemyCollisionStayReceiver receiver)
         {
-            receiver.HandleCollisionStay(collision);
+            receiver.HandleCollisionStay(
+                collision);
         }
     }
 
@@ -169,30 +197,77 @@ public class EnemyStateMachine : MonoBehaviour
         }
 
         // 再有効化時は中断したStateへ入り直す。
-        // Alertの時間・接触記録も初期化される。
+        // State固有の経過時間等はEnter時に初期化される。
         suspendedState =
-            enemyHealth != null && !enemyHealth.IsDead
+            enemyHealth != null &&
+            !enemyHealth.IsDead
                 ? CurrentState
                 : null;
 
         ExitCurrentState();
     }
 
-    private void InitializeStates()
+    /// <summary>
+    /// 攻撃命中を受けたEnemyをDamage Stateへ遷移させる。
+    /// </summary>
+    /// <remarks>
+    /// 既にDamage State中の場合はStateを切り替えず、
+    /// やられ時間と点滅演出だけを最初からやり直す。
+    /// </remarks>
+    public void RequestDamageState()
     {
-        // Searchを使わないEnemyの構成は従来通り許可する。
-        if (searchStrategy == null)
+        if (!isActiveAndEnabled ||
+            !isInitialized ||
+            enemyHealth.IsDead ||
+            damageState == null)
         {
             return;
         }
 
-        EnemyData enemyData = enemyDataReference.Data;
+        if (ReferenceEquals(
+                CurrentState,
+                damageState))
+        {
+            damageState.Restart();
+            return;
+        }
+
+        ChangeState(damageState);
+    }
+
+    private void InitializeStates()
+    {
+        EnemyData enemyData =
+            enemyDataReference.Data;
 
         if (enemyData == null)
         {
             throw new InvalidOperationException(
                 $"{nameof(EnemyDataReference)}に" +
                 $"{nameof(EnemyData)}が設定されていません。");
+        }
+
+        if (damageTiltTarget == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(EnemyStateMachine)}: " +
+                "Damage Tilt Targetが設定されていません。 " +
+                "やられState中の傾き処理は実行されません。",
+                this);
+        }
+
+        damageState =
+            new EnemyDamageState(
+                enemyDamageFlash,
+                damageTiltTarget,
+                enemyData.HitTiltDuration,
+                enemyData.HitTiltAngle,
+                RequestSearchState);
+
+        // Searchを使わないEnemyの構成は従来通り許可する。
+        if (searchStrategy == null)
+        {
+            return;
         }
 
         if (alertStrategy == null)
@@ -210,20 +285,24 @@ public class EnemyStateMachine : MonoBehaviour
             enemyData,
             gameObject);
 
-        searchState = new EnemySearchState(
-            searchStrategy,
-            RequestAlertState);
+        searchState =
+            new EnemySearchState(
+                searchStrategy,
+                RequestAlertState);
 
-        alertState = new EnemyAlertState(
-            alertStrategy,
-            RequestAttackState);
+        alertState =
+            new EnemyAlertState(
+                alertStrategy,
+                RequestAttackState);
     }
 
     private void RequestAlertState()
     {
         if (isActiveAndEnabled &&
             !enemyHealth.IsDead &&
-            ReferenceEquals(CurrentState, searchState))
+            ReferenceEquals(
+                CurrentState,
+                searchState))
         {
             ChangeState(alertState);
         }
@@ -233,7 +312,9 @@ public class EnemyStateMachine : MonoBehaviour
     {
         if (!isActiveAndEnabled ||
             enemyHealth.IsDead ||
-            !ReferenceEquals(CurrentState, alertState))
+            !ReferenceEquals(
+                CurrentState,
+                alertState))
         {
             return;
         }
@@ -245,6 +326,31 @@ public class EnemyStateMachine : MonoBehaviour
         AttackRequested?.Invoke();
     }
 
+    /// <summary>
+    /// Damage State終了後、Search Stateへ戻す。
+    /// </summary>
+    private void RequestSearchState()
+    {
+        if (!isActiveAndEnabled ||
+            enemyHealth.IsDead ||
+            !ReferenceEquals(
+                CurrentState,
+                damageState))
+        {
+            return;
+        }
+
+        // Searchを持たないEnemyでは、
+        // Damage Stateのみ終了してStateなしへ戻す。
+        if (searchState == null)
+        {
+            ExitCurrentState();
+            return;
+        }
+
+        ChangeState(searchState);
+    }
+
     private void HandleDied()
     {
         suspendedState = null;
@@ -254,21 +360,26 @@ public class EnemyStateMachine : MonoBehaviour
 
     private void ExitCurrentState()
     {
-        IEnemyState previousState = CurrentState;
+        IEnemyState previousState =
+            CurrentState;
 
         CurrentState = null;
 
         previousState?.Exit();
     }
 
-    private void ChangeState(IEnemyState nextState)
+    private void ChangeState(
+        IEnemyState nextState)
     {
         if (nextState == null)
         {
-            throw new ArgumentNullException(nameof(nextState));
+            throw new ArgumentNullException(
+                nameof(nextState));
         }
 
-        if (ReferenceEquals(CurrentState, nextState))
+        if (ReferenceEquals(
+                CurrentState,
+                nextState))
         {
             return;
         }

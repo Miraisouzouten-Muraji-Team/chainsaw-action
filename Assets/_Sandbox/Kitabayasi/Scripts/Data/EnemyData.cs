@@ -25,7 +25,6 @@ public class EnemyData : ScriptableObject
     [Min(1)]
     private int maxHealth = 20;
 
-
     [Tooltip("基礎攻撃力。各Stateの割合と組み合わせて最終ダメージを算出する。")]
     [SerializeField, Min(0)]
     private int attackPower = 10;
@@ -47,10 +46,16 @@ public class EnemyData : ScriptableObject
     [Min(0f)]
     private float damageFlashDuration = 0.1f;
 
-    [Tooltip("ダメージを受けた際に身体を斜めにする時間。")]
+    [Tooltip("ダメージを受けた際に身体を斜めにしておく時間。")]
     [SerializeField]
     [Min(0f)]
     private float hitTiltDuration = 0.5f;
+
+    [Tooltip(
+        "ダメージを受けた際に見た目を傾ける角度。" +
+        "X/Yゲームプレイ平面に対してZ軸周りに回転する。")]
+    [SerializeField]
+    private float hitTiltAngle;
 
     [Header("死亡")]
     [Tooltip("死亡後、分割されたパーツが徐々に小さくなって消えるまでの時間。")]
@@ -58,13 +63,27 @@ public class EnemyData : ScriptableObject
     [Min(0f)]
     private float deathShrinkDuration = 3f;
 
-    public int MaxHealth => maxHealth;
-    public int AttackPower => attackPower;
-    public float AlertDuration => alertDuration;
-    public float AlertContactDamagePercent => alertContactDamagePercent;
+    public int MaxHealth =>
+        maxHealth;
 
-    public float DamageFlashDuration => damageFlashDuration;
-    public float HitTiltDuration => hitTiltDuration;
+    public int AttackPower =>
+        attackPower;
 
-    public float DeathShrinkDuration => deathShrinkDuration;
+    public float AlertDuration =>
+        alertDuration;
+
+    public float AlertContactDamagePercent =>
+        alertContactDamagePercent;
+
+    public float DamageFlashDuration =>
+        damageFlashDuration;
+
+    public float HitTiltDuration =>
+        hitTiltDuration;
+
+    public float HitTiltAngle =>
+        hitTiltAngle;
+
+    public float DeathShrinkDuration =>
+        deathShrinkDuration;
 }

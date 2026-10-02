@@ -13,6 +13,10 @@ MonoBehaviour:
   m_Name: EnemyData
   m_EditorClassIdentifier: Assembly-CSharp::EnemyData
   maxHealth: 20
+  attackPower: 0
+  alertDuration: 1
+  alertContactDamagePercent: 60
   damageFlashDuration: 0.1
   hitTiltDuration: 0.5
+  hitTiltAngle: 0
   deathShrinkDuration: 3

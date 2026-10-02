@@ -12,6 +12,8 @@ using UnityEngine;
 /// 対応する受信interfaceを実装しているCurrentStateへ通知する。
 ///
 /// Alert完了後はStateを終了し、通常攻撃側へAttackRequestedを通知する。
+/// HPが0になった場合はDeath Stateへ遷移し、
+/// 死亡処理完了後にEnemy本体を破棄する。
 /// </remarks>
 [RequireComponent(typeof(EnemyHealth))]
 [RequireComponent(typeof(EnemyDataReference))]
@@ -23,7 +25,7 @@ public class EnemyStateMachine : MonoBehaviour
     [SerializeReference]
     private IEnemySearchStrategy searchStrategy;
 
-    [Header("攻撃予告")]
+    [Header("発見")]
     [Tooltip("このEnemyがAlert Stateで使用するStrategy。")]
     [SerializeReference]
     private IEnemyAlertStrategy alertStrategy;
@@ -35,6 +37,12 @@ public class EnemyStateMachine : MonoBehaviour
         "VisualRoot等の子Transformを設定する。")]
     [SerializeField]
     private Transform damageTiltTarget;
+
+    [Header("死亡")]
+    [Tooltip("このEnemyがDeath Stateで使用するStrategy。")]
+    [SerializeReference]
+    private IEnemyDeathStrategy deathStrategy =
+        new StandardEnemyDeathStrategy();
 
     [Header("デバッグ")]
     [Tooltip("Sceneビューに索敵範囲と巡回範囲を表示する。")]
@@ -48,6 +56,7 @@ public class EnemyStateMachine : MonoBehaviour
     private EnemySearchState searchState;
     private EnemyAlertState alertState;
     private EnemyDamageState damageState;
+    private EnemyDeathState deathState;
 
     private IEnemyState suspendedState;
 
@@ -58,7 +67,8 @@ public class EnemyStateMachine : MonoBehaviour
     /// <summary>
     /// Alertを終了した後、一度だけ通知する攻撃開始要求。
     /// 購読側はOnEnable / OnDisable等で購読・解除する。
-    /// 現段階ではAttack Stateは生成せず、通知後のCurrentStateはnullとなる。
+    /// 現段階ではAttack Stateは生成せず、
+    /// 通知後のCurrentStateはnullとなる。
     /// </summary>
     public event Action AttackRequested;
 
@@ -142,10 +152,12 @@ public class EnemyStateMachine : MonoBehaviour
     /// どのStrategyが使用されているかを判断しない。
     ///
     /// 現時点ではMonoBehaviourでしか直接受信できないUnityイベントが
-    /// Collision系のみのため、このクラスをUnityイベントの入口として兼用する。
+    /// Collision系のみのため、
+    /// このクラスをUnityイベントの入口として兼用する。
     ///
     /// 今後、Triggerやその他のMonoBehaviour依存イベントなど、
-    /// Stateへ転送するUnityイベントが増えてStateMachineの責務が肥大化した場合は、
+    /// Stateへ転送するUnityイベントが増えて
+    /// StateMachineの責務が肥大化した場合は、
     /// Enemy専用のUnityイベント受信ハブとなるMonoBehaviourを別途作成し、
     /// イベント受信・配送責務をこのクラスから分離する。
     /// </remarks>
@@ -264,7 +276,25 @@ public class EnemyStateMachine : MonoBehaviour
                 enemyData.HitTiltAngle,
                 RequestSearchState);
 
+        if (deathStrategy == null)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(EnemyStateMachine)}の" +
+                "Death Strategyを設定してください。");
+        }
+
+        deathStrategy.Initialize(
+            enemyData,
+            gameObject);
+
+        deathState =
+            new EnemyDeathState(
+                deathStrategy,
+                RequestDeathCompletion);
+
         // Searchを使わないEnemyの構成は従来通り許可する。
+        // サンドバッグのようにDeath / Damageだけ必要なEnemyでも
+        // StateMachineを使用できる。
         if (searchStrategy == null)
         {
             return;
@@ -351,13 +381,51 @@ public class EnemyStateMachine : MonoBehaviour
         ChangeState(searchState);
     }
 
+    /// <summary>
+    /// EnemyHealthから死亡通知を受け、
+    /// 現在Stateに関係なくDeath Stateへ遷移する。
+    /// </summary>
     private void HandleDied()
     {
+        // 死亡後に再有効化された際、
+        // 死亡前のStateへ戻らないように破棄する。
         suspendedState = null;
 
-        ExitCurrentState();
+        if (!isActiveAndEnabled ||
+            !isInitialized ||
+            deathState == null)
+        {
+            ExitCurrentState();
+            return;
+        }
+
+        ChangeState(deathState);
     }
 
+    /// <summary>
+    /// Death Strategyの共通死亡処理が完了した後、
+    /// Enemy本体を破棄する。
+    /// </summary>
+    private void RequestDeathCompletion()
+    {
+        if (!isActiveAndEnabled ||
+            !enemyHealth.IsDead ||
+            !ReferenceEquals(
+                CurrentState,
+                deathState))
+        {
+            return;
+        }
+
+        ExitCurrentState();
+
+        Destroy(gameObject);
+    }
+
+    /// <summary>
+    /// 現在Stateを終了し、
+    /// CurrentStateを空にする。
+    /// </summary>
     private void ExitCurrentState()
     {
         IEnemyState previousState =
@@ -368,6 +436,10 @@ public class EnemyStateMachine : MonoBehaviour
         previousState?.Exit();
     }
 
+    /// <summary>
+    /// 現在Stateを終了して、
+    /// 指定されたStateへ遷移する。
+    /// </summary>
     private void ChangeState(
         IEnemyState nextState)
     {

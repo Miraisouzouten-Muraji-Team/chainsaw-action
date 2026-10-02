@@ -66,7 +66,7 @@ public class ChainsawAttack : MonoBehaviour
         attackHitStopTime = Mathf.Max(0f, data.hitStopTime);
         attackPrepared = true;
         trajectoryRecorder?.BeginRecording();
-        BeginBladeRecording("攻撃開始", data); 
+        BeginBladeRecording("攻撃開始", data);
     }
     public void EnableHitBox()
     {

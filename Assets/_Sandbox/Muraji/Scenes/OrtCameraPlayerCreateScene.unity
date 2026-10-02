@@ -487,6 +487,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 3f4bdf2943fceee45b69c2567c21394d, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1450766278}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 3f4bdf2943fceee45b69c2567c21394d, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1450766279}
     - targetCorrespondingSourceObject: {fileID: 1784666113194708747, guid: 3f4bdf2943fceee45b69c2567c21394d, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1474968308}
@@ -1655,14 +1658,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawDamageReceiver
   baseDamage: 10
-  useTestHealth: 0
-  testMaxHealth: 100
-  onDamage:
-    m_PersistentCalls:
-      m_Calls: []
-  onDefeated:
-    m_PersistentCalls:
-      m_Calls: []
+  useHealth: 1
+  enemyMaxHealth: 100
 --- !u!1 &1119529482
 GameObject:
   m_ObjectHideFlags: 0
@@ -2013,6 +2010,20 @@ MonoBehaviour:
     m_RotationOrder: 4
   minPitch: 0.8
   maxPitch: 1.8
+--- !u!114 &1450766279
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1170191137}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e96cec34a8a94354992c49f5672f02a9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ChainsawBladeTrajectoryRecorder
+  tipTransform: {fileID: 312158539}
+  rootTransform: {fileID: 1383123661}
 --- !u!1 &1465582917 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 1339101018200438765, guid: ddda4c46dbab8e345a5205f32a5617ca, type: 3}
@@ -2087,6 +2098,9 @@ MonoBehaviour:
   trajectoryRecorder: {fileID: 0}
   diggingHitStopTime: 0
   shakeOnDigging: 0
+  bladeTrajectoryRecorder: {fileID: 1450766279}
+  enableTrajectoryDebugLog: 1
+  sampleLogInterval: 10
 --- !u!1001 &1519021080
 PrefabInstance:
   m_ObjectHideFlags: 0

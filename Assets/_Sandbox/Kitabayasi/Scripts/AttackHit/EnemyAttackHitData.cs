@@ -5,8 +5,18 @@ using UnityEngine;
 /// </summary>
 public sealed class EnemyAttackHitData : AttackHitData
 {
-    public EnemyAttackHitData(ScriptableObject attackData)
+    /// <summary>
+    /// 今回Playerへ与える最終ダメージ量。
+    /// </summary>
+    public float Damage { get; }
+
+    public EnemyAttackHitData(
+        ScriptableObject attackData,
+        float damage)
         : base(attackData)
     {
+        Damage = Mathf.Max(
+            0f,
+            damage);
     }
 }

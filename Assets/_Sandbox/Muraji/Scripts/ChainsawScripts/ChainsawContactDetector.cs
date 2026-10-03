@@ -1,6 +1,13 @@
 using UnityEngine;
 
-public enum ChainsawSurface { None, Floor, Wall, Ceiling, Enemy }
+public enum ChainsawSurface
+{
+    None,
+    Floor,
+    Wall,
+    Ceiling,
+    Enemy
+}
 
 public struct ChainsawContact
 {
@@ -17,23 +24,50 @@ public class ChainsawContactDetector : MonoBehaviour
     [SerializeField] private Transform root;
     [SerializeField] private Transform tip;
     [SerializeField] private Transform ownerRoot;
+
     [SerializeField] private LayerMask terrainLayers;
     [SerializeField] private LayerMask enemyLayers;
-    [SerializeField, Min(0.01f)] private float probeRadius = 0.08f;
-    [SerializeField, Min(0.01f)] private float probeDistance = 0.2f;
-    [SerializeField, Range(0.1f, 0.95f)] private float surfaceNormalThreshold = 0.7f;
-    private static readonly Vector3[] DIRECTIONS = { Vector3.down, Vector3.up, Vector3.left, Vector3.right };
+
+    [SerializeField, Min(0.01f)]
+    private float probeRadius = 0.08f;
+
+    [SerializeField, Min(0.01f)]
+    private float probeDistance = 0.2f;
+
+    [SerializeField, Range(0.1f, 0.95f)]
+    private float surfaceNormalThreshold = 0.7f;
+
+    private static readonly Vector3[] DIRECTIONS =
+    {
+        Vector3.down,
+        Vector3.up,
+        Vector3.left,
+        Vector3.right
+    };
 
     private void Awake()
     {
-        if (ownerRoot == null) ownerRoot = transform;
+        if (ownerRoot == null)
+        {
+            ownerRoot = transform;
+        }
+
         if (root == null || tip == null)
         {
-            Debug.LogError("ChainsawContactDetectorのRootとTipを設定してください。", this);
+            Debug.LogError(
+                "ChainsawContactDetectorのRootとTipを設定してください。",
+                this);
+
             enabled = false;
         }
-        if (terrainLayers.value == 0 || enemyLayers.value == 0)
-            Debug.LogWarning("食い込み検出のTerrain Layers / Enemy Layersを設定してください。", this);
+
+        if (terrainLayers.value == 0 ||
+            enemyLayers.value == 0)
+        {
+            Debug.LogWarning(
+                "食い込み検出のTerrain Layers / Enemy Layersを設定してください。",
+                this);
+        }
     }
 
     public bool TryGetContact(
@@ -51,7 +85,14 @@ public class ChainsawContactDetector : MonoBehaviour
 
         float bestScore = float.PositiveInfinity;
 
-        // 敵を検出する。
+        ChainsawContact floorContact = default;
+        float bestFloorScore = float.PositiveInfinity;
+        bool hasFloorContact = false;
+
+        // ============================================================
+        // 敵を検出
+        // ============================================================
+
         foreach (Collider collider in Physics.OverlapCapsule(
             root.position,
             tip.position,
@@ -67,20 +108,27 @@ public class ChainsawContactDetector : MonoBehaviour
             ChainsawDamageReceiver enemy =
                 collider.GetComponentInParent<ChainsawDamageReceiver>();
 
-            if (enemy == null || !enemy.CanReceiveHit)
+            if (enemy == null ||
+                !enemy.CanReceiveHit)
             {
                 continue;
             }
 
-            Vector3 point = collider.ClosestPoint(tip.position);
-            float distance = Vector3.Distance(tip.position, point);
+            Vector3 point =
+                collider.ClosestPoint(tip.position);
 
-            // 距離の評価を0以上1未満に収める。
-            float distanceScore = distance / (1f + distance);
+            float distance =
+                Vector3.Distance(
+                    tip.position,
+                    point);
 
-            // 敵は地形より優先し、現在の敵を最優先にする。
+            float distanceScore =
+                distance / (1f + distance);
+
             float score =
-                (collider == preferred ? -400f : -300f) +
+                (collider == preferred
+                    ? -400f
+                    : -300f) +
                 distanceScore;
 
             if (score >= bestScore)
@@ -100,18 +148,28 @@ public class ChainsawContactDetector : MonoBehaviour
             };
         }
 
-        // 根元・中央・先端から地形を検出する。
-        for (int sampleIndex = 0; sampleIndex < 3; sampleIndex++)
+        // ============================================================
+        // 地形を検出
+        // ============================================================
+
+        for (int sampleIndex = 0;
+             sampleIndex < 3;
+             sampleIndex++)
         {
-            Vector3 origin = Vector3.Lerp(
-                root.position,
-                tip.position,
-                sampleIndex * 0.5f);
+            Vector3 origin =
+                Vector3.Lerp(
+                    root.position,
+                    tip.position,
+                    sampleIndex * 0.5f);
 
             foreach (Vector3 direction in DIRECTIONS)
             {
-                float backoff = probeRadius + 0.01f;
-                Vector3 castOrigin = origin - direction * backoff;
+                float backoff =
+                    probeRadius + 0.01f;
+
+                Vector3 castOrigin =
+                    origin -
+                    direction * backoff;
 
                 foreach (RaycastHit hit in Physics.SphereCastAll(
                     castOrigin,
@@ -121,7 +179,8 @@ public class ChainsawContactDetector : MonoBehaviour
                     terrainLayers,
                     QueryTriggerInteraction.Ignore))
                 {
-                    if (IsOwner(hit.collider) || hit.distance <= 0.0001f)
+                    if (IsOwner(hit.collider) ||
+                        hit.distance <= 0.0001f)
                     {
                         continue;
                     }
@@ -134,55 +193,112 @@ public class ChainsawContactDetector : MonoBehaviour
 
                     ChainsawSurface surface;
 
-                    if (hit.normal.y >= surfaceNormalThreshold)
+                    if (hit.normal.y >=
+                        surfaceNormalThreshold)
                     {
-                        surface = ChainsawSurface.Floor;
+                        surface =
+                            ChainsawSurface.Floor;
                     }
-                    else if (hit.normal.y <= -surfaceNormalThreshold)
+                    else if (hit.normal.y <=
+                             -surfaceNormalThreshold)
                     {
-                        surface = ChainsawSurface.Ceiling;
+                        surface =
+                            ChainsawSurface.Ceiling;
                     }
                     else
                     {
-                        surface = ChainsawSurface.Wall;
+                        surface =
+                            ChainsawSurface.Wall;
                     }
 
-                    // 右向きなら左向きの法線を持つ壁、
-                    // 左向きなら右向きの法線を持つ壁を前方とする。
+                    float distanceScore =
+                        hit.distance /
+                        (1f + hit.distance);
+
+                    // ------------------------------------------------
+                    // Floor候補を別で保持
+                    // ------------------------------------------------
+
+                    if (surface ==
+                        ChainsawSurface.Floor)
+                    {
+                        float floorScore =
+                            hit.collider == preferred
+                                ? -100f +
+                                  distanceScore
+                                : distanceScore;
+
+                        if (floorScore <
+                            bestFloorScore)
+                        {
+                            bestFloorScore =
+                                floorScore;
+
+                            floorContact =
+                                new ChainsawContact
+                                {
+                                    Collider =
+                                        hit.collider,
+                                    Surface =
+                                        ChainsawSurface.Floor,
+                                    Point =
+                                        hit.point,
+                                    Normal =
+                                        hit.normal
+                                };
+
+                            hasFloorContact = true;
+                        }
+                    }
+
+                    // ------------------------------------------------
+                    // 前方Wall判定
+                    // ------------------------------------------------
+
                     bool isFrontWall =
-                        surface == ChainsawSurface.Wall &&
-                        Mathf.Abs(facingDirection) > 0.01f &&
-                        hit.normal.x * facingDirection < -0.1f;
+                        surface ==
+                        ChainsawSurface.Wall &&
+                        Mathf.Abs(
+                            facingDirection) > 0.01f &&
+                        hit.normal.x *
+                        facingDirection < -0.1f;
 
                     bool prioritizeWall =
                         isFrontWall &&
-                        (currentSurface == ChainsawSurface.None ||
-                         currentSurface == ChainsawSurface.Floor ||
-                         currentSurface == ChainsawSurface.Wall);
-
-                    float distanceScore =
-                        hit.distance / (1f + hit.distance);
+                        (
+                            currentSurface ==
+                                ChainsawSurface.None ||
+                            currentSurface ==
+                                ChainsawSurface.Floor ||
+                            currentSurface ==
+                                ChainsawSurface.Wall
+                        );
 
                     float score;
 
                     if (prioritizeWall)
                     {
-                        // 前方の壁は、現在の地面より優先する。
-                        score = -200f + distanceScore * 0.49f;
+                        score =
+                            -200f +
+                            distanceScore * 0.49f;
 
-                        // 複数の壁がある場合は現在の壁を優先する。
-                        if (hit.collider == preferred)
+                        if (hit.collider ==
+                            preferred)
                         {
                             score -= 0.5f;
                         }
                     }
-                    else if (hit.collider == preferred)
+                    else if (hit.collider ==
+                             preferred)
                     {
-                        score = -100f + distanceScore;
+                        score =
+                            -100f +
+                            distanceScore;
                     }
                     else
                     {
-                        score = distanceScore;
+                        score =
+                            distanceScore;
                     }
 
                     if (score >= bestScore)
@@ -192,31 +308,91 @@ public class ChainsawContactDetector : MonoBehaviour
 
                     bestScore = score;
 
-                    contact = new ChainsawContact
-                    {
-                        Collider = hit.collider,
-                        Surface = surface,
-                        Point = hit.point,
-                        Normal = hit.normal
-                    };
+                    contact =
+                        new ChainsawContact
+                        {
+                            Collider =
+                                hit.collider,
+                            Surface =
+                                surface,
+                            Point =
+                                hit.point,
+                            Normal =
+                                hit.normal
+                        };
                 }
+            }
+        }
+
+        // ============================================================
+        // Floor食い込み中のCollider切り替え
+        // ============================================================
+        //
+        // Ground1 → Ground2 のような床Colliderの切り替え時に、
+        // 新しいGroundの側面をWallとして拾うことがある。
+        //
+        // その場合、Floor候補が存在しているならFloorを維持する。
+        //
+        // これによって「床の継ぎ目」だけでWallへ遷移しない。
+        // ============================================================
+
+        if (currentSurface ==
+    ChainsawSurface.Floor &&
+    hasFloorContact &&
+    contact.Surface ==
+    ChainsawSurface.Wall)
+        {
+            // Floor候補とWall候補が同じColliderの場合、
+            // Groundの継ぎ目などで同じColliderの側面を
+            // Wallとして拾っている可能性がある。
+            //
+            // この場合だけFloorを優先する。
+            if (floorContact.Collider ==
+                contact.Collider)
+            {
+                contact =
+                    floorContact;
             }
         }
 
         return contact.Collider != null;
     }
+
     private bool IsOwner(Collider collider)
     {
-        return collider.transform == ownerRoot || collider.transform.IsChildOf(ownerRoot);
+        return collider.transform == ownerRoot ||
+               collider.transform.IsChildOf(ownerRoot);
     }
+
     private void OnDrawGizmosSelected()
     {
-        if (root == null || tip == null) return;
-        Gizmos.color = Color.cyan;
-        Gizmos.DrawLine(root.position, tip.position);
-        Gizmos.DrawWireSphere(root.position, probeRadius);
-        Gizmos.DrawWireSphere(tip.position, probeRadius);
+        if (root == null ||
+            tip == null)
+        {
+            return;
+        }
+
+        Gizmos.color =
+            Color.cyan;
+
+        Gizmos.DrawLine(
+            root.position,
+            tip.position);
+
+        Gizmos.DrawWireSphere(
+            root.position,
+            probeRadius);
+
+        Gizmos.DrawWireSphere(
+            tip.position,
+            probeRadius);
+
         foreach (Vector3 direction in DIRECTIONS)
-            Gizmos.DrawLine(tip.position, tip.position + direction * probeDistance);
+        {
+            Gizmos.DrawLine(
+                tip.position,
+                tip.position +
+                direction * probeDistance);
+        }
     }
 }

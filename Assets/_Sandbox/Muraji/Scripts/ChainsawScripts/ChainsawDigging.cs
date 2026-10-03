@@ -53,12 +53,17 @@ public class ChainsawDigging : MonoBehaviour
     [Tooltip("ボーナス壁ジャンプの回避時間（秒）")]
     [SerializeField, Min(0f)] private float wallEvadeTime = 0.25f;
 
+    [Tooltip("壁を見失っても上昇を続ける時間（秒）")]
+    [SerializeField, Min(0f)]
+    private float wallContactGraceTime = 2f;
+
     [Header("天井")]
     [Tooltip("速度加算＝回転速度÷この値")]
     [SerializeField, Min(0.01f)] private float ceilingSpeedDivisor = 7.5f;
 
     [Tooltip("ボーナス時のダッシュ加算速度")]
     [SerializeField, Min(0f)] private float ceilingDashPower = 7.5f;
+
 
     [Tooltip("ボーナス時の回避時間（秒）")]
     [SerializeField, Min(0f)] private float ceilingEvadeTime = 0.35f;
@@ -82,22 +87,21 @@ public class ChainsawDigging : MonoBehaviour
     [Tooltip("ボーナス時に追加で掛ける倍率")]
     [SerializeField, Min(0f)] private float bonusDamageMultiplier = 1.5f;
 
-    [Tooltip("壁を見失っても上昇を続ける時間（秒）")]
-    [SerializeField, Min(0f)]
-    private float wallContactGraceTime = 2f;
-
     private float wallContactLostTime;
+    private float ceilingBonusRamp;
 
     public bool IsRequested { get; private set; }
 
-    public bool IsDigging => Surface != ChainsawSurface.None;
+    public bool IsDigging =>
+        Surface != ChainsawSurface.None;
 
     public ChainsawSurface Surface { get; private set; }
 
     public bool HasBonus { get; private set; }
 
     public bool IsEvading =>
-        isActiveAndEnabled && Time.time < evadeUntil;
+        isActiveAndEnabled &&
+        Time.time < evadeUntil;
 
     public bool SuppressGravity =>
         IsDigging &&
@@ -107,7 +111,8 @@ public class ChainsawDigging : MonoBehaviour
             Surface == ChainsawSurface.Enemy
         );
 
-    public Vector3 SurfaceNormal => contact.Normal;
+    public Vector3 SurfaceNormal =>
+        contact.Normal;
 
     public float MoveSpeedBonus =>
         !IsDigging || accelerator == null
@@ -117,7 +122,7 @@ public class ChainsawDigging : MonoBehaviour
                   Mathf.Max(0.01f, floorSpeedDivisor)
                 : Surface == ChainsawSurface.Ceiling
                     ? accelerator.CurrentSpeed /
-                      Mathf.Max(0.01f, ceilingSpeedDivisor)
+                      Mathf.Max(0.01f, floorSpeedDivisor)
                     : 0f;
 
     private ChainsawContact contact;
@@ -128,11 +133,21 @@ public class ChainsawDigging : MonoBehaviour
 
     [Header("床から壁への切り替え")]
     [Tooltip("壁を検出する直前に押していれば、壁登りになる猶予時間（秒）")]
-    [SerializeField, Min(0f)] private float wallClimbInputWindow = 0.2f;
+    [SerializeField, Min(0f)]
+    private float wallClimbInputWindow = 0.2f;
+
+    [Tooltip("床Colliderの切り替え時に一瞬だけ発生するWall判定を無視する時間")]
+    [SerializeField, Min(0f)]
+    private float floorTransitionWallGraceTime = 0.05f;
 
     private float lastPressTime = float.NegativeInfinity;
+
     private bool hasPendingBounce;
     private float pendingBounceDirection;
+
+    // Floor → Wallの切り替え直後に一時的に保持するWall候補。
+    private Collider pendingWallCollider;
+    private float pendingWallTime;
 
     private void Awake()
     {
@@ -172,7 +187,10 @@ public class ChainsawDigging : MonoBehaviour
     }
 
     // PlayerControllerのUpdateから呼ぶ。
-    public void HandleInput(bool pressed, bool held, bool attacking)
+    public void HandleInput(
+        bool pressed,
+        bool held,
+        bool attacking)
     {
         if (!isActiveAndEnabled)
         {
@@ -223,7 +241,9 @@ public class ChainsawDigging : MonoBehaviour
         }
         else
         {
-            bool requested = held && !holdBlocked;
+            bool requested =
+                held &&
+                !holdBlocked;
 
             if (!requested && IsRequested)
             {
@@ -251,18 +271,22 @@ public class ChainsawDigging : MonoBehaviour
     }
 
     // PlayerControllerのFixedUpdateから呼ぶ。
-    public void Tick(float deltaTime, float facingDirection = 0f)
+    public void Tick(
+        float deltaTime,
+        float facingDirection = 0f)
     {
-        if (!isActiveAndEnabled || !IsRequested)
+        if (!isActiveAndEnabled ||
+            !IsRequested)
         {
             return;
         }
 
-        bool foundContact = detector.TryGetContact(
-            contact.Collider,
-            out ChainsawContact next,
-            Surface,
-            facingDirection);
+        bool foundContact =
+            detector.TryGetContact(
+                contact.Collider,
+                out ChainsawContact next,
+                Surface,
+                facingDirection);
 
         if (Surface == ChainsawSurface.Wall)
         {
@@ -278,9 +302,12 @@ public class ChainsawDigging : MonoBehaviour
             {
                 wallContactLostTime += deltaTime;
 
-                if (wallContactLostTime >= wallContactGraceTime)
+                if (wallContactLostTime >=
+                    wallContactGraceTime)
                 {
-                    Debug.Log("[壁登り終了] 壁を見失って猶予時間が経過", this);
+                    Debug.Log(
+                        "[壁登り終了] 壁を見失って猶予時間が経過",
+                        this);
 
                     Cancel(false);
                     return;
@@ -304,24 +331,15 @@ public class ChainsawDigging : MonoBehaviour
                 return;
             }
         }
-        //if (!detector.TryGetContact(
-        //    contact.Collider,
-        //    out ChainsawContact next,
-        //    Surface,
-        //    facingDirection))
-        //{
-        //    if (IsDigging)
-        //    {
-        //        Cancel(false);
-        //    }
-
-        //    // まだ接触していなければ、構えたまま接触を待つ。
-        //    return;
-        //}
 
         if (IsDigging &&
-            (next.Surface != Surface ||
-             (Surface == ChainsawSurface.Enemy && next.Enemy != contact.Enemy)))
+            (
+                next.Surface != Surface ||
+                (
+                    Surface == ChainsawSurface.Enemy &&
+                    next.Enemy != contact.Enemy
+                )
+            ))
         {
             bool isFloorToWall =
                 Surface == ChainsawSurface.Floor &&
@@ -330,150 +348,162 @@ public class ChainsawDigging : MonoBehaviour
             if (isFloorToWall)
             {
                 // 進行方向の前方にある壁かどうか。
-                bool isFrontWall = facingDirection * next.Normal.x < -0.1f;
+                bool isFrontWall =
+                    facingDirection *
+                    next.Normal.x < -0.1f;
 
                 bool timedPress =
-                    Time.time - lastPressTime <= wallClimbInputWindow;
+                    Time.time -
+                    lastPressTime <=
+                    wallClimbInputWindow;
 
                 if (isFrontWall && !timedPress)
                 {
-                    // 何もしていなければ壁登りに入らず、押し戻す。
-                    float bounceDirection = Mathf.Sign(next.Normal.x);
+                    // ------------------------------------------------
+                    // Ground1 → Ground2など、床Colliderが切り替わる
+                    // 継ぎ目で一瞬だけWallが検出される場合がある。
+                    //
+                    // その瞬間に即座にBounceさせず、同じWallが
+                    // 一定時間継続した場合のみ本物の壁として扱う。
+                    // ------------------------------------------------
 
-                    // 食い込みを解除する。Cancelは予約もリセットするため、その後に設定する。
+                    if (pendingWallCollider !=
+                        next.Collider)
+                    {
+                        pendingWallCollider =
+                            next.Collider;
+
+                        pendingWallTime =
+                            Time.time;
+                    }
+
+                    float wallElapsedTime =
+                        Time.time -
+                        pendingWallTime;
+
+                    if (wallElapsedTime <
+                        floorTransitionWallGraceTime)
+                    {
+                        // 一瞬だけ発生したWall判定なので、
+                        // 現在のFloor状態を維持する。
+                        return;
+                    }
+
+                    // 一定時間同じWallが続いたため、
+                    // 本物の壁として後退処理を行う。
+                    float bounceDirection =
+                        Mathf.Sign(next.Normal.x);
+
+                    // 食い込みを解除する。
+                    // Cancel後にBounce予約を設定する。
                     Cancel(true);
 
-                    pendingBounceDirection = bounceDirection;
+                    pendingBounceDirection =
+                        bounceDirection;
+
                     hasPendingBounce = true;
+
+                    pendingWallCollider = null;
+                    pendingWallTime = 0f;
+
                     return;
                 }
 
-                // 食い込み要求を維持したまま、壁の情報へ切り替える。
+                // 壁登り入力がある場合は、
+                // そのまま壁へ切り替える。
                 contact = next;
-                Surface = ChainsawSurface.None;
+
+                Surface =
+                    ChainsawSurface.None;
 
                 timer = 0f;
 
                 // 地面用の未使用ダッシュを壁へ持ち越さない。
                 pendingDash = 0f;
 
-                // 壁用のアニメーションとボーナス判定を開始する。
+                // 保留中のWall判定をリセット。
+                pendingWallCollider = null;
+                pendingWallTime = 0f;
+
+                // 壁用のアニメーションと
+                // ボーナス判定を開始する。
                 if (!BeginDigging())
                 {
                     return;
                 }
 
                 Debug.Log(
-                    $"[チェーンソー食い込み] 地面 → 壁へ切り替え：{contact.Collider.name}",
+                    $"[チェーンソー食い込み] " +
+                    $"地面 → 壁へ切り替え：" +
+                    $"{contact.Collider.name}",
                     contact.Collider);
             }
             else
             {
                 // 今回変更するのは地面から壁への切り替え。
                 // それ以外は既存の解除処理を使う。
+                pendingWallCollider = null;
+                pendingWallTime = 0f;
+
                 Cancel(false);
                 return;
             }
         }
-        // 同じ種類の地形の継ぎ目は、状態を維持して更新。
+        else
+        {
+            // Wall候補がなくなった場合は、
+            // 保留中のWall判定をリセットする。
+            if (next.Surface !=
+                ChainsawSurface.Wall)
+            {
+                pendingWallCollider = null;
+                pendingWallTime = 0f;
+            }
+        }
+
+        // 同じ種類の地形の継ぎ目は、
+        // 食い込み状態を維持して更新。
         contact = next;
 
-        if (!IsDigging && !BeginDigging())
+        if (!IsDigging &&
+            !BeginDigging())
         {
             return;
         }
 
         timer += deltaTime;
 
-        if (Surface == ChainsawSurface.Wall)
+        if (Surface ==
+            ChainsawSurface.Wall)
         {
-            float interval = Mathf.Max(0.01f, wallConsumeInterval);
+            float interval =
+                Mathf.Max(
+                    0.01f,
+                    wallConsumeInterval);
 
             while (timer >= interval)
             {
                 timer -= interval;
 
-                if (!accelerator.TryConsume(wallConsumeAmount))
+                if (!accelerator.TryConsume(
+                    wallConsumeAmount))
                 {
                     Cancel(false);
                     return;
-                }
-            }
-        }
-        else if (Surface == ChainsawSurface.Enemy)
-        {
-            float interval = Mathf.Max(0.01f, enemyAttackInterval);
-
-            while (timer >= interval)
-            {
-                timer -= interval;
-
-                if (contact.Enemy == null ||
-                    !contact.Enemy.CanReceiveHit)
-                {
-                    Cancel(false);
-                    return;
-                }
-
-                // この攻撃の回転数消費前に倍率を計算。
-                float multiplier = Mathf.Lerp(
-                    minDamageMultiplier,
-                    maxDamageMultiplier,
-                    accelerator.PowerRatio
-                );
-
-                if (HasBonus)
-                {
-                    multiplier *= bonusDamageMultiplier;
-                }
-
-                float cost = HasBonus
-                    ? bonusEnemyConsumeAmount
-                    : enemyConsumeAmount;
-
-                if (!accelerator.TryConsume(cost))
-                {
-                    Cancel(false);
-                    return;
-                }
-
-                ChainsawDamageReceiver enemy = contact.Enemy;
-
-                bool accepted = chainsawAttack.HitDigging(
-                    enemy,
-                    diggingAttackData,
-                    multiplier,
-                    contact.Point
-                );
-
-                // 命中通知先が死亡処理などで
-                // Playerや食い込みを無効化した場合にも対応。
-                if (!IsDigging)
-                {
-                    return;
-                }
-
-                if (!accepted ||
-                    enemy == null ||
-                    !enemy.CanReceiveHit)
-                {
-                    Cancel(false);
-                    return;
-                }
-
-                // ヒットストップ開始後は、残りの攻撃を続けない。
-                if (Time.timeScale <= 0f)
-                {
-                    break;
                 }
             }
         }
     }
-    public bool TryTakeWallBounce(out float direction)
-    {
-        direction = pendingBounceDirection;
 
-        bool result = hasPendingBounce;
+    public bool TryTakeWallBounce(
+        out float direction)
+    {
+        direction =
+            pendingBounceDirection;
+
+        bool result =
+            hasPendingBounce;
+
         hasPendingBounce = false;
         pendingBounceDirection = 0f;
 
@@ -506,22 +536,27 @@ public class ChainsawDigging : MonoBehaviour
                 return;
         }
 
-        string targetName = contact.Collider != null
-            ? contact.Collider.gameObject.name
-            : "不明";
+        string targetName =
+            contact.Collider != null
+                ? contact.Collider.gameObject.name
+                : "不明";
 
         Debug.Log(
-            $"[チェーンソー食い込み] 種類：{surfaceName} | " +
+            $"[チェーンソー食い込み] " +
+            $"種類：{surfaceName} | " +
             $"対象：{targetName} | " +
             $"接触位置：{contact.Point.ToString("F2")} | " +
             $"面の向き：{contact.Normal.ToString("F2")} | " +
             $"ボーナス：{HasBonus}",
-            contact.Collider != null ? (Object)contact.Collider : this);
+            contact.Collider != null
+                ? (Object)contact.Collider
+                : this);
     }
 
     private bool BeginDigging()
     {
-        if (contact.Surface == ChainsawSurface.Enemy &&
+        if (contact.Surface ==
+            ChainsawSurface.Enemy &&
             diggingAttackData == null)
         {
             Debug.LogError(
@@ -533,103 +568,159 @@ public class ChainsawDigging : MonoBehaviour
             return false;
         }
 
-        // 接触成立時の回転速度で判定し、終了まで保持。
-        HasBonus = accelerator.SpeedRatio >= bonusThreshold;
+        // 接触成立時の回転速度で判定し、
+        // 終了まで保持。
+        HasBonus =
+            accelerator.SpeedRatio >=
+            bonusThreshold;
 
-        Surface = contact.Surface;
+        Surface =
+            contact.Surface;
+
         timer = 0f;
+        ceilingBonusRamp = 0f;
 
-        // 床では入力時に開始したアニメーションを継続。
-        // 接触した瞬間に先頭へ巻き戻さない。
-        bool keepFloorAnimation =
-            Surface == ChainsawSurface.Floor &&
+        // 床では入力時に開始した
+        // アニメーションを継続。
+        bool keepCurrentAnimation =
+            Surface ==
+            ChainsawSurface.Ceiling &&
             playerAnimator.IsDiggingAnimationActive;
 
-        if (!keepFloorAnimation &&
-            !playerAnimator.StartDiggingAnimation(Surface))
+        bool keepFloorAnimation =
+            Surface ==
+            ChainsawSurface.Floor &&
+            playerAnimator.IsDiggingAnimationActive;
+
+        if (!keepCurrentAnimation &&
+            !keepFloorAnimation &&
+            !playerAnimator.StartDiggingAnimation(
+                Surface))
         {
             Cancel(true);
             return false;
         }
 
-        if (Surface == ChainsawSurface.Enemy)
+        if (Surface ==
+            ChainsawSurface.Ceiling &&
+            keepCurrentAnimation)
+        {
+            playerAnimator
+                .HoldDiggingAnimationImmediately();
+        }
+
+        if (Surface ==
+            ChainsawSurface.Enemy)
         {
             chainsawAttack.BeginDigging();
         }
 
-        if (Surface == ChainsawSurface.Floor)
+        if (Surface ==
+            ChainsawSurface.Floor)
         {
             Debug.Log(
                 $"[食い込み] 地面への食い込み開始！ " +
-                $"回転速度：{accelerator.CurrentSpeed:F1} " +
+                $"回転速度：" +
+                $"{accelerator.CurrentSpeed:F1} " +
                 $"ボーナス：{HasBonus}",
                 this
             );
 
             if (HasBonus)
             {
-                GrantEvade(floorEvadeTime);
-                pendingDash = floorDashPower;
+                GrantEvade(
+                    floorEvadeTime);
+
+                pendingDash =
+                    floorDashPower;
             }
         }
 
-        if (HasBonus && Surface == ChainsawSurface.Ceiling)
+        if (HasBonus &&
+            Surface ==
+            ChainsawSurface.Ceiling)
         {
-            GrantEvade(ceilingEvadeTime);
-            pendingDash = ceilingDashPower;
+            GrantEvade(
+                ceilingEvadeTime);
+
+            pendingDash =
+                ceilingDashPower;
         }
+
         LogDiggingContact();
+
         return true;
     }
 
-    public bool TryTakeDash(out float power)
+    public bool TryTakeDash(
+        out float power)
     {
-        power = pendingDash;
+        power =
+            pendingDash;
+
         pendingDash = 0f;
+
         hasPendingBounce = false;
         pendingBounceDirection = 0f;
+
+        pendingWallCollider = null;
+        pendingWallTime = 0f;
+
         return power > 0f;
     }
 
-    public bool TryGetWallJump(out float power)
+    public bool TryGetWallJump(
+        out float power)
     {
         power = 0f;
 
-        if (Surface != ChainsawSurface.Wall)
+        if (Surface !=
+            ChainsawSurface.Wall)
         {
             return false;
         }
 
-        power = HasBonus
-            ? bonusWallJumpPower
-            : wallJumpPower;
+        power =
+            HasBonus
+                ? bonusWallJumpPower
+                : wallJumpPower;
 
         if (HasBonus)
         {
-            GrantEvade(wallEvadeTime);
+            GrantEvade(
+                wallEvadeTime);
         }
 
         return true;
     }
 
-    private void GrantEvade(float duration)
+    private void GrantEvade(
+        float duration)
     {
-        evadeUntil = Mathf.Max(
-            evadeUntil,
-            Time.time + duration
-        );
+        evadeUntil =
+            Mathf.Max(
+                evadeUntil,
+                Time.time + duration);
     }
 
-    public void Cancel(bool immediate)
+    public void Cancel(
+        bool immediate)
     {
         IsRequested = false;
-        Surface = ChainsawSurface.None;
+        Surface =
+            ChainsawSurface.None;
+
         HasBonus = false;
         contact = default;
 
         timer = 0f;
+        ceilingBonusRamp = 0f;
         pendingDash = 0f;
         holdBlocked = true;
+
+        // 保留中のFloor → Wall判定をリセット。
+        pendingWallCollider = null;
+        pendingWallTime = 0f;
 
         if (chainsawAttack != null)
         {
@@ -643,12 +734,16 @@ public class ChainsawDigging : MonoBehaviour
 
         if (immediate)
         {
-            playerAnimator.ExitDiggingImmediately();
+            playerAnimator
+                .ExitDiggingImmediately();
         }
-        else if (playerAnimator.IsDiggingAnimationActive)
+        else if (playerAnimator
+            .IsDiggingAnimationActive)
         {
-            // 未接触の構え中でも、解除時は続きを再生する。
-            playerAnimator.ReleaseDiggingAnimation();
+            // 未接触の構え中でも、
+            // 解除時は続きを再生する。
+            playerAnimator
+                .ReleaseDiggingAnimation();
         }
 
         // 回避時間は解除後も指定時間まで維持。

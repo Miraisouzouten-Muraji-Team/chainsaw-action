@@ -265,6 +265,17 @@ public class PlayerAnimator : MonoBehaviour
         animator.SetTrigger("Wedgie");
     }
 
+    public void HoldDiggingAnimationImmediately()
+    {
+        if (animator == null || !IsDiggingAnimationActive)
+        {
+            return;
+        }
+
+        diggingAnimationPhase = DiggingAnimationPhase.Holding;
+        animator.SetFloat(DIGGING_PLAYBACK_SPEED, 0f);
+    }
+
     // 入力予約時ではなく、実際に次段へ進むときに呼ぶ。
     public bool StartSlash(int step, AttackData data)
     {

@@ -12,6 +12,7 @@ public class PlayerController : MonoBehaviour
     [SerializeField, Min(0f)] private float wallClimbSpeed = 5f;
     public bool CanTakeDamage => chainsawDigging == null || !chainsawDigging.IsEvading;
     private float facingDirection = 1f;
+    public float FacingDirection => facingDirection;
     private bool jumpPending;
     private float pendingJumpPower;
     private float ignoreGroundUntil;
@@ -163,7 +164,8 @@ public class PlayerController : MonoBehaviour
             );
         }
         // 空中で始めた攻撃の間は、左右に移動しない。
-        if (attackGravityOff)
+        if (attackGravityOff &&
+            !chainsawDigging.IsDigging)
         {
             currentSpeed = 0f;
         }
@@ -337,8 +339,9 @@ public class PlayerController : MonoBehaviour
             input.ResetInput();
             return;
         }
-        // 地面食い込み中以外は、入力方向を向く。
+        // 床・天井の食い込み中以外は、入力方向を向く。
         if (chainsawDigging.Surface != ChainsawSurface.Floor &&
+            chainsawDigging.Surface != ChainsawSurface.Ceiling &&
             input.MoveInput != 0f)
         {
             facingDirection = Mathf.Sign(input.MoveInput);
@@ -355,11 +358,12 @@ public class PlayerController : MonoBehaviour
 
     void Move()
     {
-        bool isFloorDigging =
-            chainsawDigging.Surface == ChainsawSurface.Floor;
+        // 床・天井の食い込み中は向いている方向へ自動移動。
+        bool isAutoMoving =
+            chainsawDigging.Surface == ChainsawSurface.Floor ||
+            chainsawDigging.Surface == ChainsawSurface.Ceiling; // ★変更
 
-        // 地面食い込み中は向いている方向へ自動移動。
-        float moveInput = isFloorDigging
+        float moveInput = isAutoMoving // ★変更
             ? facingDirection
             : Mathf.Clamp(input.MoveInput, -1f, 1f);
 

@@ -18,5 +18,5 @@ MonoBehaviour:
   alertContactDamagePercent: 60
   damageFlashDuration: 0.1
   hitTiltDuration: 0.5
-  hitTiltAngle: 0
+  hitTiltAngle: -15
   deathShrinkDuration: 3

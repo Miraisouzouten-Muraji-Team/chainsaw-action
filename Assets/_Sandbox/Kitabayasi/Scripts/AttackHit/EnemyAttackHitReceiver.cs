@@ -72,6 +72,12 @@ public sealed class EnemyAttackHitReceiver :
             return;
         }
 
+        Debug.Log(
+            $"{nameof(EnemyAttackHitReceiver)}: " +
+            $"Playerの攻撃命中情報を受信しました。 " +
+            $"Enemy: {gameObject.name}",
+            this);
+
         // State遷移より先に保存する。
         // Damage Stateやその他の処理から
         // 今回の命中情報を参照できるようにする。

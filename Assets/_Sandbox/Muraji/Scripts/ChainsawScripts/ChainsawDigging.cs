@@ -275,20 +275,24 @@ public class ChainsawDigging : MonoBehaviour
         float deltaTime,
         float facingDirection = 0f)
     {
-        if (!isActiveAndEnabled ||
-            !IsRequested)
+        if (!isActiveAndEnabled || !IsRequested)
         {
             return;
         }
 
-        bool foundContact =
-            detector.TryGetContact(
-                contact.Collider,
-                out ChainsawContact next,
-                Surface,
-                facingDirection);
+        bool foundContact = detector.TryGetContact(
+            contact.Collider,
+            out ChainsawContact next,
+            Surface,
+            facingDirection);
 
-        if (Surface == ChainsawSurface.Wall)
+        // 前方の敵を検出した場合は、
+        // 壁の接触猶予より敵への遷移を優先する。
+        bool foundEnemy =
+            foundContact &&
+            next.Surface == ChainsawSurface.Enemy;
+
+        if (Surface == ChainsawSurface.Wall && !foundEnemy)
         {
             bool foundWall =
                 foundContact &&
@@ -302,8 +306,7 @@ public class ChainsawDigging : MonoBehaviour
             {
                 wallContactLostTime += deltaTime;
 
-                if (wallContactLostTime >=
-                    wallContactGraceTime)
+                if (wallContactLostTime >= wallContactGraceTime)
                 {
                     Debug.Log(
                         "[壁登り終了] 壁を見失って猶予時間が経過",
@@ -347,60 +350,37 @@ public class ChainsawDigging : MonoBehaviour
 
             if (isFloorToWall)
             {
-                // 進行方向の前方にある壁かどうか。
                 bool isFrontWall =
-                    facingDirection *
-                    next.Normal.x < -0.1f;
+                    facingDirection * next.Normal.x < -0.1f;
 
                 bool timedPress =
-                    Time.time -
-                    lastPressTime <=
-                    wallClimbInputWindow;
+                    Time.time - lastPressTime <= wallClimbInputWindow;
 
                 if (isFrontWall && !timedPress)
                 {
-                    // ------------------------------------------------
-                    // Ground1 → Ground2など、床Colliderが切り替わる
-                    // 継ぎ目で一瞬だけWallが検出される場合がある。
-                    //
-                    // その瞬間に即座にBounceさせず、同じWallが
-                    // 一定時間継続した場合のみ本物の壁として扱う。
-                    // ------------------------------------------------
-
-                    if (pendingWallCollider !=
-                        next.Collider)
+                    // 既存の待ち時間を維持する。
+                    // 同じ壁を一定時間検出した場合に後退する。
+                    if (pendingWallCollider != next.Collider)
                     {
-                        pendingWallCollider =
-                            next.Collider;
-
-                        pendingWallTime =
-                            Time.time;
+                        pendingWallCollider = next.Collider;
+                        pendingWallTime = Time.time;
                     }
 
                     float wallElapsedTime =
-                        Time.time -
-                        pendingWallTime;
+                        Time.time - pendingWallTime;
 
-                    if (wallElapsedTime <
-                        floorTransitionWallGraceTime)
+                    if (wallElapsedTime < floorTransitionWallGraceTime)
                     {
-                        // 一瞬だけ発生したWall判定なので、
-                        // 現在のFloor状態を維持する。
                         return;
                     }
 
-                    // 一定時間同じWallが続いたため、
-                    // 本物の壁として後退処理を行う。
                     float bounceDirection =
                         Mathf.Sign(next.Normal.x);
 
-                    // 食い込みを解除する。
-                    // Cancel後にBounce予約を設定する。
+                    // Cancel後に後退を予約する。
                     Cancel(true);
 
-                    pendingBounceDirection =
-                        bounceDirection;
-
+                    pendingBounceDirection = bounceDirection;
                     hasPendingBounce = true;
 
                     pendingWallCollider = null;
@@ -409,24 +389,19 @@ public class ChainsawDigging : MonoBehaviour
                     return;
                 }
 
-                // 壁登り入力がある場合は、
-                // そのまま壁へ切り替える。
+                // 壁登り条件を満たしていれば、
+                // 食い込み要求を維持したまま壁へ切り替える。
                 contact = next;
-
-                Surface =
-                    ChainsawSurface.None;
+                Surface = ChainsawSurface.None;
 
                 timer = 0f;
 
-                // 地面用の未使用ダッシュを壁へ持ち越さない。
+                // 床用の未使用ダッシュを持ち越さない。
                 pendingDash = 0f;
 
-                // 保留中のWall判定をリセット。
                 pendingWallCollider = null;
                 pendingWallTime = 0f;
 
-                // 壁用のアニメーションと
-                // ボーナス判定を開始する。
                 if (!BeginDigging())
                 {
                     return;
@@ -438,10 +413,29 @@ public class ChainsawDigging : MonoBehaviour
                     $"{contact.Collider.name}",
                     contact.Collider);
             }
+            else if (next.Surface == ChainsawSurface.Enemy &&
+                     Surface != ChainsawSurface.Enemy)
+            {
+                // 前方レイで検出した敵へ、
+                // 食い込み要求を維持したまま切り替える。
+                contact = next;
+                Surface = ChainsawSurface.None;
+
+                timer = 0f;
+                pendingDash = 0f;
+
+                pendingWallCollider = null;
+                pendingWallTime = 0f;
+                wallContactLostTime = 0f;
+
+                if (!BeginDigging())
+                {
+                    return;
+                }
+            }
             else
             {
-                // 今回変更するのは地面から壁への切り替え。
-                // それ以外は既存の解除処理を使う。
+                // 上記以外の切り替えは、既存の解除処理を使う。
                 pendingWallCollider = null;
                 pendingWallTime = 0f;
 
@@ -451,42 +445,34 @@ public class ChainsawDigging : MonoBehaviour
         }
         else
         {
-            // Wall候補がなくなった場合は、
-            // 保留中のWall判定をリセットする。
-            if (next.Surface !=
-                ChainsawSurface.Wall)
+            // 壁候補がなくなった場合は待機状態をリセットする。
+            if (next.Surface != ChainsawSurface.Wall)
             {
                 pendingWallCollider = null;
                 pendingWallTime = 0f;
             }
         }
 
-        // 同じ種類の地形の継ぎ目は、
-        // 食い込み状態を維持して更新。
+        // 同じ種類の地形の継ぎ目は状態を維持して更新する。
         contact = next;
 
-        if (!IsDigging &&
-            !BeginDigging())
+        if (!IsDigging && !BeginDigging())
         {
             return;
         }
 
         timer += deltaTime;
 
-        if (Surface ==
-            ChainsawSurface.Wall)
+        if (Surface == ChainsawSurface.Wall)
         {
             float interval =
-                Mathf.Max(
-                    0.01f,
-                    wallConsumeInterval);
+                Mathf.Max(0.01f, wallConsumeInterval);
 
             while (timer >= interval)
             {
                 timer -= interval;
 
-                if (!accelerator.TryConsume(
-                    wallConsumeAmount))
+                if (!accelerator.TryConsume(wallConsumeAmount))
                 {
                     Cancel(false);
                     return;
@@ -494,7 +480,6 @@ public class ChainsawDigging : MonoBehaviour
             }
         }
     }
-
     public bool TryTakeWallBounce(
         out float direction)
     {
@@ -652,19 +637,17 @@ public class ChainsawDigging : MonoBehaviour
         return true;
     }
 
-    public bool TryTakeDash(
-        out float power)
+    public bool TryTakeDash(out float power)
     {
-        power =
-            pendingDash;
-
+        power = pendingDash;
         pendingDash = 0f;
 
         hasPendingBounce = false;
         pendingBounceDirection = 0f;
 
-        pendingWallCollider = null;
-        pendingWallTime = 0f;
+        // 壁判定の待機状態はTick / Cancelで管理する。
+        // 毎FixedUpdate呼ばれるここでは、
+        // pendingWallColliderとpendingWallTimeをリセットしない。
 
         return power > 0f;
     }

@@ -1,18 +1,25 @@
 using UnityEngine;
 using System.Collections.Generic;
+
 public class PlayerController : MonoBehaviour
 {
     PlayerInputHandler input;
     PlayerAnimator playerAnimator;
+
     [Header("食い込み")]
     [SerializeField] private ChainsawDigging chainsawDigging;
     [SerializeField] private ChainsawAccelerator chainsawAccelerator;
     [SerializeField, Min(0f)] private float surfaceStickSpeed = 1f;
+
     [Header("壁への食い込み移動")]
     [SerializeField, Min(0f)] private float wallClimbSpeed = 5f;
-    public bool CanTakeDamage => chainsawDigging == null || !chainsawDigging.IsEvading;
+
+    public bool CanTakeDamage =>
+        chainsawDigging == null || !chainsawDigging.IsEvading;
+
     private float facingDirection = 1f;
     public float FacingDirection => facingDirection;
+
     private bool jumpPending;
     private float pendingJumpPower;
     private float ignoreGroundUntil;
@@ -29,10 +36,10 @@ public class PlayerController : MonoBehaviour
     [SerializeField] float jumpForce = 5.0f;
 
     private const float MIN_GROUND_NORMAL_Y = 0.7f;
+    private const int MAX_JUMP_COUNT = 2;
 
     private Rigidbody playerRigidbody;
 
-    // 複数の床にまたがっていても接地を保持する。
     private readonly HashSet<Collider> groundColliders =
         new HashSet<Collider>();
 
@@ -60,22 +67,17 @@ public class PlayerController : MonoBehaviour
     [SerializeField, Min(0f)]
     private float airJumpForce = 5f;
 
-    private const int MAX_JUMP_COUNT = 2;
-
     [Header("見た目の向き")]
     [Tooltip("モデルとチェーンソーを含む見た目の親")]
     [SerializeField] private Transform visualRoot;
 
     private Quaternion rightFacingRotation;
-    // 空中で攻撃を始めたときだけtrue。コンボ中は維持し、攻撃終了でfalseに戻す。
+
+    // 空中で開始した攻撃は、コンボ終了までその場に留まる。
     private bool attackGravityOff;
 
-    // 実際に使用したジャンプ回数。
     private int jumpsUsed;
-
-    // 次の物理更新で確定するジャンプ回数。
     private int pendingJumpCount;
-
     private float ascentStartSpeed;
     private float fallElapsedTime;
 
@@ -85,19 +87,148 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float debugTargetSpeed;
     [SerializeField] private float debugCurrentSpeed;
 
-    // 壁に入ったときの移動速度を保持する。
     private float wallTravelSpeed;
 
     [Header("壁に当たったときの押し戻し")]
-    [SerializeField, Min(0f)] private float knockbackSpeed = 8f;
-    [SerializeField, Min(0.01f)] private float knockbackDeceleration = 20f;
+    [SerializeField, Min(0f)]
+    private float knockbackSpeed = 8f;
+
+    [SerializeField, Min(0.01f)]
+    private float knockbackDeceleration = 20f;
 
     private float knockbackVelocity;
 
     [Tooltip("跳ね返り時に上へ跳ぶ速さ。弧の高さになる")]
-    [SerializeField, Min(0f)] private float knockbackUpSpeed = 7f;
+    [SerializeField, Min(0f)]
+    private float knockbackUpSpeed = 7f;
 
     private bool knockbackHopPending;
+
+    // 各段の地上攻撃の踏み込み。
+    private float attackMoveTimeRemaining;
+    private float attackMoveSpeed;
+    private float attackMoveDirection;
+
+    [Header("攻撃データ")]
+    [SerializeField] AttackData slash1;
+    [SerializeField] AttackData slash2;
+    [SerializeField] AttackData slash3;
+
+    public AttackData CurrentAttackData { get; private set; }
+
+    [Header("コンボ設定")]
+    [Tooltip("次段へ移れる再生位置。1なら現在の攻撃を最後まで再生します。")]
+    [Range(0.1f, 1f)]
+    [SerializeField] float comboAdvanceTime = 1f;
+
+    public bool IsAttacking { get; private set; }
+
+    int slashStep = 0;
+    bool nextSlashReserved;
+    int attackStartFrame;
+    bool attackStateObserved;
+    float stateWaitTime;
+
+    void Awake()
+    {
+        input = GetComponent<PlayerInputHandler>();
+        playerAnimator = GetComponent<PlayerAnimator>();
+        playerRigidbody = GetComponent<Rigidbody>();
+
+        if (chainsawDigging == null)
+        {
+            chainsawDigging = GetComponent<ChainsawDigging>();
+        }
+
+        if (chainsawAccelerator == null)
+        {
+            chainsawAccelerator =
+                GetComponentInChildren<ChainsawAccelerator>();
+        }
+
+        if (input == null ||
+            playerAnimator == null ||
+            playerRigidbody == null ||
+            chainsawDigging == null ||
+            chainsawAccelerator == null)
+        {
+            Debug.LogError(
+                "PlayerInputHandler・PlayerAnimator・Rigidbodyを" +
+                "同じGameObjectに配置し、ChainsawDiggingと" +
+                "ChainsawAcceleratorも設定してください。",
+                this
+            );
+
+            enabled = false;
+            return;
+        }
+
+        originalUseGravity = playerRigidbody.useGravity;
+        playerRigidbody.useGravity = false;
+
+        if (playerRigidbody.isKinematic)
+        {
+            Debug.LogError(
+                "PlayerのRigidbodyのIs KinematicをOFFにしてください。",
+                this
+            );
+        }
+
+        if (visualRoot != null)
+        {
+            rightFacingRotation = visualRoot.localRotation;
+        }
+    }
+
+    void OnEnable()
+    {
+        if (playerRigidbody != null)
+        {
+            playerRigidbody.useGravity = false;
+        }
+    }
+
+    void Update()
+    {
+        // ヒットストップ中はコンボ予約だけ受け付ける。
+        if (Time.timeScale <= 0f)
+        {
+            if (IsAttacking && input.SlashInput)
+            {
+                Slash();
+            }
+
+            input.ResetInput();
+            return;
+        }
+
+        if (chainsawDigging.Surface != ChainsawSurface.Floor &&
+            chainsawDigging.Surface != ChainsawSurface.Ceiling &&
+            input.MoveInput != 0f)
+        {
+            facingDirection = Mathf.Sign(input.MoveInput);
+            ApplyFacingRotation();
+        }
+
+        chainsawDigging.HandleInput(
+            input.WedgieInput,
+            input.WedgieHeld,
+            IsAttacking
+        );
+
+        // 同時押しの優先順位：弱攻撃 > ジャンプ > 食い込み。
+        if (input.SlashInput)
+        {
+            Slash();
+        }
+        else if (!IsAttacking && input.JumpInput)
+        {
+            Jump();
+        }
+
+        UpdateSlash();
+        input.ResetInput();
+    }
 
     private void FixedUpdate()
     {
@@ -125,15 +256,12 @@ public class PlayerController : MonoBehaviour
         }
 
         ChainsawSurface previousSurface = chainsawDigging.Surface;
-
-        // 地面移動の速度を、壁への切り替え前に保存する。
         float previousMoveSpeed = Mathf.Abs(currentSpeed);
 
         chainsawDigging.Tick(deltaTime, facingDirection);
 
         if (chainsawDigging.TryTakeWallBounce(out float bounceDirection))
         {
-            // 向きは変えず、壁から離れる方向へ押し戻し、上へ跳ぶ。
             knockbackVelocity = bounceDirection * knockbackSpeed;
             knockbackHopPending = true;
         }
@@ -144,15 +272,18 @@ public class PlayerController : MonoBehaviour
 
         if (enteredWall)
         {
-            // 地面からなら横移動の速さを引き継ぐ。
-            // 直接壁へ食い込んだ場合は設定した上昇速度を使う。
-            wallTravelSpeed = previousSurface == ChainsawSurface.Floor
-                ? previousMoveSpeed
-                : wallClimbSpeed;
+            wallTravelSpeed =
+                previousSurface == ChainsawSurface.Floor
+                    ? previousMoveSpeed
+                    : wallClimbSpeed;
         }
+
         Move();
 
-        // 押し戻し中は、移動入力に関係なく押し戻し速度を優先する。
+        bool isKnockbackActive =
+            knockbackVelocity != 0f || knockbackHopPending;
+
+        // 押し戻し中は移動入力より押し戻し速度を優先。
         if (knockbackVelocity != 0f)
         {
             currentSpeed = knockbackVelocity;
@@ -163,9 +294,8 @@ public class PlayerController : MonoBehaviour
                 knockbackDeceleration * deltaTime
             );
         }
-        // 空中で始めた攻撃の間は、左右に移動しない。
-        if (attackGravityOff &&
-            !chainsawDigging.IsDigging)
+
+        if (attackGravityOff && !chainsawDigging.IsDigging)
         {
             currentSpeed = 0f;
         }
@@ -190,25 +320,25 @@ public class PlayerController : MonoBehaviour
             {
                 case ChainsawSurface.Wall:
                     {
-                        // 横方向の自動移動を止める。
                         currentSpeed = 0f;
 
-                        // 壁との接触を維持するため、壁側へ軽く押す。
                         velocity.x =
-                            -chainsawDigging.SurfaceNormal.x * surfaceStickSpeed;
+                            -chainsawDigging.SurfaceNormal.x *
+                            surfaceStickSpeed;
 
-                        // 地面での移動速度を上方向へ向ける。
                         velocity.y = wallTravelSpeed;
-
                         groundColliders.Clear();
                         break;
                     }
+
                 case ChainsawSurface.Ceiling:
                     {
                         velocity.y = 0f;
 
                         velocity -=
-                            chainsawDigging.SurfaceNormal * surfaceStickSpeed;
+                            chainsawDigging.SurfaceNormal *
+                            surfaceStickSpeed;
+
                         break;
                     }
 
@@ -221,17 +351,13 @@ public class PlayerController : MonoBehaviour
                     }
             }
         }
+
         if (jumpPending)
         {
             jumpPending = false;
-
-            // 落下中でも、上向きの速度に置き換えて跳び直す。
             velocity.y = pendingJumpPower;
-
-            // 実際に跳んだタイミングで回数を確定する。
             jumpsUsed = pendingJumpCount;
 
-            // 2回目も、弱い上昇重力から開始する。
             ascentStartSpeed = Mathf.Max(pendingJumpPower, 0f);
             fallElapsedTime = 0f;
 
@@ -244,8 +370,6 @@ public class PlayerController : MonoBehaviour
             knockbackHopPending = false;
 
             velocity.y = knockbackUpSpeed;
-
-            // 落下時の重力の加速をリセットし、上昇中の重力補正を効かせる。
             ascentStartSpeed = knockbackUpSpeed;
             fallElapsedTime = 0f;
 
@@ -255,7 +379,6 @@ public class PlayerController : MonoBehaviour
 
         if (attackGravityOff)
         {
-            // 空中攻撃中はその場に留まる。
             velocity.y = 0f;
             ascentStartSpeed = 0f;
             fallElapsedTime = 0f;
@@ -265,105 +388,35 @@ public class PlayerController : MonoBehaviour
             ApplyJumpGravity(ref velocity, deltaTime);
         }
 
-        velocity.z = 0f;
+        // 踏み込みは通常移動とは別に加算する。
+        if (isKnockbackActive ||
+            attackGravityOff ||
+            chainsawDigging.IsDigging)
+        {
+            ClearAttackMovement();
+        }
+        else
+        {
+            velocity.x += TakeAttackMoveSpeed(deltaTime);
+        }
 
+        velocity.z = 0f;
         playerRigidbody.linearVelocity = velocity;
 
         debugCurrentSpeed = velocity.x;
-        playerAnimator.SetSpeed(knockbackVelocity != 0f ? 0f : currentSpeed);
-    }
-    [Header("攻撃データ")]
-    [SerializeField] AttackData slash1;
-    [SerializeField] AttackData slash2;
-    [SerializeField] AttackData slash3;
 
-    public AttackData CurrentAttackData { get; private set; }
-
-    [Header("コンボ設定")]
-    [Tooltip("次段へ移れる再生位置。1なら現在の攻撃を最後まで再生します。")]
-    [Range(0.1f, 1f)]
-    [SerializeField] float comboAdvanceTime = 1f;
-
-    public bool IsAttacking { get; private set; }
-
-    int slashStep = 0;
-    bool nextSlashReserved;
-
-    int attackStartFrame;
-    bool attackStateObserved;
-    float stateWaitTime;
-
-    void Awake()
-    {
-        input = GetComponent<PlayerInputHandler>();
-        playerAnimator = GetComponent<PlayerAnimator>();
-        playerRigidbody = GetComponent<Rigidbody>();
-        if (chainsawDigging == null) chainsawDigging = GetComponent<ChainsawDigging>();
-        if (chainsawAccelerator == null) chainsawAccelerator = GetComponentInChildren<ChainsawAccelerator>();
-
-        if (input == null ||
-            playerAnimator == null ||
-            playerRigidbody == null || chainsawDigging == null || chainsawAccelerator == null)
-        {
-            Debug.LogError(
-                "PlayerInputHandler・PlayerAnimator・Rigidbodyを" +
-                "同じGameObjectに配置し、ChainsawDiggingとChainsawAcceleratorも設定してください。",
-                this
-            );
-
-            enabled = false;
-            return;
-        }
-        originalUseGravity = playerRigidbody.useGravity;
-        playerRigidbody.useGravity = false;
-        if (playerRigidbody.isKinematic)
-            Debug.LogError("PlayerのRigidbodyのIs KinematicをOFFにしてください。", this);
-        if (visualRoot != null)
-        {
-            // 初期状態を右向きとして保存。
-            rightFacingRotation = visualRoot.localRotation;
-        }
-    }
-
-    void OnEnable()
-    {
-        if (playerRigidbody != null) playerRigidbody.useGravity = false;
-    }
-
-    void Update()
-    {
-        // ヒットストップ中はコンボ予約だけ受け付け、食い込み／ジャンプは変更しない。
-        if (Time.timeScale <= 0f)
-        {
-            if (IsAttacking && input.SlashInput) Slash();
-            input.ResetInput();
-            return;
-        }
-        // 床・天井の食い込み中以外は、入力方向を向く。
-        if (chainsawDigging.Surface != ChainsawSurface.Floor &&
-            chainsawDigging.Surface != ChainsawSurface.Ceiling &&
-            input.MoveInput != 0f)
-        {
-            facingDirection = Mathf.Sign(input.MoveInput);
-            ApplyFacingRotation();
-        }
-
-        chainsawDigging.HandleInput(input.WedgieInput, input.WedgieHeld, IsAttacking);
-        // 同時押しの優先順位：弱攻撃 > ジャンプ > 食い込み。
-        if (input.SlashInput) Slash();
-        else if (!IsAttacking && input.JumpInput) Jump();
-        UpdateSlash();
-        input.ResetInput();
+        playerAnimator.SetSpeed(
+            knockbackVelocity != 0f ? 0f : currentSpeed
+        );
     }
 
     void Move()
     {
-        // 床・天井の食い込み中は向いている方向へ自動移動。
         bool isAutoMoving =
             chainsawDigging.Surface == ChainsawSurface.Floor ||
-            chainsawDigging.Surface == ChainsawSurface.Ceiling; // ★変更
+            chainsawDigging.Surface == ChainsawSurface.Ceiling;
 
-        float moveInput = isAutoMoving // ★変更
+        float moveInput = isAutoMoving
             ? facingDirection
             : Mathf.Clamp(input.MoveInput, -1f, 1f);
 
@@ -379,9 +432,10 @@ public class PlayerController : MonoBehaviour
             currentSpeed = 0f;
         }
 
-        float rate = Mathf.Abs(targetSpeed) > Mathf.Abs(currentSpeed)
-            ? acceleration
-            : deceleration;
+        float rate =
+            Mathf.Abs(targetSpeed) > Mathf.Abs(currentSpeed)
+                ? acceleration
+                : deceleration;
 
         currentSpeed = Mathf.MoveTowards(
             currentSpeed,
@@ -393,13 +447,17 @@ public class PlayerController : MonoBehaviour
         debugSpeedBonus = speedBonus;
         debugTargetSpeed = targetSpeed;
     }
+
     void Jump()
     {
-        if (jumpPending) return;
+        if (jumpPending)
+        {
+            return;
+        }
 
-        bool wallJump = chainsawDigging.TryGetWallJump(out float wallPower);
+        bool wallJump =
+            chainsawDigging.TryGetWallJump(out float wallPower);
 
-        // ジャンプ入力で食い込みを解除する。
         chainsawDigging.Cancel(true);
 
         groundColliders.RemoveWhere(collider =>
@@ -413,19 +471,16 @@ public class PlayerController : MonoBehaviour
 
         if (wallJump)
         {
-            // 壁ジャンプを1回目として扱い、空中ジャンプを回復する。
             pendingJumpPower = wallPower;
             pendingJumpCount = 1;
         }
         else if (isGrounded)
         {
-            // 地上からの1回目。
             pendingJumpPower = jumpForce;
             pendingJumpCount = 1;
         }
         else
         {
-            // 歩いて落ちた場合も、空中で使えるのは残り1回。
             int effectiveJumpCount = Mathf.Max(jumpsUsed, 1);
 
             if (effectiveJumpCount >= MAX_JUMP_COUNT)
@@ -442,7 +497,10 @@ public class PlayerController : MonoBehaviour
 
         playerAnimator.PlayJump();
     }
-    private void ApplyJumpGravity(ref Vector3 velocity, float deltaTime)
+
+    private void ApplyJumpGravity(
+        ref Vector3 velocity,
+        float deltaTime)
     {
         bool isGrounded =
             groundColliders.Count > 0 &&
@@ -453,23 +511,21 @@ public class PlayerController : MonoBehaviour
 
         if (isGrounded)
         {
-            // 着地したら次のジャンプに備えてリセット。
             ascentStartSpeed = 0f;
             fallElapsedTime = 0f;
-
             gravityMultiplier = 1f;
         }
         else if (velocity.y > 0f)
         {
-            // 上昇中。
             fallElapsedTime = 0f;
+            ascentStartSpeed = Mathf.Max(
+                ascentStartSpeed,
+                velocity.y
+            );
 
-            // ジャンプ以外の力で上昇した場合にも対応する。
-            ascentStartSpeed = Mathf.Max(ascentStartSpeed, velocity.y);
-
-            // 飛び出し直後は0、頂点に近づくほど1になる。
             float ascentProgress = 1f - Mathf.Clamp01(
-                velocity.y / Mathf.Max(ascentStartSpeed, 0.001f)
+                velocity.y /
+                Mathf.Max(ascentStartSpeed, 0.001f)
             );
 
             gravityMultiplier = Mathf.SmoothStep(
@@ -480,11 +536,11 @@ public class PlayerController : MonoBehaviour
         }
         else
         {
-            // 落下中。時間とともに重力を強める。
             ascentStartSpeed = 0f;
 
             float fallProgress = Mathf.Clamp01(
-                fallElapsedTime / Mathf.Max(fallGravityIncreaseTime, 0.01f)
+                fallElapsedTime /
+                Mathf.Max(fallGravityIncreaseTime, 0.01f)
             );
 
             gravityMultiplier = Mathf.SmoothStep(
@@ -496,13 +552,12 @@ public class PlayerController : MonoBehaviour
             fallElapsedTime += deltaTime;
         }
 
-        // 重力はここだけで適用する。
-        velocity += Physics.gravity
-            * gravityScale
-            * gravityMultiplier
-            * deltaTime;
+        velocity +=
+            Physics.gravity *
+            gravityScale *
+            gravityMultiplier *
+            deltaTime;
 
-        // 下向きの速度に上限を設ける。
         velocity.y = Mathf.Max(velocity.y, -maxFallSpeed);
     }
 
@@ -513,8 +568,9 @@ public class PlayerController : MonoBehaviour
             !collider.enabled ||
             !collider.gameObject.activeInHierarchy);
 
-        return groundColliders.Count > 0 &&
-               Time.time >= ignoreGroundUntil;
+        return
+            groundColliders.Count > 0 &&
+            Time.time >= ignoreGroundUntil;
     }
 
     void OnCollisionEnter(Collision collision)
@@ -542,8 +598,9 @@ public class PlayerController : MonoBehaviour
         Collider otherCollider = collision.collider;
         groundColliders.Remove(otherCollider);
 
-        // ジャンプ直後の接触を着地と誤認しない。
-        if (jumpPending || Time.time < ignoreGroundUntil || playerRigidbody.linearVelocity.y > 0.1f)
+        if (jumpPending ||
+            Time.time < ignoreGroundUntil ||
+            playerRigidbody.linearVelocity.y > 0.1f)
         {
             return;
         }
@@ -552,17 +609,13 @@ public class PlayerController : MonoBehaviour
              contactIndex < collision.contactCount;
              contactIndex++)
         {
-            ContactPoint contact = collision.GetContact(contactIndex);
+            ContactPoint contact =
+                collision.GetContact(contactIndex);
 
-            // 上向きの面に乗ったときだけ接地扱い。
-            // 壁や天井に触れただけでは接地扱いにしない。
             if (contact.normal.y >= MIN_GROUND_NORMAL_Y)
             {
                 groundColliders.Add(otherCollider);
-
-                // 地面に着地したらジャンプ回数を回復。
                 jumpsUsed = 0;
-
                 break;
             }
         }
@@ -570,14 +623,18 @@ public class PlayerController : MonoBehaviour
 
     private void ApplyFacingRotation()
     {
-        if (visualRoot == null) return;
+        if (visualRoot == null)
+        {
+            return;
+        }
 
         float angle = facingDirection < 0f ? 180f : 0f;
+
         visualRoot.localRotation =
-            rightFacingRotation * Quaternion.Euler(0f, angle, 0f);
+            rightFacingRotation *
+            Quaternion.Euler(0f, angle, 0f);
     }
 
-    // 攻撃ボタンを押したときに呼ぶ。
     void Slash()
     {
         if (!IsAttacking)
@@ -585,9 +642,7 @@ public class PlayerController : MonoBehaviour
             jumpPending = false;
             chainsawDigging.Cancel(true);
 
-            // 空中で始めた攻撃だけ、無重力にする。
             attackGravityOff = !IsGrounded();
-
             StartSlash(1);
         }
         else if (slashStep < 3)
@@ -596,22 +651,21 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // アニメーションの進行に合わせて次段・終了を判断。
     void UpdateSlash()
     {
-        if (!IsAttacking || Time.frameCount == attackStartFrame)
+        if (!IsAttacking ||
+            Time.frameCount == attackStartFrame)
         {
             return;
         }
 
-        // ヒットストップ中もSlash()で予約は受け付ける。
-        // ただし、停止中には次段へ進めない。
         if (Time.timeScale <= 0f)
         {
             return;
         }
 
-        if (!playerAnimator.TryGetAttackProgress(out float progress))
+        if (!playerAnimator.TryGetAttackProgress(
+                out float progress))
         {
             stateWaitTime += Time.deltaTime;
 
@@ -643,7 +697,6 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // 実際に攻撃を開始するときだけ、段数とデータを更新。
     void StartSlash(int step)
     {
         AttackData data =
@@ -660,6 +713,8 @@ public class PlayerController : MonoBehaviour
         slashStep = step;
         CurrentAttackData = data;
 
+        BeginAttackMovement(data);
+
         IsAttacking = true;
         nextSlashReserved = false;
 
@@ -668,13 +723,81 @@ public class PlayerController : MonoBehaviour
         stateWaitTime = 0f;
     }
 
+    private void BeginAttackMovement(AttackData data)
+    {
+        ClearAttackMovement();
+
+        if (data == null ||
+            attackGravityOff ||
+            !IsGrounded())
+        {
+            return;
+        }
+
+        float distance = Mathf.Max(0f, data.attackMoveRange);
+
+        if (distance <= 0f)
+        {
+            return;
+        }
+
+        float duration = Mathf.Max(
+            0.01f,
+            data.attackMoveDuration
+        );
+
+        attackMoveTimeRemaining = duration;
+        attackMoveSpeed = distance / duration;
+        attackMoveDirection = facingDirection < 0f ? -1f : 1f;
+    }
+
+    private float TakeAttackMoveSpeed(float deltaTime)
+    {
+        if (!IsAttacking || !IsGrounded())
+        {
+            ClearAttackMovement();
+            return 0f;
+        }
+
+        if (deltaTime <= 0f ||
+            attackMoveTimeRemaining <= 0f)
+        {
+            return 0f;
+        }
+
+        // 最後のステップは残り時間分だけ移動させる。
+        float stepTime = Mathf.Min(
+            deltaTime,
+            attackMoveTimeRemaining
+        );
+
+        float speed =
+            attackMoveDirection *
+            attackMoveSpeed *
+            stepTime /
+            deltaTime;
+
+        attackMoveTimeRemaining = Mathf.Max(
+            0f,
+            attackMoveTimeRemaining - stepTime
+        );
+
+        return speed;
+    }
+
+    private void ClearAttackMovement()
+    {
+        attackMoveTimeRemaining = 0f;
+        attackMoveSpeed = 0f;
+        attackMoveDirection = 0f;
+    }
+
     void FinishSlash()
     {
         playerAnimator.EndSlash(true);
         ClearSlashState();
     }
 
-    // ムラジmemo:被ダメージ・死亡を追加するときは、別モーションの再生前にこの関数を呼ぶ。
     public void CancelAttack()
     {
         if (playerAnimator != null)
@@ -687,6 +810,8 @@ public class PlayerController : MonoBehaviour
 
     void ClearSlashState()
     {
+        ClearAttackMovement();
+
         IsAttacking = false;
         nextSlashReserved = false;
         slashStep = 0;
@@ -700,9 +825,19 @@ public class PlayerController : MonoBehaviour
         pendingJumpCount = 0;
         jumpPending = false;
         currentSpeed = 0f;
-        if (chainsawDigging != null) chainsawDigging.Cancel(true);
-        if (playerRigidbody != null) playerRigidbody.useGravity = originalUseGravity;
+
+        if (chainsawDigging != null)
+        {
+            chainsawDigging.Cancel(true);
+        }
+
+        if (playerRigidbody != null)
+        {
+            playerRigidbody.useGravity = originalUseGravity;
+        }
+
         groundColliders.Clear();
+
         if (playerAnimator != null)
         {
             playerAnimator.EndSlash(true);

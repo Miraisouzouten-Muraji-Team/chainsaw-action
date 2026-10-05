@@ -13,6 +13,8 @@ MonoBehaviour:
   m_Name: Slash2Data
   m_EditorClassIdentifier: Assembly-CSharp::AttackData
   damage: 8
-  hitStopTime: 0.05
   attackVector: 0
-  attackMoveRange: 0
+  attackMoveRange: 2
+  attackMoveDuration: 0.15
+  cameraShack: 0
+  hitStopTime: 0.05

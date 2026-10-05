@@ -3647,10 +3647,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 65d5302ad90bf1644b5195aa383e95dc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerCamera
+  cameraData: {fileID: 11400000, guid: 74c3f388950de894ea1ab89a13e9339f, type: 2}
   playerController: {fileID: 583300420}
-  followOffset: {x: -3, y: -3}
-  directionLookAhead: 3
-  followPercent: 0.1
   cameraAreas:
   - {fileID: 590985913}
   - {fileID: 956673618}

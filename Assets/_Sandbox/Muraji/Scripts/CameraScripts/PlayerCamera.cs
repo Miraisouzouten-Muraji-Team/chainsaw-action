@@ -6,18 +6,20 @@ public class PlayerCamera : MonoBehaviour
     private const float MIN_FOLLOW_PERCENT = 0.01f;
     private const float MAX_FOLLOW_PERCENT = 1f;
 
+    [Header("カメラデータ")]
+    [SerializeField] private CameraData cameraData;
+
     [Header("プレイヤー")]
     [SerializeField] private PlayerController playerController;
 
     [Header("追従設定")]
     [Tooltip("プレイヤーに対するカメラのオフセット。")]
-    [SerializeField] private Vector2 followOffset = new Vector2(-3f, -3f);
+    private Vector2 followOffset = new Vector2(-3f, -3f);
 
     [Tooltip("プレイヤーの進行方向へどれだけ視野を広げるか。")]
-    [SerializeField, Min(0f)] private float directionLookAhead = 2f;
+    private float directionLookAhead = 2f;
 
     [Tooltip("1フレームあたりの追従率。0.1 = 10%。")]
-    [SerializeField, Range(MIN_FOLLOW_PERCENT, MAX_FOLLOW_PERCENT)]
     private float followPercent = DEFAULT_FOLLOW_PERCENT;
 
     [Header("エリア制限")]
@@ -63,6 +65,10 @@ public class PlayerCamera : MonoBehaviour
             enabled = false;
             return;
         }
+
+        followOffset = cameraData.followOffset;
+        directionLookAhead = cameraData.directionLookAhead;
+        followPercent = cameraData.followPercent;
 
         // ゲーム開始時のプレイヤー位置を保存する。
         initialPlayerPosition =

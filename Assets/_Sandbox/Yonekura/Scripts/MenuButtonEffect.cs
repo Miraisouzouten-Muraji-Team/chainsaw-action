@@ -2,21 +2,27 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
+// メニューボタン選択時、ボタン拡大や透明度変更
 public class MenuButtonEffect : MonoBehaviour,
     ISelectHandler, IDeselectHandler
 {
+    // ボタンの大きさを保存
     private Vector3 originalScale;
     private Image image;
 
+    //拡大倍率や、透明度の設定
     [SerializeField] private float selectedScale = 1.1f;
     [SerializeField] private float normalAlpha = 0.5f;
     [SerializeField] private float selectedAlpha = 1.0f;
     [SerializeField] private float speed = 10f;
+    // 選択中に表示するマーク
     [SerializeField] private GameObject selectMark;
 
+    //選択時の大きさや透明度保存
     private Vector3 targetScale;
     private float targetAlpha;
 
+    // 初期設定
     private void Start()
     {
         originalScale = transform.localScale;
@@ -33,6 +39,7 @@ public class MenuButtonEffect : MonoBehaviour,
         }
     }
 
+    // 大きさと透明度を滑らかに変更
     private void Update()
     {
         transform.localScale = Vector3.Lerp(
@@ -53,6 +60,7 @@ public class MenuButtonEffect : MonoBehaviour,
         }
     }
 
+    // ボタンが選択されたとき
     public void OnSelect(BaseEventData eventData)
     {
         targetScale = originalScale * selectedScale;
@@ -64,6 +72,7 @@ public class MenuButtonEffect : MonoBehaviour,
         }
     }
 
+    // ボタンの選択が解除されたとき
     public void OnDeselect(BaseEventData eventData)
     {
         targetScale = originalScale;
@@ -75,6 +84,7 @@ public class MenuButtonEffect : MonoBehaviour,
         }
     }
 
+    // 透明度を設定
     private void SetAlpha(float alpha)
     {
         if (image != null)

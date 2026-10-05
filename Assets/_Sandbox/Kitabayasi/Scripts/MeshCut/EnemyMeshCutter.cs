@@ -141,7 +141,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 cutRangeMinimumNormalized,
                 cutRangeMaximumNormalized,
                 cutSurfaceUvScale,
-                out MeshCutResult cutResult,
+                out Mesh firstPieceMesh,
+                out Mesh secondPieceMesh,
                 out failureReason);
 
             if (!succeeded)
@@ -154,10 +155,10 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 BuildPieceMaterials(sourceRenderer);
 
             firstPieceRuntimeMesh =
-                cutResult.FirstPieceMesh;
+                firstPieceMesh;
 
             secondPieceRuntimeMesh =
-                cutResult.SecondPieceMesh;
+                secondPieceMesh;
 
             firstPieceObject = CreatePieceObject(
                 "FirstPiece",

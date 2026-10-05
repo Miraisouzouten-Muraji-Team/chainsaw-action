@@ -27,10 +27,12 @@ public sealed class ChainsawMeshCutProcessor
         float cutRangeMinimumNormalized,
         float cutRangeMaximumNormalized,
         float cutSurfaceUvScale,
-        out MeshCutResult result,
+        out Mesh firstPieceMesh,
+        out Mesh secondPieceMesh,
         out string failureReason)
     {
-        result = null;
+        firstPieceMesh = null;
+        secondPieceMesh = null;
         failureReason = null;
 
         if (!ValidateInputs(
@@ -68,14 +70,13 @@ public sealed class ChainsawMeshCutProcessor
                 correctedCutPlane,
                 cutSurfaceUvScale,
                 geometryEpsilon,
-                out Mesh firstPieceMesh,
-                out Mesh secondPieceMesh,
+                out firstPieceMesh,
+                out secondPieceMesh,
                 out failureReason))
         {
             return false;
         }
 
-        result = new MeshCutResult(firstPieceMesh, secondPieceMesh);
         return true;
     }
 

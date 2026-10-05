@@ -4,44 +4,121 @@ using System.Threading;
 
 public class CameraShake_System : MonoBehaviour
 {
-    Vector3 basicPosition;
-    CancellationTokenSource shakeCancellation;
+    [Tooltip("追従処理が直接動かさない、揺れ専用の子Transform。未設定なら自身を使用")]
+    [SerializeField] private Transform shakeTarget;
 
-    void Awake()
+    private Vector3 basicPosition;
+    private CancellationTokenSource shakeCancellation;
+
+    private void Awake()
     {
-        basicPosition = transform.localPosition; // カメラの基本位置を保存
-    }
-
-    public void Shake(float duration,float magnitude)
-    {
-        shakeCancellation?.Cancel(); // 既存のカメラシェイクをキャンセル
-        shakeCancellation?.Dispose(); // 既存のカメラシェイクを破棄
-        shakeCancellation = new CancellationTokenSource();
-        transform.localPosition=basicPosition; // カメラの位置を基本位置に戻す
-
-        ShakeAsync(duration, magnitude, shakeCancellation.Token).Forget(); // 非同期でカメラシェイクを開始
-    }
-
-    private async UniTask ShakeAsync(float duration,float magnitude,CancellationToken token)
-    {
-        float elapsed = 0.0f;
-        while (elapsed < duration)
+        if (shakeTarget == null)
         {
-            token.ThrowIfCancellationRequested(); // キャンセルが要求された場合、例外をスローして処理を中断
-
-            float x = Random.Range(-1f, 1f) * magnitude;
-            float y = Random.Range(-1f, 1f) * magnitude;
-            transform.localPosition = new Vector3(x+x, y+y, basicPosition.z); // カメラの位置をランダムに変更
-            elapsed += Time.deltaTime;
-            await UniTask.Yield(PlayerLoopTiming.Update, token); // 次のフレームまで待機
+            shakeTarget = transform;
         }
-        transform.localPosition = basicPosition; // カメラの位置を基本位置に戻す
+
+        basicPosition = shakeTarget.localPosition;
+    }
+
+    public void Shake(float duration, float magnitude)
+    {
+        if (!isActiveAndEnabled ||
+            shakeTarget == null ||
+            duration <= 0f ||
+            magnitude <= 0f)
+        {
+            return;
+        }
+
+        CancelShake();
+
+        // 前の揺れを戻した位置を基準にする。
+        basicPosition = shakeTarget.localPosition;
+
+        CancellationTokenSource source =
+            new CancellationTokenSource();
+
+        shakeCancellation = source;
+
+        ShakeAsync(duration, magnitude, source).Forget();
+    }
+
+    private async UniTask ShakeAsync(
+        float duration,
+        float magnitude,
+        CancellationTokenSource source)
+    {
+        CancellationToken token = source.Token;
+        float endTime = Time.realtimeSinceStartup + duration;
+
+        try
+        {
+            while (Time.realtimeSinceStartup < endTime)
+            {
+                token.ThrowIfCancellationRequested();
+
+                if (shakeTarget == null)
+                {
+                    return;
+                }
+
+                float x = Random.Range(-1f, 1f) * magnitude;
+                float y = Random.Range(-1f, 1f) * magnitude;
+
+                shakeTarget.localPosition =
+                    basicPosition + new Vector3(x, y, 0f);
+
+                // ヒットストップ中も演出を進める。
+                await UniTask.Yield(
+                    PlayerLoopTiming.Update,
+                    token
+                );
+            }
+        }
+        catch (System.OperationCanceledException)
+            when (token.IsCancellationRequested)
+        {
+            // 再命中・無効化による通常のキャンセル。
+        }
+        finally
+        {
+            // 古い処理から新しい揺れの位置を戻さない。
+            if (ReferenceEquals(shakeCancellation, source))
+            {
+                shakeCancellation = null;
+
+                if (shakeTarget != null)
+                {
+                    shakeTarget.localPosition = basicPosition;
+                }
+            }
+
+            source.Dispose();
+        }
+    }
+
+    private void CancelShake()
+    {
+        CancellationTokenSource source = shakeCancellation;
+
+        if (source == null)
+        {
+            return;
+        }
+
+        shakeCancellation = null;
+        source.Cancel();
+
+        if (shakeTarget != null)
+        {
+            shakeTarget.localPosition = basicPosition;
+        }
+
+        // Disposeは非同期処理のfinallyで行う。
     }
 
     private void OnDisable()
     {
-        shakeCancellation?.Cancel(); // カメラシェイクをキャンセル
-        shakeCancellation?.Dispose(); // カメラシェイクを破棄
-        transform.localPosition = basicPosition; // カメラの位置を基本位置に戻
+        CancelShake();
     }
 }

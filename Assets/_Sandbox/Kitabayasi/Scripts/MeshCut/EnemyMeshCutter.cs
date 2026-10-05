@@ -2,69 +2,79 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Enemy死亡時に現在姿勢のSkinnedMeshをBakeし、
+/// Enemy死亡時に切断対象Meshを取得し、
 /// チェンソー軌跡を使って2つの静的Meshへ分割して表示する。
 /// </summary>
 /// <remarks>
+/// SkinnedMeshRendererの場合は死亡時の現在姿勢をBakeしてから切断する。
+/// MeshFilter + MeshRendererの場合はMeshFilterのMeshを切断する。
+///
 /// HP計算、死亡判定、攻撃受信、チェンソー軌跡記録、
 /// Triangle分割アルゴリズム、切断後の物理演出は担当しない。
 /// </remarks>
 public sealed class EnemyMeshCutter : MonoBehaviour
 {
     [Header("切断対象")]
-    [Tooltip("死亡時に現在姿勢をBakeして切断するSkinnedMeshRenderer。")]
+
+    [Tooltip(
+        "SkinnedMeshRendererを使用するEnemyの切断対象。"
+        + "MeshFilterと同時には設定しない。")]
     [SerializeField]
     private SkinnedMeshRenderer targetSkinnedMeshRenderer;
+
+    [Tooltip(
+        "MeshFilter + MeshRendererを使用するEnemyの切断対象。"
+        + "同じGameObjectにMeshRendererが必要。"
+        + "SkinnedMeshRendererと同時には設定しない。")]
+    [SerializeField]
+    private MeshFilter targetMeshFilter;
 
     [Tooltip("切断面専用SubMeshへ設定するMaterial。")]
     [SerializeField]
     private Material cutSurfaceMaterial;
 
     [Header("切断Plane設定")]
+
     [Tooltip("命中直前から代表刃方向・代表移動方向の算出に使用するサンプル数。")]
     [Min(2)]
     [SerializeField]
     private int cutDirectionSampleCount = 4;
 
-    [Tooltip("Plane Normal方向のMesh厚みに対して、両端から切断禁止にする割合。")]
-    [Range(0.0f, 0.49f)]
+    [Tooltip("Meshローカル空間で切断位置の有効範囲を定義する軸。")]
     [SerializeField]
-    private float safeCutEdgeMarginNormalized = 0.2f;
+    private MeshCutRangeAxis cutRangeAxis = MeshCutRangeAxis.Y;
+
+    [Tooltip("Cut Range Axis方向のMesh Boundsに対する有効範囲の下限。0がBounds最小、1がBounds最大。")]
+    [Range(0.0f, 1.0f)]
+    [SerializeField]
+    private float cutRangeMinimumNormalized = 0.2f;
+
+    [Tooltip("Cut Range Axis方向のMesh Boundsに対する有効範囲の上限。0がBounds最小、1がBounds最大。")]
+    [Range(0.0f, 1.0f)]
+    [SerializeField]
+    private float cutRangeMaximumNormalized = 0.8f;
 
     [Tooltip("切断Plane上へ生成する断面UVのスケール。")]
     [Min(0.0001f)]
     [SerializeField]
     private float cutSurfaceUvScale = 1.0f;
 
-    [Header("Sceneデバッグ表示")]
-    [SerializeField]
-    private bool showCutDebugGizmos = true;
+    [Header("Scene表示")]
 
+    [Tooltip("選択中のEnemyに、設定済みの切断位置有効範囲を赤く表示する。")]
     [SerializeField]
-    private bool showSafeCutRange = true;
-
-    [SerializeField]
-    private bool showCutPlanes = true;
-
-    [SerializeField]
-    private bool showCutMeshBounds = true;
+    private bool showCutRangeGizmo = true;
 
     private readonly ChainsawMeshCutProcessor cutProcessor =
         new ChainsawMeshCutProcessor();
 
     private Mesh firstPieceRuntimeMesh;
     private Mesh secondPieceRuntimeMesh;
+
     private GameObject firstPieceObject;
     private GameObject secondPieceObject;
-    private bool hasCompletedCut;
 
-    private bool hasCutDebugData;
-    private Plane debugOriginalCutPlane;
-    private Plane debugCorrectedCutPlane;
-    private float debugSafeMinimumProjection;
-    private float debugSafeMaximumProjection;
-    private Bounds debugSourceBounds;
-    private Matrix4x4 debugLocalToWorldMatrix;
+    private bool hasCompletedCut;
 
     /// <summary>
     /// 確定済みチェンソー軌跡を使ってEnemy Meshの切断を試みる。
@@ -80,117 +90,249 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         if (hasCompletedCut)
         {
             Debug.LogWarning(
-                $"{nameof(EnemyMeshCutter)}: " +
-                "このEnemyは既にMesh分割済みです。",
+                $"{nameof(EnemyMeshCutter)}: "
+                + "このEnemyは既にMesh分割済みです。",
                 this);
+
             return false;
         }
 
-        if (!ValidateCutRequest(trajectory, out string failureReason))
+        if (!ValidateCutRequest(
+                trajectory,
+                out string failureReason))
         {
             LogCutFailure(failureReason);
             return false;
         }
 
-        var bakedMesh = new Mesh
-        {
-            name = $"{targetSkinnedMeshRenderer.name}_DeathBake"
-        };
-
-        // 現在のSkinnedMesh姿勢を、Renderer Transform基準の静的Meshへ保存する。
-        // useScale=trueでRenderer TransformのScaleを補償したMeshを取得する。
-        targetSkinnedMeshRenderer.BakeMesh(bakedMesh, true);
-        bakedMesh.RecalculateBounds();
-
-        if (!ValidateBakedMeshMaterialLayout(
-                bakedMesh,
+        if (!TryGetCutSource(
+                out Mesh sourceMesh,
+                out Renderer sourceRenderer,
+                out bool destroySourceMeshAfterCut,
                 out failureReason))
         {
-            DestroyRuntimeMesh(bakedMesh);
             LogCutFailure(failureReason);
             return false;
         }
 
-        debugLocalToWorldMatrix =
-            targetSkinnedMeshRenderer.transform.localToWorldMatrix;
-
-        ConvertTrajectoryToRendererLocalSpace(
-            trajectory,
-            out List<Vector3> localTipPositions,
-            out List<Vector3> localRootPositions);
-
-        bool succeeded = cutProcessor.TryCut(
-            bakedMesh,
-            localTipPositions,
-            localRootPositions,
-            cutDirectionSampleCount,
-            safeCutEdgeMarginNormalized,
-            cutSurfaceUvScale,
-            out MeshCutResult cutResult,
-            out failureReason);
-
-        CaptureDebugData();
-        DestroyRuntimeMesh(bakedMesh);
-
-        if (!succeeded)
+        try
         {
-            LogCutFailure(failureReason);
-            return false;
+            if (!ValidateSourceMeshMaterialLayout(
+                    sourceMesh,
+                    sourceRenderer,
+                    out failureReason))
+            {
+                LogCutFailure(failureReason);
+                return false;
+            }
+
+            ConvertTrajectoryToRendererLocalSpace(
+                trajectory,
+                sourceRenderer.transform,
+                out List<Vector3> localTipPositions,
+                out List<Vector3> localRootPositions);
+
+            bool succeeded = cutProcessor.TryCut(
+                sourceMesh,
+                localTipPositions,
+                localRootPositions,
+                cutDirectionSampleCount,
+                cutRangeAxis,
+                cutRangeMinimumNormalized,
+                cutRangeMaximumNormalized,
+                cutSurfaceUvScale,
+                out MeshCutResult cutResult,
+                out failureReason);
+
+            if (!succeeded)
+            {
+                LogCutFailure(failureReason);
+                return false;
+            }
+
+            Material[] pieceMaterials =
+                BuildPieceMaterials(sourceRenderer);
+
+            firstPieceRuntimeMesh =
+                cutResult.FirstPieceMesh;
+
+            secondPieceRuntimeMesh =
+                cutResult.SecondPieceMesh;
+
+            firstPieceObject = CreatePieceObject(
+                "FirstPiece",
+                firstPieceRuntimeMesh,
+                pieceMaterials,
+                sourceRenderer);
+
+            secondPieceObject = CreatePieceObject(
+                "SecondPiece",
+                secondPieceRuntimeMesh,
+                pieceMaterials,
+                sourceRenderer);
+
+            sourceRenderer.enabled = false;
+
+            hasCompletedCut = true;
+
+            return true;
         }
-
-        Material[] pieceMaterials = BuildPieceMaterials();
-
-        firstPieceRuntimeMesh = cutResult.FirstPieceMesh;
-        secondPieceRuntimeMesh = cutResult.SecondPieceMesh;
-
-        firstPieceObject = CreatePieceObject(
-            "FirstPiece",
-            firstPieceRuntimeMesh,
-            pieceMaterials);
-        secondPieceObject = CreatePieceObject(
-            "SecondPiece",
-            secondPieceRuntimeMesh,
-            pieceMaterials);
-
-        targetSkinnedMeshRenderer.enabled = false;
-        hasCompletedCut = true;
-        return true;
+        finally
+        {
+            if (destroySourceMeshAfterCut)
+            {
+                DestroyRuntimeMesh(sourceMesh);
+            }
+        }
     }
 
+    /// <summary>
+    /// Mesh分割によって生成された2つの切断片を取得する。
+    /// </summary>
+    /// <returns>
+    /// Mesh分割済みで、両方の切断片が存在する場合はtrue。
+    /// </returns>
+    public bool TryGetCutPieceTransforms(
+        out Transform firstPieceTransform,
+        out Transform secondPieceTransform)
+    {
+        firstPieceTransform =
+            firstPieceObject != null
+                ? firstPieceObject.transform
+                : null;
+
+        secondPieceTransform =
+            secondPieceObject != null
+                ? secondPieceObject.transform
+                : null;
+
+        return hasCompletedCut &&
+               firstPieceTransform != null &&
+               secondPieceTransform != null;
+    }
+
+    /// <summary>
+    /// 切断要求に必要な設定と入力を検証する。
+    /// </summary>
     private bool ValidateCutRequest(
         ChainsawAttackTrajectory trajectory,
         out string failureReason)
     {
-        if (targetSkinnedMeshRenderer == null)
+        bool hasSkinnedMeshTarget =
+            targetSkinnedMeshRenderer != null;
+
+        bool hasMeshFilterTarget =
+            targetMeshFilter != null;
+
+        if (!hasSkinnedMeshTarget &&
+            !hasMeshFilterTarget)
         {
             failureReason =
-                "Target Skinned Mesh Rendererが設定されていません。";
+                "切断対象が設定されていません。"
+                + "Target Skinned Mesh Rendererまたは"
+                + "Target Mesh Filterのどちらかを設定してください。";
+
             return false;
         }
 
-        if (targetSkinnedMeshRenderer.sharedMesh == null)
+        if (hasSkinnedMeshTarget &&
+            hasMeshFilterTarget)
         {
             failureReason =
-                "Target Skinned Mesh RendererにsharedMeshがありません。";
+                "Target Skinned Mesh Rendererと"
+                + "Target Mesh Filterの両方が設定されています。"
+                + "切断対象はどちらか一方だけ設定してください。";
+
+            return false;
+        }
+
+        if (hasSkinnedMeshTarget)
+        {
+            if (targetSkinnedMeshRenderer.sharedMesh == null)
+            {
+                failureReason =
+                    "Target Skinned Mesh Rendererに"
+                    + "sharedMeshがありません。";
+
+                return false;
+            }
+        }
+        else
+        {
+            if (targetMeshFilter.sharedMesh == null)
+            {
+                failureReason =
+                    "Target Mesh FilterにsharedMeshがありません。";
+
+                return false;
+            }
+
+            MeshRenderer targetMeshRenderer =
+                targetMeshFilter.GetComponent<MeshRenderer>();
+
+            if (targetMeshRenderer == null)
+            {
+                failureReason =
+                    "Target Mesh Filterと同じGameObjectに"
+                    + "MeshRendererがありません。";
+
+                return false;
+            }
+
+            if (!targetMeshFilter.sharedMesh.isReadable)
+            {
+                failureReason =
+                    "Target Mesh FilterのMeshが読み取り不可です。"
+                    + "Mesh切断では頂点・Triangle情報を読み取るため、"
+                    + "Model Import Settingsの"
+                    + "Read/Write Enabledを有効にしてください。";
+
+                return false;
+            }
+        }
+
+        if (cutRangeMinimumNormalized < 0.0f ||
+            cutRangeMinimumNormalized > 1.0f ||
+            cutRangeMaximumNormalized < 0.0f ||
+            cutRangeMaximumNormalized > 1.0f)
+        {
+            failureReason =
+                "切断位置有効範囲は0～1の範囲で設定してください。";
+
+            return false;
+        }
+
+        if (cutRangeMinimumNormalized >=
+            cutRangeMaximumNormalized)
+        {
+            failureReason =
+                "Cut Range MinimumはCut Range Maximumより小さい値にしてください。";
+
             return false;
         }
 
         if (cutSurfaceMaterial == null)
         {
-            failureReason = "Cut Surface Materialが設定されていません。";
+            failureReason =
+                "Cut Surface Materialが設定されていません。";
+
             return false;
         }
 
         if (trajectory == null)
         {
-            failureReason = "ChainsawAttackTrajectoryがnullです。";
+            failureReason =
+                "ChainsawAttackTrajectoryがnullです。";
+
             return false;
         }
 
         if (trajectory.SampleCount < 2)
         {
             failureReason =
-                "Mesh切断には2サンプル以上のチェンソー軌跡が必要です。";
+                "Mesh切断には2サンプル以上の"
+                + "チェンソー軌跡が必要です。";
+
             return false;
         }
 
@@ -198,24 +340,130 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         return true;
     }
 
-    private bool ValidateBakedMeshMaterialLayout(
-        Mesh bakedMesh,
+    /// <summary>
+    /// 現在設定されている切断対象から、
+    /// ChainsawMeshCutProcessorへ渡すMeshとRendererを取得する。
+    /// </summary>
+    /// <remarks>
+    /// SkinnedMeshRendererの場合は現在姿勢をRuntime MeshへBakeする。
+    /// MeshFilterの場合はsharedMeshを読み取り専用の入力として使用する。
+    /// </remarks>
+    private bool TryGetCutSource(
+        out Mesh sourceMesh,
+        out Renderer sourceRenderer,
+        out bool destroySourceMeshAfterCut,
         out string failureReason)
     {
-        Material[] sourceMaterials =
-            targetSkinnedMeshRenderer.sharedMaterials;
+        sourceMesh = null;
+        sourceRenderer = null;
+        destroySourceMeshAfterCut = false;
 
-        if (sourceMaterials == null || sourceMaterials.Length == 0)
+        if (targetSkinnedMeshRenderer != null)
         {
-            failureReason = "切断対象RendererにMaterialがありません。";
+            var bakedMesh = new Mesh
+            {
+                name =
+                    $"{targetSkinnedMeshRenderer.name}_DeathBake"
+            };
+
+            // 現在のSkinnedMesh姿勢を、
+            // Renderer Transform基準の静的Meshへ保存する。
+            //
+            // useScale=trueでRenderer TransformのScaleを
+            // 補償したMeshを取得する。
+            targetSkinnedMeshRenderer.BakeMesh(
+                bakedMesh,
+                true);
+
+            bakedMesh.RecalculateBounds();
+
+            sourceMesh = bakedMesh;
+            sourceRenderer = targetSkinnedMeshRenderer;
+            destroySourceMeshAfterCut = true;
+
+            failureReason = null;
+            return true;
+        }
+
+        if (targetMeshFilter != null)
+        {
+            MeshRenderer meshRenderer =
+                targetMeshFilter.GetComponent<MeshRenderer>();
+
+            if (meshRenderer == null)
+            {
+                failureReason =
+                    "Target Mesh Filterと同じGameObjectに"
+                    + "MeshRendererがありません。";
+
+                return false;
+            }
+
+            sourceMesh =
+                targetMeshFilter.sharedMesh;
+
+            sourceRenderer =
+                meshRenderer;
+
+            // sharedMeshはProject AssetまたはUnityが管理するMeshなので、
+            // このEnemyMeshCutterからDestroyしてはいけない。
+            destroySourceMeshAfterCut = false;
+
+            failureReason = null;
+            return true;
+        }
+
+        failureReason =
+            "切断対象からMeshを取得できませんでした。";
+
+        return false;
+    }
+
+    /// <summary>
+    /// 元MeshのSubMesh数とRendererのMaterial数が一致しているか確認する。
+    /// </summary>
+    private bool ValidateSourceMeshMaterialLayout(
+        Mesh sourceMesh,
+        Renderer sourceRenderer,
+        out string failureReason)
+    {
+        if (sourceMesh == null)
+        {
+            failureReason =
+                "切断対象Meshがnullです。";
+
             return false;
         }
 
-        if (sourceMaterials.Length != bakedMesh.subMeshCount)
+        if (sourceRenderer == null)
         {
             failureReason =
-                "元Material数とBake MeshのSubMesh数が一致していません。" +
-                "切断後のMaterial対応を安全に維持できないため処理を中止します。";
+                "切断対象Rendererがnullです。";
+
+            return false;
+        }
+
+        Material[] sourceMaterials =
+            sourceRenderer.sharedMaterials;
+
+        if (sourceMaterials == null ||
+            sourceMaterials.Length == 0)
+        {
+            failureReason =
+                "切断対象RendererにMaterialがありません。";
+
+            return false;
+        }
+
+        if (sourceMaterials.Length !=
+            sourceMesh.subMeshCount)
+        {
+            failureReason =
+                "元Material数とMeshのSubMesh数が"
+                + "一致していません。"
+                + "切断後のMaterial対応を安全に"
+                + "維持できないため処理を中止します。";
+
             return false;
         }
 
@@ -223,122 +471,177 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// World座標で記録されたチェンソー軌跡を、
+    /// 切断対象RendererのLocal座標へ変換する。
+    /// </summary>
     private void ConvertTrajectoryToRendererLocalSpace(
         ChainsawAttackTrajectory trajectory,
+        Transform rendererTransform,
         out List<Vector3> localTipPositions,
         out List<Vector3> localRootPositions)
     {
-        int sampleCount = trajectory.SampleCount;
-        localTipPositions = new List<Vector3>(sampleCount);
-        localRootPositions = new List<Vector3>(sampleCount);
+        int sampleCount =
+            trajectory.SampleCount;
 
-        Transform rendererTransform = targetSkinnedMeshRenderer.transform;
+        localTipPositions =
+            new List<Vector3>(sampleCount);
+
+        localRootPositions =
+            new List<Vector3>(sampleCount);
 
         for (int i = 0; i < sampleCount; i++)
         {
-            ChainsawBladeTrajectorySample sample = trajectory.Samples[i];
+            ChainsawBladeTrajectorySample sample =
+                trajectory.Samples[i];
 
             localTipPositions.Add(
-                rendererTransform.InverseTransformPoint(sample.TipPosition));
+                rendererTransform.InverseTransformPoint(
+                    sample.TipPosition));
+
             localRootPositions.Add(
-                rendererTransform.InverseTransformPoint(sample.RootPosition));
+                rendererTransform.InverseTransformPoint(
+                    sample.RootPosition));
         }
     }
 
-    private void CaptureDebugData()
-    {
-        hasCutDebugData = cutProcessor.HasDebugData;
-
-        if (!hasCutDebugData)
-        {
-            return;
-        }
-
-        debugOriginalCutPlane = cutProcessor.LastOriginalCutPlane;
-        debugCorrectedCutPlane = cutProcessor.LastCorrectedCutPlane;
-        debugSafeMinimumProjection =
-            cutProcessor.LastSafeMinimumProjection;
-        debugSafeMaximumProjection =
-            cutProcessor.LastSafeMaximumProjection;
-        debugSourceBounds = cutProcessor.LastSourceBounds;
-    }
-
-    private Material[] BuildPieceMaterials()
+    /// <summary>
+    /// 元RendererのMaterialに切断面Materialを追加する。
+    /// </summary>
+    private Material[] BuildPieceMaterials(
+        Renderer sourceRenderer)
     {
         Material[] sourceMaterials =
-            targetSkinnedMeshRenderer.sharedMaterials;
-        var pieceMaterials = new Material[sourceMaterials.Length + 1];
+            sourceRenderer.sharedMaterials;
 
-        for (int i = 0; i < sourceMaterials.Length; i++)
+        var pieceMaterials =
+            new Material[sourceMaterials.Length + 1];
+
+        for (int i = 0;
+             i < sourceMaterials.Length;
+             i++)
         {
-            pieceMaterials[i] = sourceMaterials[i];
+            pieceMaterials[i] =
+                sourceMaterials[i];
         }
 
-        pieceMaterials[pieceMaterials.Length - 1] = cutSurfaceMaterial;
+        pieceMaterials[pieceMaterials.Length - 1] =
+            cutSurfaceMaterial;
+
         return pieceMaterials;
     }
 
+    /// <summary>
+    /// 切断後Meshを表示するGameObjectを生成する。
+    /// </summary>
     private GameObject CreatePieceObject(
         string suffix,
         Mesh mesh,
-        Material[] materials)
+        Material[] materials,
+        Renderer sourceRenderer)
     {
-        var pieceObject = new GameObject(
-            $"{targetSkinnedMeshRenderer.name}_Cut_{suffix}");
+        var pieceObject =
+            new GameObject(
+                $"{sourceRenderer.name}_Cut_{suffix}");
 
-        pieceObject.layer = targetSkinnedMeshRenderer.gameObject.layer;
+        pieceObject.layer =
+            sourceRenderer.gameObject.layer;
 
-        Transform pieceTransform = pieceObject.transform;
+        Transform pieceTransform =
+            pieceObject.transform;
+
         pieceTransform.SetParent(
-            targetSkinnedMeshRenderer.transform,
+            sourceRenderer.transform,
             false);
-        pieceTransform.localPosition = Vector3.zero;
-        pieceTransform.localRotation = Quaternion.identity;
-        pieceTransform.localScale = Vector3.one;
 
-        MeshFilter meshFilter = pieceObject.AddComponent<MeshFilter>();
-        meshFilter.sharedMesh = mesh;
+        pieceTransform.localPosition =
+            Vector3.zero;
 
-        MeshRenderer meshRenderer = pieceObject.AddComponent<MeshRenderer>();
+        pieceTransform.localRotation =
+            Quaternion.identity;
+
+        pieceTransform.localScale =
+            Vector3.one;
+
+        MeshFilter meshFilter =
+            pieceObject.AddComponent<MeshFilter>();
+
+        meshFilter.sharedMesh =
+            mesh;
+
+        MeshRenderer meshRenderer =
+            pieceObject.AddComponent<MeshRenderer>();
+
         CopyRendererSettings(
-            targetSkinnedMeshRenderer,
+            sourceRenderer,
             meshRenderer);
-        meshRenderer.sharedMaterials = materials;
+
+        meshRenderer.sharedMaterials =
+            materials;
 
         return pieceObject;
     }
 
+    /// <summary>
+    /// 元Rendererから切断後Rendererへ、
+    /// 表示に必要な共通設定をコピーする。
+    /// </summary>
     private static void CopyRendererSettings(
         Renderer source,
         MeshRenderer destination)
     {
-        destination.shadowCastingMode = source.shadowCastingMode;
-        destination.receiveShadows = source.receiveShadows;
-        destination.lightProbeUsage = source.lightProbeUsage;
-        destination.reflectionProbeUsage = source.reflectionProbeUsage;
-        destination.probeAnchor = source.probeAnchor;
-        destination.sortingLayerID = source.sortingLayerID;
-        destination.sortingOrder = source.sortingOrder;
+        destination.shadowCastingMode =
+            source.shadowCastingMode;
+
+        destination.receiveShadows =
+            source.receiveShadows;
+
+        destination.lightProbeUsage =
+            source.lightProbeUsage;
+
+        destination.reflectionProbeUsage =
+            source.reflectionProbeUsage;
+
+        destination.probeAnchor =
+            source.probeAnchor;
+
+        destination.sortingLayerID =
+            source.sortingLayerID;
+
+        destination.sortingOrder =
+            source.sortingOrder;
     }
 
-    private void LogCutFailure(string failureReason)
+    /// <summary>
+    /// Mesh切断失敗理由をConsoleへ出力する。
+    /// </summary>
+    private void LogCutFailure(
+        string failureReason)
     {
         Debug.LogWarning(
-            $"{nameof(EnemyMeshCutter)}: Mesh分割に失敗しました。" +
-            $" 理由: {failureReason}",
+            $"{nameof(EnemyMeshCutter)}: "
+            + "Mesh分割に失敗しました。"
+            + $" 理由: {failureReason}",
             this);
     }
 
     private void OnDestroy()
     {
-        DestroyRuntimeMesh(firstPieceRuntimeMesh);
-        DestroyRuntimeMesh(secondPieceRuntimeMesh);
+        DestroyRuntimeMesh(
+            firstPieceRuntimeMesh);
+
+        DestroyRuntimeMesh(
+            secondPieceRuntimeMesh);
 
         firstPieceRuntimeMesh = null;
         secondPieceRuntimeMesh = null;
     }
 
-    private static void DestroyRuntimeMesh(Mesh mesh)
+    /// <summary>
+    /// EnemyMeshCutterが所有するRuntime Meshを破棄する。
+    /// </summary>
+    private static void DestroyRuntimeMesh(
+        Mesh mesh)
     {
         if (mesh == null)
         {
@@ -358,272 +661,142 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 #if UNITY_EDITOR
     private void OnValidate()
     {
-        cutDirectionSampleCount = Mathf.Max(2, cutDirectionSampleCount);
-        safeCutEdgeMarginNormalized = Mathf.Clamp(
-            safeCutEdgeMarginNormalized,
-            0.0f,
-            0.49f);
-        cutSurfaceUvScale = Mathf.Max(
-            0.0001f,
-            cutSurfaceUvScale);
+        cutDirectionSampleCount =
+            Mathf.Max(
+                2,
+                cutDirectionSampleCount);
+
+        cutRangeMinimumNormalized =
+            Mathf.Clamp01(
+                cutRangeMinimumNormalized);
+
+        cutRangeMaximumNormalized =
+            Mathf.Clamp01(
+                cutRangeMaximumNormalized);
+
+        if (cutRangeMinimumNormalized >=
+            cutRangeMaximumNormalized)
+        {
+            const float minimumNormalizedRangeWidth = 0.01f;
+
+            if (cutRangeMinimumNormalized >= 1.0f)
+            {
+                cutRangeMinimumNormalized =
+                    1.0f - minimumNormalizedRangeWidth;
+            }
+
+            cutRangeMaximumNormalized =
+                Mathf.Min(
+                    1.0f,
+                    cutRangeMinimumNormalized
+                    + minimumNormalizedRangeWidth);
+        }
+
+        cutSurfaceUvScale =
+            Mathf.Max(
+                0.0001f,
+                cutSurfaceUvScale);
     }
 #endif
 
     private void OnDrawGizmosSelected()
     {
-        if (!showCutDebugGizmos || !hasCutDebugData)
+        if (!showCutRangeGizmo)
         {
             return;
         }
 
-        Matrix4x4 previousMatrix = Gizmos.matrix;
-        Color previousColor = Gizmos.color;
-
-        if (showSafeCutRange)
+        if (!TryGetPreviewBounds(
+                out Bounds sourceBounds,
+                out Transform sourceTransform))
         {
-            DrawSafeCutRange();
+            return;
         }
 
-        Gizmos.matrix = debugLocalToWorldMatrix;
-
-        if (showCutMeshBounds)
+        if (!ChainsawMeshCutProcessor.TryCalculateCutRangeBounds(
+                sourceBounds,
+                cutRangeAxis,
+                cutRangeMinimumNormalized,
+                cutRangeMaximumNormalized,
+                out Bounds cutRangeBounds))
         {
-            Gizmos.color = new Color(0.0f, 0.85f, 1.0f, 1.0f);
-            Gizmos.DrawWireCube(
-                debugSourceBounds.center,
-                debugSourceBounds.size);
+            return;
         }
 
-        if (showCutPlanes)
-        {
-            DrawPlaneWire(
-                debugOriginalCutPlane,
-                debugSourceBounds,
-                new Color(1.0f, 0.85f, 0.0f, 1.0f));
-            DrawPlaneWire(
-                debugCorrectedCutPlane,
-                debugSourceBounds,
-                new Color(0.0f, 1.0f, 0.25f, 1.0f));
-        }
+        Matrix4x4 previousMatrix =
+            Gizmos.matrix;
 
-        Gizmos.matrix = previousMatrix;
-        Gizmos.color = previousColor;
-    }
-
-    private void DrawSafeCutRange()
-    {
-        Vector3 normal = debugCorrectedCutPlane.normal.normalized;
-        CreatePlaneBasis(
-            normal,
-            out Vector3 axisU,
-            out Vector3 axisV);
-
-        CalculateBoundsProjectionRange(
-            debugSourceBounds,
-            axisU,
-            out float minimumU,
-            out float maximumU);
-        CalculateBoundsProjectionRange(
-            debugSourceBounds,
-            axisV,
-            out float minimumV,
-            out float maximumV);
-
-        float centerU = (minimumU + maximumU) * 0.5f;
-        float centerV = (minimumV + maximumV) * 0.5f;
-        float centerNormal =
-            (debugSafeMinimumProjection +
-             debugSafeMaximumProjection) * 0.5f;
-
-        Vector3 localCenter =
-            axisU * centerU +
-            axisV * centerV +
-            normal * centerNormal;
-
-        float sizeU = maximumU - minimumU;
-        float sizeV = maximumV - minimumV;
-        float sizeNormal =
-            debugSafeMaximumProjection -
-            debugSafeMinimumProjection;
-
-        Quaternion localRotation = Quaternion.LookRotation(
-            normal,
-            axisV);
+        Color previousColor =
+            Gizmos.color;
 
         Gizmos.matrix =
-            debugLocalToWorldMatrix *
-            Matrix4x4.TRS(
-                localCenter,
-                localRotation,
-                Vector3.one);
+            sourceTransform.localToWorldMatrix;
 
-        Gizmos.color = new Color(1.0f, 0.0f, 0.0f, 0.14f);
+        Gizmos.color =
+            new Color(
+                1.0f,
+                0.0f,
+                0.0f,
+                0.18f);
+
         Gizmos.DrawCube(
-            Vector3.zero,
-            new Vector3(sizeU, sizeV, sizeNormal));
+            cutRangeBounds.center,
+            cutRangeBounds.size);
 
-        Gizmos.matrix = debugLocalToWorldMatrix;
+        Gizmos.color =
+            new Color(
+                1.0f,
+                0.0f,
+                0.0f,
+                1.0f);
 
-        DrawProjectionPlaneWire(
-            normal,
-            axisU,
-            axisV,
-            debugSafeMinimumProjection,
-            minimumU,
-            maximumU,
-            minimumV,
-            maximumV,
-            new Color(1.0f, 0.0f, 0.0f, 1.0f));
+        Gizmos.DrawWireCube(
+            cutRangeBounds.center,
+            cutRangeBounds.size);
 
-        DrawProjectionPlaneWire(
-            normal,
-            axisU,
-            axisV,
-            debugSafeMaximumProjection,
-            minimumU,
-            maximumU,
-            minimumV,
-            maximumV,
-            new Color(1.0f, 0.0f, 0.0f, 1.0f));
+        Gizmos.matrix =
+            previousMatrix;
+
+        Gizmos.color =
+            previousColor;
     }
 
-    private static void DrawPlaneWire(
-        Plane plane,
-        Bounds bounds,
-        Color color)
+    /// <summary>
+    /// Sceneビューで切断位置有効範囲を表示するための
+    /// ローカルBoundsとTransformを取得する。
+    /// </summary>
+    private bool TryGetPreviewBounds(
+        out Bounds sourceBounds,
+        out Transform sourceTransform)
     {
-        Vector3 normal = plane.normal.normalized;
-        CreatePlaneBasis(
-            normal,
-            out Vector3 axisU,
-            out Vector3 axisV);
-
-        CalculateBoundsProjectionRange(
-            bounds,
-            axisU,
-            out float minimumU,
-            out float maximumU);
-        CalculateBoundsProjectionRange(
-            bounds,
-            axisV,
-            out float minimumV,
-            out float maximumV);
-
-        float planeProjection = -plane.distance;
-
-        DrawProjectionPlaneWire(
-            normal,
-            axisU,
-            axisV,
-            planeProjection,
-            minimumU,
-            maximumU,
-            minimumV,
-            maximumV,
-            color);
-    }
-
-    private static void DrawProjectionPlaneWire(
-        Vector3 normal,
-        Vector3 axisU,
-        Vector3 axisV,
-        float planeProjection,
-        float minimumU,
-        float maximumU,
-        float minimumV,
-        float maximumV,
-        Color color)
-    {
-        Vector3 first =
-            axisU * minimumU +
-            axisV * minimumV +
-            normal * planeProjection;
-
-        Vector3 second =
-            axisU * maximumU +
-            axisV * minimumV +
-            normal * planeProjection;
-
-        Vector3 third =
-            axisU * maximumU +
-            axisV * maximumV +
-            normal * planeProjection;
-
-        Vector3 fourth =
-            axisU * minimumU +
-            axisV * maximumV +
-            normal * planeProjection;
-
-        Gizmos.color = color;
-        Gizmos.DrawLine(first, second);
-        Gizmos.DrawLine(second, third);
-        Gizmos.DrawLine(third, fourth);
-        Gizmos.DrawLine(fourth, first);
-    }
-
-    private static void CreatePlaneBasis(
-        Vector3 planeNormal,
-        out Vector3 axisU,
-        out Vector3 axisV)
-    {
-        Vector3 referenceAxis =
-            Mathf.Abs(Vector3.Dot(planeNormal, Vector3.up)) < 0.95f
-                ? Vector3.up
-                : Vector3.right;
-
-        axisU = Vector3.Cross(
-            referenceAxis,
-            planeNormal).normalized;
-
-        if (axisU.sqrMagnitude <= 0.00000001f)
+        if (targetMeshFilter != null &&
+            targetMeshFilter.sharedMesh != null)
         {
-            axisU = Vector3.Cross(
-                Vector3.forward,
-                planeNormal).normalized;
+            sourceBounds =
+                targetMeshFilter.sharedMesh.bounds;
+
+            sourceTransform =
+                targetMeshFilter.transform;
+
+            return true;
         }
 
-        axisV = Vector3.Cross(
-            planeNormal,
-            axisU).normalized;
-    }
-
-    private static void CalculateBoundsProjectionRange(
-        Bounds bounds,
-        Vector3 axis,
-        out float minimumProjection,
-        out float maximumProjection)
-    {
-        Vector3[] corners = GetBoundsCorners(bounds);
-        minimumProjection = float.PositiveInfinity;
-        maximumProjection = float.NegativeInfinity;
-
-        for (int i = 0; i < corners.Length; i++)
+        if (targetSkinnedMeshRenderer != null &&
+            targetSkinnedMeshRenderer.sharedMesh != null)
         {
-            float projection = Vector3.Dot(corners[i], axis);
-            minimumProjection = Mathf.Min(
-                minimumProjection,
-                projection);
-            maximumProjection = Mathf.Max(
-                maximumProjection,
-                projection);
+            // SkinnedMeshRendererは実行時にBakeしたMeshを切断するため、
+            // Scene表示ではRendererローカルBoundsを設定確認用の近似として使用する。
+            sourceBounds =
+                targetSkinnedMeshRenderer.localBounds;
+
+            sourceTransform =
+                targetSkinnedMeshRenderer.transform;
+
+            return true;
         }
-    }
 
-    private static Vector3[] GetBoundsCorners(Bounds bounds)
-    {
-        Vector3 min = bounds.min;
-        Vector3 max = bounds.max;
-
-        return new[]
-        {
-            new Vector3(min.x, min.y, min.z),
-            new Vector3(max.x, min.y, min.z),
-            new Vector3(min.x, max.y, min.z),
-            new Vector3(max.x, max.y, min.z),
-            new Vector3(min.x, min.y, max.z),
-            new Vector3(max.x, min.y, max.z),
-            new Vector3(min.x, max.y, max.z),
-            new Vector3(max.x, max.y, max.z)
-        };
+        sourceBounds = default;
+        sourceTransform = null;
+        return false;
     }
 }

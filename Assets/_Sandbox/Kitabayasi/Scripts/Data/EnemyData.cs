@@ -58,7 +58,17 @@ public class EnemyData : ScriptableObject
     private float hitTiltAngle;
 
     [Header("死亡")]
-    [Tooltip("死亡後、分割されたパーツが徐々に小さくなって消えるまでの時間。")]
+
+    [Tooltip(
+        "メッシュ分割後、切断片の縮小を"
+        + "開始するまでの待機時間。")]
+    [SerializeField]
+    [Min(0f)]
+    private float deathShrinkDelay = 3f;
+
+    [Tooltip(
+        "縮小開始後、分割されたパーツが"
+        + "Scale 0になるまでの時間。")]
     [SerializeField]
     [Min(0f)]
     private float deathShrinkDuration = 3f;
@@ -83,6 +93,9 @@ public class EnemyData : ScriptableObject
 
     public float HitTiltAngle =>
         hitTiltAngle;
+
+    public float DeathShrinkDelay =>
+        deathShrinkDelay;
 
     public float DeathShrinkDuration =>
         deathShrinkDuration;

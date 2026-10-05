@@ -5,20 +5,35 @@ using UnityEngine;
 /// 通常Enemyで共通して使用する死亡処理を担当する。
 /// </summary>
 /// <remarks>
-/// 現段階では死亡演出時間の進行だけを実装する。
-/// メッシュ分割・分割パーツの吹き飛ばし・縮小処理は、
-/// メッシュ分割機能のAPI確定後にこのStrategyへ接続する。
+/// 死亡開始時に、死亡原因となったPlayerの攻撃情報から
+/// チェンソー軌跡を取得し、EnemyMeshCutterへメッシュ分割を要求する。
 ///
+/// Mesh分割成功後は、生成された切断片を
+/// EnemyCutPieceBurstへ渡して吹き飛ばしを開始し、
+/// EnemyCutPieceShrinkへ渡して縮小シーケンスを開始する。
+///
+/// Mesh分割アルゴリズム、切断片の具体的な移動・縮小処理、
 /// State切り替え、HPの保持・死亡判定、
 /// Enemy本体の最終破棄は担当しない。
 /// </remarks>
 [Serializable]
-public sealed class StandardEnemyDeathStrategy : IEnemyDeathStrategy
+public sealed class StandardEnemyDeathStrategy :
+    IEnemyDeathStrategy
 {
     private EnemyData enemyData;
-    private GameObject enemyObject;
 
-    private float elapsedTime;
+    private EnemyAttackHitReceiver
+        enemyAttackHitReceiver;
+
+    private EnemyMeshCutter
+        enemyMeshCutter;
+
+    private EnemyCutPieceBurst
+        enemyCutPieceBurst;
+
+    private EnemyCutPieceShrink
+        enemyCutPieceShrink;
+
     private bool isDeathActive;
 
     public void Initialize(
@@ -27,29 +42,80 @@ public sealed class StandardEnemyDeathStrategy : IEnemyDeathStrategy
     {
         this.enemyData = enemyData
             ? enemyData
-            : throw new ArgumentNullException(nameof(enemyData));
+            : throw new ArgumentNullException(
+                nameof(enemyData));
 
-        this.enemyObject = enemyObject
-            ? enemyObject
-            : throw new ArgumentNullException(nameof(enemyObject));
+        if (!enemyObject)
+        {
+            throw new ArgumentNullException(
+                nameof(enemyObject));
+        }
+
+        enemyAttackHitReceiver =
+            enemyObject.GetComponent<
+                EnemyAttackHitReceiver>();
+
+        enemyMeshCutter =
+            enemyObject.GetComponent<
+                EnemyMeshCutter>();
+
+        enemyCutPieceBurst =
+            enemyObject.GetComponent<
+                EnemyCutPieceBurst>();
+
+        enemyCutPieceShrink =
+            enemyObject.GetComponent<
+                EnemyCutPieceShrink>();
+
+        if (enemyAttackHitReceiver == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: "
+                + $"{nameof(EnemyAttackHitReceiver)}"
+                + "が見つかりません。 "
+                + "死亡時の攻撃情報を取得できないため、"
+                + "メッシュ分割は実行されません。",
+                enemyObject);
+        }
+
+        if (enemyMeshCutter == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: "
+                + $"{nameof(EnemyMeshCutter)}"
+                + "が見つかりません。 "
+                + "死亡時のメッシュ分割は実行されません。",
+                enemyObject);
+        }
+
+        if (enemyCutPieceBurst == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: "
+                + $"{nameof(EnemyCutPieceBurst)}"
+                + "が見つかりません。 "
+                + "メッシュ分割後の吹き飛ばしは"
+                + "実行されません。",
+                enemyObject);
+        }
+
+        if (enemyCutPieceShrink == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: "
+                + $"{nameof(EnemyCutPieceShrink)}"
+                + "が見つかりません。 "
+                + "メッシュ分割後の縮小は"
+                + "実行されません。",
+                enemyObject);
+        }
     }
 
     public void BeginDeath()
     {
         isDeathActive = true;
-        elapsedTime = 0f;
 
-        // TODO: メッシュ分割機能のAPIが確定したら、ここから死亡演出を開始する。
-        // 想定する処理:
-        // 1. 必要であればEnemyAttackHitReceiver.LastPlayerAttackHitDataから
-        //    死亡の原因となった攻撃情報・チェンソー軌跡を取得する。
-        // 2. メッシュ分割関数を呼び出す。
-        // 3. 生成された分割パーツを吹き飛ばす。
-        // 4. 分割パーツと各パーツの初期Scaleを保持し、
-        //    UpdateDeath()でDeathShrinkDurationに合わせて徐々に縮小する。
-        //
-        // 現時点ではメッシュ分割APIが未接続のため、
-        // Enemy本体の見た目は変更せず死亡時間だけを進行させる。
+        TryCutDeathMesh();
     }
 
     public bool UpdateDeath()
@@ -59,38 +125,111 @@ public sealed class StandardEnemyDeathStrategy : IEnemyDeathStrategy
             return false;
         }
 
-        float shrinkDuration =
-            enemyData.DeathShrinkDuration;
+        bool hasCompletedBurst =
+            enemyCutPieceBurst == null ||
+            !enemyCutPieceBurst.IsBursting;
 
-        if (shrinkDuration <= 0f)
-        {
-            return true;
-        }
+        bool hasCompletedShrink =
+            enemyCutPieceShrink == null ||
+            !enemyCutPieceShrink.IsShrinkActive;
 
-        elapsedTime += Time.fixedDeltaTime;
-
-        float shrinkProgress =
-            Mathf.Clamp01(
-                elapsedTime /
-                shrinkDuration);
-
-        // TODO: メッシュ分割機能を接続したら、
-        // BeginDeath()で保持した各分割パーツを
-        // shrinkProgressに合わせて初期ScaleからVector3.zeroへ縮小する。
-        //
-        // 例:
-        // part.localScale =
-        //     Vector3.Lerp(
-        //         initialScale,
-        //         Vector3.zero,
-        //         shrinkProgress);
-
-        return shrinkProgress >= 1f;
+        return hasCompletedBurst &&
+               hasCompletedShrink;
     }
 
     public void EndDeath()
     {
         isDeathActive = false;
-        elapsedTime = 0f;
+
+        enemyCutPieceBurst?.StopBurst();
+        enemyCutPieceShrink?.StopShrink();
+    }
+
+    /// <summary>
+    /// 死亡原因となったPlayerの攻撃情報から
+    /// チェンソー軌跡を取得し、
+    /// メッシュ分割と切断片演出の開始を要求する。
+    /// </summary>
+    private void TryCutDeathMesh()
+    {
+        if (enemyAttackHitReceiver == null ||
+            enemyMeshCutter == null)
+        {
+            return;
+        }
+
+        PlayerAttackHitData lastPlayerAttackHitData =
+            enemyAttackHitReceiver
+                .LastPlayerAttackHitData;
+
+        if (lastPlayerAttackHitData == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: "
+                + "死亡原因となった"
+                + "PlayerAttackHitDataがありません。 "
+                + "メッシュ分割は実行されません.");
+
+            return;
+        }
+
+        ChainsawAttackTrajectory chainsawTrail =
+            lastPlayerAttackHitData
+                .ChainsawTrail;
+
+        if (chainsawTrail == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: "
+                + "死亡原因となった攻撃に"
+                + "ChainsawTrailがありません。 "
+                + "メッシュ分割は実行されません.");
+
+            return;
+        }
+
+        bool cutSucceeded =
+            enemyMeshCutter.TryCut(
+                chainsawTrail);
+
+        if (!cutSucceeded)
+        {
+            return;
+        }
+
+        TryBeginCutPieceEffects();
+    }
+
+    /// <summary>
+    /// Mesh分割によって生成された2つの切断片を取得し、
+    /// 吹き飛ばしと縮小の開始を要求する。
+    /// </summary>
+    private void TryBeginCutPieceEffects()
+    {
+        bool hasCutPieces =
+            enemyMeshCutter
+                .TryGetCutPieceTransforms(
+                    out Transform firstPiece,
+                    out Transform secondPiece);
+
+        if (!hasCutPieces)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: "
+                + "Mesh分割には成功しましたが、"
+                + "生成された切断片を取得できませんでした.");
+
+            return;
+        }
+
+        enemyCutPieceBurst?.BeginBurst(
+            firstPiece,
+            secondPiece);
+
+        enemyCutPieceShrink?.BeginShrink(
+            firstPiece,
+            secondPiece,
+            enemyData.DeathShrinkDelay,
+            enemyData.DeathShrinkDuration);
     }
 }

@@ -15,13 +15,6 @@ public sealed class ChainsawMeshCutProcessor
     private const float MIN_GEOMETRY_EPSILON = 0.000001f;
     private const float MIN_DIRECTION_SQR_MAGNITUDE = 0.00000001f;
 
-    public bool HasDebugData { get; private set; }
-    public Plane LastOriginalCutPlane { get; private set; }
-    public Plane LastCorrectedCutPlane { get; private set; }
-    public float LastSafeMinimumProjection { get; private set; }
-    public float LastSafeMaximumProjection { get; private set; }
-    public Bounds LastSourceBounds { get; private set; }
-
     /// <summary>
     /// Bake済みMeshをチェンソー軌跡由来のPlaneで2つへ分割する。
     /// </summary>
@@ -30,21 +23,23 @@ public sealed class ChainsawMeshCutProcessor
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
         int cutDirectionSampleCount,
-        float safeCutEdgeMarginNormalized,
+        MeshCutRangeAxis cutRangeAxis,
+        float cutRangeMinimumNormalized,
+        float cutRangeMaximumNormalized,
         float cutSurfaceUvScale,
         out MeshCutResult result,
         out string failureReason)
     {
         result = null;
         failureReason = null;
-        ResetDebugData();
 
         if (!ValidateInputs(
                 sourceMesh,
                 localTipPositions,
                 localRootPositions,
                 cutDirectionSampleCount,
-                safeCutEdgeMarginNormalized,
+                cutRangeMinimumNormalized,
+                cutRangeMaximumNormalized,
                 cutSurfaceUvScale,
                 out failureReason))
         {
@@ -53,12 +48,14 @@ public sealed class ChainsawMeshCutProcessor
 
         float geometryEpsilon = CalculateGeometryEpsilon(sourceMesh.bounds);
 
-        if (!TryCreateCutPlanes(
+        if (!TryCreateCutPlane(
                 sourceMesh.bounds,
                 localTipPositions,
                 localRootPositions,
                 cutDirectionSampleCount,
-                safeCutEdgeMarginNormalized,
+                cutRangeAxis,
+                cutRangeMinimumNormalized,
+                cutRangeMaximumNormalized,
                 geometryEpsilon,
                 out Plane correctedCutPlane,
                 out failureReason))
@@ -82,22 +79,13 @@ public sealed class ChainsawMeshCutProcessor
         return true;
     }
 
-    private void ResetDebugData()
-    {
-        HasDebugData = false;
-        LastOriginalCutPlane = default;
-        LastCorrectedCutPlane = default;
-        LastSafeMinimumProjection = 0.0f;
-        LastSafeMaximumProjection = 0.0f;
-        LastSourceBounds = default;
-    }
-
     private static bool ValidateInputs(
         Mesh sourceMesh,
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
         int cutDirectionSampleCount,
-        float safeCutEdgeMarginNormalized,
+        float cutRangeMinimumNormalized,
+        float cutRangeMaximumNormalized,
         float cutSurfaceUvScale,
         out string failureReason)
     {
@@ -143,11 +131,21 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
-        if (safeCutEdgeMarginNormalized < 0.0f ||
-            safeCutEdgeMarginNormalized > 0.49f)
+        if (cutRangeMinimumNormalized < 0.0f ||
+            cutRangeMinimumNormalized > 1.0f ||
+            cutRangeMaximumNormalized < 0.0f ||
+            cutRangeMaximumNormalized > 1.0f)
         {
             failureReason =
-                "safeCutEdgeMarginNormalizedは0～0.49の範囲である必要があります。";
+                "切断位置有効範囲は0～1の範囲である必要があります。";
+            return false;
+        }
+
+        if (cutRangeMinimumNormalized >=
+            cutRangeMaximumNormalized)
+        {
+            failureReason =
+                "cutRangeMinimumNormalizedはcutRangeMaximumNormalizedより小さい必要があります。";
             return false;
         }
 
@@ -168,12 +166,14 @@ public sealed class ChainsawMeshCutProcessor
             MIN_GEOMETRY_EPSILON);
     }
 
-    private bool TryCreateCutPlanes(
+    private bool TryCreateCutPlane(
         Bounds sourceBounds,
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
         int cutDirectionSampleCount,
-        float safeCutEdgeMarginNormalized,
+        MeshCutRangeAxis cutRangeAxis,
+        float cutRangeMinimumNormalized,
+        float cutRangeMaximumNormalized,
         float geometryEpsilon,
         out Plane correctedCutPlane,
         out string failureReason)
@@ -252,59 +252,23 @@ public sealed class ChainsawMeshCutProcessor
             localTipPositions[sampleCount - 1],
             localRootPositions[sampleCount - 1]);
 
-        CalculateBoundsProjectionRange(
-            sourceBounds,
-            planeNormal,
-            out float minimumProjection,
-            out float maximumProjection);
-
-        float thickness = maximumProjection - minimumProjection;
-
-        if (thickness <= geometryEpsilon)
+        if (!TryCreateCutPlanePoint(
+                sourceBounds,
+                originalPlanePoint,
+                cutRangeAxis,
+                cutRangeMinimumNormalized,
+                cutRangeMaximumNormalized,
+                geometryEpsilon,
+                out Vector3 correctedPlanePoint,
+                out failureReason))
         {
             correctedCutPlane = default;
-            failureReason = "切断Plane Normal方向のMesh厚みが小さすぎます。";
             return false;
         }
 
-        float safeMinimumProjection =
-            minimumProjection + thickness * safeCutEdgeMarginNormalized;
-        float safeMaximumProjection =
-            maximumProjection - thickness * safeCutEdgeMarginNormalized;
-
-        if (safeMinimumProjection >= safeMaximumProjection)
-        {
-            correctedCutPlane = default;
-            failureReason = "安全切断範囲を確保できませんでした。";
-            return false;
-        }
-
-        float originalProjection = Vector3.Dot(
-            originalPlanePoint,
-            planeNormal);
-
-        float correctedProjection = Mathf.Clamp(
-            originalProjection,
-            safeMinimumProjection,
-            safeMaximumProjection);
-
-        float correctionDistance = correctedProjection - originalProjection;
-        Vector3 correctedPlanePoint =
-            originalPlanePoint + planeNormal * correctionDistance;
-
-        Plane originalCutPlane = new Plane(
-            planeNormal,
-            originalPlanePoint);
         correctedCutPlane = new Plane(
             planeNormal,
             correctedPlanePoint);
-
-        HasDebugData = true;
-        LastOriginalCutPlane = originalCutPlane;
-        LastCorrectedCutPlane = correctedCutPlane;
-        LastSafeMinimumProjection = safeMinimumProjection;
-        LastSafeMaximumProjection = safeMaximumProjection;
-        LastSourceBounds = sourceBounds;
 
         failureReason = null;
         return true;
@@ -317,44 +281,173 @@ public sealed class ChainsawMeshCutProcessor
         return (tipPosition + rootPosition) * 0.5f;
     }
 
-    private static void CalculateBoundsProjectionRange(
-        Bounds bounds,
-        Vector3 normalizedDirection,
-        out float minimumProjection,
-        out float maximumProjection)
+    private static bool TryCreateCutPlanePoint(
+        Bounds sourceBounds,
+        Vector3 originalPlanePoint,
+        MeshCutRangeAxis cutRangeAxis,
+        float cutRangeMinimumNormalized,
+        float cutRangeMaximumNormalized,
+        float geometryEpsilon,
+        out Vector3 correctedPlanePoint,
+        out string failureReason)
     {
-        Vector3[] corners = GetBoundsCorners(bounds);
+        float boundsMinimum = GetAxisValue(
+            sourceBounds.min,
+            cutRangeAxis);
 
-        minimumProjection = float.PositiveInfinity;
-        maximumProjection = float.NegativeInfinity;
+        float boundsMaximum = GetAxisValue(
+            sourceBounds.max,
+            cutRangeAxis);
 
-        for (int i = 0; i < corners.Length; i++)
+        float axisSize =
+            boundsMaximum - boundsMinimum;
+
+        if (axisSize <= geometryEpsilon)
         {
-            float projection = Vector3.Dot(
-                corners[i],
-                normalizedDirection);
+            correctedPlanePoint = default;
+            failureReason =
+                "Cut Range Axis方向のMesh Boundsサイズが小さすぎます。";
+            return false;
+        }
 
-            minimumProjection = Mathf.Min(minimumProjection, projection);
-            maximumProjection = Mathf.Max(maximumProjection, projection);
+        float cutRangeMinimum = Mathf.Lerp(
+            boundsMinimum,
+            boundsMaximum,
+            cutRangeMinimumNormalized);
+
+        float cutRangeMaximum = Mathf.Lerp(
+            boundsMinimum,
+            boundsMaximum,
+            cutRangeMaximumNormalized);
+
+        float originalAxisPosition = GetAxisValue(
+            originalPlanePoint,
+            cutRangeAxis);
+
+        float correctedAxisPosition = Mathf.Clamp(
+            originalAxisPosition,
+            cutRangeMinimum,
+            cutRangeMaximum);
+
+        // 切断位置として使う軸だけ実際の命中位置を反映し、
+        // それ以外の軸はMesh Bounds中央へ寄せる。
+        // これにより奥行き方向などの端をかすった命中位置が
+        // そのまま切断Plane基準点になることを防ぐ。
+        correctedPlanePoint =
+            sourceBounds.center;
+
+        SetAxisValue(
+            ref correctedPlanePoint,
+            cutRangeAxis,
+            correctedAxisPosition);
+
+        failureReason = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Scene表示と実行時切断で同じ設定値を使えるよう、
+    /// Mesh Bounds内の切断位置有効範囲をBoundsとして計算する。
+    /// </summary>
+    internal static bool TryCalculateCutRangeBounds(
+        Bounds sourceBounds,
+        MeshCutRangeAxis cutRangeAxis,
+        float cutRangeMinimumNormalized,
+        float cutRangeMaximumNormalized,
+        out Bounds cutRangeBounds)
+    {
+        cutRangeBounds = default;
+
+        if (cutRangeMinimumNormalized < 0.0f ||
+            cutRangeMinimumNormalized > 1.0f ||
+            cutRangeMaximumNormalized < 0.0f ||
+            cutRangeMaximumNormalized > 1.0f ||
+            cutRangeMinimumNormalized >= cutRangeMaximumNormalized)
+        {
+            return false;
+        }
+
+        Vector3 minimum =
+            sourceBounds.min;
+
+        Vector3 maximum =
+            sourceBounds.max;
+
+        float axisMinimum = GetAxisValue(
+            minimum,
+            cutRangeAxis);
+
+        float axisMaximum = GetAxisValue(
+            maximum,
+            cutRangeAxis);
+
+        if (axisMaximum <= axisMinimum)
+        {
+            return false;
+        }
+
+        SetAxisValue(
+            ref minimum,
+            cutRangeAxis,
+            Mathf.Lerp(
+                axisMinimum,
+                axisMaximum,
+                cutRangeMinimumNormalized));
+
+        SetAxisValue(
+            ref maximum,
+            cutRangeAxis,
+            Mathf.Lerp(
+                axisMinimum,
+                axisMaximum,
+                cutRangeMaximumNormalized));
+
+        cutRangeBounds.SetMinMax(
+            minimum,
+            maximum);
+
+        return true;
+    }
+
+    private static float GetAxisValue(
+        Vector3 value,
+        MeshCutRangeAxis axis)
+    {
+        switch (axis)
+        {
+            case MeshCutRangeAxis.X:
+                return value.x;
+
+            case MeshCutRangeAxis.Y:
+                return value.y;
+
+            case MeshCutRangeAxis.Z:
+                return value.z;
+
+            default:
+                return value.y;
         }
     }
 
-    private static Vector3[] GetBoundsCorners(Bounds bounds)
+    private static void SetAxisValue(
+        ref Vector3 value,
+        MeshCutRangeAxis axis,
+        float axisValue)
     {
-        Vector3 min = bounds.min;
-        Vector3 max = bounds.max;
-
-        return new[]
+        switch (axis)
         {
-            new Vector3(min.x, min.y, min.z),
-            new Vector3(max.x, min.y, min.z),
-            new Vector3(min.x, max.y, min.z),
-            new Vector3(max.x, max.y, min.z),
-            new Vector3(min.x, min.y, max.z),
-            new Vector3(max.x, min.y, max.z),
-            new Vector3(min.x, max.y, max.z),
-            new Vector3(max.x, max.y, max.z)
-        };
+            case MeshCutRangeAxis.X:
+                value.x = axisValue;
+                break;
+
+            case MeshCutRangeAxis.Y:
+                value.y = axisValue;
+                break;
+
+            case MeshCutRangeAxis.Z:
+                value.z = axisValue;
+                break;
+        }
     }
 
     private static bool TrySplitMesh(
@@ -405,9 +498,11 @@ public sealed class ChainsawMeshCutProcessor
         var firstBuilder = new PieceMeshBuilder(
             originalSubMeshCount + 1,
             hasTangents);
+
         var secondBuilder = new PieceMeshBuilder(
             originalSubMeshCount + 1,
             hasTangents);
+
         var cutSegments = new List<CutSegment>();
 
         for (int subMeshIndex = 0;
@@ -422,6 +517,7 @@ public sealed class ChainsawMeshCutProcessor
             }
 
             int[] triangles = sourceMesh.GetTriangles(subMeshIndex);
+
             if (triangles.Length % 3 != 0)
             {
                 failureReason =
@@ -476,8 +572,10 @@ public sealed class ChainsawMeshCutProcessor
 
                 float distanceA = cutPlane.GetDistanceToPoint(
                     triangle[0].Position);
+
                 float distanceB = cutPlane.GetDistanceToPoint(
                     triangle[1].Position);
+
                 float distanceC = cutPlane.GetDistanceToPoint(
                     triangle[2].Position);
 
@@ -492,6 +590,7 @@ public sealed class ChainsawMeshCutProcessor
                     distanceA > geometryEpsilon ||
                     distanceB > geometryEpsilon ||
                     distanceC > geometryEpsilon;
+
                 bool hasNegativeVertex =
                     distanceA < -geometryEpsilon ||
                     distanceB < -geometryEpsilon ||
@@ -505,6 +604,7 @@ public sealed class ChainsawMeshCutProcessor
                         triangle[2],
                         subMeshIndex,
                         false);
+
                     continue;
                 }
 
@@ -516,6 +616,7 @@ public sealed class ChainsawMeshCutProcessor
                         triangle[2],
                         subMeshIndex,
                         false);
+
                     continue;
                 }
 
@@ -524,6 +625,7 @@ public sealed class ChainsawMeshCutProcessor
                     distances,
                     true,
                     geometryEpsilon);
+
                 List<VertexData> negativePolygon = ClipTriangle(
                     triangle,
                     distances,
@@ -534,6 +636,7 @@ public sealed class ChainsawMeshCutProcessor
                     positivePolygon,
                     subMeshIndex,
                     false);
+
                 secondBuilder.AddConvexPolygon(
                     negativePolygon,
                     subMeshIndex,
@@ -546,7 +649,7 @@ public sealed class ChainsawMeshCutProcessor
                         out CutSegment cutSegment))
                 {
                     failureReason =
-                        "交差Triangleから有効な切断線分を生成できませんでした。";
+                        "交差Triangleから有効な切断線分を生成できませんでした.";
                     return false;
                 }
 
@@ -594,12 +697,17 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
-        firstPieceMesh = firstBuilder.BuildMesh("EnemyCut_FirstPiece");
-        secondPieceMesh = secondBuilder.BuildMesh("EnemyCut_SecondPiece");
+        firstPieceMesh =
+            firstBuilder.BuildMesh("EnemyCut_FirstPiece");
 
-        if (firstPieceMesh == null || secondPieceMesh == null)
+        secondPieceMesh =
+            secondBuilder.BuildMesh("EnemyCut_SecondPiece");
+
+        if (firstPieceMesh == null ||
+            secondPieceMesh == null)
         {
-            failureReason = "有効な2つの分割Meshを生成できませんでした。";
+            failureReason =
+                "有効な2つの分割Meshを生成できませんでした.";
             return false;
         }
 
@@ -607,9 +715,12 @@ public sealed class ChainsawMeshCutProcessor
         return true;
     }
 
-    private static bool IsValidVertexIndex(int index, int vertexCount)
+    private static bool IsValidVertexIndex(
+        int index,
+        int vertexCount)
     {
-        return index >= 0 && index < vertexCount;
+        return index >= 0 &&
+               index < vertexCount;
     }
 
     private static VertexData CreateVertexData(
@@ -624,8 +735,12 @@ public sealed class ChainsawMeshCutProcessor
         return new VertexData(
             vertices[index],
             normals[index],
-            hasUv ? uv[index] : Vector2.zero,
-            hasTangents ? tangents[index] : Vector4.zero);
+            hasUv
+                ? uv[index]
+                : Vector2.zero,
+            hasTangents
+                ? tangents[index]
+                : Vector4.zero);
     }
 
     private static List<VertexData> ClipTriangle(
@@ -634,33 +749,46 @@ public sealed class ChainsawMeshCutProcessor
         bool keepPositiveSide,
         float geometryEpsilon)
     {
-        var output = new List<VertexData>(4);
+        var output =
+            new List<VertexData>(4);
 
-        VertexData previousVertex = triangle[triangle.Count - 1];
-        float previousDistance = distances[distances.Count - 1];
-        bool previousInside = IsInsideHalfSpace(
-            previousDistance,
-            keepPositiveSide,
-            geometryEpsilon);
+        VertexData previousVertex =
+            triangle[triangle.Count - 1];
+
+        float previousDistance =
+            distances[distances.Count - 1];
+
+        bool previousInside =
+            IsInsideHalfSpace(
+                previousDistance,
+                keepPositiveSide,
+                geometryEpsilon);
 
         for (int i = 0; i < triangle.Count; i++)
         {
-            VertexData currentVertex = triangle[i];
-            float currentDistance = distances[i];
-            bool currentInside = IsInsideHalfSpace(
-                currentDistance,
-                keepPositiveSide,
-                geometryEpsilon);
+            VertexData currentVertex =
+                triangle[i];
+
+            float currentDistance =
+                distances[i];
+
+            bool currentInside =
+                IsInsideHalfSpace(
+                    currentDistance,
+                    keepPositiveSide,
+                    geometryEpsilon);
 
             if (currentInside)
             {
                 if (!previousInside)
                 {
-                    VertexData intersection = InterpolateToPlane(
-                        previousVertex,
-                        currentVertex,
-                        previousDistance,
-                        currentDistance);
+                    VertexData intersection =
+                        InterpolateToPlane(
+                            previousVertex,
+                            currentVertex,
+                            previousDistance,
+                            currentDistance);
+
                     AddDistinctPolygonVertex(
                         output,
                         intersection,
@@ -674,20 +802,27 @@ public sealed class ChainsawMeshCutProcessor
             }
             else if (previousInside)
             {
-                VertexData intersection = InterpolateToPlane(
-                    previousVertex,
-                    currentVertex,
-                    previousDistance,
-                    currentDistance);
+                VertexData intersection =
+                    InterpolateToPlane(
+                        previousVertex,
+                        currentVertex,
+                        previousDistance,
+                        currentDistance);
+
                 AddDistinctPolygonVertex(
                     output,
                     intersection,
                     geometryEpsilon);
             }
 
-            previousVertex = currentVertex;
-            previousDistance = currentDistance;
-            previousInside = currentInside;
+            previousVertex =
+                currentVertex;
+
+            previousDistance =
+                currentDistance;
+
+            previousInside =
+                currentInside;
         }
 
         if (output.Count >= 2 &&
@@ -696,7 +831,8 @@ public sealed class ChainsawMeshCutProcessor
                 output[output.Count - 1].Position,
                 geometryEpsilon))
         {
-            output.RemoveAt(output.Count - 1);
+            output.RemoveAt(
+                output.Count - 1);
         }
 
         return output;
@@ -733,13 +869,21 @@ public sealed class ChainsawMeshCutProcessor
         float fromDistance,
         float toDistance)
     {
-        float denominator = fromDistance - toDistance;
-        float interpolation = Mathf.Abs(denominator) <= Mathf.Epsilon
-            ? 0.5f
-            : fromDistance / denominator;
+        float denominator =
+            fromDistance - toDistance;
 
-        interpolation = Mathf.Clamp01(interpolation);
-        return VertexData.Lerp(from, to, interpolation);
+        float interpolation =
+            Mathf.Abs(denominator) <= Mathf.Epsilon
+                ? 0.5f
+                : fromDistance / denominator;
+
+        interpolation =
+            Mathf.Clamp01(interpolation);
+
+        return VertexData.Lerp(
+            from,
+            to,
+            interpolation);
     }
 
     private static bool TryGetCutSegment(
@@ -748,15 +892,24 @@ public sealed class ChainsawMeshCutProcessor
         float geometryEpsilon,
         out CutSegment cutSegment)
     {
-        var points = new List<Vector3>(3);
+        var points =
+            new List<Vector3>(3);
 
-        for (int i = 0; i < triangle.Count; i++)
+        for (int i = 0;
+             i < triangle.Count;
+             i++)
         {
-            int nextIndex = (i + 1) % triangle.Count;
-            float currentDistance = distances[i];
-            float nextDistance = distances[nextIndex];
+            int nextIndex =
+                (i + 1) % triangle.Count;
 
-            if (Mathf.Abs(currentDistance) <= geometryEpsilon)
+            float currentDistance =
+                distances[i];
+
+            float nextDistance =
+                distances[nextIndex];
+
+            if (Mathf.Abs(currentDistance) <=
+                geometryEpsilon)
             {
                 AddDistinctPoint(
                     points,
@@ -775,11 +928,12 @@ public sealed class ChainsawMeshCutProcessor
                 continue;
             }
 
-            VertexData intersection = InterpolateToPlane(
-                triangle[i],
-                triangle[nextIndex],
-                currentDistance,
-                nextDistance);
+            VertexData intersection =
+                InterpolateToPlane(
+                    triangle[i],
+                    triangle[nextIndex],
+                    currentDistance,
+                    nextDistance);
 
             AddDistinctPoint(
                 points,
@@ -804,13 +958,22 @@ public sealed class ChainsawMeshCutProcessor
                 return false;
             }
 
-            cutSegment = new CutSegment(points[0], points[1]);
+            cutSegment =
+                new CutSegment(
+                    points[0],
+                    points[1]);
+
             return true;
         }
 
-        float greatestSqrDistance = 0.0f;
-        Vector3 firstPoint = default;
-        Vector3 secondPoint = default;
+        float greatestSqrDistance =
+            0.0f;
+
+        Vector3 firstPoint =
+            default;
+
+        Vector3 secondPoint =
+            default;
 
         for (int firstIndex = 0;
              firstIndex < points.Count - 1;
@@ -821,26 +984,38 @@ public sealed class ChainsawMeshCutProcessor
                  secondIndex++)
             {
                 float sqrDistance =
-                    (points[firstIndex] - points[secondIndex]).sqrMagnitude;
+                    (points[firstIndex] -
+                     points[secondIndex]).sqrMagnitude;
 
-                if (sqrDistance <= greatestSqrDistance)
+                if (sqrDistance <=
+                    greatestSqrDistance)
                 {
                     continue;
                 }
 
-                greatestSqrDistance = sqrDistance;
-                firstPoint = points[firstIndex];
-                secondPoint = points[secondIndex];
+                greatestSqrDistance =
+                    sqrDistance;
+
+                firstPoint =
+                    points[firstIndex];
+
+                secondPoint =
+                    points[secondIndex];
             }
         }
 
-        if (greatestSqrDistance <= geometryEpsilon * geometryEpsilon)
+        if (greatestSqrDistance <=
+            geometryEpsilon * geometryEpsilon)
         {
             cutSegment = default;
             return false;
         }
 
-        cutSegment = new CutSegment(firstPoint, secondPoint);
+        cutSegment =
+            new CutSegment(
+                firstPoint,
+                secondPoint);
+
         return true;
     }
 
@@ -849,9 +1024,14 @@ public sealed class ChainsawMeshCutProcessor
         Vector3 point,
         float geometryEpsilon)
     {
-        for (int i = 0; i < points.Count; i++)
+        for (int i = 0;
+             i < points.Count;
+             i++)
         {
-            if (ArePositionsClose(points[i], point, geometryEpsilon))
+            if (ArePositionsClose(
+                    points[i],
+                    point,
+                    geometryEpsilon))
             {
                 return;
             }
@@ -875,69 +1055,99 @@ public sealed class ChainsawMeshCutProcessor
         out List<List<Vector3>> boundaryLoops,
         out string failureReason)
     {
-        var nodes = new List<BoundaryNode>();
-        var uniqueEdges = new HashSet<long>();
+        var nodes =
+            new List<BoundaryNode>();
 
-        for (int i = 0; i < cutSegments.Count; i++)
+        var uniqueEdges =
+            new HashSet<long>();
+
+        for (int i = 0;
+             i < cutSegments.Count;
+             i++)
         {
-            int firstNodeIndex = FindOrCreateBoundaryNode(
-                nodes,
-                cutSegments[i].First,
-                geometryEpsilon);
-            int secondNodeIndex = FindOrCreateBoundaryNode(
-                nodes,
-                cutSegments[i].Second,
-                geometryEpsilon);
+            int firstNodeIndex =
+                FindOrCreateBoundaryNode(
+                    nodes,
+                    cutSegments[i].First,
+                    geometryEpsilon);
 
-            if (firstNodeIndex == secondNodeIndex)
+            int secondNodeIndex =
+                FindOrCreateBoundaryNode(
+                    nodes,
+                    cutSegments[i].Second,
+                    geometryEpsilon);
+
+            if (firstNodeIndex ==
+                secondNodeIndex)
             {
                 continue;
             }
 
-            long edgeKey = CreateEdgeKey(
-                firstNodeIndex,
-                secondNodeIndex);
+            long edgeKey =
+                CreateEdgeKey(
+                    firstNodeIndex,
+                    secondNodeIndex);
 
             if (!uniqueEdges.Add(edgeKey))
             {
                 continue;
             }
 
-            nodes[firstNodeIndex].Neighbors.Add(secondNodeIndex);
-            nodes[secondNodeIndex].Neighbors.Add(firstNodeIndex);
+            nodes[firstNodeIndex]
+                .Neighbors
+                .Add(secondNodeIndex);
+
+            nodes[secondNodeIndex]
+                .Neighbors
+                .Add(firstNodeIndex);
         }
 
         if (uniqueEdges.Count < 3)
         {
             boundaryLoops = null;
-            failureReason = "切断境界を構成する線分が不足しています。";
+            failureReason =
+                "切断境界を構成する線分が不足しています。";
+
             return false;
         }
 
-        for (int i = 0; i < nodes.Count; i++)
+        for (int i = 0;
+             i < nodes.Count;
+             i++)
         {
             if (nodes[i].Neighbors.Count != 2)
             {
                 boundaryLoops = null;
                 failureReason =
                     "切断境界が閉じた単純ループになっていません。";
+
                 return false;
             }
         }
 
-        boundaryLoops = new List<List<Vector3>>();
-        var visitedEdges = new HashSet<long>();
+        boundaryLoops =
+            new List<List<Vector3>>();
+
+        var visitedEdges =
+            new HashSet<long>();
 
         for (int nodeIndex = 0;
              nodeIndex < nodes.Count;
              nodeIndex++)
         {
             for (int neighborIndex = 0;
-                 neighborIndex < nodes[nodeIndex].Neighbors.Count;
+                 neighborIndex <
+                 nodes[nodeIndex].Neighbors.Count;
                  neighborIndex++)
             {
-                int neighbor = nodes[nodeIndex].Neighbors[neighborIndex];
-                long edgeKey = CreateEdgeKey(nodeIndex, neighbor);
+                int neighbor =
+                    nodes[nodeIndex]
+                        .Neighbors[neighborIndex];
+
+                long edgeKey =
+                    CreateEdgeKey(
+                        nodeIndex,
+                        neighbor);
 
                 if (visitedEdges.Contains(edgeKey))
                 {
@@ -952,14 +1162,18 @@ public sealed class ChainsawMeshCutProcessor
                         out List<Vector3> loop))
                 {
                     boundaryLoops = null;
-                    failureReason = "切断境界ループの追跡に失敗しました。";
+                    failureReason =
+                        "切断境界ループの追跡に失敗しました。";
+
                     return false;
                 }
 
                 if (loop.Count < 3)
                 {
                     boundaryLoops = null;
-                    failureReason = "切断境界ループの頂点数が不足しています。";
+                    failureReason =
+                        "切断境界ループの頂点数が不足しています。";
+
                     return false;
                 }
 
@@ -971,7 +1185,9 @@ public sealed class ChainsawMeshCutProcessor
             visitedEdges.Count != uniqueEdges.Count)
         {
             boundaryLoops = null;
-            failureReason = "すべての切断境界を閉じたループへ構築できませんでした。";
+            failureReason =
+                "すべての切断境界を閉じたループへ構築できませんでした。";
+
             return false;
         }
 
@@ -984,17 +1200,23 @@ public sealed class ChainsawMeshCutProcessor
         Vector3 position,
         float geometryEpsilon)
     {
-        float sqrEpsilon = geometryEpsilon * geometryEpsilon;
+        float sqrEpsilon =
+            geometryEpsilon * geometryEpsilon;
 
-        for (int i = 0; i < nodes.Count; i++)
+        for (int i = 0;
+             i < nodes.Count;
+             i++)
         {
-            if ((nodes[i].Position - position).sqrMagnitude <= sqrEpsilon)
+            if ((nodes[i].Position - position).sqrMagnitude <=
+                sqrEpsilon)
             {
                 return i;
             }
         }
 
-        nodes.Add(new BoundaryNode(position));
+        nodes.Add(
+            new BoundaryNode(position));
+
         return nodes.Count - 1;
     }
 
@@ -1005,7 +1227,8 @@ public sealed class ChainsawMeshCutProcessor
         HashSet<long> visitedEdges,
         out List<Vector3> loop)
     {
-        loop = new List<Vector3>();
+        loop =
+            new List<Vector3>();
 
         int previousNode = -1;
         int currentNode = startNode;
@@ -1015,30 +1238,47 @@ public sealed class ChainsawMeshCutProcessor
 
         while (true)
         {
-            loop.Add(nodes[currentNode].Position);
-            visitedEdges.Add(CreateEdgeKey(currentNode, nextNode));
+            loop.Add(
+                nodes[currentNode].Position);
 
-            previousNode = currentNode;
-            currentNode = nextNode;
+            visitedEdges.Add(
+                CreateEdgeKey(
+                    currentNode,
+                    nextNode));
+
+            previousNode =
+                currentNode;
+
+            currentNode =
+                nextNode;
 
             if (currentNode == startNode)
             {
                 return true;
             }
 
-            if (nodes[currentNode].Neighbors.Count != 2)
+            if (nodes[currentNode]
+                .Neighbors.Count != 2)
             {
                 loop = null;
                 return false;
             }
 
-            int firstNeighbor = nodes[currentNode].Neighbors[0];
-            int secondNeighbor = nodes[currentNode].Neighbors[1];
-            nextNode = firstNeighbor == previousNode
-                ? secondNeighbor
-                : firstNeighbor;
+            int firstNeighbor =
+                nodes[currentNode]
+                    .Neighbors[0];
+
+            int secondNeighbor =
+                nodes[currentNode]
+                    .Neighbors[1];
+
+            nextNode =
+                firstNeighbor == previousNode
+                    ? secondNeighbor
+                    : firstNeighbor;
 
             guard++;
+
             if (guard > maximumSteps)
             {
                 loop = null;
@@ -1047,11 +1287,22 @@ public sealed class ChainsawMeshCutProcessor
         }
     }
 
-    private static long CreateEdgeKey(int firstNode, int secondNode)
+    private static long CreateEdgeKey(
+        int firstNode,
+        int secondNode)
     {
-        int minimum = Mathf.Min(firstNode, secondNode);
-        int maximum = Mathf.Max(firstNode, secondNode);
-        return ((long)minimum << 32) | (uint)maximum;
+        int minimum =
+            Mathf.Min(
+                firstNode,
+                secondNode);
+
+        int maximum =
+            Mathf.Max(
+                firstNode,
+                secondNode);
+
+        return ((long)minimum << 32) |
+               (uint)maximum;
     }
 
     private static bool TryAddCutSurfaceCaps(
@@ -1069,10 +1320,13 @@ public sealed class ChainsawMeshCutProcessor
             out Vector3 planeAxisU,
             out Vector3 planeAxisV);
 
-        var preparedLoops = new List<PreparedBoundaryLoop>(
-            boundaryLoops.Count);
+        var preparedLoops =
+            new List<PreparedBoundaryLoop>(
+                boundaryLoops.Count);
 
-        for (int i = 0; i < boundaryLoops.Count; i++)
+        for (int i = 0;
+             i < boundaryLoops.Count;
+             i++)
         {
             if (!TryPrepareBoundaryLoop(
                     boundaryLoops[i],
@@ -1083,33 +1337,41 @@ public sealed class ChainsawMeshCutProcessor
             {
                 failureReason =
                     "切断境界を断面三角形分割用の単純Polygonへ変換できませんでした。";
+
                 return false;
             }
 
-            preparedLoops.Add(preparedLoop);
+            preparedLoops.Add(
+                preparedLoop);
         }
 
-        if (ContainsNestedLoops(preparedLoops))
+        if (ContainsNestedLoops(
+                preparedLoops))
         {
             failureReason =
                 "polygon-with-holesとなる切断境界は初版では対応しません。";
+
             return false;
         }
 
-        float earEpsilon = geometryEpsilon * geometryEpsilon;
+        float earEpsilon =
+            geometryEpsilon * geometryEpsilon;
 
         for (int loopIndex = 0;
              loopIndex < preparedLoops.Count;
              loopIndex++)
         {
-            PreparedBoundaryLoop loop = preparedLoops[loopIndex];
+            PreparedBoundaryLoop loop =
+                preparedLoops[loopIndex];
 
             if (!TryTriangulateEarClipping(
                     loop.ProjectedPoints,
                     earEpsilon,
                     out List<int> triangleIndices))
             {
-                failureReason = "Ear Clippingによる切断面生成に失敗しました。";
+                failureReason =
+                    "Ear Clippingによる切断面生成に失敗しました。";
+
                 return false;
             }
 
@@ -1117,12 +1379,17 @@ public sealed class ChainsawMeshCutProcessor
                  triangleIndex < triangleIndices.Count;
                  triangleIndex += 3)
             {
-                Vector3 pointA = loop.Positions[
-                    triangleIndices[triangleIndex]];
-                Vector3 pointB = loop.Positions[
-                    triangleIndices[triangleIndex + 1]];
-                Vector3 pointC = loop.Positions[
-                    triangleIndices[triangleIndex + 2]];
+                Vector3 pointA =
+                    loop.Positions[
+                        triangleIndices[triangleIndex]];
+
+                Vector3 pointB =
+                    loop.Positions[
+                        triangleIndices[triangleIndex + 1]];
+
+                Vector3 pointC =
+                    loop.Positions[
+                        triangleIndices[triangleIndex + 2]];
 
                 AddCapTriangle(
                     firstBuilder,
@@ -1158,20 +1425,34 @@ public sealed class ChainsawMeshCutProcessor
         out Vector3 planeAxisV)
     {
         Vector3 referenceAxis =
-            Mathf.Abs(Vector3.Dot(planeNormal, Vector3.up)) < 0.95f
+            Mathf.Abs(
+                Vector3.Dot(
+                    planeNormal,
+                    Vector3.up)) < 0.95f
                 ? Vector3.up
                 : Vector3.right;
 
-        planeAxisU = Vector3.Cross(referenceAxis, planeNormal).normalized;
+        planeAxisU =
+            Vector3.Cross(
+                referenceAxis,
+                planeNormal).normalized;
 
-        if (planeAxisU.sqrMagnitude <= MIN_DIRECTION_SQR_MAGNITUDE)
+        if (planeAxisU.sqrMagnitude <=
+            MIN_DIRECTION_SQR_MAGNITUDE)
         {
-            referenceAxis = Vector3.forward;
+            referenceAxis =
+                Vector3.forward;
+
             planeAxisU =
-                Vector3.Cross(referenceAxis, planeNormal).normalized;
+                Vector3.Cross(
+                    referenceAxis,
+                    planeNormal).normalized;
         }
 
-        planeAxisV = Vector3.Cross(planeNormal, planeAxisU).normalized;
+        planeAxisV =
+            Vector3.Cross(
+                planeNormal,
+                planeAxisU).normalized;
     }
 
     private static bool TryPrepareBoundaryLoop(
@@ -1181,16 +1462,26 @@ public sealed class ChainsawMeshCutProcessor
         float geometryEpsilon,
         out PreparedBoundaryLoop preparedLoop)
     {
-        var positions = new List<Vector3>(sourcePositions.Count);
-        var projectedPoints = new List<Vector2>(sourcePositions.Count);
+        var positions =
+            new List<Vector3>(
+                sourcePositions.Count);
 
-        for (int i = 0; i < sourcePositions.Count; i++)
+        var projectedPoints =
+            new List<Vector2>(
+                sourcePositions.Count);
+
+        for (int i = 0;
+             i < sourcePositions.Count;
+             i++)
         {
-            positions.Add(sourcePositions[i]);
-            projectedPoints.Add(ProjectToPlane2D(
-                sourcePositions[i],
-                planeAxisU,
-                planeAxisV));
+            positions.Add(
+                sourcePositions[i]);
+
+            projectedPoints.Add(
+                ProjectToPlane2D(
+                    sourcePositions[i],
+                    planeAxisU,
+                    planeAxisV));
         }
 
         RemoveRedundantLoopPoints(
@@ -1204,7 +1495,10 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
-        float signedArea = CalculateSignedArea(projectedPoints);
+        float signedArea =
+            CalculateSignedArea(
+                projectedPoints);
+
         if (Mathf.Abs(signedArea) <=
             geometryEpsilon * geometryEpsilon)
         {
@@ -1218,9 +1512,11 @@ public sealed class ChainsawMeshCutProcessor
             projectedPoints.Reverse();
         }
 
-        preparedLoop = new PreparedBoundaryLoop(
-            positions,
-            projectedPoints);
+        preparedLoop =
+            new PreparedBoundaryLoop(
+                positions,
+                projectedPoints);
+
         return true;
     }
 
@@ -1230,8 +1526,12 @@ public sealed class ChainsawMeshCutProcessor
         Vector3 planeAxisV)
     {
         return new Vector2(
-            Vector3.Dot(position, planeAxisU),
-            Vector3.Dot(position, planeAxisV));
+            Vector3.Dot(
+                position,
+                planeAxisU),
+            Vector3.Dot(
+                position,
+                planeAxisV));
     }
 
     private static void RemoveRedundantLoopPoints(
@@ -1244,7 +1544,9 @@ public sealed class ChainsawMeshCutProcessor
             return;
         }
 
-        float sqrEpsilon = geometryEpsilon * geometryEpsilon;
+        float sqrEpsilon =
+            geometryEpsilon * geometryEpsilon;
+
         bool removedPoint;
         int guard = 0;
 
@@ -1252,18 +1554,32 @@ public sealed class ChainsawMeshCutProcessor
         {
             removedPoint = false;
 
-            for (int i = 0; i < projectedPoints.Count; i++)
+            for (int i = 0;
+                 i < projectedPoints.Count;
+                 i++)
             {
                 int previousIndex =
-                    (i - 1 + projectedPoints.Count) % projectedPoints.Count;
-                int nextIndex = (i + 1) % projectedPoints.Count;
+                    (i - 1 +
+                     projectedPoints.Count) %
+                    projectedPoints.Count;
 
-                Vector2 previous = projectedPoints[previousIndex];
-                Vector2 current = projectedPoints[i];
-                Vector2 next = projectedPoints[nextIndex];
+                int nextIndex =
+                    (i + 1) %
+                    projectedPoints.Count;
 
-                if ((current - previous).sqrMagnitude <= sqrEpsilon ||
-                    (next - current).sqrMagnitude <= sqrEpsilon)
+                Vector2 previous =
+                    projectedPoints[previousIndex];
+
+                Vector2 current =
+                    projectedPoints[i];
+
+                Vector2 next =
+                    projectedPoints[nextIndex];
+
+                if ((current - previous).sqrMagnitude <=
+                    sqrEpsilon ||
+                    (next - current).sqrMagnitude <=
+                    sqrEpsilon)
                 {
                     positions.RemoveAt(i);
                     projectedPoints.RemoveAt(i);
@@ -1271,15 +1587,24 @@ public sealed class ChainsawMeshCutProcessor
                     break;
                 }
 
-                Vector2 firstDirection = current - previous;
-                Vector2 secondDirection = next - current;
-                float cross = Mathf.Abs(Cross2D(
-                    firstDirection,
-                    secondDirection));
-                float scale =
-                    firstDirection.magnitude + secondDirection.magnitude;
+                Vector2 firstDirection =
+                    current - previous;
 
-                if (cross <= geometryEpsilon * scale)
+                Vector2 secondDirection =
+                    next - current;
+
+                float cross =
+                    Mathf.Abs(
+                        Cross2D(
+                            firstDirection,
+                            secondDirection));
+
+                float scale =
+                    firstDirection.magnitude +
+                    secondDirection.magnitude;
+
+                if (cross <=
+                    geometryEpsilon * scale)
                 {
                     positions.RemoveAt(i);
                     projectedPoints.RemoveAt(i);
@@ -1300,11 +1625,21 @@ public sealed class ChainsawMeshCutProcessor
     {
         float area = 0.0f;
 
-        for (int i = 0; i < polygon.Count; i++)
+        for (int i = 0;
+             i < polygon.Count;
+             i++)
         {
-            Vector2 current = polygon[i];
-            Vector2 next = polygon[(i + 1) % polygon.Count];
-            area += current.x * next.y - next.x * current.y;
+            Vector2 current =
+                polygon[i];
+
+            Vector2 next =
+                polygon[
+                    (i + 1) %
+                    polygon.Count];
+
+            area +=
+                current.x * next.y -
+                next.x * current.y;
         }
 
         return area * 0.5f;
@@ -1317,20 +1652,24 @@ public sealed class ChainsawMeshCutProcessor
              innerIndex < loops.Count;
              innerIndex++)
         {
-            Vector2 testPoint = loops[innerIndex].ProjectedPoints[0];
+            Vector2 testPoint =
+                loops[innerIndex]
+                    .ProjectedPoints[0];
 
             for (int outerIndex = 0;
                  outerIndex < loops.Count;
                  outerIndex++)
             {
-                if (innerIndex == outerIndex)
+                if (innerIndex ==
+                    outerIndex)
                 {
                     continue;
                 }
 
                 if (IsPointInsidePolygon(
                         testPoint,
-                        loops[outerIndex].ProjectedPoints))
+                        loops[outerIndex]
+                            .ProjectedPoints))
                 {
                     return true;
                 }
@@ -1346,15 +1685,20 @@ public sealed class ChainsawMeshCutProcessor
     {
         bool inside = false;
 
-        for (int currentIndex = 0, previousIndex = polygon.Count - 1;
+        for (int currentIndex = 0,
+                 previousIndex = polygon.Count - 1;
              currentIndex < polygon.Count;
              previousIndex = currentIndex++)
         {
-            Vector2 current = polygon[currentIndex];
-            Vector2 previous = polygon[previousIndex];
+            Vector2 current =
+                polygon[currentIndex];
+
+            Vector2 previous =
+                polygon[previousIndex];
 
             bool intersects =
-                (current.y > point.y) != (previous.y > point.y) &&
+                (current.y > point.y) !=
+                (previous.y > point.y) &&
                 point.x <
                 (previous.x - current.x) *
                 (point.y - current.y) /
@@ -1375,43 +1719,71 @@ public sealed class ChainsawMeshCutProcessor
         float areaEpsilon,
         out List<int> triangleIndices)
     {
-        triangleIndices = new List<int>();
+        triangleIndices =
+            new List<int>();
 
         if (polygon.Count < 3)
         {
             return false;
         }
 
-        var remainingIndices = new List<int>(polygon.Count);
-        for (int i = 0; i < polygon.Count; i++)
+        var remainingIndices =
+            new List<int>(
+                polygon.Count);
+
+        for (int i = 0;
+             i < polygon.Count;
+             i++)
         {
             remainingIndices.Add(i);
         }
 
         int guard = 0;
-        int maximumIterations = polygon.Count * polygon.Count;
+
+        int maximumIterations =
+            polygon.Count * polygon.Count;
 
         while (remainingIndices.Count > 3)
         {
             bool foundEar = false;
 
-            for (int i = 0; i < remainingIndices.Count; i++)
+            for (int i = 0;
+                 i < remainingIndices.Count;
+                 i++)
             {
                 int previousListIndex =
-                    (i - 1 + remainingIndices.Count) % remainingIndices.Count;
-                int nextListIndex = (i + 1) % remainingIndices.Count;
+                    (i - 1 +
+                     remainingIndices.Count) %
+                    remainingIndices.Count;
 
-                int previousIndex = remainingIndices[previousListIndex];
-                int currentIndex = remainingIndices[i];
-                int nextIndex = remainingIndices[nextListIndex];
+                int nextListIndex =
+                    (i + 1) %
+                    remainingIndices.Count;
 
-                Vector2 previous = polygon[previousIndex];
-                Vector2 current = polygon[currentIndex];
-                Vector2 next = polygon[nextIndex];
+                int previousIndex =
+                    remainingIndices[
+                        previousListIndex];
 
-                float cornerCross = Cross2D(
-                    current - previous,
-                    next - current);
+                int currentIndex =
+                    remainingIndices[i];
+
+                int nextIndex =
+                    remainingIndices[
+                        nextListIndex];
+
+                Vector2 previous =
+                    polygon[previousIndex];
+
+                Vector2 current =
+                    polygon[currentIndex];
+
+                Vector2 next =
+                    polygon[nextIndex];
+
+                float cornerCross =
+                    Cross2D(
+                        current - previous,
+                        next - current);
 
                 if (cornerCross <= areaEpsilon)
                 {
@@ -1424,7 +1796,9 @@ public sealed class ChainsawMeshCutProcessor
                      testListIndex < remainingIndices.Count;
                      testListIndex++)
                 {
-                    int testIndex = remainingIndices[testListIndex];
+                    int testIndex =
+                        remainingIndices[
+                            testListIndex];
 
                     if (testIndex == previousIndex ||
                         testIndex == currentIndex ||
@@ -1450,10 +1824,17 @@ public sealed class ChainsawMeshCutProcessor
                     continue;
                 }
 
-                triangleIndices.Add(previousIndex);
-                triangleIndices.Add(currentIndex);
-                triangleIndices.Add(nextIndex);
+                triangleIndices.Add(
+                    previousIndex);
+
+                triangleIndices.Add(
+                    currentIndex);
+
+                triangleIndices.Add(
+                    nextIndex);
+
                 remainingIndices.RemoveAt(i);
+
                 foundEar = true;
                 break;
             }
@@ -1465,6 +1846,7 @@ public sealed class ChainsawMeshCutProcessor
             }
 
             guard++;
+
             if (guard > maximumIterations)
             {
                 triangleIndices = null;
@@ -1472,9 +1854,15 @@ public sealed class ChainsawMeshCutProcessor
             }
         }
 
-        triangleIndices.Add(remainingIndices[0]);
-        triangleIndices.Add(remainingIndices[1]);
-        triangleIndices.Add(remainingIndices[2]);
+        triangleIndices.Add(
+            remainingIndices[0]);
+
+        triangleIndices.Add(
+            remainingIndices[1]);
+
+        triangleIndices.Add(
+            remainingIndices[2]);
+
         return true;
     }
 
@@ -1485,24 +1873,32 @@ public sealed class ChainsawMeshCutProcessor
         Vector2 third,
         float areaEpsilon)
     {
-        float firstCross = Cross2D(
-            second - first,
-            point - first);
-        float secondCross = Cross2D(
-            third - second,
-            point - second);
-        float thirdCross = Cross2D(
-            first - third,
-            point - third);
+        float firstCross =
+            Cross2D(
+                second - first,
+                point - first);
+
+        float secondCross =
+            Cross2D(
+                third - second,
+                point - second);
+
+        float thirdCross =
+            Cross2D(
+                first - third,
+                point - third);
 
         return firstCross >= -areaEpsilon &&
                secondCross >= -areaEpsilon &&
                thirdCross >= -areaEpsilon;
     }
 
-    private static float Cross2D(Vector2 first, Vector2 second)
+    private static float Cross2D(
+        Vector2 first,
+        Vector2 second)
     {
-        return first.x * second.y - first.y * second.x;
+        return first.x * second.y -
+               first.y * second.x;
     }
 
     private static void AddCapTriangle(
@@ -1516,44 +1912,58 @@ public sealed class ChainsawMeshCutProcessor
         Vector3 planeAxisV,
         float cutSurfaceUvScale)
     {
-        Vector3 actualNormal = Vector3.Cross(
-            pointB - pointA,
-            pointC - pointA);
+        Vector3 actualNormal =
+            Vector3.Cross(
+                pointB - pointA,
+                pointC - pointA);
 
-        if (Vector3.Dot(actualNormal, desiredNormal) < 0.0f)
+        if (Vector3.Dot(
+                actualNormal,
+                desiredNormal) < 0.0f)
         {
-            Vector3 temporary = pointB;
-            pointB = pointC;
-            pointC = temporary;
+            Vector3 temporary =
+                pointB;
+
+            pointB =
+                pointC;
+
+            pointC =
+                temporary;
         }
 
-        Vector4 tangent = new Vector4(
-            planeAxisU.x,
-            planeAxisU.y,
-            planeAxisU.z,
-            1.0f);
+        Vector4 tangent =
+            new Vector4(
+                planeAxisU.x,
+                planeAxisU.y,
+                planeAxisU.z,
+                1.0f);
 
-        VertexData vertexA = CreateCapVertex(
-            pointA,
-            desiredNormal,
-            tangent,
-            planeAxisU,
-            planeAxisV,
-            cutSurfaceUvScale);
-        VertexData vertexB = CreateCapVertex(
-            pointB,
-            desiredNormal,
-            tangent,
-            planeAxisU,
-            planeAxisV,
-            cutSurfaceUvScale);
-        VertexData vertexC = CreateCapVertex(
-            pointC,
-            desiredNormal,
-            tangent,
-            planeAxisU,
-            planeAxisV,
-            cutSurfaceUvScale);
+        VertexData vertexA =
+            CreateCapVertex(
+                pointA,
+                desiredNormal,
+                tangent,
+                planeAxisU,
+                planeAxisV,
+                cutSurfaceUvScale);
+
+        VertexData vertexB =
+            CreateCapVertex(
+                pointB,
+                desiredNormal,
+                tangent,
+                planeAxisU,
+                planeAxisV,
+                cutSurfaceUvScale);
+
+        VertexData vertexC =
+            CreateCapVertex(
+                pointC,
+                desiredNormal,
+                tangent,
+                planeAxisU,
+                planeAxisV,
+                cutSurfaceUvScale);
 
         builder.AddTriangle(
             vertexA,
@@ -1571,9 +1981,16 @@ public sealed class ChainsawMeshCutProcessor
         Vector3 planeAxisV,
         float cutSurfaceUvScale)
     {
-        Vector2 uv = new Vector2(
-            Vector3.Dot(position, planeAxisU) * cutSurfaceUvScale,
-            Vector3.Dot(position, planeAxisV) * cutSurfaceUvScale);
+        Vector2 uv =
+            new Vector2(
+                Vector3.Dot(
+                    position,
+                    planeAxisU) *
+                cutSurfaceUvScale,
+                Vector3.Dot(
+                    position,
+                    planeAxisV) *
+                cutSurfaceUvScale);
 
         return new VertexData(
             position,
@@ -1606,35 +2023,49 @@ public sealed class ChainsawMeshCutProcessor
             VertexData second,
             float interpolation)
         {
-            Vector3 normal = Vector3.Lerp(
-                first.Normal,
-                second.Normal,
-                interpolation);
+            Vector3 normal =
+                Vector3.Lerp(
+                    first.Normal,
+                    second.Normal,
+                    interpolation);
 
-            if (normal.sqrMagnitude > MIN_DIRECTION_SQR_MAGNITUDE)
+            if (normal.sqrMagnitude >
+                MIN_DIRECTION_SQR_MAGNITUDE)
             {
                 normal.Normalize();
             }
 
-            Vector4 tangent = Vector4.Lerp(
-                first.Tangent,
-                second.Tangent,
-                interpolation);
-            Vector3 tangentDirection = new Vector3(
-                tangent.x,
-                tangent.y,
-                tangent.z);
+            Vector4 tangent =
+                Vector4.Lerp(
+                    first.Tangent,
+                    second.Tangent,
+                    interpolation);
+
+            Vector3 tangentDirection =
+                new Vector3(
+                    tangent.x,
+                    tangent.y,
+                    tangent.z);
 
             if (tangentDirection.sqrMagnitude >
                 MIN_DIRECTION_SQR_MAGNITUDE)
             {
                 tangentDirection.Normalize();
-                tangent.x = tangentDirection.x;
-                tangent.y = tangentDirection.y;
-                tangent.z = tangentDirection.z;
+
+                tangent.x =
+                    tangentDirection.x;
+
+                tangent.y =
+                    tangentDirection.y;
+
+                tangent.z =
+                    tangentDirection.z;
             }
 
-            tangent.w = tangent.w < 0.0f ? -1.0f : 1.0f;
+            tangent.w =
+                tangent.w < 0.0f
+                    ? -1.0f
+                    : 1.0f;
 
             return new VertexData(
                 Vector3.Lerp(
@@ -1655,7 +2086,9 @@ public sealed class ChainsawMeshCutProcessor
         public Vector3 First { get; }
         public Vector3 Second { get; }
 
-        public CutSegment(Vector3 first, Vector3 second)
+        public CutSegment(
+            Vector3 first,
+            Vector3 second)
         {
             First = first;
             Second = second;
@@ -1667,10 +2100,13 @@ public sealed class ChainsawMeshCutProcessor
         public Vector3 Position { get; }
         public List<int> Neighbors { get; }
 
-        public BoundaryNode(Vector3 position)
+        public BoundaryNode(
+            Vector3 position)
         {
             Position = position;
-            Neighbors = new List<int>(2);
+
+            Neighbors =
+                new List<int>(2);
         }
     }
 
@@ -1683,32 +2119,56 @@ public sealed class ChainsawMeshCutProcessor
             List<Vector3> positions,
             List<Vector2> projectedPoints)
         {
-            Positions = positions;
-            ProjectedPoints = projectedPoints;
+            Positions =
+                positions;
+
+            ProjectedPoints =
+                projectedPoints;
         }
     }
 
     private sealed class PieceMeshBuilder
     {
-        private readonly List<Vector3> vertices = new List<Vector3>();
-        private readonly List<Vector3> normals = new List<Vector3>();
-        private readonly List<Vector2> uv = new List<Vector2>();
-        private readonly List<Vector4> tangents = new List<Vector4>();
-        private readonly List<List<int>> trianglesBySubMesh;
+        private readonly List<Vector3> vertices =
+            new List<Vector3>();
+
+        private readonly List<Vector3> normals =
+            new List<Vector3>();
+
+        private readonly List<Vector2> uv =
+            new List<Vector2>();
+
+        private readonly List<Vector4> tangents =
+            new List<Vector4>();
+
+        private readonly List<List<int>>
+            trianglesBySubMesh;
+
         private readonly bool hasTangents;
 
-        public int OriginalTriangleCount { get; private set; }
+        public int OriginalTriangleCount
+        {
+            get;
+            private set;
+        }
 
         public PieceMeshBuilder(
             int subMeshCount,
             bool hasTangents)
         {
-            this.hasTangents = hasTangents;
-            trianglesBySubMesh = new List<List<int>>(subMeshCount);
+            this.hasTangents =
+                hasTangents;
 
-            for (int i = 0; i < subMeshCount; i++)
+            trianglesBySubMesh =
+                new List<List<int>>(
+                    subMeshCount);
+
+            for (int i = 0;
+                 i < subMeshCount;
+                 i++)
             {
-                trianglesBySubMesh.Add(new List<int>());
+                trianglesBySubMesh.Add(
+                    new List<int>());
             }
         }
 
@@ -1717,12 +2177,15 @@ public sealed class ChainsawMeshCutProcessor
             int subMeshIndex,
             bool isCap)
         {
-            if (polygon == null || polygon.Count < 3)
+            if (polygon == null ||
+                polygon.Count < 3)
             {
                 return;
             }
 
-            for (int i = 1; i < polygon.Count - 1; i++)
+            for (int i = 1;
+                 i < polygon.Count - 1;
+                 i++)
             {
                 AddTriangle(
                     polygon[0],
@@ -1740,13 +2203,26 @@ public sealed class ChainsawMeshCutProcessor
             int subMeshIndex,
             bool isCap)
         {
-            int firstIndex = AddVertex(first);
-            int secondIndex = AddVertex(second);
-            int thirdIndex = AddVertex(third);
+            int firstIndex =
+                AddVertex(first);
 
-            trianglesBySubMesh[subMeshIndex].Add(firstIndex);
-            trianglesBySubMesh[subMeshIndex].Add(secondIndex);
-            trianglesBySubMesh[subMeshIndex].Add(thirdIndex);
+            int secondIndex =
+                AddVertex(second);
+
+            int thirdIndex =
+                AddVertex(third);
+
+            trianglesBySubMesh[
+                subMeshIndex].Add(
+                    firstIndex);
+
+            trianglesBySubMesh[
+                subMeshIndex].Add(
+                    secondIndex);
+
+            trianglesBySubMesh[
+                subMeshIndex].Add(
+                    thirdIndex);
 
             if (!isCap)
             {
@@ -1754,59 +2230,94 @@ public sealed class ChainsawMeshCutProcessor
             }
         }
 
-        public Mesh BuildMesh(string meshName)
+        public Mesh BuildMesh(
+            string meshName)
         {
             if (vertices.Count == 0)
             {
                 return null;
             }
 
-            var mesh = new Mesh
-            {
-                name = meshName,
-                indexFormat = vertices.Count > ushort.MaxValue
-                    ? IndexFormat.UInt32
-                    : IndexFormat.UInt16
-            };
+            var mesh =
+                new Mesh
+                {
+                    name = meshName,
+                    indexFormat =
+                        vertices.Count >
+                        ushort.MaxValue
+                            ? IndexFormat.UInt32
+                            : IndexFormat.UInt16
+                };
 
-            mesh.SetVertices(vertices);
-            mesh.SetNormals(normals);
-            mesh.SetUVs(0, uv);
+            mesh.SetVertices(
+                vertices);
+
+            mesh.SetNormals(
+                normals);
+
+            mesh.SetUVs(
+                0,
+                uv);
 
             if (hasTangents)
             {
-                mesh.SetTangents(tangents);
+                mesh.SetTangents(
+                    tangents);
             }
 
-            mesh.subMeshCount = trianglesBySubMesh.Count;
+            mesh.subMeshCount =
+                trianglesBySubMesh.Count;
 
             for (int subMeshIndex = 0;
-                 subMeshIndex < trianglesBySubMesh.Count;
+                 subMeshIndex <
+                 trianglesBySubMesh.Count;
                  subMeshIndex++)
             {
                 mesh.SetTriangles(
-                    trianglesBySubMesh[subMeshIndex],
+                    trianglesBySubMesh[
+                        subMeshIndex],
                     subMeshIndex,
                     false);
             }
 
             mesh.RecalculateBounds();
+
             return mesh;
         }
 
-        private int AddVertex(VertexData vertex)
+        private int AddVertex(
+            VertexData vertex)
         {
-            int index = vertices.Count;
-            vertices.Add(vertex.Position);
-            normals.Add(vertex.Normal);
-            uv.Add(vertex.Uv);
+            int index =
+                vertices.Count;
+
+            vertices.Add(
+                vertex.Position);
+
+            normals.Add(
+                vertex.Normal);
+
+            uv.Add(
+                vertex.Uv);
 
             if (hasTangents)
             {
-                tangents.Add(vertex.Tangent);
+                tangents.Add(
+                    vertex.Tangent);
             }
 
             return index;
         }
     }
+}
+
+
+/// <summary>
+/// Meshローカル空間で切断位置の有効範囲を定義する軸。
+/// </summary>
+public enum MeshCutRangeAxis
+{
+    X,
+    Y,
+    Z
 }

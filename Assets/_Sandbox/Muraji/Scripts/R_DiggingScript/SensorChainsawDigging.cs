@@ -149,6 +149,18 @@ public class SensorChainsawDigging : MonoBehaviour
     // Floor → Wallの切り替え直後に一時的に保持するWall候補。
     private Collider pendingWallCollider;
     private float pendingWallTime;
+    public int TerrainLayerMask =>
+    detector != null ? detector.TerrainLayerMask : 0;
+
+    public bool TryGetCeilingContact(
+        out SensorChainsawContact ceilingContact)
+    {
+        ceilingContact = default;
+
+        return isActiveAndEnabled &&
+            detector != null &&
+            detector.TryGetCeilingContact(out ceilingContact);
+    }
 
     private void Awake()
     {
@@ -286,8 +298,11 @@ public class SensorChainsawDigging : MonoBehaviour
 
     // PlayerControllerのFixedUpdateから呼ぶ。
     public void Tick(
-        float deltaTime,
-        float facingDirection = 0f)
+    float deltaTime,
+    float facingDirection = 0f,
+    float wallImpactMinimumSpeed = float.PositiveInfinity,
+    float floorMoveSpeed = 0f,
+    int wallImpactLayers = 0)
     {
         if (!isActiveAndEnabled || !IsRequested)
         {
@@ -368,35 +383,35 @@ public class SensorChainsawDigging : MonoBehaviour
 
                 if (isFrontWall && !timedPress)
                 {
-                    // 既存の待ち時間を維持する。
-                    // 同じ壁を一定時間検出した場合に後退する。
-                    if (pendingWallCollider != next.Collider)
+                    // 高速時はRayだけでのけぞらず、本体の衝突まで待つ。
+                    Vector3 floorNormal = contact.Normal;
+
+                    Vector3 floorTangent = new Vector3(
+                        floorNormal.y,
+                        -floorNormal.x,
+                        0f
+                    ).normalized;
+
+                    if (floorTangent.x < 0f)
                     {
-                        pendingWallCollider = next.Collider;
-                        pendingWallTime = Time.time;
+                        floorTangent = -floorTangent;
                     }
 
-                    float wallElapsedTime =
-                        Time.time - pendingWallTime;
+                    float approachSpeed = -Vector3.Dot(
+                        floorTangent * floorMoveSpeed,
+                        next.Normal
+                    );
 
-                    if (wallElapsedTime < floorTransitionWallGraceTime)
+                    bool impactLayer =
+                        (wallImpactLayers &
+                         (1 << next.Collider.gameObject.layer)) != 0;
+
+                    if (impactLayer && approachSpeed >= wallImpactMinimumSpeed)
                     {
+                        pendingWallCollider = null;
+                        pendingWallTime = 0f;
                         return;
                     }
-
-                    float bounceDirection =
-                        Mathf.Sign(next.Normal.x);
-
-                    // Cancel後に後退を予約する。
-                    Cancel(true);
-
-                    pendingBounceDirection = bounceDirection;
-                    hasPendingBounce = true;
-
-                    pendingWallCollider = null;
-                    pendingWallTime = 0f;
-
-                    return;
                 }
 
                 // 壁登り条件を満たしていれば、

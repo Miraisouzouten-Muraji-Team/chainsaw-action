@@ -4937,6 +4937,17 @@ MonoBehaviour:
   slash2: {fileID: 11400000, guid: 5ea1d1f77eb496b498c1ab9404279355, type: 2}
   slash3: {fileID: 11400000, guid: e540abe81fcc379418b2cdafb563b6e8, type: 2}
   comboAdvanceTime: 1
+  enableDiggingImpact: 1
+  impactTerrainLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  minimumDiggingImpactSpeed: 4
+  diggingImpactStunDuration: 0.15
+  impactCameraShake: {fileID: 1850938001}
+  impactShakeDuration: 0.15
+  impactShakeMagnitude: 0.1
+  impactSurfaceNormalThreshold: 0.7
+  logDiggingImpact: 1
 --- !u!54 &2094984636
 Rigidbody:
   m_ObjectHideFlags: 0

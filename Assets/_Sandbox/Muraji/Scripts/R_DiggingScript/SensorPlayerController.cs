@@ -121,7 +121,64 @@ public class SensorPlayerController : MonoBehaviour
     [Range(0.1f, 1f)]
     [SerializeField] float comboAdvanceTime = 1f;
 
-    public bool IsAttacking { get; private set; }
+
+[Header("食い込み中の強衝突：硬直とカメラシェイク")]
+[SerializeField]
+private bool enableDiggingImpact = true;
+
+[Tooltip("NothingならDetectorのTerrain Layersを使用。指定する場合は敵を含めない")]
+[SerializeField]
+private LayerMask impactTerrainLayers;
+
+[Tooltip("面へ向かう速度がこの値以上なら硬直。チェーンソーの回転数ではない")]
+[SerializeField, Min(0.01f)]
+private float minimumDiggingImpactSpeed = 4f;
+
+[SerializeField, Min(0.01f)]
+private float diggingImpactStunDuration = 0.2f;
+
+[SerializeField]
+private CameraShake_System impactCameraShake;
+
+[SerializeField, Min(0f)]
+private float impactShakeDuration = 0.15f;
+
+[SerializeField, Min(0f)]
+private float impactShakeMagnitude = 0.1f;
+
+[Tooltip("DetectorのSurface Normal Thresholdと合わせる")]
+[SerializeField, Range(0.1f, 0.95f)]
+private float impactSurfaceNormalThreshold = 0.7f;
+
+[SerializeField]
+private bool logDiggingImpact = true;
+
+public bool IsImpactStunned => impactStunRemaining > 0f;
+
+private int ResolvedImpactTerrainLayers =>
+    impactTerrainLayers.value != 0
+        ? impactTerrainLayers.value
+        : chainsawDigging != null
+            ? chainsawDigging.TerrainLayerMask
+            : 0;
+
+private bool CanUseDiggingImpact =>
+    enableDiggingImpact &&
+    ResolvedImpactTerrainLayers != 0 &&
+    diggingImpactStunDuration > 0f;
+
+private bool wallAscentImpactArmed;
+private bool floorTravelImpactArmed;
+private float floorTravelImpactDirection;
+private bool impactSettingsChecked;
+
+private float impactStunRemaining;
+private Vector3 lastDiggingPhysicsVelocity;
+private ChainsawSurface lastDiggingPhysicsSurface;
+
+private RigidbodyConstraints constraintsBeforeImpact;
+private bool impactConstraintsHeld;
+private float impactBounceDirection;    public bool IsAttacking { get; private set; }
 
     int slashStep = 0;
     bool nextSlashReserved;
@@ -190,6 +247,11 @@ public class SensorPlayerController : MonoBehaviour
 
     void Update()
     {
+        if (IsImpactStunned)
+        {
+            input.ResetInput();
+            return;
+        }
         // ヒットストップ中はコンボ予約だけ受け付ける。
         if (Time.timeScale <= 0f)
         {
@@ -257,10 +319,31 @@ public class SensorPlayerController : MonoBehaviour
             );
         }
 
+        if (TickDiggingImpactStun(deltaTime))
+        {
+            return;
+        }
+
+        CheckDiggingImpactSettings();
+
+        // 食い込み状態の更新前に、前回の移動で天井に触れたか確認する。
+        if (TryBeginUpperSensorImpact())
+        {
+            return;
+        }
+
         ChainsawSurface previousSurface = chainsawDigging.Surface;
         float previousMoveSpeed = Mathf.Abs(currentSpeed);
 
-        chainsawDigging.Tick(deltaTime, facingDirection);
+        chainsawDigging.Tick(
+            deltaTime,
+            facingDirection,
+            CanUseDiggingImpact
+                ? Mathf.Max(0.01f, minimumDiggingImpactSpeed)
+                : float.PositiveInfinity,
+            currentSpeed,
+            ResolvedImpactTerrainLayers
+        );
 
         if (chainsawDigging.TryTakeWallBounce(out float bounceDirection))
         {
@@ -405,6 +488,27 @@ public class SensorPlayerController : MonoBehaviour
         velocity.z = 0f;
         playerRigidbody.linearVelocity = velocity;
 
+        // 床の食い込みから続く移動を記録する。
+        UpdateFloorTravelImpact(velocity);
+        // 物理衝突によって速度が0になる前の移動速度。
+        lastDiggingPhysicsVelocity = velocity;
+        lastDiggingPhysicsSurface = chainsawDigging.Surface;
+
+        // 壁登りによる上昇を記録する。
+        if (lastDiggingPhysicsSurface == ChainsawSurface.Wall &&
+            velocity.y > 0f)
+        {
+            wallAscentImpactArmed = true;
+        }
+        else if (
+            velocity.y <= 0f ||
+            lastDiggingPhysicsSurface != ChainsawSurface.None)
+        {
+            // 下降開始、または別の面への食い込みで解除する。
+            wallAscentImpactArmed = false;
+        }
+
+        // SurfaceがNoneでも上昇中なら、直前の壁登りの記録を維持する。
         debugCurrentSpeed = velocity.x;
 
         playerAnimator.SetSpeed(
@@ -580,11 +684,14 @@ public class SensorPlayerController : MonoBehaviour
 
     void OnCollisionEnter(Collision collision)
     {
+        TryBeginDiggingImpact(collision);
         UpdateGroundContact(collision);
     }
 
     void OnCollisionStay(Collision collision)
     {
+        // 同じ地形Collider内で壁から天井へ接触が変わる場合も確認する。
+        TryBeginDiggingImpact(collision);
         UpdateGroundContact(collision);
     }
 
@@ -622,6 +729,14 @@ public class SensorPlayerController : MonoBehaviour
             {
                 groundColliders.Add(otherCollider);
                 jumpsUsed = 0;
+
+                // 通常状態で着地したら、空中移動の記録を解除する。
+                // 床に食い込んでいる最中は記録を維持する。
+                if (chainsawDigging.Surface != ChainsawSurface.Floor)
+                {
+                    ResetFloorTravelImpact();
+                }
+
                 break;
             }
         }
@@ -826,8 +941,376 @@ public class SensorPlayerController : MonoBehaviour
         attackGravityOff = false;
     }
 
+    private void CheckDiggingImpactSettings()
+    {
+        if (impactSettingsChecked || !enableDiggingImpact)
+        {
+            return;
+        }
+
+        impactSettingsChecked = true;
+
+        ResolveImpactCameraShake();
+
+        if (ResolvedImpactTerrainLayers == 0)
+        {
+            Debug.LogWarning(
+                "食い込み硬直：DetectorのTerrain Layers、または" +
+                "Impact Terrain Layersに地形Layerを設定してください。",
+                this
+            );
+        }
+
+        if (impactCameraShake == null ||
+            !impactCameraShake.isActiveAndEnabled)
+        {
+            Debug.LogWarning(
+                "食い込み硬直：有効なCameraShake_Systemを" +
+                "Impact Camera Shakeに設定してください。" +
+                "硬直だけは実行できます。",
+                this
+            );
+        }
+    }
+
+    private void ResolveImpactCameraShake()
+    {
+        if (impactCameraShake != null)
+        {
+            return;
+        }
+
+        Camera mainCamera = Camera.main;
+
+        if (mainCamera == null)
+        {
+            return;
+        }
+
+        impactCameraShake =
+            mainCamera.GetComponentInParent<CameraShake_System>();
+
+        if (impactCameraShake == null)
+        {
+            impactCameraShake =
+                mainCamera.GetComponentInChildren<CameraShake_System>();
+        }
+    }
+
+    private void UpdateFloorTravelImpact(Vector3 velocity)
+    {
+        ChainsawSurface surface = chainsawDigging.Surface;
+
+        if (surface == ChainsawSurface.Floor)
+        {
+            // 床の食い込みで移動していた方向を記録する。
+            floorTravelImpactArmed =
+                Mathf.Abs(velocity.x) > 0.01f;
+
+            floorTravelImpactDirection =
+                floorTravelImpactArmed
+                    ? Mathf.Sign(velocity.x)
+                    : 0f;
+
+            return;
+        }
+
+        // 床を離れた後も、元の方向へ移動していれば維持する。
+        // 落下に移っても解除しない。
+        //
+        // 別の面への食い込み・停止・反転で解除する。
+        if (surface != ChainsawSurface.None ||
+            velocity.x * floorTravelImpactDirection <= 0.01f)
+        {
+            ResetFloorTravelImpact();
+        }
+    }
+
+    private void ResetFloorTravelImpact()
+    {
+        floorTravelImpactArmed = false;
+        floorTravelImpactDirection = 0f;
+    }
+    private bool TryBeginUpperSensorImpact()
+    {
+        if (!CanUseDiggingImpact ||
+            IsImpactStunned ||
+            !wallAscentImpactArmed ||
+            lastDiggingPhysicsVelocity.y <= 0f)
+        {
+            return false;
+        }
+
+        if (!chainsawDigging.TryGetCeilingContact(
+            out SensorChainsawContact ceiling))
+        {
+            return false;
+        }
+
+        int targetLayer = 1 << ceiling.Collider.gameObject.layer;
+
+        if ((ResolvedImpactTerrainLayers & targetLayer) == 0)
+        {
+            return false;
+        }
+
+        Vector3 normal = ceiling.Normal;
+
+        if (Mathf.Abs(normal.z) > 0.5f)
+        {
+            return false;
+        }
+
+        normal = new Vector3(
+            normal.x,
+            normal.y,
+            0f
+        ).normalized;
+
+        if (normal.y > -impactSurfaceNormalThreshold)
+        {
+            return false;
+        }
+
+        // 天井の面へ向かう速度で判定する。
+        float approachSpeed =
+            -Vector3.Dot(lastDiggingPhysicsVelocity, normal);
+
+        if (approachSpeed <
+            Mathf.Max(0.01f, minimumDiggingImpactSpeed))
+        {
+            return false;
+        }
+
+        BeginDiggingImpactStun(0f);
+        return true;
+    }
+    private void TryBeginDiggingImpact(Collision collision)
+    {
+        if (!isActiveAndEnabled ||
+            !CanUseDiggingImpact ||
+            IsImpactStunned ||
+            playerRigidbody == null ||
+            playerRigidbody.isKinematic ||
+            chainsawDigging == null ||
+            !chainsawDigging.isActiveAndEnabled)
+        {
+            return;
+        }
+
+        bool wasClimbing =
+            wallAscentImpactArmed ||
+            lastDiggingPhysicsSurface == ChainsawSurface.Wall;
+
+        bool wasSliding =
+            floorTravelImpactArmed ||
+            lastDiggingPhysicsSurface == ChainsawSurface.Floor;
+
+        if (!wasClimbing && !wasSliding)
+        {
+            return;
+        }
+
+        for (int i = 0; i < collision.contactCount; i++)
+        {
+            ContactPoint contact = collision.GetContact(i);
+            Collider target = contact.otherCollider;
+
+            if (target == null || target.isTrigger)
+            {
+                continue;
+            }
+
+            int targetLayer = 1 << target.gameObject.layer;
+
+            if ((ResolvedImpactTerrainLayers & targetLayer) == 0)
+            {
+                continue;
+            }
+
+            if (target.transform == transform ||
+                target.transform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            Vector3 normal = contact.normal;
+
+            if (Mathf.Abs(normal.z) > 0.5f)
+            {
+                continue;
+            }
+
+            normal = new Vector3(
+                normal.x,
+                normal.y,
+                0f
+            ).normalized;
+
+            bool hitsCeiling =
+                wasClimbing &&
+                normal.y <= -impactSurfaceNormalThreshold &&
+                lastDiggingPhysicsVelocity.y > 0f;
+
+            bool hitsWall =
+                wasSliding &&
+                Mathf.Abs(normal.y) < impactSurfaceNormalThreshold;
+
+            if (!hitsCeiling && !hitsWall)
+            {
+                continue;
+            }
+
+            float approachSpeed =
+                -Vector3.Dot(lastDiggingPhysicsVelocity, normal);
+
+            if (approachSpeed <
+                Mathf.Max(0.01f, minimumDiggingImpactSpeed))
+            {
+                continue;
+            }
+
+            BeginDiggingImpactStun(
+                hitsWall ? Mathf.Sign(normal.x) : 0f
+            );
+
+            return;
+        }
+    }
+    private void BeginDiggingImpactStun(float bounceDirection)
+    {
+        ResetFloorTravelImpact();
+        wallAscentImpactArmed = false;
+
+        if (logDiggingImpact)
+        {
+            Debug.Log(
+                "食い込み強衝突：硬直開始（" +
+                (bounceDirection == 0f ? "天井" : "壁") +
+                "）",
+                this
+            );
+        }
+
+        impactStunRemaining =
+            Mathf.Max(0.01f, diggingImpactStunDuration);
+
+        // 床→壁の場合は、硬直終了後に既存ののけぞりを行う。
+        impactBounceDirection = bounceDirection;
+
+        chainsawDigging.Cancel(true);
+        chainsawDigging.TryTakeWallBounce(out _);
+
+        CancelAttack();
+
+        jumpPending = false;
+        pendingJumpPower = 0f;
+        pendingJumpCount = 0;
+
+        knockbackVelocity = 0f;
+        knockbackHopPending = false;
+
+        currentSpeed = 0f;
+        wallTravelSpeed = 0f;
+        ascentStartSpeed = 0f;
+        fallElapsedTime = 0f;
+
+        lastDiggingPhysicsVelocity = Vector3.zero;
+        lastDiggingPhysicsSurface = ChainsawSurface.None;
+
+        input.ResetInput();
+
+        // 硬直前の制約を保存してから固定する。
+        constraintsBeforeImpact = playerRigidbody.constraints;
+        impactConstraintsHeld = true;
+
+        playerRigidbody.linearVelocity = Vector3.zero;
+        playerRigidbody.angularVelocity = Vector3.zero;
+        playerRigidbody.constraints = RigidbodyConstraints.FreezeAll;
+
+        playerAnimator.SetSpeed(0f);
+
+        debugCurrentSpeed = 0f;
+        debugSpeedBonus = 0f;
+        debugTargetSpeed = 0f;
+
+        ResolveImpactCameraShake();
+
+        if (impactCameraShake != null &&
+            impactCameraShake.isActiveAndEnabled)
+        {
+            impactCameraShake.Shake(
+                impactShakeDuration,
+                impactShakeMagnitude
+            );
+        }
+    }
+    private bool TickDiggingImpactStun(float deltaTime)
+    {
+        if (!IsImpactStunned)
+        {
+            return false;
+        }
+
+        playerRigidbody.linearVelocity = Vector3.zero;
+        playerRigidbody.angularVelocity = Vector3.zero;
+
+        lastDiggingPhysicsVelocity = Vector3.zero;
+        lastDiggingPhysicsSurface = ChainsawSurface.None;
+
+        debugRotationSpeed = chainsawAccelerator.CurrentSpeed;
+
+        input.ResetInput();
+
+        impactStunRemaining = Mathf.Max(
+            0f,
+            impactStunRemaining - deltaTime
+        );
+
+        if (!IsImpactStunned)
+        {
+            RestoreImpactConstraints();
+
+            if (impactBounceDirection != 0f)
+            {
+                knockbackVelocity =
+                    impactBounceDirection * knockbackSpeed;
+
+                knockbackHopPending = true;
+            }
+
+            impactBounceDirection = 0f;
+        }
+
+        return true;
+    }
+
+    private void RestoreImpactConstraints()
+    {
+        if (!impactConstraintsHeld)
+        {
+            return;
+        }
+
+        if (playerRigidbody != null)
+        {
+            playerRigidbody.constraints = constraintsBeforeImpact;
+        }
+
+        impactConstraintsHeld = false;
+    }
+
     void OnDisable()
     {
+        ResetFloorTravelImpact();
+        wallAscentImpactArmed = false;
+        impactSettingsChecked = false;
+        RestoreImpactConstraints();
+
+        impactStunRemaining = 0f;
+        impactBounceDirection = 0f;
+        lastDiggingPhysicsVelocity = Vector3.zero;
+        lastDiggingPhysicsSurface = ChainsawSurface.None;
         jumpsUsed = 0;
         pendingJumpCount = 0;
         jumpPending = false;

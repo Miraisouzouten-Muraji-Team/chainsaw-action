@@ -63,7 +63,33 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
     private bool configured;
     private float facing = 1f;
+    public int TerrainLayerMask => terrainLayers.value;
 
+    // 壁の優先順位に隠されないように、Upperだけで天井を調べる。
+    public bool TryGetCeilingContact(out SensorChainsawContact contact)
+    {
+        contact = default;
+
+        if (!isActiveAndEnabled || !configured)
+        {
+            return false;
+        }
+
+        Physics.SyncTransforms();
+
+        float bestScore = float.PositiveInfinity;
+
+        CollectContacts(
+            upperSensor,
+            null,
+            ChainsawSurface.None,
+            ref contact,
+            ref bestScore
+        );
+
+        return contact.Collider != null &&
+            contact.Surface == ChainsawSurface.Ceiling;
+    }
     private void Awake()
     {
         if (ownerRoot == null)

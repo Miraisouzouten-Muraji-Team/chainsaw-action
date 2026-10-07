@@ -12,7 +12,6 @@ namespace Samples.Editor
         {
             // Create optimized shaders
             OptimizedShaderGenerator.Generate("Assets/OptimizedShaders");
-            
             // Create shader replacement settings
             var replaceSettings = new OptimizedShaderReplacer.Settings
             {

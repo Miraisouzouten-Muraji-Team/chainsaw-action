@@ -118,7 +118,6 @@ public class PlayerCamera : MonoBehaviour
                 targetPosition,
                 interpolation);
     }
-
     private void UpdateCurrentArea()
     {
         Vector3 playerPosition =
@@ -171,7 +170,6 @@ public class PlayerCamera : MonoBehaviour
 
         return null;
     }
-
     private Vector3 CalculateTargetPosition()
     {
         float facingDirection =
@@ -184,13 +182,17 @@ public class PlayerCamera : MonoBehaviour
         Vector3 position =
             playerPosition;
 
-        // 仕様書の[-3,-3]オフセット。
+        // [-3,-3]オフセット。
         position.x += followOffset.x;
         position.y += followOffset.y;
 
         // プレイヤーの進行方向側へ視野を広げる。
         position.x +=
             facingDirection * directionLookAhead;
+
+        // プレイヤーの進行方向側へ視野を広げる。
+        position.y +=
+            facingDirection;
 
         // カメラのZ座標は現在位置を維持する。
         position.z =

@@ -175,10 +175,12 @@ private bool impactSettingsChecked;
 private float impactStunRemaining;
 private Vector3 lastDiggingPhysicsVelocity;
 private ChainsawSurface lastDiggingPhysicsSurface;
+private PlayeMidCollider playerMidCollider;
 
-private RigidbodyConstraints constraintsBeforeImpact;
+    private RigidbodyConstraints constraintsBeforeImpact;
 private bool impactConstraintsHeld;
-private float impactBounceDirection;    public bool IsAttacking { get; private set; }
+private float impactBounceDirection;
+public bool IsAttacking { get; private set; }
 
     int slashStep = 0;
     bool nextSlashReserved;
@@ -191,6 +193,15 @@ private float impactBounceDirection;    public bool IsAttacking { get; private s
         input = GetComponent<PlayerInputHandler>();
         playerAnimator = GetComponent<PlayerAnimator>();
         playerRigidbody = GetComponent<Rigidbody>();
+
+        // 壁の接触記録用コンポーネントを取得する。
+        // 未配置なら同じGameObjectへ追加する。物理Colliderは追加しない。
+        playerMidCollider = GetComponent<PlayeMidCollider>();
+
+        if (playerMidCollider == null)
+        {
+            playerMidCollider = gameObject.AddComponent<PlayeMidCollider>();
+        }
 
         if (chainsawDigging == null)
         {
@@ -325,6 +336,9 @@ private float impactBounceDirection;    public bool IsAttacking { get; private s
         }
 
         CheckDiggingImpactSettings();
+
+        // 無効化・削除された壁の接触記録を更新する。
+        playerMidCollider.RefreshContacts(ResolvedImpactTerrainLayers);
 
         // 食い込み状態の更新前に、前回の移動で天井に触れたか確認する。
         if (TryBeginUpperSensorImpact())
@@ -486,7 +500,6 @@ private float impactBounceDirection;    public bool IsAttacking { get; private s
         }
 
         velocity.z = 0f;
-        playerRigidbody.linearVelocity = velocity;
 
         // 床の食い込みから続く移動を記録する。
         UpdateFloorTravelImpact(velocity);
@@ -510,6 +523,11 @@ private float impactBounceDirection;    public bool IsAttacking { get; private s
 
         // SurfaceがNoneでも上昇中なら、直前の壁登りの記録を維持する。
         debugCurrentSpeed = velocity.x;
+
+        // 硬直・シェイクの判定には制限前の速度を残す。
+        // Rigidbodyへ渡す実際の移動速度だけを、最後に制限する。
+        ApplyWallMovementBlock(ref velocity);
+        playerRigidbody.linearVelocity = velocity;
 
         playerAnimator.SetSpeed(
             knockbackVelocity != 0f ? 0f : currentSpeed
@@ -684,20 +702,109 @@ private float impactBounceDirection;    public bool IsAttacking { get; private s
 
     void OnCollisionEnter(Collision collision)
     {
+        if (!isActiveAndEnabled)
+        {
+            return;
+        }
+
+        // 速度を止める前に、既存の硬直・シェイクを判定する。
         TryBeginDiggingImpact(collision);
+
+        UpdateWallContact(collision);
         UpdateGroundContact(collision);
     }
 
     void OnCollisionStay(Collision collision)
     {
-        // 同じ地形Collider内で壁から天井へ接触が変わる場合も確認する。
+        if (!isActiveAndEnabled)
+        {
+            return;
+        }
+
+        // 同じ地形内で接触面が変化した場合も更新する。
         TryBeginDiggingImpact(collision);
+
+        UpdateWallContact(collision);
         UpdateGroundContact(collision);
     }
 
     void OnCollisionExit(Collision collision)
     {
+        if (playerMidCollider != null)
+        {
+            playerMidCollider.RemoveContact(
+                collision.collider,
+                ResolvedImpactTerrainLayers
+            );
+        }
+
         groundColliders.Remove(collision.collider);
+    }
+
+    private void UpdateWallContact(Collision collision)
+    {
+        if (playerMidCollider == null)
+        {
+            return;
+        }
+
+        playerMidCollider.RecordContact(
+            collision,
+            ResolvedImpactTerrainLayers
+        );
+
+        // 衝突したフレームにも、壁方向の移動と歩行速度を止める。
+        Vector3 velocity = playerRigidbody.linearVelocity;
+
+        if (ApplyWallMovementBlock(ref velocity))
+        {
+            playerRigidbody.linearVelocity = velocity;
+            playerAnimator.SetSpeed(0f);
+            debugCurrentSpeed = velocity.x;
+        }
+    }
+
+    private bool ApplyWallMovementBlock(ref Vector3 velocity)
+    {
+        // 硬直・壁登り・敵への食い込みは既存の専用処理を優先する。
+        if (playerMidCollider == null ||
+            IsImpactStunned ||
+            chainsawDigging.Surface == ChainsawSurface.Wall ||
+            chainsawDigging.Surface == ChainsawSurface.Enemy)
+        {
+            return false;
+        }
+
+        // 壁へ向かう横移動だけを止める。
+        // 上下移動と、壁から離れる方向への移動は残す。
+        bool blocked = playerMidCollider.IsBlocked(velocity.x);
+
+        if (blocked)
+        {
+            velocity.x = 0f;
+        }
+
+        // 歩行アニメーションに渡す速度も止める。
+        if (playerMidCollider.IsBlocked(currentSpeed))
+        {
+            currentSpeed = 0f;
+            blocked = true;
+        }
+
+        // 押し戻された先にも壁がある場合は、その方向への移動を止める。
+        if (playerMidCollider.IsBlocked(knockbackVelocity))
+        {
+            knockbackVelocity = 0f;
+        }
+
+        // 攻撃自体は継続し、壁方向の踏み込みだけを終了する。
+        if (playerMidCollider.IsBlocked(attackMoveDirection))
+        {
+            ClearAttackMovement();
+            blocked = true;
+        }
+
+        return blocked;
     }
 
     void UpdateGroundContact(Collision collision)
@@ -1302,6 +1409,11 @@ private float impactBounceDirection;    public bool IsAttacking { get; private s
 
     void OnDisable()
     {
+        // 再有効化時に、古い壁の接触情報を持ち越さない。
+        if (playerMidCollider != null)
+        {
+            playerMidCollider.ClearContacts();
+        }
         ResetFloorTravelImpact();
         wallAscentImpactArmed = false;
         impactSettingsChecked = false;

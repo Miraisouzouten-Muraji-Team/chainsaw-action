@@ -12,47 +12,63 @@ public class ChainsawAccelerator : MonoBehaviour
         SettlingToDiggingLimit
     }
 
-    [Header("回転速度（回転 / 秒）")]
-    [Tooltip("アクセルを離したときの目標値")]
-    [SerializeField, Min(0f)]
-    private float minSpeed = 5f;
+    [Header("回転速度・加減速・SE設定")]
+    [Tooltip("回転速度、食い込み時の上限、加減速曲線、SEピッチをまとめた設定データ")]
+    [SerializeField] private AccelerationParameter accelerationParameter;
 
-    [Tooltip("食い込んでいないときの上限")]
-    [SerializeField, Min(0.01f)]
-    private float maxSpeed = 50f;
+    private float minSpeed
+    {
+        get => accelerationParameter.minSpeed;
+        set => accelerationParameter.minSpeed = value;
+    }
 
-    [Tooltip("食い込み中の目標上限")]
-    [SerializeField, Min(0.01f)]
-    private float diggingMaxSpeed = 35f;
+    private float maxSpeed
+    {
+        get => accelerationParameter.maxSpeed;
+        set => accelerationParameter.maxSpeed = value;
+    }
 
-    [Header("加速／減速にかかる時間")]
-    [Tooltip("加速曲線の再生時間（秒）")]
-    [SerializeField, Min(MIN_TRANSITION_DURATION)]
-    private float accelerationTime = 2f;
+    private float diggingMaxSpeed
+    {
+        get => accelerationParameter.diggingMaxSpeed;
+        set => accelerationParameter.diggingMaxSpeed = value;
+    }
 
-    [Tooltip("減速曲線の再生時間（秒）。50→35にも使用")]
-    [SerializeField, Min(MIN_TRANSITION_DURATION)]
-    private float decelerationTime = 2.5f;
+    private float accelerationTime
+    {
+        get => accelerationParameter.accelerationTime;
+        set => accelerationParameter.accelerationTime = value;
+    }
 
-    [Tooltip("横軸：時間、縦軸：加速の進み具合（0→1）")]
-    [SerializeField]
-    private AnimationCurve accelerationCurve = new AnimationCurve(
-        new Keyframe(0f, 0f),
-        new Keyframe(0.5f, 0.5f, 3f, 3f),
-        new Keyframe(1f, 1f)
-    );
+    private float decelerationTime
+    {
+        get => accelerationParameter.decelerationTime;
+        set => accelerationParameter.decelerationTime = value;
+    }
 
-    [Tooltip("横軸：時間、縦軸：減速の進み具合（0→1）")]
-    [SerializeField]
-    private AnimationCurve decelerationCurve = new AnimationCurve(
-        new Keyframe(0f, 0f),
-        new Keyframe(0.7f, 0.3f, 1f, 1f),
-        new Keyframe(1f, 1f)
-    );
+    private AnimationCurve accelerationCurve
+    {
+        get => accelerationParameter.accelerationCurve;
+        set => accelerationParameter.accelerationCurve = value;
+    }
 
-    [Header("SEピッチ")]
-    [SerializeField] private float minPitch = 0.8f;
-    [SerializeField] private float maxPitch = 1.8f;
+    private AnimationCurve decelerationCurve
+    {
+        get => accelerationParameter.decelerationCurve;
+        set => accelerationParameter.decelerationCurve = value;
+    }
+
+    private float minPitch
+    {
+        get => accelerationParameter.minPitch;
+        set => accelerationParameter.minPitch = value;
+    }
+
+    private float maxPitch
+    {
+        get => accelerationParameter.maxPitch;
+        set => accelerationParameter.maxPitch = value;
+    }
 
     public float CurrentSpeed { get; private set; }
 
@@ -77,8 +93,15 @@ public class ChainsawAccelerator : MonoBehaviour
 
     private TransitionMode transitionMode;
 
+    // SOの割り当てを確認してから、従来通り初期回転数を設定する。
     private void Awake()
     {
+        if (accelerationParameter == null)
+        {
+            Debug.LogError("Acceleration Parameterを設定してください。", this);
+            enabled = false;
+            return;
+        }
         CurrentSpeed = minSpeed;
     }
 
@@ -212,8 +235,10 @@ public class ChainsawAccelerator : MonoBehaviour
         return true;
     }
 
+    // 既存の値域補正を維持する。SO未設定時は補正しない。
     private void OnValidate()
     {
+        if (accelerationParameter == null) return;
         minSpeed = Mathf.Max(0f, minSpeed);
         maxSpeed = Mathf.Max(minSpeed + 0.01f, maxSpeed);
 

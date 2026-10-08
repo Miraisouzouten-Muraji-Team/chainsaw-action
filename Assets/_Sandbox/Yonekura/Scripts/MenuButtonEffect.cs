@@ -1,42 +1,60 @@
+using R3;
+using R3.Triggers;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 // メニューボタン選択時、ボタン拡大や透明度変更
-public class MenuButtonEffect : MonoBehaviour,
-    ISelectHandler, IDeselectHandler
+public class MenuButtonEffect : MonoBehaviour
 {
     // ボタンの大きさを保存
     private Vector3 originalScale;
-    private Image image;
 
-    //拡大倍率や、透明度の設定
+    // ボタンの文字
+    private Text text;
+
+    // 拡大倍率や、透明度の設定
     [SerializeField] private float selectedScale = 1.1f;
-    [SerializeField] private float normalAlpha = 0.5f;
-    [SerializeField] private float selectedAlpha = 1.0f;
     [SerializeField] private float speed = 10f;
+    [SerializeField] private float normalTextAlpha = 0.5f;
+    [SerializeField] private float selectedTextAlpha = 1.0f;
+
     // 選択中に表示するマーク
     [SerializeField] private GameObject selectMark;
 
-    //選択時の大きさや透明度保存
+    // 選択時の大きさや透明度
     private Vector3 targetScale;
-    private float targetAlpha;
+    private float targetTextAlpha;
 
     // 初期設定
     private void Start()
     {
         originalScale = transform.localScale;
-        image = GetComponent<Image>();
+
+        // 子オブジェクトのTextを自動取得
+        text = GetComponentInChildren<Text>();
 
         targetScale = originalScale;
-        targetAlpha = normalAlpha;
+        targetTextAlpha = normalTextAlpha;
 
-        SetAlpha(normalAlpha);
-
+        // ゲーム開始時、選択マークを非表示
         if (selectMark != null)
         {
             selectMark.SetActive(false);
         }
+
+        // ボタンが選択されたとき
+        gameObject
+            .GetComponent<Selectable>()
+            .OnSelectAsObservable()
+            .Subscribe(_ => OnSelect())
+            .AddTo(this);
+
+        // ボタンの選択が解除されたとき
+        gameObject
+            .GetComponent<Selectable>()
+            .OnDeselectAsObservable()
+            .Subscribe(_ => OnDeselect())
+            .AddTo(this);
     }
 
     // 大きさと透明度を滑らかに変更
@@ -48,23 +66,19 @@ public class MenuButtonEffect : MonoBehaviour,
             Time.unscaledDeltaTime * speed
         );
 
-        if (image != null)
+        if (text != null)
         {
-            Color color = image.color;
-            color.a = Mathf.Lerp(
-                color.a,
-                targetAlpha,
-                Time.unscaledDeltaTime * speed
-            );
-            image.color = color;
+            Color color = text.color;
+            color.a = targetTextAlpha;
+            text.color = color;
         }
     }
 
     // ボタンが選択されたとき
-    public void OnSelect(BaseEventData eventData)
+    private void OnSelect()
     {
         targetScale = originalScale * selectedScale;
-        targetAlpha = selectedAlpha;
+        targetTextAlpha = selectedTextAlpha;
 
         if (selectMark != null)
         {
@@ -73,25 +87,14 @@ public class MenuButtonEffect : MonoBehaviour,
     }
 
     // ボタンの選択が解除されたとき
-    public void OnDeselect(BaseEventData eventData)
+    private void OnDeselect()
     {
         targetScale = originalScale;
-        targetAlpha = normalAlpha;
+        targetTextAlpha = normalTextAlpha;
 
         if (selectMark != null)
         {
             selectMark.SetActive(false);
-        }
-    }
-
-    // 透明度を設定
-    private void SetAlpha(float alpha)
-    {
-        if (image != null)
-        {
-            Color color = image.color;
-            color.a = alpha;
-            image.color = color;
         }
     }
 }

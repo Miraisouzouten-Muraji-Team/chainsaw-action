@@ -1,5 +1,8 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
+using Cysharp.Threading.Tasks;
+using R3;
 
 public class ChangeSceneButton : MonoBehaviour
 {
@@ -16,20 +19,60 @@ public class ChangeSceneButton : MonoBehaviour
     // 遷移先のシーン
     [SerializeField] private Object targetScene;
 
-    // フェード演出
-    [SerializeField] private SceneFade sceneFade;
+    // シーン遷移演出
+    [SerializeField] private TransitionManager transitionManager;
+
+    // シーン遷移の種類
+    [SerializeField] private TransitionManager.TransitionType transitionType;
 
     // 終了確認パネル
     [SerializeField] private GameObject confirmPanel;
 
     // 「いいえ」ボタン
-    [SerializeField] private GameObject noButton;
+    [SerializeField] private Button noButton;
+
+    // 「はい」ボタン
+    [SerializeField] private Button yesButton;
 
     // 終了ボタン
-    [SerializeField] private GameObject closeButton;
+    [SerializeField] private Button closeButton;
+
+    private Button button;
+
+    // ボタンを取得
+    private void Awake()
+    {
+        button = GetComponent<Button>();
+    }
+
+    private void Start()
+    {
+        // このボタンが押されたら処理する
+        button
+            .OnClickAsObservable()
+            .Subscribe(_ => ChangeScene())
+            .AddTo(this);
+
+        // 「いいえ」ボタンが押されたら処理する
+        if (noButton != null)
+        {
+            noButton
+                .OnClickAsObservable()
+                .Subscribe(_ => NoButton())
+                .AddTo(this);
+        }
+        //「はい」ボタンが押されたら処理する
+        if (yesButton != null)
+        {
+            yesButton
+                .OnClickAsObservable()
+                .Subscribe(_ => QuitGame())
+                .AddTo(this);
+        }
+    }
 
     // ボタンが押されたときの処理
-    public void ChangeScene()
+    private void ChangeScene()
     {
         // シーン変更の場合
         if (action == ButtonAction.ChangeScene)
@@ -40,12 +83,12 @@ public class ChangeSceneButton : MonoBehaviour
         // ゲーム終了の場合
         else if (action == ButtonAction.QuitGame)
         {
-            OpenConfirmPanel();
+            OpenConfirmPanel().Forget();
         }
     }
 
     // 終了確認パネルを開く
-    private void OpenConfirmPanel()
+    private async UniTask OpenConfirmPanel()
     {
         if (confirmPanel == null)
         {
@@ -54,23 +97,24 @@ public class ChangeSceneButton : MonoBehaviour
         }
 
         confirmPanel.SetActive(true);
+
+        // 1フレーム待つ
+        await UniTask.Yield();
+
         // 「いいえ」を選択状態にする
-        StartCoroutine(SelectNoButton());
-    }
-
-    // 「いいえ」を選択
-    private System.Collections.IEnumerator SelectNoButton()
-    {
-        yield return null;
-
-        EventSystem.current.SetSelectedGameObject(noButton);
+        EventSystem.current.SetSelectedGameObject(noButton.gameObject);
     }
 
     // 「いいえ」を押したとき
-    public void NoButton()
+    private async void NoButton()
     {
         confirmPanel.SetActive(false);
-        EventSystem.current.SetSelectedGameObject(closeButton);
+
+        // 1フレーム待つ
+        await UniTask.Yield();
+
+        // 「閉じる」を選択状態にする
+        EventSystem.current.SetSelectedGameObject(closeButton.gameObject);
     }
 
     // シーン切り替え
@@ -82,13 +126,16 @@ public class ChangeSceneButton : MonoBehaviour
             return;
         }
 
-        if (sceneFade == null)
+        if (transitionManager == null)
         {
-            Debug.LogError("SceneFadeが設定されていません！");
+            Debug.LogError("TransitionManagerが設定されていません！");
             return;
         }
 
-        sceneFade.FadeToScene(targetScene.name);
+        transitionManager.TransitionToScene(
+            targetScene.name,
+            transitionType
+        );
     }
 
     // ゲーム終了

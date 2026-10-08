@@ -10,7 +10,7 @@ public class PlayerCamera : MonoBehaviour
     [SerializeField] private CameraData cameraData;
 
     [Header("プレイヤー")]
-    [SerializeField] private PlayerController playerController;
+    [SerializeField] private SensorPlayerController playerController;
 
     [Header("追従設定")]
     [Tooltip("プレイヤーに対するカメラのオフセット。")]

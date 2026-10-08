@@ -4,8 +4,8 @@ using UnityEngine;
 public class ChainsawDiggingParticles : MonoBehaviour
 {
     [Header("参照")]
-    [SerializeField] private ChainsawDigging chainsawDigging;
-    [SerializeField] private PlayerController playerController;
+    [SerializeField] private SensorChainsawDigging chainsawDigging;
+    [SerializeField] private SensorPlayerController playerController;
 
     [Tooltip("Project内のParticle SystemのPrefabを設定")]
     [SerializeField] private ParticleSystem particlePrefab;
@@ -35,13 +35,13 @@ public class ChainsawDiggingParticles : MonoBehaviour
         if (chainsawDigging == null)
         {
             chainsawDigging =
-                GetComponentInParent<ChainsawDigging>();
+                GetComponentInParent<SensorChainsawDigging>();
         }
 
         if (playerController == null)
         {
             playerController =
-                GetComponentInParent<PlayerController>();
+                GetComponentInParent<SensorPlayerController>();
         }
 
         if (chainsawDigging == null ||

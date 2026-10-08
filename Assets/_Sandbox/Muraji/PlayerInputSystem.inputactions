@@ -400,6 +400,17 @@
                 },
                 {
                     "name": "",
+                    "id": "b61ab716-fcc9-4e82-8c3d-ef7638f1b7fe",
+                    "path": "<SwitchProControllerHID>/buttonNorth",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Slash",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
                     "id": "4c56e750-ad45-4b38-b4d9-666cffbb8a00",
                     "path": "<Keyboard>/r",
                     "interactions": "",

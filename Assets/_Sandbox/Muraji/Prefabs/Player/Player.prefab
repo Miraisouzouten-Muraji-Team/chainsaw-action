@@ -467,52 +467,25 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cea2bfeaf7c54a74590b3da1d613afbe, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SensorPlayerController
+  playerParameter: {fileID: 11400000, guid: 95f83e18d5c42904aa49a97890997239, type: 2}
   chainsawDigging: {fileID: 6732003626081136930}
   chainsawAccelerator: {fileID: 5039336180393239376}
-  surfaceStickSpeed: 1
-  wallClimbSpeed: 5
-  wallJumpAngle: 53.2
-  wallJumpStunDuration: 0.25
-  wallJumpDirectionHoldDuration: 0.2
-  moveSpeed: 8
-  acceleration: 20
-  deceleration: 30
-  jumpForce: 25
-  coyoteTime: 0.1
-  gravityScale: 4
-  jumpStartGravityMultiplier: 0.7
-  maxFallGravityMultiplier: 2.5
-  fallGravityIncreaseTime: 0.2
-  maxFallSpeed: 20
-  airJumpForce: 25
   visualRoot: {fileID: 2576167837745099611}
   debugRotationSpeed: 0
   debugSpeedBonus: 0
   debugTargetSpeed: 0
   debugCurrentSpeed: 0
-  knockbackSpeed: 8
-  knockbackDeceleration: 20
-  knockbackUpSpeed: 7
   slash1: {fileID: 11400000, guid: 8607520c691a1314eb0173541cd3397a, type: 2}
   slash2: {fileID: 11400000, guid: 5ea1d1f77eb496b498c1ab9404279355, type: 2}
   slash3: {fileID: 11400000, guid: e540abe81fcc379418b2cdafb563b6e8, type: 2}
-  comboAdvanceTime: 1
   enableDiggingImpact: 1
   impactTerrainLayers:
     serializedVersion: 2
     m_Bits: 0
-  minimumDiggingImpactSpeed: 4
-  diggingImpactStunDuration: 0.15
   impactCameraShake: {fileID: 0}
-  impactShakeDuration: 0.15
-  impactShakeMagnitude: 0.1
-  impactSurfaceNormalThreshold: 0.7
   logDiggingImpact: 1
   enableCornerCorrection: 1
-  cornerTolerance: 10
-  cornerPushSpeed: 20
   headCollider: {fileID: 3512462412820357885}
-  ceilingCornerJumpSpeed: 7
   logCornerCorrection: 0
 --- !u!114 &6732003626081136930
 MonoBehaviour:
@@ -629,7 +602,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4cb39a7c3855298418d949a6fe31cc11, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
-  attackHitBox: {fileID: 0}
+  attackHitBox: {fileID: 220597037484416876}
   slash1State: Base Layer.Slash1
   slash2State: Base Layer.Slash2
   slash3State: Base Layer.Slash3

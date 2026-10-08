@@ -117,7 +117,7 @@ public class PlayerCamera : MonoBehaviour
                 transform.position,
                 targetPosition,
                 interpolation);
-    }   
+    }
     private void UpdateCurrentArea()
     {
         Vector3 playerPosition =

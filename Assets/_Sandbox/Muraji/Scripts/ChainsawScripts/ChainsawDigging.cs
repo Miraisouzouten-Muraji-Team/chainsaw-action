@@ -59,33 +59,33 @@ public class ChainsawDigging : MonoBehaviour
 
     [Header("天井")]
     [Tooltip("速度加算＝回転速度÷この値")]
-    [SerializeField, Min(0.01f)] private float ceilingSpeedDivisor = 7.5f;
+    [SerializeField, Min(0.01f)] private float ceilingSpeedDivisor;
 
     [Tooltip("ボーナス時のダッシュ加算速度")]
-    [SerializeField, Min(0f)] private float ceilingDashPower = 7.5f;
+    [SerializeField, Min(0f)] private float ceilingDashPower;
 
 
     [Tooltip("ボーナス時の回避時間（秒）")]
-    [SerializeField, Min(0f)] private float ceilingEvadeTime = 0.35f;
+    [SerializeField, Min(0f)] private float ceilingEvadeTime;
 
     [Header("敵：消費は攻撃1回ごと")]
     [Tooltip("連続攻撃の間隔（秒）")]
-    [SerializeField, Min(0.01f)] private float enemyAttackInterval = 0.1f;
+    [SerializeField, Min(0.01f)] private float enemyAttackInterval;
 
     [Tooltip("通常の攻撃1回の消費量")]
-    [SerializeField, Min(0f)] private float enemyConsumeAmount = 1f;
+    [SerializeField, Min(0f)] private float enemyConsumeAmount;
 
     [Tooltip("ボーナス時の攻撃1回の消費量")]
-    [SerializeField, Min(0f)] private float bonusEnemyConsumeAmount = 2f;
+    [SerializeField, Min(0f)] private float bonusEnemyConsumeAmount;
 
     [Tooltip("PowerRatioが0のときのダメージ倍率")]
-    [SerializeField, Min(0f)] private float minDamageMultiplier = 0.9f;
+    [SerializeField, Min(0f)] private float minDamageMultiplier;
 
     [Tooltip("PowerRatioが1のときのダメージ倍率")]
-    [SerializeField, Min(0f)] private float maxDamageMultiplier = 1.25f;
+    [SerializeField, Min(0f)] private float maxDamageMultiplier;
 
     [Tooltip("ボーナス時に追加で掛ける倍率")]
-    [SerializeField, Min(0f)] private float bonusDamageMultiplier = 1.5f;
+    [SerializeField, Min(0f)] private float bonusDamageMultiplier;
 
     private float wallContactLostTime;
     private float ceilingBonusRamp;
@@ -134,11 +134,11 @@ public class ChainsawDigging : MonoBehaviour
     [Header("床から壁への切り替え")]
     [Tooltip("壁を検出する直前に押していれば、壁登りになる猶予時間（秒）")]
     [SerializeField, Min(0f)]
-    private float wallClimbInputWindow = 0.2f;
+    private float wallClimbInputWindow;
 
     [Tooltip("床Colliderの切り替え時に一瞬だけ発生するWall判定を無視する時間")]
     [SerializeField, Min(0f)]
-    private float floorTransitionWallGraceTime = 0.05f;
+    private float floorTransitionWallGraceTime;
 
     private float lastPressTime = float.NegativeInfinity;
 

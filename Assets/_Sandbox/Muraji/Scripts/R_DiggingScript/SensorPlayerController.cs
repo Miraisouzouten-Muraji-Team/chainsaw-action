@@ -666,7 +666,8 @@ public class SensorPlayerController : MonoBehaviour
             wallJumpDirectionHoldRemaining = 0f;
             wallJumpLaunchPending = playerParameter.surfaceStickJumpStunTime <= 0f;
             playerRigidbody.linearVelocity = Vector3.zero;
-            playerAnimator.PlayJump();
+            // 壁ジャンプ専用アニメーションを再生する。硬直と跳躍処理は変更しない。
+            playerAnimator.PlayWallJump();
             return;
         }
 
@@ -730,7 +731,15 @@ public class SensorPlayerController : MonoBehaviour
 
         groundColliders.Clear();
 
-        playerAnimator.PlayJump();
+        // 確定したジャンプ回数に応じて、初段と二段目のアニメーションを切り替える。
+        if (pendingJumpCount >= MAX_JUMP_COUNT)
+        {
+            playerAnimator.PlayDoubleJump();
+        }
+        else
+        {
+            playerAnimator.PlayJump();
+        }
     }
     // 設定アセットの重力倍率と落下上限を使い、上下速度を更新する。
     private void ApplyJumpGravity(

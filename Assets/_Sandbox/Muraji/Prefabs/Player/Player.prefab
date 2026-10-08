@@ -522,7 +522,7 @@ MonoBehaviour:
   upperSensor: {fileID: 1134152958625072312}
   middleSensor: {fileID: 4946291620221252972}
   lowerSensor: {fileID: 8495765336010916488}
-  contactDetectorParameter: {fileID: 0}
+  contactDetectorParameter: {fileID: 11400000, guid: 29a800746011f10429132adda1c51df1, type: 2}
   frontRayOrigin: {fileID: 8895299963247931275}
   detectedSurface: 0
   detectedCollider: {fileID: 0}
@@ -556,7 +556,13 @@ Animator:
   m_LinearVelocityBlending: 0
   m_StabilizeFeet: 0
   m_AnimatePhysics: 0
-  m_WarningMessage: 
+  m_WarningMessage: "\nBinding warning: Some generic clip(s) animate transforms that
+    are already bound by a Humanoid avatar. These transforms can only be changed
+    by Humanoid clips.\n\tTransform 'mixamorig:Hips'\n\tTransform 'mixamorig:LeftFoot'\n\tTransform
+    'mixamorig:LeftHandThumb2'\n\tTransform 'mixamorig:LeftHandIndex1'\n\tTransform
+    'mixamorig:Spine1'\n\tTransform 'mixamorig:LeftToeBase'\n\tTransform 'mixamorig:LeftHandThumb3'\n\tTransform
+    'mixamorig:RightArm'\n\tTransform 'mixamorig:LeftLeg'\n\tTransform 'mixamorig:LeftShoulder'\n\tand
+    more ...\n\tFrom animation clip 'mixamo.com'\n\tFrom animation clip 'mixamo.com'"
   m_HasTransformHierarchy: 1
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
@@ -584,6 +590,8 @@ MonoBehaviour:
   ceilingDiggingState: 
   enemyDiggingState: 
   jumpState: Base Layer.Jump
+  doubleJumpState: Base Layer.Doublejump
+  wallJumpState: Base Layer.Kickjump
 --- !u!1 &6874388743141161285
 GameObject:
   m_ObjectHideFlags: 0

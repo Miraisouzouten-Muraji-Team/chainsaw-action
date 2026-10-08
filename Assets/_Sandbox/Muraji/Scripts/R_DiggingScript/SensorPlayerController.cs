@@ -22,6 +22,25 @@ public class SensorPlayerController : MonoBehaviour
 
     private bool jumpPending;
     private float pendingJumpPower;
+
+    [Header("壁食い込みジャンプ")]
+    [Tooltip("壁食い込み中にジャンプしたときの初速です。通常ジャンプ・2段ジャンプとは独立して設定します。")]
+    [SerializeField, Min(0.01f)] private float wallJumpSpeed = 7f;
+
+    [Tooltip("壁から離れる水平方向を0度、真上を90度とするジャンプ角度です。")]
+    [SerializeField, Range(1f, 89f)] private float wallJumpAngle = 45f;
+
+    [Tooltip("壁ジャンプ入力後、その場で停止してから飛び出すまでの秒数です。0なら即座に飛びます。")]
+    [SerializeField, Min(0f)] private float wallJumpStunDuration = 0.12f;
+
+    [Tooltip("飛び出した後、通常の左右移動でジャンプ速度を上書きしない秒数です。")]
+    [SerializeField, Min(0f)] private float wallJumpDirectionHoldDuration = 0.2f;
+
+    private float wallJumpStunRemaining;
+    private float wallJumpDirectionHoldRemaining;
+    private Vector3 pendingWallJumpVelocity;
+    private float wallJumpHorizontalVelocity;
+    private bool wallJumpLaunchPending;
     private float ignoreGroundUntil;
     private bool originalUseGravity;
 
@@ -129,65 +148,98 @@ public class SensorPlayerController : MonoBehaviour
     [SerializeField] float comboAdvanceTime = 1f;
 
 
-[Header("食い込み中の強衝突：硬直とカメラシェイク")]
-[SerializeField]
-private bool enableDiggingImpact = true;
+    [Header("食い込み中の強衝突：硬直とカメラシェイク")]
+    [SerializeField]
+    private bool enableDiggingImpact = true;
 
-[Tooltip("NothingならDetectorのTerrain Layersを使用。指定する場合は敵を含めない")]
-[SerializeField]
-private LayerMask impactTerrainLayers;
+    [Tooltip("NothingならDetectorのTerrain Layersを使用。指定する場合は敵を含めない")]
+    [SerializeField]
+    private LayerMask impactTerrainLayers;
 
-[Tooltip("面へ向かう速度がこの値以上なら硬直。チェーンソーの回転数ではない")]
-[SerializeField, Min(0.01f)]
-private float minimumDiggingImpactSpeed = 4f;
+    [Tooltip("面へ向かう速度がこの値以上なら硬直。チェーンソーの回転数ではない")]
+    [SerializeField, Min(0.01f)]
+    private float minimumDiggingImpactSpeed = 4f;
 
-[SerializeField, Min(0.01f)]
-private float diggingImpactStunDuration = 0.2f;
+    [SerializeField, Min(0.01f)]
+    private float diggingImpactStunDuration = 0.2f;
 
-[SerializeField]
-private CameraShake_System impactCameraShake;
+    [SerializeField]
+    private CameraShake_System impactCameraShake;
 
-[SerializeField, Min(0f)]
-private float impactShakeDuration = 0.15f;
+    [SerializeField, Min(0f)]
+    private float impactShakeDuration = 0.15f;
 
-[SerializeField, Min(0f)]
-private float impactShakeMagnitude = 0.1f;
+    [SerializeField, Min(0f)]
+    private float impactShakeMagnitude = 0.1f;
 
-[Tooltip("DetectorのSurface Normal Thresholdと合わせる")]
-[SerializeField, Range(0.1f, 0.95f)]
-private float impactSurfaceNormalThreshold = 0.7f;
+    [Tooltip("DetectorのSurface Normal Thresholdと合わせる")]
+    [SerializeField, Range(0.1f, 0.95f)]
+    private float impactSurfaceNormalThreshold = 0.7f;
 
-[SerializeField]
-private bool logDiggingImpact = true;
+    [SerializeField]
+    private bool logDiggingImpact = true;
 
-public bool IsImpactStunned => impactStunRemaining > 0f;
+    public bool IsImpactStunned => impactStunRemaining > 0f;
 
-private int ResolvedImpactTerrainLayers =>
-    impactTerrainLayers.value != 0
-        ? impactTerrainLayers.value
-        : chainsawDigging != null
-            ? chainsawDigging.TerrainLayerMask
-            : 0;
+    private int ResolvedImpactTerrainLayers =>
+        impactTerrainLayers.value != 0
+            ? impactTerrainLayers.value
+            : chainsawDigging != null
+                ? chainsawDigging.TerrainLayerMask
+                : 0;
 
-private bool CanUseDiggingImpact =>
-    enableDiggingImpact &&
-    ResolvedImpactTerrainLayers != 0 &&
-    diggingImpactStunDuration > 0f;
+    private bool CanUseDiggingImpact =>
+        enableDiggingImpact &&
+        ResolvedImpactTerrainLayers != 0 &&
+        diggingImpactStunDuration > 0f;
 
-private bool wallAscentImpactArmed;
-private bool floorTravelImpactArmed;
-private float floorTravelImpactDirection;
-private bool impactSettingsChecked;
+    private bool wallAscentImpactArmed;
+    private bool floorTravelImpactArmed;
+    private float floorTravelImpactDirection;
+    private bool impactSettingsChecked;
 
-private float impactStunRemaining;
-private Vector3 lastDiggingPhysicsVelocity;
-private ChainsawSurface lastDiggingPhysicsSurface;
-private PlayeMidCollider playerMidCollider;
+    private float impactStunRemaining;
+    private Vector3 lastDiggingPhysicsVelocity;
+    private ChainsawSurface lastDiggingPhysicsSurface;
+    private PlayeMidCollider playerMidCollider;
+    [Header("角の補正")]
+    [Tooltip("ONにすると、ステージの角に軽く触れたときに止まらず、ずらして通過させます。OFFなら従来どおりの動きになります。")]
+    [SerializeField]
+    private bool enableCornerCorrection = true;
+
+    [Tooltip("角に食い込んでいる量（縦・横の両方）がこの値以下なら「角」として扱います。大きくすると補正される範囲が広がり、小さくすると壁として止まりやすくなります。")]
+    [SerializeField, Min(0.01f)]
+    private float cornerTolerance = 0.2f;
+
+    [Tooltip("角から押し出すときの最大の速さです。大きいほど一瞬でずれ、小さいほどゆっくり滑ります。")]
+    [SerializeField, Min(0.1f)]
+    private float cornerPushSpeed = 6f;
+
+    // 次の物理更新で適用する補正量。x＝天井の角の横ずらし、y＝床の角の持ち上げ。
+    private Vector3 pendingCornerCorrection;
+
+    [Tooltip("頭部の物理Colliderを指定。ここが天井角に接触したときだけ横補正します。")]
+    [SerializeField] private Collider headCollider;
+
+    // 補正直後に天井の強衝突が発火するのを防ぐ短い猶予。
+    private float ceilingCornerGraceUntil;
+
+    [Tooltip("天井の角を横に避けるとき、上方向に与えるジャンプ速度")]
+    [SerializeField, Min(0f)] private float ceilingCornerJumpSpeed = 7f;
+
+    // 衝突イベントから次のFixedUpdateにジャンプを予約する。
+    private bool ceilingCornerJumpPending;
+
+    // これより小さい重なりは、床の継ぎ目などの誤差として補正しない。
+    private const float MIN_CORNER_OVERLAP = 0.02f;
+
+    // 角から完全に外れるための、わずかな余白。
+    private const float CORNER_EXTRA_MARGIN = 0.005f;
 
     private RigidbodyConstraints constraintsBeforeImpact;
-private bool impactConstraintsHeld;
-private float impactBounceDirection;
-public bool IsAttacking { get; private set; }
+    private bool impactConstraintsHeld;
+    private float impactBounceDirection;
+    public bool IsAttacking { get; private set; }
 
     int slashStep = 0;
     bool nextSlashReserved;
@@ -265,7 +317,7 @@ public bool IsAttacking { get; private set; }
 
     void Update()
     {
-        if (IsImpactStunned)
+        if (IsImpactStunned || wallJumpStunRemaining > 0f)
         {
             input.ResetInput();
             return;
@@ -342,10 +394,19 @@ public bool IsAttacking { get; private set; }
             return;
         }
 
+        // 壁ジャンプ前の硬直中は操作による移動を停止する。
+        if (TickWallJumpStun(deltaTime))
+        {
+            return;
+        }
+
         CheckDiggingImpactSettings();
 
         // 無効化・削除された壁の接触記録を更新する。
         playerMidCollider.RefreshContacts(ResolvedImpactTerrainLayers);
+
+        // 前の物理ステップで検出した頭部の角接触を先に補正する。
+        ApplyPendingCornerCorrection(deltaTime);
 
         // 食い込み状態の更新前に、前回の移動で天井に触れたか確認する。
         if (TryBeginUpperSensorImpact())
@@ -508,6 +569,42 @@ public bool IsAttacking { get; private set; }
             velocity.x += TakeAttackMoveSpeed(deltaTime);
         }
 
+        // 壁ジャンプの初速は通常移動・食い込み速度の計算後に上書きする。
+        if (wallJumpLaunchPending)
+        {
+            wallJumpLaunchPending = false;
+            jumpPending = false;
+            velocity.x = pendingWallJumpVelocity.x;
+            velocity.y = pendingWallJumpVelocity.y;
+            wallJumpHorizontalVelocity = velocity.x;
+            wallJumpDirectionHoldRemaining = wallJumpDirectionHoldDuration;
+            currentSpeed = velocity.x;
+            ascentStartSpeed = Mathf.Max(velocity.y, 0f);
+            fallElapsedTime = 0f;
+            groundColliders.Clear();
+            ignoreGroundUntil = Time.time + 0.1f;
+        }
+        else if (wallJumpDirectionHoldRemaining > 0f)
+        {
+            // 壁から離れる初速を維持し、通常移動による即時上書きを防止する。
+            velocity.x = wallJumpHorizontalVelocity;
+            currentSpeed = velocity.x;
+            wallJumpDirectionHoldRemaining = Mathf.Max(
+                0f, wallJumpDirectionHoldRemaining - deltaTime);
+        }
+
+        // 角に接触して横補正したときだけ、上向きのジャンプも加える。
+        // 速度決定の最後で適用し、重力計算や食い込み速度で上書きされないようにする。
+        if (ceilingCornerJumpPending)
+        {
+            ceilingCornerJumpPending = false;
+            velocity.y = Mathf.Max(velocity.y, ceilingCornerJumpSpeed);
+            ascentStartSpeed = Mathf.Max(ascentStartSpeed, velocity.y);
+            fallElapsedTime = 0f;
+            groundColliders.Clear();
+            ignoreGroundUntil = Time.time + 0.1f;
+        }
+
         velocity.z = 0f;
 
         // 床の食い込みから続く移動を記録する。
@@ -515,6 +612,8 @@ public bool IsAttacking { get; private set; }
         // 物理衝突によって速度が0になる前の移動速度。
         lastDiggingPhysicsVelocity = velocity;
         lastDiggingPhysicsSurface = chainsawDigging.Surface;
+
+
 
         // 壁登りによる上昇を記録する。
         if (lastDiggingPhysicsSurface == ChainsawSurface.Wall &&
@@ -581,6 +680,25 @@ public bool IsAttacking { get; private set; }
         debugTargetSpeed = targetSpeed;
     }
 
+    // 壁ジャンプの硬直時間をFixedUpdateで進め、終了したらジャンプを予約する。
+    private bool TickWallJumpStun(float deltaTime)
+    {
+        if (wallJumpStunRemaining <= 0f)
+            return false;
+
+        wallJumpStunRemaining = Mathf.Max(0f, wallJumpStunRemaining - deltaTime);
+        playerRigidbody.linearVelocity = Vector3.zero;
+        currentSpeed = 0f;
+        input.ResetInput();
+        playerAnimator.SetSpeed(0f);
+
+        if (wallJumpStunRemaining <= 0f)
+            wallJumpLaunchPending = true;
+
+        // 硬直終了した同フレームも通常移動を行わず、次の物理更新で飛ぶ。
+        return true;
+    }
+
     // 壁ジャンプ、接地・猶予中の初段、二段目の順でジャンプを予約する。
     void Jump()
     {
@@ -589,14 +707,47 @@ public bool IsAttacking { get; private set; }
             return;
         }
 
-        // 食い込み解除前の状態を保存する。
+        // 壁ジャンプ待機中は二重入力を受け付けない。
+        if (wallJumpStunRemaining > 0f || wallJumpLaunchPending)
+            return;
+
+        // 食い込み解除前の状態と法線を保存する。
         ChainsawSurface surfaceBeforeJump = chainsawDigging.Surface;
+        Vector3 wallNormal = chainsawDigging.SurfaceNormal;
 
         bool wasDiggingFloor =
             surfaceBeforeJump == ChainsawSurface.Floor;
 
         bool wallJump =
-            chainsawDigging.TryGetWallJump(out float wallPower);
+            chainsawDigging.TryGetWallJump(out _);
+
+        // 壁食い込み中は独立した壁ジャンプ速度と角度から初速を計算する。
+        if (wallJump && surfaceBeforeJump == ChainsawSurface.Wall &&
+            Mathf.Abs(wallNormal.x) > 0.01f)
+        {
+            float horizontalDirection = Mathf.Sign(wallNormal.x);
+            float angleRadians = wallJumpAngle * Mathf.Deg2Rad;
+            pendingWallJumpVelocity = new Vector3(
+                horizontalDirection * Mathf.Cos(angleRadians) * wallJumpSpeed,
+                Mathf.Sin(angleRadians) * wallJumpSpeed,
+                0f);
+
+            chainsawDigging.Cancel(true);
+            pendingJumpCount = 1;
+            jumpsUsed = 1;
+            jumpPending = false;
+            currentSpeed = 0f;
+            knockbackVelocity = 0f;
+            knockbackHopPending = false;
+            lastGroundedTime = float.NegativeInfinity;
+            groundColliders.Clear();
+            wallJumpStunRemaining = wallJumpStunDuration;
+            wallJumpDirectionHoldRemaining = 0f;
+            wallJumpLaunchPending = wallJumpStunDuration <= 0f;
+            playerRigidbody.linearVelocity = Vector3.zero;
+            playerAnimator.PlayJump();
+            return;
+        }
 
         chainsawDigging.Cancel(true);
 
@@ -623,13 +774,15 @@ public bool IsAttacking { get; private set; }
             knockbackVelocity == 0f &&
             Time.time - lastGroundedTime <= coyoteTime;
 
+        // 壁ジャンプの判定が成立しているのに法線が取れない場合、
+        // 通常ジャンプへ置き換えず、真上に飛ぶ旧挙動を防ぐ。
         if (wallJump)
         {
-            // 既存の壁ジャンプを優先する。
-            pendingJumpPower = wallPower;
-            pendingJumpCount = 1;
+            Debug.LogWarning("壁ジャンプの方向を確定できませんでした。壁のSurfaceNormalを確認してください。", this);
+            return;
         }
-        else if (isGrounded || canUseCoyoteTime)
+
+        if (isGrounded || canUseCoyoteTime)
         {
             // 猶予中も、通常の初段と同じ強さ・回数でジャンプする。
             pendingJumpPower = jumpForce;
@@ -743,8 +896,10 @@ public bool IsAttacking { get; private set; }
             return;
         }
 
-        // 速度を止める前に、既存の硬直・シェイクを判定する。
-        TryBeginDiggingImpact(collision);
+        // 頭部が天井の端に軽く当たったときだけ、横移動を予約する。
+        bool correctingCeilingCorner = TryQueueCeilingCornerCorrection(collision);
+        if (!correctingCeilingCorner)
+            TryBeginDiggingImpact(collision);
 
         UpdateWallContact(collision);
         UpdateGroundContact(collision);
@@ -757,8 +912,10 @@ public bool IsAttacking { get; private set; }
             return;
         }
 
-        // 同じ地形内で接触面が変化した場合も更新する。
-        TryBeginDiggingImpact(collision);
+        // 同じ地形への接触中も、角の状態を判定し直す。
+        bool correctingCeilingCorner = TryQueueCeilingCornerCorrection(collision);
+        if (!correctingCeilingCorner)
+            TryBeginDiggingImpact(collision);
 
         UpdateWallContact(collision);
         UpdateGroundContact(collision);
@@ -775,6 +932,112 @@ public bool IsAttacking { get; private set; }
         }
 
         groundColliders.Remove(collision.collider);
+    }
+
+    [Header("天井角補正の確認")]
+    [SerializeField] private bool logCornerCorrection = false;
+
+    // BoxColliderの天井端を使って、横方向の食い込み量を算出する。
+    // Raycastは角で失敗しやすいため、BoxColliderでは使わない。
+    private bool TryQueueCeilingCornerCorrection(Collision collision)
+    {
+        if (!enableCornerCorrection || headCollider == null ||
+            !headCollider.enabled || headCollider.isTrigger ||
+            playerRigidbody == null || IsImpactStunned ||
+            Time.time < ceilingCornerGraceUntil)
+            return false;
+
+        float upwardSpeed = Mathf.Max(playerRigidbody.linearVelocity.y,
+                                      lastDiggingPhysicsVelocity.y);
+        if (upwardSpeed <= 0.05f)
+            return false;
+
+        Collider terrain = collision.collider;
+        if (terrain == null || terrain.isTrigger ||
+            (ResolvedImpactTerrainLayers & (1 << terrain.gameObject.layer)) == 0)
+            return false;
+
+        bool headTouched = false;
+        for (int i = 0; i < collision.contactCount; i++)
+        {
+            ContactPoint contact = collision.GetContact(i);
+            if (contact.thisCollider == headCollider)
+            {
+                headTouched = true;
+                break;
+            }
+        }
+        if (!headTouched)
+            return false;
+
+        Bounds head = headCollider.bounds;
+        Bounds ceiling = terrain.bounds;
+
+        // 現在の角補正は、回転していないBoxCollider地形に限定する。
+        // MeshColliderや斜面はboundsだけでは誤検出するため補正しない。
+        BoxCollider box = terrain as BoxCollider;
+        if (box == null ||
+            Mathf.Abs(Vector3.Dot(terrain.transform.right, Vector3.right)) < 0.999f ||
+            Mathf.Abs(Vector3.Dot(terrain.transform.up, Vector3.up)) < 0.999f)
+        {
+            if (logCornerCorrection)
+                Debug.Log("[天井角補正] 地形が軸平行BoxColliderではないため未対応: " + terrain.name, this);
+            return false;
+        }
+
+        // 頭が天井下面に近い場合のみ。真横の壁接触は対象外。
+        float underside = ceiling.min.y;
+        if (underside < head.center.y - 0.02f ||
+            underside > head.max.y + 0.06f)
+            return false;
+
+        // 頭の中央まで天井に入っていたら平面衝突として扱う。
+        float overlap;
+        float direction;
+        if (head.center.x < ceiling.min.x && head.max.x > ceiling.min.x)
+        {
+            overlap = head.max.x - ceiling.min.x;
+            direction = -1f;
+        }
+        else if (head.center.x > ceiling.max.x && head.min.x < ceiling.max.x)
+        {
+            overlap = ceiling.max.x - head.min.x;
+            direction = 1f;
+        }
+        else
+            return false;
+
+        if (overlap < MIN_CORNER_OVERLAP || overlap > cornerTolerance)
+        {
+            if (logCornerCorrection)
+                Debug.Log($"[天井角補正] 重なりが範囲外: {overlap:F3} / 許容 {cornerTolerance:F3}", this);
+            return false;
+        }
+
+        float correctionX = direction * (overlap + CORNER_EXTRA_MARGIN);
+        if (Mathf.Abs(correctionX) > Mathf.Abs(pendingCornerCorrection.x))
+            pendingCornerCorrection.x = correctionX;
+
+        ceilingCornerJumpPending = true;
+        ceilingCornerGraceUntil = Time.time + 0.12f;
+        if (logCornerCorrection)
+            Debug.Log($"[天井角補正] 成功: {terrain.name} 横補正 {correctionX:F3}", this);
+        return true;
+    }
+
+    private void ApplyPendingCornerCorrection(float deltaTime)
+    {
+        if (pendingCornerCorrection == Vector3.zero)
+            return;
+
+        float amount = Mathf.MoveTowards(0f, pendingCornerCorrection.x,
+                                        cornerPushSpeed * deltaTime);
+        pendingCornerCorrection.x -= amount;
+        // 補正はプレイヤーのRigidbody全体に適用する。
+        playerRigidbody.MovePosition(playerRigidbody.position + Vector3.right * amount);
+
+        if (Mathf.Abs(pendingCornerCorrection.x) < 0.0001f)
+            pendingCornerCorrection = Vector3.zero;
     }
 
     private void UpdateWallContact(Collision collision)
@@ -1176,6 +1439,9 @@ public bool IsAttacking { get; private set; }
     }
     private bool TryBeginUpperSensorImpact()
     {
+        if (Time.time < ceilingCornerGraceUntil)
+            return false;
+
         if (!CanUseDiggingImpact ||
             IsImpactStunned ||
             !wallAscentImpactArmed ||
@@ -1298,6 +1564,10 @@ public bool IsAttacking { get; private set; }
             bool hitsWall =
                 wasSliding &&
                 Mathf.Abs(normal.y) < impactSurfaceNormalThreshold;
+
+            // 頭部の角を通過している間は、天井硬直だけ抑制する。
+            if (hitsCeiling && Time.time < ceilingCornerGraceUntil)
+                continue;
 
             if (!hitsCeiling && !hitsWall)
             {
@@ -1482,11 +1752,19 @@ public bool IsAttacking { get; private set; }
         }
         ResetFloorTravelImpact();
         wallAscentImpactArmed = false;
+        pendingCornerCorrection = Vector3.zero;
+        ceilingCornerJumpPending = false;
+        ceilingCornerGraceUntil = 0f;
         impactSettingsChecked = false;
         RestoreImpactConstraints();
 
         impactStunRemaining = 0f;
         impactBounceDirection = 0f;
+        wallJumpStunRemaining = 0f;
+        wallJumpDirectionHoldRemaining = 0f;
+        wallJumpLaunchPending = false;
+        pendingWallJumpVelocity = Vector3.zero;
+        wallJumpHorizontalVelocity = 0f;
         lastDiggingPhysicsVelocity = Vector3.zero;
         lastDiggingPhysicsSurface = ChainsawSurface.None;
         jumpsUsed = 0;

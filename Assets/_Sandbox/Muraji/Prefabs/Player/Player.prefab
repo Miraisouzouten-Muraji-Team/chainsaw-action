@@ -471,6 +471,9 @@ MonoBehaviour:
   chainsawAccelerator: {fileID: 5039336180393239376}
   surfaceStickSpeed: 1
   wallClimbSpeed: 5
+  wallJumpAngle: 53.2
+  wallJumpStunDuration: 0.25
+  wallJumpDirectionHoldDuration: 0.2
   moveSpeed: 8
   acceleration: 20
   deceleration: 30
@@ -481,7 +484,7 @@ MonoBehaviour:
   maxFallGravityMultiplier: 2.5
   fallGravityIncreaseTime: 0.2
   maxFallSpeed: 20
-  airJumpForce: 20
+  airJumpForce: 25
   visualRoot: {fileID: 2576167837745099611}
   debugRotationSpeed: 0
   debugSpeedBonus: 0
@@ -505,6 +508,12 @@ MonoBehaviour:
   impactShakeMagnitude: 0.1
   impactSurfaceNormalThreshold: 0.7
   logDiggingImpact: 1
+  enableCornerCorrection: 1
+  cornerTolerance: 10
+  cornerPushSpeed: 20
+  headCollider: {fileID: 3512462412820357885}
+  ceilingCornerJumpSpeed: 7
+  logCornerCorrection: 0
 --- !u!114 &6732003626081136930
 MonoBehaviour:
   m_ObjectHideFlags: 0

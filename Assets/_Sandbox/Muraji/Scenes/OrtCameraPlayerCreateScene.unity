@@ -269,6 +269,30 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 6767748527981177828, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: jumpForce
+      value: 25
+      objectReference: {fileID: 0}
+    - target: {fileID: 6767748527981177828, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: airJumpForce
+      value: 25
+      objectReference: {fileID: 0}
+    - target: {fileID: 6767748527981177828, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: wallJumpSpeed
+      value: 25
+      objectReference: {fileID: 0}
+    - target: {fileID: 6767748527981177828, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: logCornerCorrection
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6767748527981177828, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: minimumDiggingImpactSpeed
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 6767748527981177828, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: impactSurfaceNormalThreshold
+      value: 0.7
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

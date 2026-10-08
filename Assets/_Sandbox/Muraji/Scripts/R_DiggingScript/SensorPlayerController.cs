@@ -3,16 +3,16 @@ using System.Collections.Generic;
 
 public class SensorPlayerController : MonoBehaviour
 {
+    [Header("プレイヤーの共通設定")]
+    [Tooltip("移動・ジャンプ・食い込み・角補正の設定を読み取るPlayerParameterアセットを指定してください。実行中の速度や残り時間はこのアセットへ書き込みません。")]
+    [SerializeField] private PlayerParameter playerParameter;
+
     PlayerInputHandler input;
     PlayerAnimator playerAnimator;
 
     [Header("食い込み")]
     [SerializeField] private SensorChainsawDigging chainsawDigging;
     [SerializeField] private ChainsawAccelerator chainsawAccelerator;
-    [SerializeField, Min(0f)] private float surfaceStickSpeed = 1f;
-
-    [Header("壁への食い込み移動")]
-    [SerializeField, Min(0f)] private float wallClimbSpeed = 5f;
 
     public bool CanTakeDamage =>
         chainsawDigging == null || !chainsawDigging.IsEvading;
@@ -23,19 +23,6 @@ public class SensorPlayerController : MonoBehaviour
     private bool jumpPending;
     private float pendingJumpPower;
 
-    [Header("壁食い込みジャンプ")]
-    [Tooltip("壁食い込み中にジャンプしたときの初速です。通常ジャンプ・2段ジャンプとは独立して設定します。")]
-    [SerializeField, Min(0.01f)] private float wallJumpSpeed = 7f;
-
-    [Tooltip("壁から離れる水平方向を0度、真上を90度とするジャンプ角度です。")]
-    [SerializeField, Range(1f, 89f)] private float wallJumpAngle = 45f;
-
-    [Tooltip("壁ジャンプ入力後、その場で停止してから飛び出すまでの秒数です。0なら即座に飛びます。")]
-    [SerializeField, Min(0f)] private float wallJumpStunDuration = 0.12f;
-
-    [Tooltip("飛び出した後、通常の左右移動でジャンプ速度を上書きしない秒数です。")]
-    [SerializeField, Min(0f)] private float wallJumpDirectionHoldDuration = 0.2f;
-
     private float wallJumpStunRemaining;
     private float wallJumpDirectionHoldRemaining;
     private Vector3 pendingWallJumpVelocity;
@@ -44,19 +31,7 @@ public class SensorPlayerController : MonoBehaviour
     private float ignoreGroundUntil;
     private bool originalUseGravity;
 
-    [Header("移動設定")]
-    [SerializeField] float moveSpeed = 5.0f;
-    [SerializeField] float acceleration = 20.0f;
-    [SerializeField] float deceleration = 30.0f;
-
     float currentSpeed = 0.0f;
-
-    [Header("ジャンプ設定")]
-    [SerializeField] float jumpForce = 5.0f;
-
-    [Tooltip("地面を離れてから、初段ジャンプを受け付ける秒数です。0にすると猶予を無効にします。")]
-    [SerializeField, Min(0f)]
-    private float coyoteTime = 0.15f;
 
     // 空中から開始した場合に猶予を与えないため、未接地で初期化する。
     private float lastGroundedTime = float.NegativeInfinity;
@@ -68,30 +43,6 @@ public class SensorPlayerController : MonoBehaviour
 
     private readonly HashSet<Collider> groundColliders =
         new HashSet<Collider>();
-
-    [Header("重力設定")]
-    [SerializeField, Min(0f)]
-    private float gravityScale = 2f;
-
-    [Tooltip("ジャンプ直後の重力倍率。頂点に近づくと1倍に戻ります。")]
-    [SerializeField, Range(0.1f, 1f)]
-    private float jumpStartGravityMultiplier = 0.7f;
-
-    [Tooltip("落下中に到達する最大の重力倍率。")]
-    [SerializeField, Min(1f)]
-    private float maxFallGravityMultiplier = 2.5f;
-
-    [Tooltip("落下開始から最大重力になるまでの秒数。")]
-    [SerializeField, Min(0.01f)]
-    private float fallGravityIncreaseTime = 0.2f;
-
-    [Tooltip("落下速度の上限。")]
-    [SerializeField, Min(0.1f)]
-    private float maxFallSpeed = 20f;
-
-    [Header("二段ジャンプ設定")]
-    [SerializeField, Min(0f)]
-    private float airJumpForce = 5f;
 
     [Header("見た目の向き")]
     [Tooltip("モデルとチェーンソーを含む見た目の親")]
@@ -115,18 +66,7 @@ public class SensorPlayerController : MonoBehaviour
 
     private float wallTravelSpeed;
 
-    [Header("壁に当たったときの押し戻し")]
-    [SerializeField, Min(0f)]
-    private float knockbackSpeed = 8f;
-
-    [SerializeField, Min(0.01f)]
-    private float knockbackDeceleration = 20f;
-
     private float knockbackVelocity;
-
-    [Tooltip("跳ね返り時に上へ跳ぶ速さ。弧の高さになる")]
-    [SerializeField, Min(0f)]
-    private float knockbackUpSpeed = 7f;
 
     private bool knockbackHopPending;
 
@@ -142,11 +82,8 @@ public class SensorPlayerController : MonoBehaviour
 
     public AttackData CurrentAttackData { get; private set; }
 
-    [Header("コンボ設定")]
-    [Tooltip("次段へ移れる再生位置。1なら現在の攻撃を最後まで再生します。")]
-    [Range(0.1f, 1f)]
-    [SerializeField] float comboAdvanceTime = 1f;
-
+    // コンボの次段へ移る再生位置はPlayerParameterから取得する。
+    private float ComboAdvanceTime => playerParameter.comboAdvanceTime;
 
     [Header("食い込み中の強衝突：硬直とカメラシェイク")]
     [SerializeField]
@@ -156,25 +93,8 @@ public class SensorPlayerController : MonoBehaviour
     [SerializeField]
     private LayerMask impactTerrainLayers;
 
-    [Tooltip("面へ向かう速度がこの値以上なら硬直。チェーンソーの回転数ではない")]
-    [SerializeField, Min(0.01f)]
-    private float minimumDiggingImpactSpeed = 4f;
-
-    [SerializeField, Min(0.01f)]
-    private float diggingImpactStunDuration = 0.2f;
-
     [SerializeField]
     private CameraShake_System impactCameraShake;
-
-    [SerializeField, Min(0f)]
-    private float impactShakeDuration = 0.15f;
-
-    [SerializeField, Min(0f)]
-    private float impactShakeMagnitude = 0.1f;
-
-    [Tooltip("DetectorのSurface Normal Thresholdと合わせる")]
-    [SerializeField, Range(0.1f, 0.95f)]
-    private float impactSurfaceNormalThreshold = 0.7f;
 
     [SerializeField]
     private bool logDiggingImpact = true;
@@ -189,9 +109,10 @@ public class SensorPlayerController : MonoBehaviour
                 : 0;
 
     private bool CanUseDiggingImpact =>
+        playerParameter != null &&
         enableDiggingImpact &&
         ResolvedImpactTerrainLayers != 0 &&
-        diggingImpactStunDuration > 0f;
+        playerParameter.diggingImpactStunDuration > 0f;
 
     private bool wallAscentImpactArmed;
     private bool floorTravelImpactArmed;
@@ -207,14 +128,6 @@ public class SensorPlayerController : MonoBehaviour
     [SerializeField]
     private bool enableCornerCorrection = true;
 
-    [Tooltip("角に食い込んでいる量（縦・横の両方）がこの値以下なら「角」として扱います。大きくすると補正される範囲が広がり、小さくすると壁として止まりやすくなります。")]
-    [SerializeField, Min(0.01f)]
-    private float cornerTolerance = 0.2f;
-
-    [Tooltip("角から押し出すときの最大の速さです。大きいほど一瞬でずれ、小さいほどゆっくり滑ります。")]
-    [SerializeField, Min(0.1f)]
-    private float cornerPushSpeed = 6f;
-
     // 次の物理更新で適用する補正量。x＝天井の角の横ずらし、y＝床の角の持ち上げ。
     private Vector3 pendingCornerCorrection;
 
@@ -223,9 +136,6 @@ public class SensorPlayerController : MonoBehaviour
 
     // 補正直後に天井の強衝突が発火するのを防ぐ短い猶予。
     private float ceilingCornerGraceUntil;
-
-    [Tooltip("天井の角を横に避けるとき、上方向に与えるジャンプ速度")]
-    [SerializeField, Min(0f)] private float ceilingCornerJumpSpeed = 7f;
 
     // 衝突イベントから次のFixedUpdateにジャンプを予約する。
     private bool ceilingCornerJumpPending;
@@ -247,6 +157,7 @@ public class SensorPlayerController : MonoBehaviour
     bool attackStateObserved;
     float stateWaitTime;
 
+    // 必要なコンポーネントと設定アセットを確認し、物理移動を初期化する。
     void Awake()
     {
         input = GetComponent<PlayerInputHandler>();
@@ -291,6 +202,16 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         originalUseGravity = playerRigidbody.useGravity;
+
+        // 設定アセットがない場合は、参照エラーになる前にControllerを停止する。
+        // useGravityの元の値を保存した後に止めるため、OnDisableでも正しく復元できる。
+        if (playerParameter == null)
+        {
+            Debug.LogError("SensorPlayerControllerのPlayer Parameterに、PlayerParameterアセットを設定してください。", this);
+            enabled = false;
+            return;
+        }
+
         playerRigidbody.useGravity = false;
 
         if (playerRigidbody.isKinematic)
@@ -364,6 +285,7 @@ public class SensorPlayerController : MonoBehaviour
         input.ResetInput();
     }
 
+    // PlayerParameterの設定を読み、食い込み・ジャンプ・移動を物理更新する。
     private void FixedUpdate()
     {
         float deltaTime = Time.fixedDeltaTime;
@@ -421,7 +343,7 @@ public class SensorPlayerController : MonoBehaviour
             deltaTime,
             facingDirection,
             CanUseDiggingImpact
-                ? Mathf.Max(0.01f, minimumDiggingImpactSpeed)
+                ? Mathf.Max(0.01f, playerParameter.surfaceStickCollisionSpeed)
                 : float.PositiveInfinity,
             currentSpeed,
             ResolvedImpactTerrainLayers
@@ -429,7 +351,7 @@ public class SensorPlayerController : MonoBehaviour
 
         if (chainsawDigging.TryTakeWallBounce(out float bounceDirection))
         {
-            knockbackVelocity = bounceDirection * knockbackSpeed;
+            knockbackVelocity = bounceDirection * playerParameter.wallKnockbackSpeed;
             knockbackHopPending = true;
         }
 
@@ -442,7 +364,7 @@ public class SensorPlayerController : MonoBehaviour
             wallTravelSpeed =
                 previousSurface == ChainsawSurface.Floor
                     ? previousMoveSpeed
-                    : wallClimbSpeed;
+                    : playerParameter.wallClimbSpeed;
         }
 
         // 食い込み状態と押し戻しの予約が確定してから猶予を更新する。
@@ -460,7 +382,7 @@ public class SensorPlayerController : MonoBehaviour
             knockbackVelocity = Mathf.MoveTowards(
                 knockbackVelocity,
                 0f,
-                knockbackDeceleration * deltaTime
+                playerParameter.wallKnockbackDeceleration * deltaTime
             );
         }
 
@@ -493,7 +415,7 @@ public class SensorPlayerController : MonoBehaviour
                         Vector3 normal = chainsawDigging.SurfaceNormal;
                         Vector3 tangent = new Vector3(normal.y, -normal.x, 0f).normalized;
                         if (tangent.y < 0f) tangent = -tangent;
-                        velocity = tangent * wallTravelSpeed - normal * surfaceStickSpeed;
+                        velocity = tangent * wallTravelSpeed - normal * playerParameter.surfaceStickSpeed;
                         groundColliders.Clear();
                         break;
                     }
@@ -505,7 +427,7 @@ public class SensorPlayerController : MonoBehaviour
                         Vector3 tangent = new Vector3(normal.y, -normal.x, 0f).normalized;
                         if (tangent.x < 0f) tangent = -tangent;
                         // currentSpeedは斜面に沿った速度として使う。
-                        velocity = tangent * currentSpeed - normal * surfaceStickSpeed;
+                        velocity = tangent * currentSpeed - normal * playerParameter.surfaceStickSpeed;
                         if (chainsawDigging.Surface == ChainsawSurface.Floor)
                             jumpsUsed = 0;
                         break;
@@ -538,8 +460,8 @@ public class SensorPlayerController : MonoBehaviour
         {
             knockbackHopPending = false;
 
-            velocity.y = knockbackUpSpeed;
-            ascentStartSpeed = knockbackUpSpeed;
+            velocity.y = playerParameter.wallKnockbackUpwardForce;
+            ascentStartSpeed = playerParameter.wallKnockbackUpwardForce;
             fallElapsedTime = 0f;
 
             groundColliders.Clear();
@@ -577,7 +499,7 @@ public class SensorPlayerController : MonoBehaviour
             velocity.x = pendingWallJumpVelocity.x;
             velocity.y = pendingWallJumpVelocity.y;
             wallJumpHorizontalVelocity = velocity.x;
-            wallJumpDirectionHoldRemaining = wallJumpDirectionHoldDuration;
+            wallJumpDirectionHoldRemaining = playerParameter.surfaceStickJumpNoOverrideTime;
             currentSpeed = velocity.x;
             ascentStartSpeed = Mathf.Max(velocity.y, 0f);
             fallElapsedTime = 0f;
@@ -598,7 +520,7 @@ public class SensorPlayerController : MonoBehaviour
         if (ceilingCornerJumpPending)
         {
             ceilingCornerJumpPending = false;
-            velocity.y = Mathf.Max(velocity.y, ceilingCornerJumpSpeed);
+            velocity.y = Mathf.Max(velocity.y, playerParameter.cornerJumpForce);
             ascentStartSpeed = Mathf.Max(ascentStartSpeed, velocity.y);
             fallElapsedTime = 0f;
             groundColliders.Clear();
@@ -612,8 +534,6 @@ public class SensorPlayerController : MonoBehaviour
         // 物理衝突によって速度が0になる前の移動速度。
         lastDiggingPhysicsVelocity = velocity;
         lastDiggingPhysicsSurface = chainsawDigging.Surface;
-
-
 
         // 壁登りによる上昇を記録する。
         if (lastDiggingPhysicsSurface == ChainsawSurface.Wall &&
@@ -642,6 +562,7 @@ public class SensorPlayerController : MonoBehaviour
         );
     }
 
+    // 設定アセットの移動速度と加減速を使い、現在速度を更新する。
     void Move()
     {
         bool isAutoMoving =
@@ -653,7 +574,7 @@ public class SensorPlayerController : MonoBehaviour
             : Mathf.Clamp(input.MoveInput, -1f, 1f);
 
         float speedBonus = chainsawDigging.MoveSpeedBonus;
-        float targetSpeed = moveInput * (moveSpeed + speedBonus);
+        float targetSpeed = moveInput * (playerParameter.moveSpeed + speedBonus);
 
         bool isReversing =
             (moveInput > 0f && currentSpeed < 0f) ||
@@ -666,8 +587,8 @@ public class SensorPlayerController : MonoBehaviour
 
         float rate =
             Mathf.Abs(targetSpeed) > Mathf.Abs(currentSpeed)
-                ? acceleration
-                : deceleration;
+                ? playerParameter.acceleration
+                : playerParameter.deceleration;
 
         currentSpeed = Mathf.MoveTowards(
             currentSpeed,
@@ -726,10 +647,10 @@ public class SensorPlayerController : MonoBehaviour
             Mathf.Abs(wallNormal.x) > 0.01f)
         {
             float horizontalDirection = Mathf.Sign(wallNormal.x);
-            float angleRadians = wallJumpAngle * Mathf.Deg2Rad;
+            float angleRadians = playerParameter.surfaceStickJumpAngle * Mathf.Deg2Rad;
             pendingWallJumpVelocity = new Vector3(
-                horizontalDirection * Mathf.Cos(angleRadians) * wallJumpSpeed,
-                Mathf.Sin(angleRadians) * wallJumpSpeed,
+                horizontalDirection * Mathf.Cos(angleRadians) * playerParameter.surfaceStickJumpForce,
+                Mathf.Sin(angleRadians) * playerParameter.surfaceStickJumpForce,
                 0f);
 
             chainsawDigging.Cancel(true);
@@ -741,9 +662,9 @@ public class SensorPlayerController : MonoBehaviour
             knockbackHopPending = false;
             lastGroundedTime = float.NegativeInfinity;
             groundColliders.Clear();
-            wallJumpStunRemaining = wallJumpStunDuration;
+            wallJumpStunRemaining = playerParameter.surfaceStickJumpStunTime;
             wallJumpDirectionHoldRemaining = 0f;
-            wallJumpLaunchPending = wallJumpStunDuration <= 0f;
+            wallJumpLaunchPending = playerParameter.surfaceStickJumpStunTime <= 0f;
             playerRigidbody.linearVelocity = Vector3.zero;
             playerAnimator.PlayJump();
             return;
@@ -767,12 +688,12 @@ public class SensorPlayerController : MonoBehaviour
         // 壁・天井・敵への食い込み中や押し戻し中には適用しない。
         bool canUseCoyoteTime =
             surfaceBeforeJump == ChainsawSurface.None &&
-            coyoteTime > 0f &&
+            playerParameter.coyoteTime > 0f &&
             jumpsUsed == 0 &&
             !IsImpactStunned &&
             !knockbackHopPending &&
             knockbackVelocity == 0f &&
-            Time.time - lastGroundedTime <= coyoteTime;
+            Time.time - lastGroundedTime <= playerParameter.coyoteTime;
 
         // 壁ジャンプの判定が成立しているのに法線が取れない場合、
         // 通常ジャンプへ置き換えず、真上に飛ぶ旧挙動を防ぐ。
@@ -785,7 +706,7 @@ public class SensorPlayerController : MonoBehaviour
         if (isGrounded || canUseCoyoteTime)
         {
             // 猶予中も、通常の初段と同じ強さ・回数でジャンプする。
-            pendingJumpPower = jumpForce;
+            pendingJumpPower = playerParameter.jumpForce;
             pendingJumpCount = 1;
         }
         else
@@ -798,7 +719,7 @@ public class SensorPlayerController : MonoBehaviour
                 return;
             }
 
-            pendingJumpPower = airJumpForce;
+            pendingJumpPower = playerParameter.airJumpForce;
             pendingJumpCount = effectiveJumpCount + 1;
         }
 
@@ -811,6 +732,7 @@ public class SensorPlayerController : MonoBehaviour
 
         playerAnimator.PlayJump();
     }
+    // 設定アセットの重力倍率と落下上限を使い、上下速度を更新する。
     private void ApplyJumpGravity(
         ref Vector3 velocity,
         float deltaTime)
@@ -842,7 +764,7 @@ public class SensorPlayerController : MonoBehaviour
             );
 
             gravityMultiplier = Mathf.SmoothStep(
-                jumpStartGravityMultiplier,
+                playerParameter.jumpStartGravityMultiplier,
                 1f,
                 ascentProgress
             );
@@ -853,12 +775,12 @@ public class SensorPlayerController : MonoBehaviour
 
             float fallProgress = Mathf.Clamp01(
                 fallElapsedTime /
-                Mathf.Max(fallGravityIncreaseTime, 0.01f)
+                Mathf.Max(playerParameter.fallGravityIncreaseTime, 0.01f)
             );
 
             gravityMultiplier = Mathf.SmoothStep(
                 1f,
-                maxFallGravityMultiplier,
+                playerParameter.maxFallGravityMultiplier,
                 fallProgress
             );
 
@@ -867,11 +789,11 @@ public class SensorPlayerController : MonoBehaviour
 
         velocity +=
             Physics.gravity *
-            gravityScale *
+            playerParameter.gravityScale *
             gravityMultiplier *
             deltaTime;
 
-        velocity.y = Mathf.Max(velocity.y, -maxFallSpeed);
+        velocity.y = Mathf.Max(velocity.y, -playerParameter.maxFallSpeed);
     }
 
     private bool IsGrounded()
@@ -1007,10 +929,10 @@ public class SensorPlayerController : MonoBehaviour
         else
             return false;
 
-        if (overlap < MIN_CORNER_OVERLAP || overlap > cornerTolerance)
+        if (overlap < MIN_CORNER_OVERLAP || overlap > playerParameter.cornerTolerance)
         {
             if (logCornerCorrection)
-                Debug.Log($"[天井角補正] 重なりが範囲外: {overlap:F3} / 許容 {cornerTolerance:F3}", this);
+                Debug.Log($"[天井角補正] 重なりが範囲外: {overlap:F3} / 許容 {playerParameter.cornerTolerance:F3}", this);
             return false;
         }
 
@@ -1025,13 +947,14 @@ public class SensorPlayerController : MonoBehaviour
         return true;
     }
 
+    // 設定アセットの押し出し速度で、予約済みの天井角補正を進める。
     private void ApplyPendingCornerCorrection(float deltaTime)
     {
         if (pendingCornerCorrection == Vector3.zero)
             return;
 
         float amount = Mathf.MoveTowards(0f, pendingCornerCorrection.x,
-                                        cornerPushSpeed * deltaTime);
+                                        playerParameter.cornerPushSpeed * deltaTime);
         pendingCornerCorrection.x -= amount;
         // 補正はプレイヤーのRigidbody全体に適用する。
         playerRigidbody.MovePosition(playerRigidbody.position + Vector3.right * amount);
@@ -1215,7 +1138,7 @@ public class SensorPlayerController : MonoBehaviour
 
         if (slashStep < 3 &&
             nextSlashReserved &&
-            progress >= comboAdvanceTime)
+            progress >= ComboAdvanceTime)
         {
             StartSlash(slashStep + 1);
         }
@@ -1437,6 +1360,7 @@ public class SensorPlayerController : MonoBehaviour
         floorTravelImpactArmed = false;
         floorTravelImpactDirection = 0f;
     }
+    // 設定アセットの法線閾値と衝突速度を使い、上センサーから硬直を判定する。
     private bool TryBeginUpperSensorImpact()
     {
         if (Time.time < ceilingCornerGraceUntil)
@@ -1476,7 +1400,7 @@ public class SensorPlayerController : MonoBehaviour
             0f
         ).normalized;
 
-        if (normal.y > -impactSurfaceNormalThreshold)
+        if (normal.y > -playerParameter.impactSurfaceNormalThreshold)
         {
             return false;
         }
@@ -1486,7 +1410,7 @@ public class SensorPlayerController : MonoBehaviour
             -Vector3.Dot(lastDiggingPhysicsVelocity, normal);
 
         if (approachSpeed <
-            Mathf.Max(0.01f, minimumDiggingImpactSpeed))
+            Mathf.Max(0.01f, playerParameter.surfaceStickCollisionSpeed))
         {
             return false;
         }
@@ -1494,6 +1418,7 @@ public class SensorPlayerController : MonoBehaviour
         BeginDiggingImpactStun(0f);
         return true;
     }
+    // 設定アセットの閾値を使い、壁・天井への物理衝突で硬直を判定する。
     private void TryBeginDiggingImpact(Collision collision)
     {
         if (!isActiveAndEnabled ||
@@ -1558,12 +1483,12 @@ public class SensorPlayerController : MonoBehaviour
 
             bool hitsCeiling =
                 wasClimbing &&
-                normal.y <= -impactSurfaceNormalThreshold &&
+                normal.y <= -playerParameter.impactSurfaceNormalThreshold &&
                 lastDiggingPhysicsVelocity.y > 0f;
 
             bool hitsWall =
                 wasSliding &&
-                Mathf.Abs(normal.y) < impactSurfaceNormalThreshold;
+                Mathf.Abs(normal.y) < playerParameter.impactSurfaceNormalThreshold;
 
             // 頭部の角を通過している間は、天井硬直だけ抑制する。
             if (hitsCeiling && Time.time < ceilingCornerGraceUntil)
@@ -1578,7 +1503,7 @@ public class SensorPlayerController : MonoBehaviour
                 -Vector3.Dot(lastDiggingPhysicsVelocity, normal);
 
             if (approachSpeed <
-                Mathf.Max(0.01f, minimumDiggingImpactSpeed))
+                Mathf.Max(0.01f, playerParameter.surfaceStickCollisionSpeed))
             {
                 continue;
             }
@@ -1590,6 +1515,7 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
     }
+    // 設定アセットの時間と揺れの値を使い、硬直とカメラシェイクを開始する。
     private void BeginDiggingImpactStun(float bounceDirection)
     {
         // 硬直終了後に衝突前のジャンプ猶予を持ち越さない。
@@ -1608,7 +1534,7 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         impactStunRemaining =
-            Mathf.Max(0.01f, diggingImpactStunDuration);
+            Mathf.Max(0.01f, playerParameter.diggingImpactStunDuration);
 
         // 床→壁の場合は、硬直終了後に既存ののけぞりを行う。
         impactBounceDirection = bounceDirection;
@@ -1655,8 +1581,8 @@ public class SensorPlayerController : MonoBehaviour
             impactCameraShake.isActiveAndEnabled)
         {
             impactCameraShake.Shake(
-                impactShakeDuration,
-                impactShakeMagnitude
+                playerParameter.impactShakeDuration,
+                playerParameter.impactShakeMagnitude
             );
         }
     }
@@ -1686,6 +1612,7 @@ public class SensorPlayerController : MonoBehaviour
             lastGroundedTime = Time.time;
         }
     }
+    // 実行中の硬直残り時間を減らし、終了時に設定アセットの速度で押し戻す。
     private bool TickDiggingImpactStun(float deltaTime)
     {
         if (!IsImpactStunned)
@@ -1715,7 +1642,7 @@ public class SensorPlayerController : MonoBehaviour
             if (impactBounceDirection != 0f)
             {
                 knockbackVelocity =
-                    impactBounceDirection * knockbackSpeed;
+                    impactBounceDirection * playerParameter.wallKnockbackSpeed;
 
                 knockbackHopPending = true;
             }

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.Rendering;
 
 namespace Project.Rendering.Pixel
 {
@@ -27,6 +28,9 @@ namespace Project.Rendering.Pixel
 
         [SerializeField]
         private Material _retroPixelMaterial;
+
+        [SerializeField]
+        private Material _volumetricFogMaterial;
 
         [Header("Resolution")]
         [SerializeField]
@@ -438,9 +442,11 @@ namespace Project.Rendering.Pixel
                 // Near / Middle / Farは
                 // Main Cameraでは直接描画せず、
                 // 各Capture CameraからRTへ描画する。
+                //_mainCamera.cullingMask =
+                //    _originalMainCameraMask &
+                //    ~_pixelLayerMask;
                 _mainCamera.cullingMask =
-                    _originalMainCameraMask &
-                    ~_pixelLayerMask;
+    _originalMainCameraMask;
 
                 return;
             }
@@ -476,26 +482,45 @@ namespace Project.Rendering.Pixel
                     PIXEL_EFFECT_ENABLED,
                     value);
             }
+
+            if (_volumetricFogMaterial != null)
+            {
+                _volumetricFogMaterial.SetFloat(
+                    PIXEL_EFFECT_ENABLED,
+                    value);
+            }
         }
 
         private void ApplyTexturesToMaterial()
         {
-            if (_compositeMaterial == null)
+            // 従来の色合成
+            if (_compositeMaterial != null)
+            {
+                _compositeMaterial.SetTexture(
+                    "_PixelNearTex", _nearTexture);
+
+                _compositeMaterial.SetTexture(
+                    "_PixelMiddleTex", _middleTexture);
+
+                _compositeMaterial.SetTexture(
+                    "_PixelFarTex", _farTexture);
+            }
+
+            if (_volumetricFogMaterial == null)
             {
                 return;
             }
 
-            _compositeMaterial.SetTexture(
-                "_PixelNearTex",
-                _nearTexture);
+            // Fog側でも各レイヤーの色を参照する
+            // 主に描画されている画素の判定に使用
+            _volumetricFogMaterial.SetTexture(
+                "_PixelNearTex", _nearTexture);
 
-            _compositeMaterial.SetTexture(
-                "_PixelMiddleTex",
-                _middleTexture);
+            _volumetricFogMaterial.SetTexture(
+                "_PixelMiddleTex", _middleTexture);
 
-            _compositeMaterial.SetTexture(
-                "_PixelFarTex",
-                _farTexture);
+            _volumetricFogMaterial.SetTexture(
+                "_PixelFarTex", _farTexture);
         }
 
         private void OnDestroy()

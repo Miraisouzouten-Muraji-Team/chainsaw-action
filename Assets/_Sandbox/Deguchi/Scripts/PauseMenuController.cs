@@ -81,7 +81,7 @@ public class PauseMenuController : MonoBehaviour
     }
 
     // -------------------------
-    // ƒ|[ƒY‰æ–Ê
+    // ãƒãƒ¼ã‚ºç”»é¢
     // -------------------------
 
     public void OpenPauseMenu()
@@ -122,7 +122,7 @@ public class PauseMenuController : MonoBehaviour
         }
     }
 
-    // ESC / OPTIONS —p
+    // ESC / OPTIONS ç”¨
     public void HandleMenuButton()
     {
         switch (State)
@@ -145,7 +145,7 @@ public class PauseMenuController : MonoBehaviour
         }
     }
 
-    // ›ƒ{ƒ^ƒ“—p
+    // â—‹ãƒœã‚¿ãƒ³ç”¨
     public void HandleBackButton()
     {
         switch (State)
@@ -165,25 +165,25 @@ public class PauseMenuController : MonoBehaviour
     }
 
     // -------------------------
-    // İ’è
+    // è¨­å®š
     // -------------------------
 
     public void OpenSettings()
     {
         Debug.Log(
-            $"İ’èƒ{ƒ^ƒ“‰Ÿ‰º State={State}"
+            $"è¨­å®šãƒœã‚¿ãƒ³æŠ¼ä¸‹ State={State}"
         );
 
         if (State != PauseMenuState.Main)
         {
             Debug.LogWarning(
-                "State‚ªMain‚Å‚Í‚È‚¢‚Ì‚Åİ’è‰æ–Ê‚ğŠJ‚¯‚Ü‚¹‚ñ"
+                "StateãŒMainã§ã¯ãªã„ã®ã§è¨­å®šç”»é¢ã‚’é–‹ã‘ã¾ã›ã‚“"
             );
 
             return;
         }
 
-        Debug.Log("İ’è‰æ–Ê‚ğŠJ‚«‚Ü‚·");
+        Debug.Log("è¨­å®šç”»é¢ã‚’é–‹ãã¾ã™");
 
         lastSelectedMainButton =
             settingsButton.gameObject;
@@ -235,46 +235,46 @@ public class PauseMenuController : MonoBehaviour
     }
 
     // -------------------------
-    // ƒŠƒgƒ‰ƒC
+    // ãƒªãƒˆãƒ©ã‚¤
     // -------------------------
 
     public void OnRetryPressed()
     {
         OpenConfirmation(
             retrySceneName,
-            "–{“–‚ÉƒŠƒgƒ‰ƒC‚µ‚Ü‚·‚©H",
+            "æœ¬å½“ã«ãƒªãƒˆãƒ©ã‚¤ã—ã¾ã™ã‹ï¼Ÿ",
             retryButton.gameObject
         );
     }
 
     // -------------------------
-    // ƒZƒŒƒNƒg
+    // ã‚»ãƒ¬ã‚¯ãƒˆ
     // -------------------------
 
     public void OnSelectPressed()
     {
         OpenConfirmation(
             selectSceneName,
-            "ƒZƒŒƒNƒg‰æ–Ê‚É–ß‚è‚Ü‚·‚©H",
+            "ã‚»ãƒ¬ã‚¯ãƒˆç”»é¢ã«æˆ»ã‚Šã¾ã™ã‹ï¼Ÿ",
             selectButton.gameObject
         );
     }
 
     // -------------------------
-    // ƒ^ƒCƒgƒ‹
+    // ã‚¿ã‚¤ãƒˆãƒ«
     // -------------------------
 
     public void OnTitlePressed()
     {
         OpenConfirmation(
             titleSceneName,
-            "ƒ^ƒCƒgƒ‹‰æ–Ê‚É–ß‚è‚Ü‚·‚©H",
+            "ã‚¿ã‚¤ãƒˆãƒ«ç”»é¢ã«æˆ»ã‚Šã¾ã™ã‹ï¼Ÿ",
             titleButton.gameObject
         );
     }
 
     // -------------------------
-    // ‚Æ‚¶‚é
+    // ã¨ã˜ã‚‹
     // -------------------------
 
     public void OnClosePressed()
@@ -283,7 +283,7 @@ public class PauseMenuController : MonoBehaviour
     }
 
     // -------------------------
-    // Šm”F‰æ–Ê
+    // ç¢ºèªç”»é¢
     // -------------------------
 
     private void OpenConfirmation(
@@ -303,7 +303,7 @@ public class PauseMenuController : MonoBehaviour
 
         confirmMessageText.text = message;
 
-        // š Å‰‚Íu‚¢‚¢‚¦v‚ğ‘I‘ğ
+        // â˜… æœ€åˆã¯ã€Œã„ã„ãˆã€ã‚’é¸æŠ
         Select(noButton.gameObject);
     }
 
@@ -313,7 +313,7 @@ public class PauseMenuController : MonoBehaviour
                 pendingSceneName))
         {
             Debug.LogError(
-                "‘JˆÚæ‚ÌScene–¼‚ªİ’è‚³‚ê‚Ä‚¢‚Ü‚¹‚ñB"
+                "é·ç§»å…ˆã®SceneåãŒè¨­å®šã•ã‚Œã¦ã„ã¾ã›ã‚“ã€‚"
             );
 
             return;
@@ -323,8 +323,8 @@ public class PauseMenuController : MonoBehaviour
                 pendingSceneName))
         {
             Debug.LogError(
-                $"Scene '{pendingSceneName}' ‚ğ“Ç‚İ‚ß‚Ü‚¹‚ñB" +
-                "Build Settings / Build Profile ‚É’Ç‰Á‚³‚ê‚Ä‚¢‚é‚©Šm”F‚µ‚Ä‚­‚¾‚³‚¢B"
+                $"Scene '{pendingSceneName}' ã‚’èª­ã¿è¾¼ã‚ã¾ã›ã‚“ã€‚" +
+                "Build Settings / Build Profile ã«è¿½åŠ ã•ã‚Œã¦ã„ã‚‹ã‹ç¢ºèªã—ã¦ãã ã•ã„ã€‚"
             );
 
             return;

@@ -499,33 +499,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a98080f99fe6d7d478157f08d4acecd1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SensorChainsawDigging
+  diggingParameter: {fileID: 11400000, guid: 71bb5b276ea3ed543a8b5497ad7198a2, type: 2}
   detector: {fileID: 5176221053347166965}
   accelerator: {fileID: 5039336180393239376}
   playerAnimator: {fileID: 4898117705153392083}
   chainsawAttack: {fileID: 220597037484416876}
   diggingAttackData: {fileID: 0}
-  inputMode: 0
-  bonusThreshold: 0.8
-  floorSpeedDivisor: 5
-  floorDashPower: 20
-  floorEvadeTime: 0.5
-  wallConsumeInterval: 1
-  wallConsumeAmount: 20
-  wallJumpPower: 60
-  bonusWallJumpPower: 15
-  wallEvadeTime: 2
-  wallContactGraceTime: 0.1
-  ceilingSpeedDivisor: 7.5
-  ceilingDashPower: 7.5
-  ceilingEvadeTime: 0.35
-  enemyAttackInterval: 0.1
-  enemyConsumeAmount: 1
-  bonusEnemyConsumeAmount: 2
-  minDamageMultiplier: 0.9
-  maxDamageMultiplier: 1.25
-  bonusDamageMultiplier: 1.5
-  wallClimbInputWindow: 0.2
-  floorTransitionWallGraceTime: 0.05
 --- !u!114 &5176221053347166965
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -4,6 +4,10 @@ public class SensorChainsawDigging : MonoBehaviour
 {
     public enum InputMode { Toggle, Hold }
 
+    [Header("食い込みパラメータ")]
+    [Tooltip("食い込みの操作方法、速度、消費量などを設定したScriptableObject")]
+    [SerializeField] private DiggingParameter diggingParameter;
+
     [Header("参照（Player上の参照は未設定なら自動取得）")]
     [Tooltip("接触先の判定")]
     [SerializeField] private SensorChainsawContactDetector detector;
@@ -19,73 +23,6 @@ public class SensorChainsawDigging : MonoBehaviour
 
     [Tooltip("敵への食い込み攻撃データ")]
     [SerializeField] private AttackData diggingAttackData;
-
-    [Header("操作と開始ボーナス")]
-    [Tooltip("Toggle：押すたび切替／Hold：長押し")]
-    [SerializeField] private InputMode inputMode = InputMode.Toggle;
-
-    [Tooltip("開始ボーナスに必要な回転速度の割合")]
-    [SerializeField, Range(0f, 1f)] private float bonusThreshold = 0.8f;
-
-    [Header("床")]
-    [Tooltip("速度加算＝回転速度÷この値")]
-    [SerializeField, Min(0.01f)] private float floorSpeedDivisor = 5f;
-
-    [Tooltip("ボーナス時のダッシュ加算速度")]
-    [SerializeField, Min(0f)] private float floorDashPower = 10f;
-
-    [Tooltip("ボーナス時の回避時間（秒）")]
-    [SerializeField, Min(0f)] private float floorEvadeTime = 0.5f;
-
-    [Header("壁")]
-    [Tooltip("回転リソースの消費間隔（秒）")]
-    [SerializeField, Min(0.01f)] private float wallConsumeInterval = 0.1f;
-
-    [Tooltip("1回あたりの消費量")]
-    [SerializeField, Min(0f)] private float wallConsumeAmount = 20f;
-
-    [Tooltip("通常の壁ジャンプ速度")]
-    [SerializeField, Min(0f)] private float wallJumpPower = 10f;
-
-    [Tooltip("ボーナス時の壁ジャンプ速度")]
-    [SerializeField, Min(0f)] private float bonusWallJumpPower = 15f;
-
-    [Tooltip("ボーナス壁ジャンプの回避時間（秒）")]
-    [SerializeField, Min(0f)] private float wallEvadeTime = 0.25f;
-
-    [Tooltip("壁を見失っても上昇を続ける時間（秒）")]
-    [SerializeField, Min(0f)]
-    private float wallContactGraceTime = 2f;
-
-    [Header("天井")]
-    [Tooltip("速度加算＝回転速度÷この値")]
-    [SerializeField, Min(0.01f)] private float ceilingSpeedDivisor = 7.5f;
-
-    [Tooltip("ボーナス時のダッシュ加算速度")]
-    [SerializeField, Min(0f)] private float ceilingDashPower = 7.5f;
-
-
-    [Tooltip("ボーナス時の回避時間（秒）")]
-    [SerializeField, Min(0f)] private float ceilingEvadeTime = 0.35f;
-
-    [Header("敵：消費は攻撃1回ごと")]
-    [Tooltip("連続攻撃の間隔（秒）")]
-    [SerializeField, Min(0.01f)] private float enemyAttackInterval = 0.1f;
-
-    [Tooltip("通常の攻撃1回の消費量")]
-    [SerializeField, Min(0f)] private float enemyConsumeAmount = 1f;
-
-    [Tooltip("ボーナス時の攻撃1回の消費量")]
-    [SerializeField, Min(0f)] private float bonusEnemyConsumeAmount = 2f;
-
-    [Tooltip("PowerRatioが0のときのダメージ倍率")]
-    [SerializeField, Min(0f)] private float minDamageMultiplier = 0.9f;
-
-    [Tooltip("PowerRatioが1のときのダメージ倍率")]
-    [SerializeField, Min(0f)] private float maxDamageMultiplier = 1.25f;
-
-    [Tooltip("ボーナス時に追加で掛ける倍率")]
-    [SerializeField, Min(0f)] private float bonusDamageMultiplier = 1.5f;
 
     private float wallContactLostTime;
     private float ceilingBonusRamp;
@@ -120,10 +57,10 @@ public class SensorChainsawDigging : MonoBehaviour
             ? 0f
             : Surface == ChainsawSurface.Floor
                 ? accelerator.CurrentSpeed /
-                  Mathf.Max(0.01f, floorSpeedDivisor)
+                  Mathf.Max(0.01f, diggingParameter.floorSpeedDivisor)
                 : Surface == ChainsawSurface.Ceiling
                     ? accelerator.CurrentSpeed /
-                      Mathf.Max(0.01f, floorSpeedDivisor)
+                      Mathf.Max(0.01f, diggingParameter.floorSpeedDivisor)
                     : 0f;
 
     private SensorChainsawContact contact;
@@ -131,15 +68,6 @@ public class SensorChainsawDigging : MonoBehaviour
     private float evadeUntil;
     private bool holdBlocked;
     private float pendingDash;
-
-    [Header("床から壁への切り替え")]
-    [Tooltip("壁を検出する直前に押していれば、壁登りになる猶予時間（秒）")]
-    [SerializeField, Min(0f)]
-    private float wallClimbInputWindow = 0.2f;
-
-    [Tooltip("床Colliderの切り替え時に一瞬だけ発生するWall判定を無視する時間")]
-    [SerializeField, Min(0f)]
-    private float floorTransitionWallGraceTime = 0.05f;
 
     private float lastPressTime = float.NegativeInfinity;
 
@@ -152,6 +80,7 @@ public class SensorChainsawDigging : MonoBehaviour
     public int TerrainLayerMask =>
     detector != null ? detector.TerrainLayerMask : 0;
 
+    // 天井の接触情報を検出器から取得する。
     public bool TryGetCeilingContact(
         out SensorChainsawContact ceilingContact)
     {
@@ -162,8 +91,16 @@ public class SensorChainsawDigging : MonoBehaviour
             detector.TryGetCeilingContact(out ceilingContact);
     }
 
+    // 必要な参照を自動取得し、設定アセットが未登録なら処理を止める。
     private void Awake()
     {
+        if (diggingParameter == null)
+        {
+            Debug.LogError("Digging Parameterを設定してください。", this);
+            enabled = false;
+            return;
+        }
+
         if (detector == null)
         {
             detector = GetComponent<SensorChainsawContactDetector>();
@@ -199,7 +136,7 @@ public class SensorChainsawDigging : MonoBehaviour
         }
     }
 
-    // PlayerControllerのUpdateから呼ぶ。
+    // PlayerControllerから呼び、操作モードに応じて食い込み要求を更新する。
     public void HandleInput(
         bool pressed,
         bool held,
@@ -237,7 +174,7 @@ public class SensorChainsawDigging : MonoBehaviour
             return;
         }
 
-        if (inputMode == InputMode.Toggle)
+        if (diggingParameter.inputMode == InputMode.Toggle)
         {
             if (!pressed)
             {
@@ -271,11 +208,13 @@ public class SensorChainsawDigging : MonoBehaviour
         }
     }
 
+    // 食い込み判定に使用するプレイヤーの向きを更新する。
     public void SetFacingDirection(float direction)
     {
         if (detector != null) detector.SetFacingDirection(direction);
     }
 
+    // 入力時の接触を確認して食い込み要求を開始する。
     private void BeginRequest(float facingDirection)
     {
         // 押した時点で3つの判定範囲に対象がある場合だけ要求を開始する。
@@ -296,7 +235,7 @@ public class SensorChainsawDigging : MonoBehaviour
         wallContactLostTime = 0f;
     }
 
-    // PlayerControllerのFixedUpdateから呼ぶ。
+    // PlayerControllerのFixedUpdateから呼び、接触状態の更新と消費処理を行う。
     public void Tick(
     float deltaTime,
     float facingDirection = 0f,
@@ -335,7 +274,7 @@ public class SensorChainsawDigging : MonoBehaviour
             {
                 wallContactLostTime += deltaTime;
 
-                if (wallContactLostTime >= wallContactGraceTime)
+                if (wallContactLostTime >= diggingParameter.wallContactGraceTime)
                 {
                     Debug.Log(
                         "[壁登り終了] 壁を見失って猶予時間が経過",
@@ -379,7 +318,7 @@ public class SensorChainsawDigging : MonoBehaviour
                     facingDirection * next.Normal.x < -0.1f;
 
                 bool timedPress =
-                    Time.time - lastPressTime <= wallClimbInputWindow;
+                    Time.time - lastPressTime <= diggingParameter.wallClimbInputWindow;
 
                 if (isFrontWall && !timedPress)
                 {
@@ -491,13 +430,13 @@ public class SensorChainsawDigging : MonoBehaviour
         if (Surface == ChainsawSurface.Wall)
         {
             float interval =
-                Mathf.Max(0.01f, wallConsumeInterval);
+                Mathf.Max(0.01f, diggingParameter.wallConsumeInterval);
 
             while (timer >= interval)
             {
                 timer -= interval;
 
-                if (!accelerator.TryConsume(wallConsumeAmount))
+                if (!accelerator.TryConsume(diggingParameter.wallConsumeAmount))
                 {
                     Cancel(false);
                     return;
@@ -505,6 +444,7 @@ public class SensorChainsawDigging : MonoBehaviour
             }
         }
     }
+    // 保留していた壁反発の向きを取得して消費する。
     public bool TryTakeWallBounce(
         out float direction)
     {
@@ -520,6 +460,7 @@ public class SensorChainsawDigging : MonoBehaviour
         return result;
     }
 
+    // 食い込み対象と接触情報をログに出力する。
     private void LogDiggingContact()
     {
         string surfaceName;
@@ -563,6 +504,7 @@ public class SensorChainsawDigging : MonoBehaviour
                 : this);
     }
 
+    // 接触面に応じて食い込み状態とボーナスを初期化する。
     private bool BeginDigging()
     {
         if (contact.Surface ==
@@ -582,7 +524,7 @@ public class SensorChainsawDigging : MonoBehaviour
         // 終了まで保持。
         HasBonus =
             accelerator.SpeedRatio >=
-            bonusThreshold;
+            diggingParameter.bonusThreshold;
 
         Surface =
             contact.Surface;
@@ -639,10 +581,10 @@ public class SensorChainsawDigging : MonoBehaviour
             if (HasBonus)
             {
                 GrantEvade(
-                    floorEvadeTime);
+                    diggingParameter.floorEvadeTime);
 
                 pendingDash =
-                    floorDashPower;
+                    diggingParameter.floorDashPower;
             }
         }
 
@@ -651,10 +593,10 @@ public class SensorChainsawDigging : MonoBehaviour
             ChainsawSurface.Ceiling)
         {
             GrantEvade(
-                ceilingEvadeTime);
+                diggingParameter.ceilingEvadeTime);
 
             pendingDash =
-                ceilingDashPower;
+                diggingParameter.ceilingDashPower;
         }
 
         LogDiggingContact();
@@ -662,6 +604,7 @@ public class SensorChainsawDigging : MonoBehaviour
         return true;
     }
 
+    // 保留しているダッシュ加算値を取得して消費する。
     public bool TryTakeDash(out float power)
     {
         power = pendingDash;
@@ -677,6 +620,7 @@ public class SensorChainsawDigging : MonoBehaviour
         return power > 0f;
     }
 
+    // 壁ジャンプの強さを取得し、必要に応じて回避時間を設定する。
     public bool TryGetWallJump(
         out float power)
     {
@@ -690,18 +634,19 @@ public class SensorChainsawDigging : MonoBehaviour
 
         power =
             HasBonus
-                ? bonusWallJumpPower
-                : wallJumpPower;
+                ? diggingParameter.bonusWallJumpPower
+                : diggingParameter.wallJumpPower;
 
         if (HasBonus)
         {
             GrantEvade(
-                wallEvadeTime);
+                diggingParameter.wallEvadeTime);
         }
 
         return true;
     }
 
+    // 指定時間まで回避判定を延長する。
     private void GrantEvade(
         float duration)
     {
@@ -711,6 +656,7 @@ public class SensorChainsawDigging : MonoBehaviour
                 Time.time + duration);
     }
 
+    // 食い込みの状態を解除し、アニメーションと攻撃状態を終了する。
     public void Cancel(
         bool immediate)
     {
@@ -757,6 +703,7 @@ public class SensorChainsawDigging : MonoBehaviour
         // 回避時間は解除後も指定時間まで維持。
     }
 
+    // コンポーネント停止時に食い込みと回避状態を解除する。
     private void OnDisable()
     {
         Cancel(true);

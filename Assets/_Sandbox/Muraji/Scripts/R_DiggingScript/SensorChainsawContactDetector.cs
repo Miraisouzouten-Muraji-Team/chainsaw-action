@@ -34,25 +34,14 @@ public class SensorChainsawContactDetector : MonoBehaviour
     [Tooltip("床専用。斜面も面の法線で床かどうか判定する")]
     [SerializeField] private BoxCollider lowerSensor;
 
-    [SerializeField] private LayerMask terrainLayers;
-    [SerializeField] private LayerMask enemyLayers;
-
-    [Tooltip("法線Yの絶対値がこの値以上なら床／天井。0.7なら約45度まで")]
-    [SerializeField, Range(0.1f, 0.95f)]
-    private float surfaceNormalThreshold = 0.7f;
-
-    [Tooltip("面を調べるRayを判定範囲の外側へ戻す距離。開始条件の範囲は拡張しない")]
-    [SerializeField, Min(0.01f)]
-    private float normalRayBackoff = 0.25f;
+    [Header("接触判定パラメータ")]
+    [Tooltip("地形と敵のレイヤー、法線のしきい値、Rayの長さを管理するScriptableObject")]
+    [SerializeField] private ContactDetectorParameter contactDetectorParameter;
 
     [Header("壁専用の前方Ray")]
 
     [Tooltip("Player直下の胴体位置。モデルやアニメーションする骨には置かない")]
     [SerializeField] private Transform frontRayOrigin;
-
-    [Tooltip("Ray始点から壁を検出する距離。Colliderとの重なりは不要")]
-    [SerializeField, Min(0.01f)]
-    private float frontRayDistance = 1f;
 
     [Header("直近の照会結果（再生中の確認用）")]
     [SerializeField] private ChainsawSurface detectedSurface;
@@ -63,7 +52,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
     private bool configured;
     private float facing = 1f;
-    public int TerrainLayerMask => terrainLayers.value;
+    public int TerrainLayerMask => contactDetectorParameter != null ? contactDetectorParameter.TerrainLayers.value : 0;
 
     // 壁の優先順位に隠されないように、Upperだけで天井を調べる。
     public bool TryGetCeilingContact(out SensorChainsawContact contact)
@@ -90,8 +79,16 @@ public class SensorChainsawContactDetector : MonoBehaviour
         return contact.Collider != null &&
             contact.Surface == ChainsawSurface.Ceiling;
     }
+    // 必須コンポーネントと設定アセットの参照が揃っているかを確認する。
     private void Awake()
     {
+        if (contactDetectorParameter == null)
+        {
+            Debug.LogError("食い込み判定：Contact Detector Parameterを設定してください。", this);
+            enabled = false;
+            return;
+        }
+
         if (ownerRoot == null)
         {
             ownerRoot = transform;
@@ -257,8 +254,8 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 overlapBuffer,
                 sensor.transform.rotation,
                 sensor == middleSensor
-                    ? enemyLayers.value
-                    : terrainLayers.value,
+                    ? contactDetectorParameter.EnemyLayers.value
+                    : contactDetectorParameter.TerrainLayers.value,
                 QueryTriggerInteraction.Collide
             );
 
@@ -283,7 +280,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
             }
 
             bool isEnemyLayer =
-                (enemyLayers.value & (1 << target.gameObject.layer)) != 0;
+                (contactDetectorParameter.EnemyLayers.value & (1 << target.gameObject.layer)) != 0;
 
             // 敵はMiddleだけで検出する。
             if (sensor == middleSensor)
@@ -330,7 +327,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
             }
 
             if (target.isTrigger ||
-                (terrainLayers.value & (1 << target.gameObject.layer)) == 0)
+                (contactDetectorParameter.TerrainLayers.value & (1 << target.gameObject.layer)) == 0)
             {
                 continue;
             }
@@ -379,7 +376,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
         Bounds bounds = sensor.bounds;
 
         bool vertical = Mathf.Abs(direction.y) > 0.5f;
-        float backoff = Mathf.Max(0.01f, normalRayBackoff);
+        float backoff = Mathf.Max(0.01f, contactDetectorParameter.NormalRayBackoff);
 
         for (int i = 0; i < NORMAL_SAMPLE_COUNT; i++)
         {
@@ -471,9 +468,9 @@ public class SensorChainsawContactDetector : MonoBehaviour
             ).normalized;
 
             ChainsawSurface surface =
-                normal.y >= surfaceNormalThreshold
+                normal.y >= contactDetectorParameter.SurfaceNormalThreshold
                     ? ChainsawSurface.Floor
-                    : normal.y <= -surfaceNormalThreshold
+                    : normal.y <= -contactDetectorParameter.SurfaceNormalThreshold
                         ? ChainsawSurface.Ceiling
                         : ChainsawSurface.Wall;
 
@@ -514,7 +511,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
         Vector3 origin = frontRayOrigin.position;
         Vector3 direction = Vector3.right * facing;
-        float distance = Mathf.Max(0.01f, frontRayDistance);
+        float distance = Mathf.Max(0.01f, contactDetectorParameter.FrontRayDistance);
 
         Debug.DrawRay(
             origin,
@@ -530,7 +527,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
             origin,
             direction,
             distance,
-            terrainLayers,
+            contactDetectorParameter.TerrainLayers,
             QueryTriggerInteraction.Ignore))
         {
             if (hit.collider == null || IsOwner(hit.collider))
@@ -568,7 +565,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
         ).normalized;
 
         // 床・天井に分類される面は、壁として採用しない。
-        if (Mathf.Abs(normal.y) >= surfaceNormalThreshold)
+        if (Mathf.Abs(normal.y) >= contactDetectorParameter.SurfaceNormalThreshold)
         {
             return;
         }
@@ -625,7 +622,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
             origin,
             delta / distance,
             distance - POINT_TOLERANCE,
-            terrainLayers,
+            contactDetectorParameter.TerrainLayers,
             QueryTriggerInteraction.Ignore))
         {
             if (hit.collider != target && !IsOwner(hit.collider))
@@ -724,7 +721,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
             Gizmos.DrawLine(
                 frontRayOrigin.position,
                 frontRayOrigin.position +
-                direction * Mathf.Max(0.01f, frontRayDistance)
+                direction * Mathf.Max(0.01f, contactDetectorParameter.FrontRayDistance)
             );
 
             Gizmos.color = previousColor;

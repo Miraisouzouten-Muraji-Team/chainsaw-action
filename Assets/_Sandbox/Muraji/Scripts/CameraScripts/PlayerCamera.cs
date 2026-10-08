@@ -117,8 +117,7 @@ public class PlayerCamera : MonoBehaviour
                 transform.position,
                 targetPosition,
                 interpolation);
-    }
-    
+    }   
     private void UpdateCurrentArea()
     {
         Vector3 playerPosition =
@@ -171,7 +170,6 @@ public class PlayerCamera : MonoBehaviour
 
         return null;
     }
-
     private Vector3 CalculateTargetPosition()
     {
         float facingDirection =

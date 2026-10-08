@@ -522,16 +522,8 @@ MonoBehaviour:
   upperSensor: {fileID: 1134152958625072312}
   middleSensor: {fileID: 4946291620221252972}
   lowerSensor: {fileID: 8495765336010916488}
-  terrainLayers:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  enemyLayers:
-    serializedVersion: 2
-    m_Bits: 64
-  surfaceNormalThreshold: 0.7
-  normalRayBackoff: 1.5
+  contactDetectorParameter: {fileID: 0}
   frontRayOrigin: {fileID: 8895299963247931275}
-  frontRayDistance: 0.75
   detectedSurface: 0
   detectedCollider: {fileID: 0}
   detectedNormal: {x: 0, y: 0, z: 0}
@@ -933,79 +925,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7e624b05775fca847a22140969b8b248, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawRotation
-  minSpeed: 5
-  maxSpeed: 50
-  diggingMaxSpeed: 35
-  accelerationTime: 2
-  decelerationTime: 2.5
-  accelerationCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 0.5
-      value: 0.5
-      inSlope: 3
-      outSlope: 3
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  decelerationCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 0.47221678
-      value: 0.31269532
-      inSlope: 1.9540911
-      outSlope: 1.9540911
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.09116605
-      outWeight: 1
-    - serializedVersion: 3
-      time: 0.7041931
-      value: 0.9904785
-      inSlope: 4.213732
-      outSlope: 4.213732
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.077947706
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  minPitch: 0.8
-  maxPitch: 1.8
+  accelerationParameter: {fileID: 11400000, guid: 49f0f6b37d9166b4393cdf12508c13ad, type: 2}
 --- !u!114 &3326524623475350209
 MonoBehaviour:
   m_ObjectHideFlags: 0

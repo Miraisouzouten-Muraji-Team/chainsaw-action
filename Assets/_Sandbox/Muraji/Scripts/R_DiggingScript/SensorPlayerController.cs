@@ -35,6 +35,13 @@ public class SensorPlayerController : MonoBehaviour
     [Header("ジャンプ設定")]
     [SerializeField] float jumpForce = 5.0f;
 
+    [Tooltip("地面を離れてから、初段ジャンプを受け付ける秒数です。0にすると猶予を無効にします。")]
+    [SerializeField, Min(0f)]
+    private float coyoteTime = 0.15f;
+
+    // 空中から開始した場合に猶予を与えないため、未接地で初期化する。
+    private float lastGroundedTime = float.NegativeInfinity;
+
     private const float MIN_GROUND_NORMAL_Y = 0.7f;
     private const int MAX_JUMP_COUNT = 2;
 
@@ -377,8 +384,10 @@ public bool IsAttacking { get; private set; }
                     : wallClimbSpeed;
         }
 
-        Move();
+        // 食い込み状態と押し戻しの予約が確定してから猶予を更新する。
+        UpdateCoyoteTime();
 
+        Move();
         bool isKnockbackActive =
             knockbackVelocity != 0f || knockbackHopPending;
 
@@ -572,14 +581,20 @@ public bool IsAttacking { get; private set; }
         debugTargetSpeed = targetSpeed;
     }
 
+    // 壁ジャンプ、接地・猶予中の初段、二段目の順でジャンプを予約する。
     void Jump()
     {
         if (jumpPending)
         {
             return;
         }
-        
-        bool wasDiggingFloor = chainsawDigging.Surface == ChainsawSurface.Floor;
+
+        // 食い込み解除前の状態を保存する。
+        ChainsawSurface surfaceBeforeJump = chainsawDigging.Surface;
+
+        bool wasDiggingFloor =
+            surfaceBeforeJump == ChainsawSurface.Floor;
+
         bool wallJump =
             chainsawDigging.TryGetWallJump(out float wallPower);
 
@@ -590,21 +605,39 @@ public bool IsAttacking { get; private set; }
             !collider.enabled ||
             !collider.gameObject.activeInHierarchy);
 
-        bool isGrounded = wasDiggingFloor ||
-            (groundColliders.Count > 0 && Time.time >= ignoreGroundUntil);
+        bool isGrounded =
+            wasDiggingFloor ||
+            (
+                groundColliders.Count > 0 &&
+                Time.time >= ignoreGroundUntil
+            );
+
+        // 初段をまだ使っておらず、最後の接地から設定時間以内なら許可する。
+        // 壁・天井・敵への食い込み中や押し戻し中には適用しない。
+        bool canUseCoyoteTime =
+            surfaceBeforeJump == ChainsawSurface.None &&
+            coyoteTime > 0f &&
+            jumpsUsed == 0 &&
+            !IsImpactStunned &&
+            !knockbackHopPending &&
+            knockbackVelocity == 0f &&
+            Time.time - lastGroundedTime <= coyoteTime;
 
         if (wallJump)
         {
+            // 既存の壁ジャンプを優先する。
             pendingJumpPower = wallPower;
             pendingJumpCount = 1;
         }
-        else if (isGrounded)
+        else if (isGrounded || canUseCoyoteTime)
         {
+            // 猶予中も、通常の初段と同じ強さ・回数でジャンプする。
             pendingJumpPower = jumpForce;
             pendingJumpCount = 1;
         }
         else
         {
+            // 猶予を過ぎた場合は、従来どおり二段目として扱う。
             int effectiveJumpCount = Mathf.Max(jumpsUsed, 1);
 
             if (effectiveJumpCount >= MAX_JUMP_COUNT)
@@ -617,11 +650,14 @@ public bool IsAttacking { get; private set; }
         }
 
         jumpPending = true;
+
+        // 予約時点で猶予を消費し、初段を連続使用できないようにする。
+        lastGroundedTime = float.NegativeInfinity;
+
         groundColliders.Clear();
 
         playerAnimator.PlayJump();
     }
-
     private void ApplyJumpGravity(
         ref Vector3 velocity,
         float deltaTime)
@@ -1286,6 +1322,8 @@ public bool IsAttacking { get; private set; }
     }
     private void BeginDiggingImpactStun(float bounceDirection)
     {
+        // 硬直終了後に衝突前のジャンプ猶予を持ち越さない。
+        lastGroundedTime = float.NegativeInfinity;
         ResetFloorTravelImpact();
         wallAscentImpactArmed = false;
 
@@ -1352,6 +1390,32 @@ public bool IsAttacking { get; private set; }
             );
         }
     }
+
+    // 初段ジャンプ用の最終接地時刻を記録し、使用済みの猶予を解除する。
+    private void UpdateCoyoteTime()
+    {
+        ChainsawSurface surface = chainsawDigging.Surface;
+
+        if (jumpPending ||
+            jumpsUsed > 0 ||
+            IsImpactStunned ||
+            knockbackHopPending ||
+            knockbackVelocity != 0f ||
+            surface == ChainsawSurface.Wall ||
+            surface == ChainsawSurface.Ceiling ||
+            surface == ChainsawSurface.Enemy)
+        {
+            lastGroundedTime = float.NegativeInfinity;
+            return;
+        }
+
+        // 空中では時刻を更新しない。
+        // IsGrounded自体の判定内容は変更しない。
+        if (IsGrounded())
+        {
+            lastGroundedTime = Time.time;
+        }
+    }
     private bool TickDiggingImpactStun(float deltaTime)
     {
         if (!IsImpactStunned)
@@ -1409,6 +1473,8 @@ public bool IsAttacking { get; private set; }
 
     void OnDisable()
     {
+        // 再有効化時に以前の接地時刻を持ち越さない。
+        lastGroundedTime = float.NegativeInfinity;
         // 再有効化時に、古い壁の接触情報を持ち越さない。
         if (playerMidCollider != null)
         {

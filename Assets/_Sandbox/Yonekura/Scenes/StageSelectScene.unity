@@ -119,6 +119,67 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &83787126
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 83787129}
+  - component: {fileID: 83787128}
+  - component: {fileID: 83787127}
+  m_Layer: 5
+  m_Name: ZigzagWipePanel
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &83787127
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 83787126}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 71ea48afc522bb940a89ab1a8cb51057, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ZigzagWipeGraphic
+  m_Material: {fileID: 0}
+  m_Color: {r: 0, g: 0, b: 0, a: 1}
+  m_RaycastTarget: 0
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+--- !u!222 &83787128
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 83787126}
+  m_CullTransparentMesh: 1
+--- !u!224 &83787129
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 83787126}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1112817899}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 1, y: 1}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 0, y: 0}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &499238865
 GameObject:
   m_ObjectHideFlags: 0
@@ -169,7 +230,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 0, g: 0, b: 0, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -293,6 +354,7 @@ RectTransform:
   - {fileID: 1655903513}
   - {fileID: 499238866}
   - {fileID: 2013923968}
+  - {fileID: 83787129}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -689,9 +751,11 @@ MonoBehaviour:
   fadeImage: {fileID: 1655903514}
   diagonalWipePanel: {fileID: 499238866}
   circleWipePanel: {fileID: 2013923968}
+  zigzagWipePanel: {fileID: 83787127}
   moveDistance: 3500
   duration: 0.5
   circleWipeDuration: 1
+  zigzagWipeDuration: 0.5
 --- !u!4 &1593801881
 Transform:
   m_ObjectHideFlags: 0
@@ -918,7 +982,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: -1274769231239856530, guid: c608c5a0d44cf1c4b9e1cc59311aa780, type: 3}
+  m_Sprite: {fileID: 4249851292263905005, guid: a8eff458f5e06b046abdea681fcc9ba3, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1

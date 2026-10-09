@@ -1,5 +1,4 @@
 using UnityEditor;
-using UnityEngine;
 
 [CustomEditor(typeof(ChangeSceneButton))]
 public class ChangeSceneButtonEditor : Editor
@@ -36,5 +35,3 @@ public class ChangeSceneButtonEditor : Editor
         }
     }
 }
-
-

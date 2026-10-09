@@ -20,9 +20,17 @@ MonoBehaviour:
   coyoteTime: 0.1
   gravityScale: 4
   jumpStartGravityMultiplier: 0.7
-  maxFallGravityMultiplier: 2.5
+  maxFallGravityMultiplier: 2
   fallGravityIncreaseTime: 0.2
   maxFallSpeed: 20
+  groundRayLayers:
+    serializedVersion: 2
+    m_Bits: 1
+  groundRaySideOffset: 0.02
+  groundRayStartHeight: 0.1
+  groundRayDistance: 0.1
+  groundRayNormalThreshold: 0.1
+  groundRayContactTolerance: 0.1
   wallKnockbackSpeed: 8
   wallKnockbackDeceleration: 20
   wallKnockbackUpwardForce: 7

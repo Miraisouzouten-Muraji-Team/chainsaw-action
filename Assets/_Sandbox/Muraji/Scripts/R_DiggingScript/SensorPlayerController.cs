@@ -1,5 +1,4 @@
 using UnityEngine;
-using System.Collections.Generic;
 
 public class SensorPlayerController : MonoBehaviour
 {
@@ -36,13 +35,17 @@ public class SensorPlayerController : MonoBehaviour
     // 空中から開始した場合に猶予を与えないため、未接地で初期化する。
     private float lastGroundedTime = float.NegativeInfinity;
 
-    private const float MIN_GROUND_NORMAL_Y = 0.7f;
+
+    [Header("3本Rayによる接地判定")]
+    [Tooltip("足元中央に配置した空のGameObjectのTransform。ここを基準に中央・前・後ろへRayを飛ばします。")]
+    [SerializeField] private Transform groundCheckTransform;
+
+    // Rayによる接地判定は実行時に更新する。SOには状態を書き込まない。
+    private bool isGroundedByRay;
     private const int MAX_JUMP_COUNT = 2;
 
     private Rigidbody playerRigidbody;
 
-    private readonly HashSet<Collider> groundColliders =
-        new HashSet<Collider>();
 
     [Header("見た目の向き")]
     [Tooltip("モデルとチェーンソーを含む見た目の親")]
@@ -163,6 +166,14 @@ public class SensorPlayerController : MonoBehaviour
         input = GetComponent<PlayerInputHandler>();
         playerAnimator = GetComponent<PlayerAnimator>();
         playerRigidbody = GetComponent<Rigidbody>();
+
+        // Rayの発射位置は専用Transformのみで決める。物理Colliderは参照しない。
+        if (groundCheckTransform == null)
+        {
+            Debug.LogError("3本Ray接地判定用のGround Check Transform（足元中央）を設定してください。", this);
+            enabled = false;
+            return;
+        }
 
         // 壁の接触記録用コンポーネントを取得する。
         // 未配置なら同じGameObjectへ追加する。物理Colliderは追加しない。
@@ -297,10 +308,8 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
-        groundColliders.RemoveWhere(collider =>
-            collider == null ||
-            !collider.enabled ||
-            !collider.gameObject.activeInHierarchy);
+        // 3本のRayで着地を確認し、空中ジャンプ回数を回復する。
+        RefreshGroundRayState();
 
         if (chainsawAccelerator.isActiveAndEnabled)
         {
@@ -416,7 +425,6 @@ public class SensorPlayerController : MonoBehaviour
                         Vector3 tangent = new Vector3(normal.y, -normal.x, 0f).normalized;
                         if (tangent.y < 0f) tangent = -tangent;
                         velocity = tangent * wallTravelSpeed - normal * playerParameter.surfaceStickSpeed;
-                        groundColliders.Clear();
                         break;
                     }
 
@@ -451,8 +459,6 @@ public class SensorPlayerController : MonoBehaviour
 
             ascentStartSpeed = Mathf.Max(pendingJumpPower, 0f);
             fallElapsedTime = 0f;
-
-            groundColliders.Clear();
             ignoreGroundUntil = Time.time + 0.1f;
         }
 
@@ -463,8 +469,6 @@ public class SensorPlayerController : MonoBehaviour
             velocity.y = playerParameter.wallKnockbackUpwardForce;
             ascentStartSpeed = playerParameter.wallKnockbackUpwardForce;
             fallElapsedTime = 0f;
-
-            groundColliders.Clear();
             ignoreGroundUntil = Time.time + 0.1f;
         }
 
@@ -503,7 +507,6 @@ public class SensorPlayerController : MonoBehaviour
             currentSpeed = velocity.x;
             ascentStartSpeed = Mathf.Max(velocity.y, 0f);
             fallElapsedTime = 0f;
-            groundColliders.Clear();
             ignoreGroundUntil = Time.time + 0.1f;
         }
         else if (wallJumpDirectionHoldRemaining > 0f)
@@ -523,7 +526,6 @@ public class SensorPlayerController : MonoBehaviour
             velocity.y = Mathf.Max(velocity.y, playerParameter.cornerJumpForce);
             ascentStartSpeed = Mathf.Max(ascentStartSpeed, velocity.y);
             fallElapsedTime = 0f;
-            groundColliders.Clear();
             ignoreGroundUntil = Time.time + 0.1f;
         }
 
@@ -661,7 +663,6 @@ public class SensorPlayerController : MonoBehaviour
             knockbackVelocity = 0f;
             knockbackHopPending = false;
             lastGroundedTime = float.NegativeInfinity;
-            groundColliders.Clear();
             wallJumpStunRemaining = playerParameter.surfaceStickJumpStunTime;
             wallJumpDirectionHoldRemaining = 0f;
             wallJumpLaunchPending = playerParameter.surfaceStickJumpStunTime <= 0f;
@@ -673,17 +674,9 @@ public class SensorPlayerController : MonoBehaviour
 
         chainsawDigging.Cancel(true);
 
-        groundColliders.RemoveWhere(collider =>
-            collider == null ||
-            !collider.enabled ||
-            !collider.gameObject.activeInHierarchy);
-
-        bool isGrounded =
-            wasDiggingFloor ||
-            (
-                groundColliders.Count > 0 &&
-                Time.time >= ignoreGroundUntil
-            );
+        // ジャンプ入力の瞬間にも更新し、直前の物理フレームの判定ズレを防ぐ。
+        RefreshGroundRayState();
+        bool isGrounded = wasDiggingFloor || isGroundedByRay;
 
         // 初段をまだ使っておらず、最後の接地から設定時間以内なら許可する。
         // 壁・天井・敵への食い込み中や押し戻し中には適用しない。
@@ -729,8 +722,6 @@ public class SensorPlayerController : MonoBehaviour
         // 予約時点で猶予を消費し、初段を連続使用できないようにする。
         lastGroundedTime = float.NegativeInfinity;
 
-        groundColliders.Clear();
-
         // 確定したジャンプ回数に応じて、初段と二段目のアニメーションを切り替える。
         if (pendingJumpCount >= MAX_JUMP_COUNT)
         {
@@ -741,15 +732,103 @@ public class SensorPlayerController : MonoBehaviour
             playerAnimator.PlayJump();
         }
     }
+
+    // 足元の中央・前・後ろの3本Rayで床／斜面を調べ、着地時にジャンプ回数を戻す。
+    private void RefreshGroundRayState()
+    {
+        isGroundedByRay = false;
+
+        if (groundCheckTransform == null || playerParameter == null ||
+            playerRigidbody == null || !groundCheckTransform.gameObject.activeInHierarchy ||
+            jumpPending || wallJumpLaunchPending || wallJumpStunRemaining > 0f ||
+            Time.time < ignoreGroundUntil ||
+            playerRigidbody.linearVelocity.y > 0.1f)
+        {
+            return;
+        }
+
+        int groundMask = playerParameter.groundRayLayers.value != 0
+            ? playerParameter.groundRayLayers.value
+            : ResolvedImpactTerrainLayers;
+        if (groundMask == 0)
+        {
+            return;
+        }
+
+        float sideOffset = Mathf.Max(0f, playerParameter.groundRaySideOffset);
+        float startHeight = Mathf.Max(0.01f, playerParameter.groundRayStartHeight);
+        float distance = Mathf.Max(0.01f, playerParameter.groundRayDistance);
+        float normalThreshold = Mathf.Clamp01(playerParameter.groundRayNormalThreshold);
+        // 足元中央のTransformを原点として、上に開始位置をずらす。
+        Vector3 center = groundCheckTransform.position + Vector3.up * startHeight;
+
+        // 真ん中・前・後ろ。向きが変わっても同じ3か所を検出する。
+        for (int index = 0; index < 3; index++)
+        {
+            float offset = index == 0 ? 0f :
+                index == 1 ? sideOffset * facingDirection :
+                -sideOffset * facingDirection;
+            Vector3 origin = center + Vector3.right * offset;
+            RaycastHit[] hits = Physics.RaycastAll(
+                origin, Vector3.down, distance,
+                groundMask, QueryTriggerInteraction.Ignore);
+
+            foreach (RaycastHit hit in hits)
+            {
+                if (hit.collider == null ||
+                    hit.collider.transform == transform ||
+                    hit.collider.transform.IsChildOf(transform) ||
+                    hit.normal.y < normalThreshold)
+                {
+                    continue;
+                }
+
+                // Rayが遠方の床を発見しただけでは接地にしない。
+                // GroundCheckが足元にある前提で、実際の足元と床との隙間を評価する。
+                // 探索用Rayの距離とは別に、接地確定の許容距離を設定する。
+                float groundGap = hit.distance - startHeight;
+                float contactTolerance = Mathf.Max(0f, playerParameter.groundRayContactTolerance);
+
+                // 足元より上の面を「着地」として採用しない。
+                // 側面の段差・壁際で横のRayが上段の床を拾うと、
+                // 旧実装ではgroundGapが負でも接地が成立していた。
+                // 床の探索距離は変えず、接地できる高さの範囲だけ制限する。
+                if (groundGap < -contactTolerance || groundGap > contactTolerance)
+                {
+                    continue;
+                }
+
+                isGroundedByRay = true;
+                jumpsUsed = 0;
+                return;
+            }
+        }
+    }
+
+    // Sceneビューで3本の接地Rayの位置と長さを表示する。
+    private void OnDrawGizmosSelected()
+    {
+        if (groundCheckTransform == null || playerParameter == null)
+            return;
+
+        float offset = Mathf.Max(0f, playerParameter.groundRaySideOffset);
+        float height = Mathf.Max(0.01f, playerParameter.groundRayStartHeight);
+        float distance = Mathf.Max(0.01f, playerParameter.groundRayDistance);
+        Vector3 center = groundCheckTransform.position + Vector3.up * height;
+        Gizmos.color = Application.isPlaying && isGroundedByRay ? Color.green : Color.yellow;
+        for (int i = -1; i <= 1; i++)
+        {
+            Vector3 origin = center + Vector3.right * offset * i;
+            Gizmos.DrawLine(origin, origin + Vector3.down * distance);
+        }
+    }
+
     // 設定アセットの重力倍率と落下上限を使い、上下速度を更新する。
     private void ApplyJumpGravity(
         ref Vector3 velocity,
         float deltaTime)
     {
-        bool isGrounded =
-            groundColliders.Count > 0 &&
-            Time.time >= ignoreGroundUntil &&
-            velocity.y <= 0.1f;
+        bool isGrounded = isGroundedByRay && velocity.y <= 0.1f;
 
         float gravityMultiplier;
 
@@ -810,14 +889,7 @@ public class SensorPlayerController : MonoBehaviour
         if (chainsawDigging != null && chainsawDigging.Surface == ChainsawSurface.Floor)
             return true;
 
-        groundColliders.RemoveWhere(collider =>
-            collider == null ||
-            !collider.enabled ||
-            !collider.gameObject.activeInHierarchy);
-
-        return
-            groundColliders.Count > 0 &&
-            Time.time >= ignoreGroundUntil;
+        return isGroundedByRay;
     }
 
     void OnCollisionEnter(Collision collision)
@@ -833,7 +905,6 @@ public class SensorPlayerController : MonoBehaviour
             TryBeginDiggingImpact(collision);
 
         UpdateWallContact(collision);
-        UpdateGroundContact(collision);
     }
 
     void OnCollisionStay(Collision collision)
@@ -849,7 +920,6 @@ public class SensorPlayerController : MonoBehaviour
             TryBeginDiggingImpact(collision);
 
         UpdateWallContact(collision);
-        UpdateGroundContact(collision);
     }
 
     void OnCollisionExit(Collision collision)
@@ -861,8 +931,6 @@ public class SensorPlayerController : MonoBehaviour
                 ResolvedImpactTerrainLayers
             );
         }
-
-        groundColliders.Remove(collision.collider);
     }
 
     [Header("天井角補正の確認")]
@@ -1036,48 +1104,6 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         return blocked;
-    }
-
-    void UpdateGroundContact(Collision collision)
-    {
-        if (!isActiveAndEnabled)
-        {
-            return;
-        }
-
-        Collider otherCollider = collision.collider;
-        groundColliders.Remove(otherCollider);
-
-        if (jumpPending ||
-            Time.time < ignoreGroundUntil ||
-            (playerRigidbody.linearVelocity.y > 0.1f &&
-             chainsawDigging.Surface != ChainsawSurface.Floor))
-        {
-            return;
-        }
-
-        for (int contactIndex = 0;
-             contactIndex < collision.contactCount;
-             contactIndex++)
-        {
-            ContactPoint contact =
-                collision.GetContact(contactIndex);
-
-            if (contact.normal.y >= MIN_GROUND_NORMAL_Y)
-            {
-                groundColliders.Add(otherCollider);
-                jumpsUsed = 0;
-
-                // 通常状態で着地したら、空中移動の記録を解除する。
-                // 床に食い込んでいる最中は記録を維持する。
-                if (chainsawDigging.Surface != ChainsawSurface.Floor)
-                {
-                    ResetFloorTravelImpact();
-                }
-
-                break;
-            }
-        }
     }
 
     private void ApplyFacingRotation()
@@ -1681,6 +1707,7 @@ public class SensorPlayerController : MonoBehaviour
     {
         // 再有効化時に以前の接地時刻を持ち越さない。
         lastGroundedTime = float.NegativeInfinity;
+        isGroundedByRay = false;
         // 再有効化時に、古い壁の接触情報を持ち越さない。
         if (playerMidCollider != null)
         {
@@ -1717,8 +1744,6 @@ public class SensorPlayerController : MonoBehaviour
         {
             playerRigidbody.useGravity = originalUseGravity;
         }
-
-        groundColliders.Clear();
 
         if (playerAnimator != null)
         {

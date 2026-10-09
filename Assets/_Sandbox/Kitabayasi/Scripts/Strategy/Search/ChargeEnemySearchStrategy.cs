@@ -1,25 +1,22 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// 突進エネミーの索敵Stateで使用する索敵Strategy。
-/// </summary>
-/// <remarks>
 /// 責務:
-/// ・ゲーム開始時の位置を基準に巡回する。
-/// ・初期Facing方向へPatrolDistanceだけ移動して往復する。
-/// ・巡回端で停止し、指定時間をかけて180度反転する。
+/// ・ゲーム開始時、またはDamage復帰時に更新された位置を基準に巡回する。
+/// ・巡回基準時点のFacing方向へPatrolDistanceだけ移動して往復する。
+/// ・巡回端または平坦面の終端で停止し、VisualRootだけを指定時間かけて180度反転する。
+/// ・巡回中に進行方向を塞ぐ壁面へ衝突した場合は反転する。
+/// ・巡回前に平坦面を判定し、穴・段差・坂へ進入しない。
 /// ・XY平面上でプレイヤーとの距離を判定する。
-/// ・EnemyとPlayer間のColliderによる視線遮蔽を判定する。
+/// ・EnemyとPlayerのX位置まで水平Rayを飛ばし、区間内の障害物を判定する。
 /// ・索敵中にPlayerへ接触した際の攻撃情報を送信する。
-///
-/// 担当しない責務:
-/// ・Stateの保持やState遷移。
-/// ・PlayerのHP変更。
-/// ・設定値そのものの保持。
-/// </remarks>
+
 [Serializable]
-public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
+public sealed class ChargeEnemySearchStrategy :
+    IEnemySearchStrategy,
+    IEnemyPatrolOriginUpdater,
+    IEnemyDebugRayProvider
 {
     private const string PLAYER_TAG = "Player";
 
@@ -27,19 +24,25 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
 
     private const float ARRIVAL_TOLERANCE = 0.05f;
     private const float DIRECTION_EPSILON = 0.001f;
+    private const float WALL_NORMAL_X_THRESHOLD = 0.7f;
 
     private ChargeEnemyData enemyData;
 
     private GameObject enemyObject;
     private Transform enemyTransform;
+    private Transform visualRoot;
     private Rigidbody enemyRigidbody;
     private Collider enemyCollider;
 
+    private ChargeEnemyGroundChecker groundChecker;
+
     private Transform playerTransform;
-    private Collider playerCollider;
     private IAttackHitReceiver playerAttackHitReceiver;
 
     private RaycastHit[] raycastHitBuffer;
+
+    private EnemyDebugRay obstacleCheckDebugRay;
+    private bool hasObstacleCheckDebugRay;
 
     private Vector3 patrolStartPosition;
 
@@ -55,13 +58,11 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
     private Quaternion turnStartRotation;
     private Quaternion turnTargetRotation;
 
-    /// <summary>
-    /// Strategyで使用する実行時参照を初期化する。
     /// ゲーム開始時の巡回開始位置もここで固定する。
-    /// </summary>
     public void Initialize(
         EnemyData enemyData,
-        GameObject enemyObject)
+        GameObject enemyObject,
+        Transform visualRoot)
     {
         this.enemyData = enemyData as ChargeEnemyData
             ?? throw new InvalidOperationException(
@@ -72,6 +73,12 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
             ?? throw new ArgumentNullException(nameof(enemyObject));
 
         enemyTransform = enemyObject.transform;
+
+        this.visualRoot = visualRoot
+            ? visualRoot
+            : throw new InvalidOperationException(
+                $"{nameof(ChargeEnemySearchStrategy)}を使用するEnemyには" +
+                "VisualRootの設定が必要です。");
 
         enemyRigidbody =
             enemyObject.GetComponent<Rigidbody>();
@@ -93,6 +100,20 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
         enemyCollider =
             enemyObject.GetComponentInChildren<Collider>();
 
+        if (enemyCollider == null)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(ChargeEnemySearchStrategy)}を使用するEnemyには" +
+                $"{nameof(Collider)}が必要です。");
+        }
+
+        groundChecker =
+            new ChargeEnemyGroundChecker(
+                this.enemyData,
+                enemyTransform,
+                enemyRigidbody,
+                enemyCollider);
+
         raycastHitBuffer =
             new RaycastHit[RAYCAST_HIT_BUFFER_SIZE];
 
@@ -101,17 +122,17 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
         patrolStartPosition = enemyRigidbody.position;
 
         initialPatrolDirectionSign =
-            GetInitialHorizontalDirectionSign(
-                enemyTransform);
+            GetHorizontalDirectionSign(
+                visualRoot);
 
         ResolvePlayerReferences();
     }
 
-    /// <summary>
-    /// 索敵Stateを開始する。
-    /// </summary>
     public void BeginSearch()
     {
+        hasObstacleCheckDebugRay = false;
+        groundChecker?.ClearDebugRays();
+
         isSearchActive = true;
         isTurning = false;
         isMovingToPatrolEnd = true;
@@ -124,11 +145,11 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
         ResolvePlayerReferences();
     }
 
-    /// <summary>
-    /// 巡回とプレイヤー検知を更新する。
-    /// </summary>
-    public bool UpdateSearch()
+    public bool UpdateSearch(
+        out float detectedPlayerDirectionSign)
     {
+        detectedPlayerDirectionSign = 0f;
+
         if (!isSearchActive)
         {
             return false;
@@ -136,6 +157,25 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
 
         if (CanDetectPlayer())
         {
+            Vector3 searchOrigin =
+                GetSearchOrigin();
+
+            float deltaX =
+                playerTransform.position.x -
+                searchOrigin.x;
+
+            if (Mathf.Abs(deltaX) >
+                DIRECTION_EPSILON)
+            {
+                detectedPlayerDirectionSign =
+                    Mathf.Sign(deltaX);
+            }
+            else
+            {
+                detectedPlayerDirectionSign =
+                    currentMoveDirectionSign;
+            }
+
             StopHorizontalMovement();
 
             // State遷移要求後にSearchStateが一時的に残っても、
@@ -151,56 +191,101 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
     }
 
     /// <summary>
-    /// SearchState中にPlayerへ接触した場合、
-    /// 索敵中の接触ダメージ情報を送信する。
-    /// </summary>
-    public void HandleCollisionEnter(Collision collision)
+    /// SearchState中のCollisionを処理する。
+    /// Player接触時は攻撃情報を送り、
+    /// 進行方向を塞ぐ壁との接触時は巡回方向を反転する。
+    /// /// <summary>
+    public void HandleCollisionEnter(
+        Collision collision)
     {
-        if (!isSearchActive)
-        {
-            return;
-        }
-
-        if (collision == null)
+        if (!isSearchActive ||
+            collision == null)
         {
             return;
         }
 
         ResolvePlayerReferences();
 
-        if (playerTransform == null)
+        Collider collidedCollider =
+            collision.collider;
+
+        // Playerとの接触は壁判定とは別に処理する。
+        if (playerTransform != null &&
+            IsPlayerCollider(collidedCollider))
+        {
+            if (playerAttackHitReceiver == null)
+            {
+                Debug.LogWarning(
+                    $"{nameof(ChargeEnemySearchStrategy)}: " +
+                    "PlayerにIAttackHitReceiverの実装が見つかりません。",
+                    enemyObject);
+
+                return;
+            }
+
+            float damage =
+                enemyData.AttackPower *
+                (enemyData.PatrolContactDamagePercent / 100f);
+
+            EnemyAttackHitData attackHitData =
+                new EnemyAttackHitData(
+                    enemyData,
+                    damage);
+
+            playerAttackHitReceiver.ReceiveAttackHit(
+                attackHitData);
+
+            return;
+        }
+
+        if (isTurning)
         {
             return;
         }
 
-        Collider collidedCollider = collision.collider;
-
-        if (!IsPlayerCollider(collidedCollider))
+        if (IsWallBlockingCurrentMoveDirection(
+                collision))
         {
-            return;
+            BeginTurn();
+        }
+    }
+
+    /// <summary>
+    /// 現在の巡回方向を正面から塞ぐ接触面が存在するか判定する。
+    /// 地面との接触は法線が主に上下方向を向くため、
+    /// 壁として扱わない。
+    /// </summary>
+    private bool IsWallBlockingCurrentMoveDirection(
+        Collision collision)
+    {
+        if (Mathf.Abs(currentMoveDirectionSign) <=
+            DIRECTION_EPSILON)
+        {
+            return false;
         }
 
-        if (playerAttackHitReceiver == null)
-        {
-            Debug.LogWarning(
-                $"{nameof(ChargeEnemySearchStrategy)}: " +
-                "PlayerにIAttackHitReceiverの実装が見つかりません。",
-                enemyObject);
+        int contactCount =
+            collision.contactCount;
 
-            return;
+        for (int i = 0;
+             i < contactCount;
+             i++)
+        {
+            ContactPoint contact =
+                collision.GetContact(i);
+
+            float normalAgainstMoveDirection =
+                contact.normal.x *
+                currentMoveDirectionSign;
+
+            if (normalAgainstMoveDirection <=
+                -WALL_NORMAL_X_THRESHOLD)
+            {
+                return true;
+            }
         }
 
-        float damage =
-            enemyData.AttackPower *
-            (enemyData.PatrolContactDamagePercent / 100f);
-
-        EnemyAttackHitData attackHitData =
-            new EnemyAttackHitData(
-                enemyData,
-                damage);
-
-        playerAttackHitReceiver.ReceiveAttackHit(
-            attackHitData);
+        return false;
     }
 
     /// <summary>
@@ -208,10 +293,49 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
     /// </summary>
     public void EndSearch()
     {
+        hasObstacleCheckDebugRay = false;
+        groundChecker?.ClearDebugRays();
+
         isSearchActive = false;
         isTurning = false;
 
         StopHorizontalMovement();
+    }
+
+    /// <summary>
+    /// 索敵処理で実際に使用した障害物判定Rayと地面判定Rayを提供する。
+    /// </summary>
+    public void CollectDebugRays(
+        List<EnemyDebugRay> debugRays)
+    {
+        if (debugRays == null)
+        {
+            throw new ArgumentNullException(
+                nameof(debugRays));
+        }
+
+        if (hasObstacleCheckDebugRay)
+        {
+            debugRays.Add(
+                obstacleCheckDebugRay);
+        }
+
+        groundChecker?.CollectDebugRays(
+            debugRays);
+    }
+
+    /// <summary>
+    /// Damage終了後の現在位置と見た目の向きを、
+    /// 次回Searchの巡回基準として保存する。
+    /// </summary>
+    public void UpdatePatrolOriginFromCurrentPose()
+    {
+        patrolStartPosition =
+            enemyRigidbody.position;
+
+        initialPatrolDirectionSign =
+            GetHorizontalDirectionSign(
+                visualRoot);
     }
 
     /// <summary>
@@ -236,6 +360,18 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
 
         if (HasReachedPatrolTarget(
                 targetPositionX))
+        {
+            BeginTurn();
+            return;
+        }
+
+        float expectedMovementDistance =
+            enemyData.PatrolMoveSpeed *
+            Time.fixedDeltaTime;
+
+        if (!groundChecker.CanMoveInDirection(
+                currentMoveDirectionSign,
+                expectedMovementDistance))
         {
             BeginTurn();
             return;
@@ -289,10 +425,10 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
         turnElapsedTime = 0f;
 
         turnStartRotation =
-            enemyRigidbody.rotation;
+            visualRoot.rotation;
 
-        // X/Yゲームプレイ平面における左右反転なので、
-        // 世界Y軸を中心に180度回転する。
+        // Rigidbody / Colliderは固定したまま、
+        // 既存仕様と同じワールドY軸周りでVisualRootだけを左右反転する。
         turnTargetRotation =
             Quaternion.AngleAxis(
                 180f,
@@ -337,8 +473,8 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
                 turnTargetRotation,
                 progress);
 
-        enemyRigidbody.MoveRotation(
-            nextRotation);
+        visualRoot.rotation =
+            nextRotation;
 
         if (progress < 1f)
         {
@@ -353,8 +489,8 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
     /// </summary>
     private void CompleteTurnImmediately()
     {
-        enemyRigidbody.MoveRotation(
-            turnTargetRotation);
+        visualRoot.rotation =
+            turnTargetRotation;
 
         CompleteTurn();
     }
@@ -430,10 +566,14 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
 
     /// <summary>
     /// Playerが検知範囲内に存在し、
-    /// かつ間に別Colliderが存在しないか判定する。
+    /// かつPlayerのX位置までの水平区間に障害物が存在しないか判定する。
     /// </summary>
     private bool CanDetectPlayer()
     {
+        // このFixedUpdateで障害物判定Rayを投げなかった場合に、
+        // 前回のRayを現在のRayとして表示し続けない。
+        hasObstacleCheckDebugRay = false;
+
         ResolvePlayerReferences();
 
         if (playerTransform == null)
@@ -441,16 +581,19 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
             return false;
         }
 
+        Vector3 searchOrigin =
+            GetSearchOrigin();
+
         Vector3 playerPosition =
-            GetPlayerRayTargetPosition();
+            playerTransform.position;
 
         float deltaX =
             playerPosition.x -
-            enemyRigidbody.position.x;
+            searchOrigin.x;
 
         float deltaY =
             playerPosition.y -
-            enemyRigidbody.position.y;
+            searchOrigin.y;
 
         float squaredDistance =
             deltaX * deltaX +
@@ -466,26 +609,26 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
             return false;
         }
 
-        return HasClearLineOfSight(
-            playerPosition);
+        return HasNoBlockingObstacleToPlayer(
+            playerPosition.x);
     }
 
     /// <summary>
-    /// EnemyからPlayerまでの間に、
-    /// Player以外の通常Colliderが存在しないか判定する。
+    /// EnemyのCollider中央からPlayerのX位置まで水平Rayを飛ばし、
+    /// その区間にPlayer以外の障害物Colliderが存在しないか判定する。
     /// </summary>
-    private bool HasClearLineOfSight(
-        Vector3 playerPosition)
+    private bool HasNoBlockingObstacleToPlayer(
+        float playerPositionX)
     {
         Vector3 rayOrigin =
-            GetRayOrigin();
+            GetSearchOrigin();
 
-        Vector3 rayVector =
-            playerPosition -
-            rayOrigin;
+        float deltaX =
+            playerPositionX -
+            rayOrigin.x;
 
         float rayDistance =
-            rayVector.magnitude;
+            Mathf.Abs(deltaX);
 
         if (rayDistance <=
             DIRECTION_EPSILON)
@@ -494,8 +637,9 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
         }
 
         Vector3 rayDirection =
-            rayVector /
-            rayDistance;
+            deltaX > 0f
+                ? Vector3.right
+                : Vector3.left;
 
         int hitCount =
             Physics.RaycastNonAlloc(
@@ -506,86 +650,60 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
                 Physics.DefaultRaycastLayers,
                 QueryTriggerInteraction.Ignore);
 
-        Collider nearestCollider = null;
-
-        float nearestDistance =
-            float.PositiveInfinity;
+        bool hasBlockingObstacle = false;
 
         for (int i = 0;
              i < hitCount;
              i++)
         {
-            RaycastHit hit =
-                raycastHitBuffer[i];
-
             Collider hitCollider =
-                hit.collider;
+                raycastHitBuffer[i].collider;
 
             if (hitCollider == null)
             {
                 continue;
             }
 
-            // Enemy自身のColliderは
-            // 視線を遮る対象にしない。
+            // Enemy自身とPlayerのColliderは遮蔽物として扱わない。
+            // PlayerそのものへRayを当てることは索敵成立の条件にしない。
             if (IsEnemyOwnedCollider(
+                    hitCollider) ||
+                IsPlayerCollider(
                     hitCollider))
             {
                 continue;
             }
 
-            if (hit.distance >=
-                nearestDistance)
-            {
-                continue;
-            }
-
-            nearestDistance =
-                hit.distance;
-
-            nearestCollider =
-                hitCollider;
+            hasBlockingObstacle = true;
+            break;
         }
 
-        // Playerまでの間に何も無ければ
-        // 視線が通っている。
-        if (nearestCollider == null)
-        {
-            return true;
-        }
+        bool hasNoBlockingObstacle =
+            !hasBlockingObstacle;
 
-        // 最初の有効ColliderがPlayerなら発見可能。
-        // それ以外はEnemy・ステージ・オブジェクトを問わず
-        // 障害物として扱う。
-        return IsPlayerCollider(
-            nearestCollider);
+        // Physicsへ渡した始点・方向・距離と判定結果をそのまま保持する。
+        // Gizmo側では現在位置からRayを再計算しない。
+        obstacleCheckDebugRay =
+            new EnemyDebugRay(
+                rayOrigin,
+                rayDirection,
+                rayDistance,
+                EnemyDebugRayKind.LineOfSight,
+                hasNoBlockingObstacle
+                    ? EnemyDebugRayResult.Success
+                    : EnemyDebugRayResult.Blocked);
+
+        hasObstacleCheckDebugRay = true;
+
+        return hasNoBlockingObstacle;
     }
 
     /// <summary>
-    /// Rayの開始位置を取得する。
-    /// Colliderが存在する場合はその中心を使用する。
+    /// 索敵距離判定と障害物判定Rayで共通使用するEnemy側の基準位置を取得する。
     /// </summary>
-    private Vector3 GetRayOrigin()
+    private Vector3 GetSearchOrigin()
     {
-        if (enemyCollider != null)
-        {
-            return enemyCollider.bounds.center;
-        }
-
-        return enemyRigidbody.worldCenterOfMass;
-    }
-
-    /// <summary>
-    /// Player側のRay終点を取得する。
-    /// </summary>
-    private Vector3 GetPlayerRayTargetPosition()
-    {
-        if (playerCollider != null)
-        {
-            return playerCollider.bounds.center;
-        }
-
-        return playerTransform.position;
+        return enemyCollider.bounds.center;
     }
 
     /// <summary>
@@ -647,50 +765,8 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
         playerTransform =
             playerObject.transform;
 
-        ResolvePlayerCollider(
-            playerObject);
-
         ResolvePlayerAttackHitReceiver(
             playerObject);
-    }
-
-    /// <summary>
-    /// Playerの通常Colliderを取得する。
-    /// </summary>
-    private void ResolvePlayerCollider(
-        GameObject playerObject)
-    {
-        Collider[] colliders =
-            playerObject.GetComponentsInChildren<Collider>(
-                true);
-
-        playerCollider = null;
-
-        for (int i = 0;
-             i < colliders.Length;
-             i++)
-        {
-            Collider collider =
-                colliders[i];
-
-            if (collider == null)
-            {
-                continue;
-            }
-
-            if (collider.isTrigger)
-            {
-                continue;
-            }
-
-            playerCollider = collider;
-            return;
-        }
-
-        if (colliders.Length > 0)
-        {
-            playerCollider = colliders[0];
-        }
     }
 
     /// <summary>
@@ -721,10 +797,10 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
     }
 
     /// <summary>
-    /// Enemyがゲーム開始時に向いている方向から、
-    /// X方向の巡回符号を取得する。
+    /// VisualRootが現在向いている方向から、
+    /// X方向の符号を取得する。
     /// </summary>
-    private static float GetInitialHorizontalDirectionSign(
+    private static float GetHorizontalDirectionSign(
         Transform targetTransform)
     {
         float forwardX =
@@ -747,7 +823,7 @@ public sealed class ChargeEnemySearchStrategy : IEnemySearchStrategy
 
         Debug.LogWarning(
             $"{nameof(ChargeEnemySearchStrategy)}: " +
-            "Enemyの初期向きからX方向を判定できなかったため、" +
+            "VisualRootの向きからX方向を判定できなかったため、" +
             "+X方向を使用します。",
             targetTransform);
 

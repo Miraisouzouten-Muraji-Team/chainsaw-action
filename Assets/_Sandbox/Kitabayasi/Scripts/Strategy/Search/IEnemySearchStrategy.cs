@@ -6,7 +6,7 @@ using UnityEngine;
 /// <remarks>
 /// 責務:
 /// ・Enemyごとに異なる索敵処理のライフサイクルを定義する。
-/// ・プレイヤーを発見したかどうかをEnemySearchStateへ返す。
+/// ・プレイヤーを発見したかどうかと、発見時の攻撃方向をEnemySearchStateへ返す。
 /// ・索敵中に発生したCollisionを受け取る。
 ///
 /// 担当しない責務:
@@ -16,34 +16,32 @@ using UnityEngine;
 /// </remarks>
 public interface IEnemySearchStrategy
 {
-    /// <summary>
-    /// Strategyで使用するEnemyDataと、
-    /// Strategyを所有するEnemyを設定する。
-    /// </summary>
+    /// <param name="visualRoot">
+    /// Rigidbody / Colliderを回転させず見た目だけを制御するためのTransform。
+    /// 使用しないStrategyは参照を保持する必要はない。
+    /// </param>
     void Initialize(
         EnemyData enemyData,
-        GameObject enemyObject);
+        GameObject enemyObject,
+        Transform visualRoot);
 
-    /// <summary>
-    /// 索敵Stateへ入った際の処理を行う。
-    /// </summary>
+
     void BeginSearch();
 
-    /// <summary>
-    /// 索敵中の処理を更新する。
-    /// </summary>
+
+    /// <param name="detectedPlayerDirectionSign">
+    /// プレイヤーを発見した瞬間の左右方向。
+    /// -1が-X方向、1が+X方向。
+    /// </param>
     /// <returns>
     /// プレイヤーを発見した場合はtrue。
     /// </returns>
-    bool UpdateSearch();
+    bool UpdateSearch(
+        out float detectedPlayerDirectionSign);
 
-    /// <summary>
-    /// 索敵中に発生したCollisionを受け取る。
-    /// </summary>
+
     void HandleCollisionEnter(Collision collision);
 
-    /// <summary>
-    /// 索敵Stateから抜ける際の処理を行う。
-    /// </summary>
+
     void EndSearch();
 }

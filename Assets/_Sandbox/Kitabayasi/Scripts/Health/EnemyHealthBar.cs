@@ -1,6 +1,4 @@
-using System;
-using System.Threading;
-using Cysharp.Threading.Tasks;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -8,16 +6,13 @@ using UnityEngine.UI;
 /// EnemyHealthの状態をHPバーとして表示する。
 /// </summary>
 /// <remarks>
+/// 自分が属するEnemyの親階層からEnemyHealthを取得し、
 /// 現在HP、直前のダメージ量、失われたHPの視覚表現を担当する。
 /// HPの保持・変更やダメージ計算は担当しない。
 /// </remarks>
 public class EnemyHealthBar : MonoBehaviour
 {
     [Header("参照")]
-    [Tooltip("表示対象となるEnemyHealth。")]
-    [SerializeField]
-    private EnemyHealth enemyHealth;
-
     [Tooltip("現在HPを表示する緑色のImage。")]
     [SerializeField]
     private Image currentHealthImage;
@@ -31,28 +26,19 @@ public class EnemyHealthBar : MonoBehaviour
     [SerializeField, Min(0f)]
     private float damageDisplayDuration = 0.5f;
 
-    [Tooltip("赤ゲージが1秒間に減少する割合。1ならHPバー全体を1秒で減少する速度。")]
-    [SerializeField, Min(0.01f)]
-    private float damageDecreaseSpeed = 1f;
-
-    // ダメージ表示の待機・減少処理をキャンセルするために使用する。
-    private CancellationTokenSource damageDisplayCts;
-
-    // 赤ゲージが最終的に到達するHP割合。
-    // 追加ダメージを受けた場合は、この値だけを最新HPへ更新する。
-    private float targetDamageHealthRatio;
-
-    // 赤ゲージが現在滑らかに減少しているかを示す。
-    // 減少中の追加ダメージでは処理を再開始せず、
-    // 現在位置から新しい目標HPへそのまま減少させるために使用する。
-    private bool isDamageGaugeDecreasing;
+    private EnemyHealth enemyHealth;
+    private Coroutine damageDisplayCoroutine;
 
     private void Awake()
     {
+        // HPバーをEnemyごとにPrefab化しても手動参照設定が不要になるよう、
+        // 自分自身から親階層を辿って、このHPバーが属するEnemyHealthを取得する。
+        enemyHealth = GetComponentInParent<EnemyHealth>();
+
         if (enemyHealth == null)
         {
             Debug.LogError(
-                $"{nameof(EnemyHealthBar)}: {nameof(EnemyHealth)} が設定されていません。",
+                $"{nameof(EnemyHealthBar)}: 親階層に {nameof(EnemyHealth)} が見つかりません。",
                 this);
 
             enabled = false;
@@ -71,7 +57,6 @@ public class EnemyHealthBar : MonoBehaviour
 
     private void OnEnable()
     {
-        // ハンドルの登録
         enemyHealth.HealthChanged += HandleHealthChanged;
 
         SetHealthImmediately();
@@ -79,129 +64,54 @@ public class EnemyHealthBar : MonoBehaviour
 
     private void OnDisable()
     {
-        // HP変更通知を受け取らないよう、イベントハンドラーを解除する。
+        // HP変更通知を受け取らないよう、イベント購読を解除する。
         if (enemyHealth != null)
         {
             enemyHealth.HealthChanged -= HandleHealthChanged;
         }
 
-        // 無効化後にUniTaskの続きが実行されないよう、
-        // 実行中のダメージ表示処理をキャンセルする。
-        CancelDamageDisplay();
+        // 無効化後にCoroutineの続きが実行されないよう停止する。
+        if (damageDisplayCoroutine != null)
+        {
+            StopCoroutine(damageDisplayCoroutine);
+            damageDisplayCoroutine = null;
+        }
     }
 
     // EnemyHealthからHP変更通知を受け取ったときのHPバー更新処理。
     private void HandleHealthChanged(int previousHealth, int currentHealth)
     {
+        float previousHealthRatio = CalculateHealthRatio(previousHealth);
         float currentHealthRatio = CalculateHealthRatio(currentHealth);
 
         // 現在HPはダメージを受けた瞬間に減らす。
         currentHealthImage.fillAmount = currentHealthRatio;
 
-        // HPが増加した場合はダメージ表示演出を行わず、
-        // 緑・赤ゲージの両方を現在HPへ即座に合わせる。
-        if (currentHealth >= previousHealth)
+        // 赤ゲージをダメージ前のHPまで残すことで、
+        // 緑ゲージとの差分を「今回失ったHP」として表示する。
+        damageHealthImage.fillAmount = previousHealthRatio;
+
+        // 連続ダメージ時は古い表示終了処理を止め、
+        // 最新のダメージから表示時間を数え直す。
+        if (damageDisplayCoroutine != null)
         {
-            CancelDamageDisplay();
-
-            targetDamageHealthRatio = currentHealthRatio;
-            damageHealthImage.fillAmount = currentHealthRatio;
-
-            return;
+            StopCoroutine(damageDisplayCoroutine);
         }
 
-        // 赤ゲージが最終的に到達する位置を、
-        // 最新の現在HPへ更新する。
-        targetDamageHealthRatio = currentHealthRatio;
-
-        // 赤ゲージが既に減少中の場合は処理を再開始しない。
-        // 現在の赤ゲージ位置から、更新された最新HPへそのまま減少を続ける。
-        if (isDamageGaugeDecreasing)
-        {
-            return;
-        }
-
-        // まだ減少開始前の待機中に追加ダメージを受けた場合は、
-        // 古い待機処理を止め、最新のダメージから表示時間を数え直す。
-        CancelDamageDisplay();
-
-        damageDisplayCts = new CancellationTokenSource();
-
-        UpdateDamageGaugeAsync(damageDisplayCts).Forget();
+        damageDisplayCoroutine = StartCoroutine(
+            HideDamageAfterDelay(currentHealthRatio));
     }
 
-    // 一定時間ダメージ量を表示した後、
-    // 赤ゲージを最新の現在HPまで滑らかに減少させる。
-    private async UniTask UpdateDamageGaugeAsync(
-        CancellationTokenSource cts)
+    // ダメージ表示時間の経過後、赤ゲージを現在HPまで減らす。
+    private IEnumerator HideDamageAfterDelay(float currentHealthRatio)
     {
-        // 元のWaitForSecondsと同様にTime.timeScaleの影響を受ける時間で待機する。
-        // 待機中に新しいダメージを受けた場合や、
-        // GameObjectが無効化された場合はキャンセルされる。
-        bool isCanceled = await UniTask.Delay(
-                TimeSpan.FromSeconds(damageDisplayDuration),
-                ignoreTimeScale: false,
-                cancellationToken: cts.Token)
-            .SuppressCancellationThrow();
+        yield return new WaitForSeconds(damageDisplayDuration);
 
-        // キャンセルされた処理、または既に新しい表示処理へ
-        // 切り替わっている場合は以降の処理を行わない。
-        if (isCanceled ||
-            !ReferenceEquals(damageDisplayCts, cts))
-        {
-            return;
-        }
+        // 赤い部分を現在HPまで減らすことで、
+        // 背面にある灰色のバーを表示する。
+        damageHealthImage.fillAmount = currentHealthRatio;
 
-        isDamageGaugeDecreasing = true;
-
-        // 赤ゲージの現在位置から最新HPまで毎フレーム少しずつ減らす。
-        // 減少中に追加ダメージを受けた場合は、
-        // targetDamageHealthRatioが更新されるため、
-        // その時点の赤ゲージ位置から新しい目標へそのまま減少を続ける。
-        while (damageHealthImage.fillAmount > targetDamageHealthRatio)
-        {
-            damageHealthImage.fillAmount = Mathf.MoveTowards(
-                damageHealthImage.fillAmount,
-                targetDamageHealthRatio,
-                damageDecreaseSpeed * Time.deltaTime);
-
-            // 次のフレームまで待機する。
-            // GameObjectの無効化などでキャンセルされた場合は処理を終了する。
-            isCanceled = await UniTask.NextFrame(
-                    cts.Token)
-                .SuppressCancellationThrow();
-
-            if (isCanceled ||
-                !ReferenceEquals(damageDisplayCts, cts))
-            {
-                return;
-            }
-        }
-
-        // 浮動小数点の誤差が残らないよう、
-        // 最後に赤ゲージを目標HPへ正確に合わせる。
-        damageHealthImage.fillAmount = targetDamageHealthRatio;
-
-        isDamageGaugeDecreasing = false;
-
-        damageDisplayCts = null;
-        cts.Dispose();
-    }
-
-    // 実行中のダメージ表示処理があればキャンセルする。
-    private void CancelDamageDisplay()
-    {
-        if (damageDisplayCts == null)
-        {
-            isDamageGaugeDecreasing = false;
-            return;
-        }
-
-        damageDisplayCts.Cancel();
-        damageDisplayCts.Dispose();
-        damageDisplayCts = null;
-
-        isDamageGaugeDecreasing = false;
+        damageDisplayCoroutine = null;
     }
 
     // 現在のHPを待ち時間や演出なしでHPバーへ反映する。
@@ -212,9 +122,6 @@ public class EnemyHealthBar : MonoBehaviour
 
         currentHealthImage.fillAmount = currentHealthRatio;
         damageHealthImage.fillAmount = currentHealthRatio;
-
-        targetDamageHealthRatio = currentHealthRatio;
-        isDamageGaugeDecreasing = false;
     }
 
     // HPをImage.fillAmountで使用できる0～1の割合へ変換する。

@@ -5,7 +5,7 @@ using UnityEngine.Serialization;
 /// 全Enemyに共通する設定値を保持するScriptableObject。
 /// </summary>
 /// <remarks>
-/// 最大HP、攻撃力、共通の攻撃予告、被ダメージ演出、死亡演出など、
+/// 最大HP、攻撃力、索敵半径、共通の攻撃予告、被ダメージ演出、死亡演出など、
 /// Enemyの種類に関係なく共通して必要な設定値を保持する。
 ///
 /// Enemy固有の設定が不要な場合は、この型を直接使用できる。
@@ -20,55 +20,55 @@ using UnityEngine.Serialization;
 public class EnemyData : ScriptableObject
 {
     [Header("基本")]
-    [Tooltip("最大HP。1以上を設定してください。")]
+    [Tooltip("最大HP（1以上）。")]
     [SerializeField]
     [Min(1)]
     private int maxHealth = 20;
 
-    [Tooltip("基礎攻撃力。各Stateの割合と組み合わせて最終ダメージを算出する。")]
+    [Tooltip("基礎攻撃力。")]
     [SerializeField, Min(0)]
     private int attackPower = 10;
 
+    [Header("索敵")]
+    [Tooltip("プレイヤーの検知半径。")]
+    [SerializeField]
+    [Min(0f)]
+    private float detectionRadius = 2f;
+
     [Header("攻撃予告")]
-    [Tooltip("StandardEnemyAlertStrategyが攻撃開始を予告する時間。")]
+    [Tooltip("攻撃予告の継続時間。")]
     [FormerlySerializedAs("discoveryDuration")]
     [SerializeField, Min(0f)]
     private float alertDuration = 1.0f;
 
-    [Tooltip("Alert中の接触ダメージ割合（%）。基礎攻撃力そのものは変更しない。")]
+    [Tooltip("攻撃予告中の接触ダメージ割合（%）。")]
     [FormerlySerializedAs("discoveryContactDamagePercent")]
     [SerializeField, Range(0f, 100f)]
     private float alertContactDamagePercent = 60f;
 
     [Header("やられ")]
-    [Tooltip("ダメージを受けた際に白黒点滅させる時間。")]
+    [Tooltip("被ダメージ時の点滅時間。")]
     [SerializeField]
     [Min(0f)]
     private float damageFlashDuration = 0.1f;
 
-    [Tooltip("ダメージを受けた際に身体を斜めにしておく時間。")]
+    [Tooltip("被ダメージ時の傾き継続時間。")]
     [SerializeField]
     [Min(0f)]
     private float hitTiltDuration = 0.5f;
 
-    [Tooltip(
-        "ダメージを受けた際に見た目を傾ける角度。" +
-        "X/Yゲームプレイ平面に対してZ軸周りに回転する。")]
+    [Tooltip("被ダメージ時のZ軸回転角度。")]
     [SerializeField]
     private float hitTiltAngle;
 
     [Header("死亡")]
 
-    [Tooltip(
-        "メッシュ分割後、切断片の縮小を"
-        + "開始するまでの待機時間。")]
+    [Tooltip("切断後、縮小開始までの待機時間。")]
     [SerializeField]
     [Min(0f)]
     private float deathShrinkDelay = 3f;
 
-    [Tooltip(
-        "縮小開始後、分割されたパーツが"
-        + "Scale 0になるまでの時間。")]
+    [Tooltip("切断片の縮小時間。")]
     [SerializeField]
     [Min(0f)]
     private float deathShrinkDuration = 3f;
@@ -78,6 +78,9 @@ public class EnemyData : ScriptableObject
 
     public int AttackPower =>
         attackPower;
+
+    public float DetectionRadius =>
+        detectionRadius;
 
     public float AlertDuration =>
         alertDuration;

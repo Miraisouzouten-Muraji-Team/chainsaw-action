@@ -14,15 +14,23 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChargeEnemyData
   maxHealth: 20
   attackPower: 10
-  detectionRadius: 2
+  detectionRadius: 5
+  alertDuration: 1
+  alertContactDamagePercent: 60
+  damageFlashDuration: 0.1
+  hitTiltDuration: 0.5
+  hitTiltAngle: 0
+  deathShrinkDelay: 3
+  deathShrinkDuration: 3
+  patrolDistance: 2
   patrolMoveSpeed: 3
   patrolTurnDuration: 0.5
   patrolContactDamagePercent: 50
-  discoveryDuration: 1
-  discoveryContactDamagePercent: 60
-  attackPreparationDuration: 0.75
+  attackPreparationDuration: 2
+  attackPreparationRetreatDistance: 5
   attackMoveSpeed: 15
   attackContactDamagePercent: 100
-  damageFlashDuration: 0.1
-  hitTiltDuration: 0.5
-  deathShrinkDuration: 3
+  groundCheckForwardOffset: 0.1
+  groundCheckDownDistance: 0.25
+  maxGroundHeightDifference: 0.1
+  maxGroundSlopeAngle: 5

@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /// <summary>
 /// EnemyのStateを保持し、遷移・実行とStrategyの初期構成を管理する。
@@ -11,7 +12,8 @@ using UnityEngine;
 /// 具体的なStateやStrategyを判定せず、
 /// 対応する受信interfaceを実装しているCurrentStateへ通知する。
 ///
-/// Alert完了後はStateを終了し、通常攻撃側へAttackRequestedを通知する。
+/// SearchでPlayerを発見した瞬間の方向をAttack Stateへ引き継ぎ、
+/// Alert完了後にAttack Stateへ遷移する。
 /// HPが0になった場合はDeath Stateへ遷移し、
 /// 死亡処理完了後にEnemy本体を破棄する。
 /// </remarks>
@@ -30,13 +32,19 @@ public class EnemyStateMachine : MonoBehaviour
     [SerializeReference]
     private IEnemyAlertStrategy alertStrategy;
 
-    [Header("やられ")]
+    [Header("攻撃")]
+    [Tooltip("このEnemyがAttack Stateで使用するStrategy。")]
+    [SerializeReference]
+    private IEnemyAttackStrategy attackStrategy;
+
+    [Header("見た目")]
     [Tooltip(
-        "やられ中に傾ける見た目用Transform。" +
+        "Enemyの見た目だけを回転・傾斜させるTransform。" +
         "RigidbodyやColliderを持つEnemy本体ではなく、" +
         "VisualRoot等の子Transformを設定する。")]
+    [FormerlySerializedAs("damageTiltTarget")]
     [SerializeField]
-    private Transform damageTiltTarget;
+    private Transform visualRoot;
 
     [Header("死亡")]
     [Tooltip("このEnemyがDeath Stateで使用するStrategy。")]
@@ -45,9 +53,10 @@ public class EnemyStateMachine : MonoBehaviour
         new StandardEnemyDeathStrategy();
 
     [Header("デバッグ")]
-    [Tooltip("Sceneビューに索敵範囲と巡回範囲を表示する。")]
+    [Tooltip("Sceneビューに巡回範囲と編集ハンドルを表示する。")]
+    [FormerlySerializedAs("showSearchDebugVisualization")]
     [SerializeField]
-    private bool showSearchDebugVisualization;
+    private bool showPatrolDebugVisualization;
 
     private EnemyHealth enemyHealth;
     private EnemyDataReference enemyDataReference;
@@ -55,6 +64,7 @@ public class EnemyStateMachine : MonoBehaviour
 
     private EnemySearchState searchState;
     private EnemyAlertState alertState;
+    private EnemyAttackState attackState;
     private EnemyDamageState damageState;
     private EnemyDeathState deathState;
 
@@ -63,14 +73,6 @@ public class EnemyStateMachine : MonoBehaviour
     private bool isInitialized;
 
     public IEnemyState CurrentState { get; private set; }
-
-    /// <summary>
-    /// Alertを終了した後、一度だけ通知する攻撃開始要求。
-    /// 購読側はOnEnable / OnDisable等で購読・解除する。
-    /// 現段階ではAttack Stateは生成せず、
-    /// 通知後のCurrentStateはnullとなる。
-    /// </summary>
-    public event Action AttackRequested;
 
     private void Awake()
     {
@@ -259,19 +261,19 @@ public class EnemyStateMachine : MonoBehaviour
                 $"{nameof(EnemyData)}が設定されていません。");
         }
 
-        if (damageTiltTarget == null)
+        if (visualRoot == null)
         {
             Debug.LogWarning(
                 $"{nameof(EnemyStateMachine)}: " +
-                "Damage Tilt Targetが設定されていません。 " +
-                "やられState中の傾き処理は実行されません。",
+                "Visual Rootが設定されていません。 " +
+                "見た目の傾斜・向き変更を必要とする処理は実行できません。",
                 this);
         }
 
         damageState =
             new EnemyDamageState(
                 enemyDamageFlash,
-                damageTiltTarget,
+                visualRoot,
                 enemyData.HitTiltDuration,
                 enemyData.HitTiltAngle,
                 RequestSearchState);
@@ -307,13 +309,26 @@ public class EnemyStateMachine : MonoBehaviour
                 "Alert Strategyを設定してください。");
         }
 
+        if (attackStrategy == null)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(EnemyStateMachine)}の" +
+                "Attack Strategyを設定してください。");
+        }
+
         searchStrategy.Initialize(
             enemyData,
-            gameObject);
+            gameObject,
+            visualRoot);
 
         alertStrategy.Initialize(
             enemyData,
             gameObject);
+
+        attackStrategy.Initialize(
+            enemyData,
+            gameObject,
+            visualRoot);
 
         searchState =
             new EnemySearchState(
@@ -324,20 +339,37 @@ public class EnemyStateMachine : MonoBehaviour
             new EnemyAlertState(
                 alertStrategy,
                 RequestAttackState);
+
+        attackState =
+            new EnemyAttackState(
+                attackStrategy);
     }
 
-    private void RequestAlertState()
+    /// <summary>
+    /// SearchでPlayerを発見した瞬間の方向を保持し、
+    /// Alert Stateへ遷移する。
+    /// </summary>
+    private void RequestAlertState(
+        float initialAttackDirectionSign)
     {
-        if (isActiveAndEnabled &&
-            !enemyHealth.IsDead &&
-            ReferenceEquals(
+        if (!isActiveAndEnabled ||
+            enemyHealth.IsDead ||
+            !ReferenceEquals(
                 CurrentState,
                 searchState))
         {
-            ChangeState(alertState);
+            return;
         }
+
+        attackState.SetInitialAttackDirection(
+            initialAttackDirectionSign);
+
+        ChangeState(alertState);
     }
 
+    /// <summary>
+    /// Alert完了後、Attack Stateへ遷移する。
+    /// </summary>
     private void RequestAttackState()
     {
         if (!isActiveAndEnabled ||
@@ -349,15 +381,12 @@ public class EnemyStateMachine : MonoBehaviour
             return;
         }
 
-        // 受信側が攻撃を開始する時点で
-        // 赤色表示・接触ダメージは解除済みとする。
-        ExitCurrentState();
-
-        AttackRequested?.Invoke();
+        ChangeState(attackState);
     }
 
     /// <summary>
-    /// Damage State終了後、Search Stateへ戻す。
+    /// Damage State終了後、必要なら巡回基準を現在Poseへ更新して
+    /// Search Stateへ戻す。
     /// </summary>
     private void RequestSearchState()
     {
@@ -376,6 +405,16 @@ public class EnemyStateMachine : MonoBehaviour
         {
             ExitCurrentState();
             return;
+        }
+
+        // Damageの見た目傾斜を先に解除してから、
+        // 現在位置・現在向きを新しい巡回基準として取り込む。
+        ExitCurrentState();
+
+        if (searchStrategy is
+            IEnemyPatrolOriginUpdater patrolOriginUpdater)
+        {
+            patrolOriginUpdater.UpdatePatrolOriginFromCurrentPose();
         }
 
         ChangeState(searchState);

@@ -192,11 +192,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ef8933fdee0af28438b142d55d57ead4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyHealthBar
-  enemyHealth: {fileID: 110358812601047028}
   currentHealthImage: {fileID: 4886190568447946109}
   damageHealthImage: {fileID: 6518459136142554680}
   damageDisplayDuration: 0.5
-  damageDecreaseSpeed: 1
 --- !u!1 &2793125513464034318
 GameObject:
   m_ObjectHideFlags: 0
@@ -504,7 +502,7 @@ Transform:
   m_GameObject: {fileID: 8856678778778255261}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.48, y: -2.23, z: 6.29614}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -592,10 +590,12 @@ MonoBehaviour:
     rid: -2
   alertStrategy:
     rid: -2
-  damageTiltTarget: {fileID: 3401371955779553497}
+  attackStrategy:
+    rid: -2
+  visualRoot: {fileID: 3401371955779553497}
   deathStrategy:
     rid: 2559746691593404481
-  showSearchDebugVisualization: 0
+  showPatrolDebugVisualization: 0
   references:
     version: 2
     RefIds:

@@ -9,7 +9,7 @@ using UnityEngine;
 /// ・索敵StateのEnter / Update / Exitを管理する。
 /// ・敵固有の索敵処理をIEnemySearchStrategyへ委譲する。
 /// ・索敵中に受け取ったCollision開始通知をStrategyへ委譲する。
-/// ・プレイヤー発見時にState遷移を要求する。
+/// ・プレイヤー発見時に、発見方向を渡してState遷移を要求する。
 ///
 /// 担当しない責務:
 /// ・敵固有の巡回、検知、移動処理。
@@ -22,13 +22,13 @@ public sealed class EnemySearchState :
     IEnemyCollisionEnterReceiver
 {
     private readonly IEnemySearchStrategy searchStrategy;
-    private readonly Action requestAlertState;
+    private readonly Action<float> requestAlertState;
 
     private bool hasRequestedAlertState;
 
     public EnemySearchState(
         IEnemySearchStrategy searchStrategy,
-        Action requestAlertState)
+        Action<float> requestAlertState)
     {
         this.searchStrategy = searchStrategy
             ?? throw new ArgumentNullException(nameof(searchStrategy));
@@ -51,7 +51,9 @@ public sealed class EnemySearchState :
             return;
         }
 
-        bool hasDetectedPlayer = searchStrategy.UpdateSearch();
+        bool hasDetectedPlayer =
+            searchStrategy.UpdateSearch(
+                out float detectedPlayerDirectionSign);
 
         if (!hasDetectedPlayer)
         {
@@ -60,8 +62,10 @@ public sealed class EnemySearchState :
 
         hasRequestedAlertState = true;
 
-        // 実際のState変更は行わず、StateMachineへ遷移を要求する。
-        requestAlertState.Invoke();
+        // 発見した瞬間の方向をAttack Stateまで保持するため、
+        // StateMachineへ遷移要求と一緒に渡す。
+        requestAlertState.Invoke(
+            detectedPlayerDirectionSign);
     }
 
     /// <summary>

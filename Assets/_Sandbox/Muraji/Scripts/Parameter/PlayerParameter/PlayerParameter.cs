@@ -21,7 +21,7 @@ public class PlayerParameter : ScriptableObject
     [SerializeField]
     public float airJumpForce = 10f;
     [Tooltip("コヨーテタイム")]
-    [SerializeField,Min(0f)]
+    [SerializeField, Min(0f)]
     public float coyoteTime = 0.1f;
     [Tooltip("重力の大きさ")]
     [SerializeField]
@@ -39,13 +39,27 @@ public class PlayerParameter : ScriptableObject
     [SerializeField, Min(0.1f)]
     public float maxFallSpeed = 20f;
 
+    [Header("ジャンプ：3本Ray接地判定")]
+    [Tooltip("接地を判定する地形レイヤー。Nothingなら食い込み衝突判定の地形レイヤーを使用します。")]
+    public LayerMask groundRayLayers;
+    [Tooltip("足元中央のTransformから、前と後ろのRayを横方向にずらす距離です。")]
+    [Min(0f)] public float groundRaySideOffset = 0.35f;
+    [Tooltip("Ground Check Transformの位置からRayの開始位置を上へずらす距離です。")]
+    [Min(0.01f)] public float groundRayStartHeight = 0.1f;
+    [Tooltip("足元から下向きに地面を探すRayの長さ。開始位置からの距離です。")]
+    [Min(0.01f)] public float groundRayDistance = 0.25f;
+    [Tooltip("接地として認める地面の法線Yの下限。0.7なら約45度までの斜面を接地とします。")]
+    [Range(0.1f, 1f)] public float groundRayNormalThreshold = 0.7f;
+    [Tooltip("Rayが床を検出した際、足元から床までの距離がこの値以下なら接地確定します。Rayの探索距離とは別の値です。")]
+    [Min(0f)] public float groundRayContactTolerance = 0.03f;
+
     [Header("壁衝突時のパラメータ")]
     // 壁衝突時のパラメータ
     [Tooltip("ノックバックスピード")]
     [SerializeField, Min(0f)]
     public float wallKnockbackSpeed = 5f;
     [Tooltip("ノックバックでの減速")]
-    [SerializeField,Min(0.01f)]
+    [SerializeField, Min(0.01f)]
     public float wallKnockbackDeceleration = 10f;
     [Tooltip("ノックバックでの上昇数")]
     [SerializeField, Min(0f)]
@@ -102,6 +116,6 @@ public class PlayerParameter : ScriptableObject
     public float impactSurfaceNormalThreshold = 0.7f;
     [Header("コンボ設定")]
     [Tooltip("アニメーション間隔変更")]
-    [SerializeField,Range(0.1f,1f)]
+    [SerializeField, Range(0.1f, 1f)]
     public float comboAdvanceTime = 1;
 }

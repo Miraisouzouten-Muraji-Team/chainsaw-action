@@ -40,6 +40,13 @@ public class PlayerAnimator : MonoBehaviour
     [SerializeField] private string enemyDiggingState = "";
     [SerializeField] private string jumpState = "Base Layer.Jump";
 
+    [Header("追加ジャンプアニメーション")]
+    [Tooltip("二段ジャンプ時に再生するAnimatorステートのフルパス")]
+    [SerializeField] private string doubleJumpState = "Base Layer.DoubleJump";
+
+    [Tooltip("壁ジャンプ時に再生するAnimatorステートのフルパス")]
+    [SerializeField] private string wallJumpState = "Base Layer.WallJump";
+
     private DiggingAnimationPhase diggingAnimationPhase;
     private int diggingStateHash;
     private int diggingStartFrame;
@@ -249,6 +256,45 @@ public class PlayerAnimator : MonoBehaviour
         int jumpHash = Animator.StringToHash(jumpState);
         if (animator.HasState(0, jumpHash)) animator.Play(jumpHash, 0, 0f);
         else animator.SetTrigger("Jump");
+    }
+
+    // 二段ジャンプのアニメーションを再生する。
+    // ステートが未作成の場合は既存の通常ジャンプを使用する。
+    public void PlayDoubleJump()
+    {
+        PlayAdditionalJumpState(doubleJumpState);
+    }
+
+    // 壁ジャンプのアニメーションを再生する。
+    // ステートが未作成の場合は既存の通常ジャンプを使用する。
+    public void PlayWallJump()
+    {
+        PlayAdditionalJumpState(wallJumpState);
+    }
+
+    // 指定された追加ジャンプステートを再生する。
+    // 既存のPlayJumpには手を加えず、未設定時のみそこへ戻す。
+    private void PlayAdditionalJumpState(string statePath)
+    {
+        if (animator == null)
+        {
+            animator = GetComponent<Animator>();
+        }
+
+        if (animator == null || !animator.isActiveAndEnabled)
+        {
+            return;
+        }
+
+        if (string.IsNullOrEmpty(statePath) ||
+            !animator.HasState(0, Animator.StringToHash(statePath)))
+        {
+            PlayJump();
+            return;
+        }
+
+        CancelDiggingAnimation();
+        animator.Play(Animator.StringToHash(statePath), 0, 0f);
     }
 
     public void ExitDiggingImmediately()

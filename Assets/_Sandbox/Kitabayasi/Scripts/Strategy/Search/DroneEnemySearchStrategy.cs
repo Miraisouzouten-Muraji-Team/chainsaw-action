@@ -3,31 +3,38 @@ using System.Collections.Generic;
 using UnityEngine;
 
 // 責務:
-// ・XYゲームプレイ平面上の巡回地点A/Bを往復する。
+// ・Search開始位置を基準に、XYゲームプレイ平面上の巡回地点A/Bを再配置して往復する。
+// ・Drone本体のBoxCollider形状を使い、巡回地点と巡回経路が安全か検証・補正する。
 // ・巡回端で停止し、VisualRootだけを指定時間かけて左右反転する。
-// ・検知範囲と障害物RayからPlayer発見を判定する。
+// ・固定したSearchCenterの検知範囲と、現在のDrone→Player間のLOS RayからPlayer発見を判定する。
 // ・索敵中にPlayerへ接触した際の攻撃情報を送信する。
 //
 // 担当しない責務:
 // ・SearchからAlertへのState遷移そのもの。
 // ・Alert / Attackの具体処理。
-// ・巡回地点のScene編集Gizmo。
+// ・PatrolPointA/BのEditor生成。
 [Serializable]
 public sealed class DroneEnemySearchStrategy :
     IEnemySearchStrategy,
     IEnemyDebugRayProvider
 {
     private const string PLAYER_TAG = "Player";
-    private const int RAYCAST_HIT_BUFFER_SIZE = 16;
+
+    private const int RAYCAST_HIT_BUFFER_SIZE = 32;
+    private const int BOX_CAST_HIT_BUFFER_SIZE = 32;
+    private const int OVERLAP_BUFFER_SIZE = 32;
+    private const int PATROL_CORRECTION_ITERATIONS = 12;
+
     private const float ARRIVAL_TOLERANCE = 0.05f;
     private const float DIRECTION_EPSILON = 0.001f;
+    private const float PATROL_SAFETY_MARGIN = 0.02f;
 
     [Header("巡回地点")]
-    [Tooltip("巡回地点A。実行開始時のワールド位置を巡回地点として固定する。")]
+    [Tooltip("巡回地点A。初期化時にEnemy基準のXYオフセットとして保存する。")]
     [SerializeField]
     private Transform patrolPointA;
 
-    [Tooltip("巡回地点B。実行開始時のワールド位置を巡回地点として固定する。")]
+    [Tooltip("巡回地点B。初期化時にEnemy基準のXYオフセットとして保存する。")]
     [SerializeField]
     private Transform patrolPointB;
 
@@ -37,19 +44,32 @@ public sealed class DroneEnemySearchStrategy :
     private Transform enemyTransform;
     private Transform visualRoot;
     private Rigidbody enemyRigidbody;
-    private Collider enemyCollider;
+    private BoxCollider enemyBoxCollider;
 
     private Transform playerTransform;
     private IAttackHitReceiver playerAttackHitReceiver;
 
     private RaycastHit[] raycastHitBuffer;
+    private RaycastHit[] boxCastHitBuffer;
+    private Collider[] overlapBuffer;
 
     private EnemyDebugRay obstacleCheckDebugRay;
     private bool hasObstacleCheckDebugRay;
 
+    private Vector2 patrolPointAOffset;
+    private Vector2 patrolPointBOffset;
+
+    private Vector3 searchCenter;
     private Vector3 patrolPointAWorldPosition;
     private Vector3 patrolPointBWorldPosition;
 
+    private Vector3 boxCenterOffsetFromRigidbody;
+    private Vector3 boxHalfExtents;
+    private Quaternion boxOrientation;
+
+    private bool hasSearchCenter;
+    private bool hasValidPatrolRoute;
+    private bool hasPhysicsQueryBufferOverflow;
     private bool isMovingToPointB;
     private bool isTurning;
     private bool isSearchActive;
@@ -102,23 +122,36 @@ public sealed class DroneEnemySearchStrategy :
                 "非KinematicのRigidbodyを使用する前提です。");
         }
 
-        // メインColliderを暗黙に子階層から選ばないため、
-        // Enemy本体のColliderを使用する。
-        enemyCollider =
-            enemyObject.GetComponent<Collider>();
+        // 巡回安全判定は実際のDrone本体形状を基準にするため、
+        // 子階層や別形状Colliderへの暗黙フォールバックは行わない。
+        enemyBoxCollider =
+            enemyObject.GetComponent<BoxCollider>();
 
-        if (enemyCollider == null)
+        if (enemyBoxCollider == null)
         {
             throw new InvalidOperationException(
                 $"{nameof(DroneEnemySearchStrategy)}を使用するEnemy本体には" +
-                $"{nameof(Collider)}が必要です。");
+                $"{nameof(BoxCollider)}が必要です。");
+        }
+
+        if (!enemyBoxCollider.enabled)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(DroneEnemySearchStrategy)}を使用するEnemy本体の" +
+                $"{nameof(BoxCollider)}を有効にしてください。");
         }
 
         ValidatePatrolPoints();
-        CachePatrolPointWorldPositions();
+        CacheConfiguredPatrolOffsets();
 
         raycastHitBuffer =
             new RaycastHit[RAYCAST_HIT_BUFFER_SIZE];
+
+        boxCastHitBuffer =
+            new RaycastHit[BOX_CAST_HIT_BUFFER_SIZE];
+
+        overlapBuffer =
+            new Collider[OVERLAP_BUFFER_SIZE];
 
         ResolvePlayerReferences();
     }
@@ -126,13 +159,39 @@ public sealed class DroneEnemySearchStrategy :
     public void BeginSearch()
     {
         hasObstacleCheckDebugRay = false;
+        hasPhysicsQueryBufferOverflow = false;
 
         isSearchActive = true;
         isTurning = false;
+        hasValidPatrolRoute = false;
 
         turnElapsedTime = 0f;
 
-        SelectInitialPatrolTarget();
+        // Attack等でDroneが移動した後も同じ巡回形状を使えるよう、
+        // Searchへ入った瞬間の位置を今回の固定基準として取り直す。
+        searchCenter =
+            enemyRigidbody.position;
+
+        hasSearchCenter = true;
+
+        ResolvePlayerReferences();
+        CacheBoxQueryGeometry();
+
+        // 巡回順はSearchCenter→A→B→A...で固定する。
+        isMovingToPointB = false;
+
+        if (!TryBuildPatrolRoute(
+                out string failureReason))
+        {
+            StopPlanarMovement();
+
+            Debug.LogWarning(
+                $"{nameof(DroneEnemySearchStrategy)}: " +
+                "安全な巡回地点・経路を確定できないため、" +
+                $"このSearch中の巡回を停止します。{failureReason}",
+                enemyObject);
+        }
+
         ResolvePlayerReferences();
     }
 
@@ -145,6 +204,8 @@ public sealed class DroneEnemySearchStrategy :
         {
             return false;
         }
+
+        SyncPatrolPointTransforms();
 
         if (CanDetectPlayer())
         {
@@ -211,6 +272,7 @@ public sealed class DroneEnemySearchStrategy :
 
         isSearchActive = false;
         isTurning = false;
+        hasValidPatrolRoute = false;
 
         StopPlanarMovement();
     }
@@ -229,6 +291,19 @@ public sealed class DroneEnemySearchStrategy :
             debugRays.Add(
                 obstacleCheckDebugRay);
         }
+    }
+
+    /// <summary>
+    /// Sceneビューの索敵範囲表示が実処理と同じ固定中心を使うため、
+    /// 現在のSearchCenterをEditor描画側へ提供する。
+    /// </summary>
+    public bool TryGetSearchCenter(
+        out Vector3 currentSearchCenter)
+    {
+        currentSearchCenter =
+            searchCenter;
+
+        return hasSearchCenter;
     }
 
     private void ValidatePatrolPoints()
@@ -256,57 +331,514 @@ public sealed class DroneEnemySearchStrategy :
         {
             throw new InvalidOperationException(
                 $"{nameof(DroneEnemySearchStrategy)}の" +
-                "Patrol Point AとBは異なる位置に設定してください。");
+                "Patrol Point AとBは異なるXY位置に設定してください。");
         }
     }
 
-    private void CachePatrolPointWorldPositions()
+    private void CacheConfiguredPatrolOffsets()
     {
-        // PointをEnemyの子にしても巡回範囲までEnemyに追従しないよう、
-        // 初期位置を固定する。
-        float gameplayDepth =
-            enemyRigidbody.position.z;
+        Vector3 initialEnemyPosition =
+            enemyRigidbody.position;
 
-        patrolPointAWorldPosition =
-            new Vector3(
-                patrolPointA.position.x,
-                patrolPointA.position.y,
-                gameplayDepth);
+        // Pointを子Transformとして保持していても、
+        // Attack後のSearch再突入時には初期設定した巡回形状を再利用したいため、
+        // ワールド座標そのものではなくEnemy基準のXY差分だけを保存する。
+        patrolPointAOffset =
+            new Vector2(
+                patrolPointA.position.x -
+                initialEnemyPosition.x,
 
-        patrolPointBWorldPosition =
-            new Vector3(
-                patrolPointB.position.x,
-                patrolPointB.position.y,
-                gameplayDepth);
+                patrolPointA.position.y -
+                initialEnemyPosition.y);
+
+        patrolPointBOffset =
+            new Vector2(
+                patrolPointB.position.x -
+                initialEnemyPosition.x,
+
+                patrolPointB.position.y -
+                initialEnemyPosition.y);
     }
 
-    private void SelectInitialPatrolTarget()
+    private void CacheBoxQueryGeometry()
     {
-        Vector2 currentPosition =
-            GetCurrentPlanarPosition();
+        Transform boxTransform =
+            enemyBoxCollider.transform;
 
-        Vector2 pointA =
-            ToPlanarPosition(
-                patrolPointAWorldPosition);
+        Vector3 worldBoxCenter =
+            boxTransform.TransformPoint(
+                enemyBoxCollider.center);
 
-        Vector2 pointB =
-            ToPlanarPosition(
+        boxCenterOffsetFromRigidbody =
+            worldBoxCenter -
+            enemyRigidbody.position;
+
+        Vector3 lossyScale =
+            boxTransform.lossyScale;
+
+        Vector3 absoluteScale =
+            new Vector3(
+                Mathf.Abs(lossyScale.x),
+                Mathf.Abs(lossyScale.y),
+                Mathf.Abs(lossyScale.z));
+
+        boxHalfExtents =
+            Vector3.Scale(
+                enemyBoxCollider.size * 0.5f,
+                absoluteScale);
+
+        boxOrientation =
+            boxTransform.rotation;
+    }
+
+    private bool TryBuildPatrolRoute(
+        out string failureReason)
+    {
+        float detectionRadius =
+            enemyData.DetectionRadius;
+
+        if (detectionRadius <=
+            DIRECTION_EPSILON)
+        {
+            failureReason =
+                " DetectionRadiusが0以下です。";
+
+            return false;
+        }
+
+        Vector3 candidateA =
+            BuildPatrolCandidate(
+                patrolPointAOffset,
+                detectionRadius);
+
+        Vector3 candidateB =
+            BuildPatrolCandidate(
+                patrolPointBOffset,
+                detectionRadius);
+
+        patrolPointAWorldPosition =
+            candidateA;
+
+        patrolPointBWorldPosition =
+            candidateB;
+
+        SyncPatrolPointTransforms();
+
+        if (!IsBoxPlacementSafe(
+                searchCenter))
+        {
+            failureReason =
+                " Search開始位置でDrone本体のBoxCollider相当形状が" +
+                "障害物と重なっています。" +
+                GetBufferOverflowMessage();
+
+            return false;
+        }
+
+        if (!TryResolveSafeDestinationAlongPath(
+                searchCenter,
+                candidateA,
+                out Vector3 resolvedA))
+        {
+            failureReason =
+                " SearchCenter→PatrolPointAの安全経路を確保できません。" +
+                GetBufferOverflowMessage();
+
+            return false;
+        }
+
+        patrolPointAWorldPosition =
+            resolvedA;
+
+        if (!TryResolveSafeDestinationAlongPath(
+                resolvedA,
+                candidateB,
+                out Vector3 resolvedB))
+        {
+            patrolPointBWorldPosition =
+                candidateB;
+
+            SyncPatrolPointTransforms();
+
+            failureReason =
+                " PatrolPointA→PatrolPointBの安全経路を確保できません。" +
+                GetBufferOverflowMessage();
+
+            return false;
+        }
+
+        patrolPointBWorldPosition =
+            resolvedB;
+
+        if (!ValidateResolvedPatrolRoute())
+        {
+            SyncPatrolPointTransforms();
+
+            failureReason =
+                " 補正後の巡回地点・経路の最終検証に失敗しました。" +
+                GetBufferOverflowMessage();
+
+            return false;
+        }
+
+        SyncPatrolPointTransforms();
+
+        hasValidPatrolRoute = true;
+        failureReason = string.Empty;
+
+        return true;
+    }
+
+    private Vector3 BuildPatrolCandidate(
+        Vector2 configuredOffset,
+        float detectionRadius)
+    {
+        Vector2 planarCandidate =
+            new Vector2(
+                searchCenter.x +
+                configuredOffset.x,
+
+                searchCenter.y +
+                configuredOffset.y);
+
+        Vector2 center =
+            new Vector2(
+                searchCenter.x,
+                searchCenter.y);
+
+        Vector2 fromCenter =
+            planarCandidate -
+            center;
+
+        float squaredRadius =
+            detectionRadius *
+            detectionRadius;
+
+        if (fromCenter.sqrMagnitude >
+            squaredRadius)
+        {
+            planarCandidate =
+                center +
+                fromCenter.normalized *
+                detectionRadius;
+        }
+
+        // PatrolPoint側のZは巡回形状として扱わず、
+        // Searchへ入った瞬間のDrone深度を今回の固定深度にする。
+        return new Vector3(
+            planarCandidate.x,
+            planarCandidate.y,
+            searchCenter.z);
+    }
+
+    private bool TryResolveSafeDestinationAlongPath(
+        Vector3 pathStart,
+        Vector3 desiredDestination,
+        out Vector3 resolvedDestination)
+    {
+        resolvedDestination =
+            desiredDestination;
+
+        Vector3 pathVector =
+            desiredDestination -
+            pathStart;
+
+        float pathDistance =
+            pathVector.magnitude;
+
+        if (pathDistance <=
+            ARRIVAL_TOLERANCE)
+        {
+            return false;
+        }
+
+        if (IsDestinationAndPathSafe(
+                pathStart,
+                desiredDestination))
+        {
+            return true;
+        }
+
+        float safeT = 0f;
+        float blockedT = 1f;
+
+        // 経路上で「ここまでは安全」を二分探索する。
+        // 固定回数で必ず終了させ、障害物配置による無限補正を防ぐ。
+        for (int i = 0;
+             i < PATROL_CORRECTION_ITERATIONS;
+             i++)
+        {
+            float testT =
+                (safeT + blockedT) * 0.5f;
+
+            Vector3 testDestination =
+                Vector3.Lerp(
+                    pathStart,
+                    desiredDestination,
+                    testT);
+
+            if (IsDestinationAndPathSafe(
+                    pathStart,
+                    testDestination))
+            {
+                safeT = testT;
+            }
+            else
+            {
+                blockedT = testT;
+            }
+        }
+
+        float safeDistance =
+            pathDistance * safeT -
+            PATROL_SAFETY_MARGIN;
+
+        if (safeDistance <=
+            ARRIVAL_TOLERANCE)
+        {
+            return false;
+        }
+
+        resolvedDestination =
+            pathStart +
+            pathVector.normalized *
+            safeDistance;
+
+        resolvedDestination.z =
+            searchCenter.z;
+
+        return
+            IsPositionWithinDetectionRadius(
+                resolvedDestination) &&
+            IsDestinationAndPathSafe(
+                pathStart,
+                resolvedDestination);
+    }
+
+    private bool ValidateResolvedPatrolRoute()
+    {
+        if (!IsPositionWithinDetectionRadius(
+                patrolPointAWorldPosition) ||
+            !IsPositionWithinDetectionRadius(
+                patrolPointBWorldPosition))
+        {
+            return false;
+        }
+
+        if ((ToPlanarPosition(
+                    patrolPointAWorldPosition) -
+                ToPlanarPosition(
+                    searchCenter)).magnitude <=
+            ARRIVAL_TOLERANCE)
+        {
+            return false;
+        }
+
+        if ((ToPlanarPosition(
+                    patrolPointBWorldPosition) -
+                ToPlanarPosition(
+                    patrolPointAWorldPosition)).magnitude <=
+            ARRIVAL_TOLERANCE)
+        {
+            return false;
+        }
+
+        return
+            IsBoxPlacementSafe(
+                patrolPointAWorldPosition) &&
+            IsBoxPlacementSafe(
+                patrolPointBWorldPosition) &&
+            IsBoxPathClear(
+                searchCenter,
+                patrolPointAWorldPosition) &&
+            IsBoxPathClear(
+                patrolPointAWorldPosition,
                 patrolPointBWorldPosition);
+    }
 
-        float squaredDistanceToA =
-            (pointA - currentPosition).sqrMagnitude;
+    private bool IsDestinationAndPathSafe(
+        Vector3 pathStart,
+        Vector3 destination)
+    {
+        return
+            IsBoxPlacementSafe(
+                destination) &&
+            IsBoxPathClear(
+                pathStart,
+                destination);
+    }
 
-        float squaredDistanceToB =
-            (pointB - currentPosition).sqrMagnitude;
+    private bool IsBoxPlacementSafe(
+        Vector3 bodyPosition)
+    {
+        Vector3 queryCenter =
+            GetBoxCenterAtBodyPosition(
+                bodyPosition);
 
-        // A側にいるならBへ、
-        // B側にいるならAへ向かう。
-        isMovingToPointB =
-            squaredDistanceToA <= squaredDistanceToB;
+        int overlapCount =
+            Physics.OverlapBoxNonAlloc(
+                queryCenter,
+                boxHalfExtents,
+                overlapBuffer,
+                boxOrientation,
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Ignore);
+
+        if (overlapCount >=
+            overlapBuffer.Length)
+        {
+            hasPhysicsQueryBufferOverflow = true;
+            return false;
+        }
+
+        for (int i = 0;
+             i < overlapCount;
+             i++)
+        {
+            Collider overlappedCollider =
+                overlapBuffer[i];
+
+            if (overlappedCollider == null ||
+                IsIgnoredPatrolObstacle(
+                    overlappedCollider))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool IsBoxPathClear(
+        Vector3 pathStart,
+        Vector3 pathEnd)
+    {
+        Vector3 pathVector =
+            pathEnd -
+            pathStart;
+
+        float pathDistance =
+            pathVector.magnitude;
+
+        if (pathDistance <=
+            DIRECTION_EPSILON)
+        {
+            return true;
+        }
+
+        Vector3 pathDirection =
+            pathVector /
+            pathDistance;
+
+        Vector3 castCenter =
+            GetBoxCenterAtBodyPosition(
+                pathStart);
+
+        int hitCount =
+            Physics.BoxCastNonAlloc(
+                castCenter,
+                boxHalfExtents,
+                pathDirection,
+                boxCastHitBuffer,
+                boxOrientation,
+                pathDistance,
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Ignore);
+
+        if (hitCount >=
+            boxCastHitBuffer.Length)
+        {
+            hasPhysicsQueryBufferOverflow = true;
+            return false;
+        }
+
+        for (int i = 0;
+             i < hitCount;
+             i++)
+        {
+            Collider hitCollider =
+                boxCastHitBuffer[i].collider;
+
+            if (hitCollider == null ||
+                IsIgnoredPatrolObstacle(
+                    hitCollider))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private Vector3 GetBoxCenterAtBodyPosition(
+        Vector3 bodyPosition)
+    {
+        return
+            bodyPosition +
+            boxCenterOffsetFromRigidbody;
+    }
+
+    private bool IsPositionWithinDetectionRadius(
+        Vector3 position)
+    {
+        Vector2 delta =
+            ToPlanarPosition(position) -
+            ToPlanarPosition(searchCenter);
+
+        float radius =
+            enemyData.DetectionRadius;
+
+        return
+            delta.sqrMagnitude <=
+            radius * radius +
+            DIRECTION_EPSILON *
+            DIRECTION_EPSILON;
+    }
+
+    private bool IsIgnoredPatrolObstacle(
+        Collider targetCollider)
+    {
+        return
+            IsEnemyOwnedCollider(
+                targetCollider) ||
+            IsPlayerCollider(
+                targetCollider);
+    }
+
+    private string GetBufferOverflowMessage()
+    {
+        return hasPhysicsQueryBufferOverflow
+            ? " Physicsクエリ結果が内部バッファ上限に達したため、安全側へ失敗扱いにしています。"
+            : string.Empty;
+    }
+
+    private void SyncPatrolPointTransforms()
+    {
+        if (patrolPointA != null)
+        {
+            patrolPointA.position =
+                patrolPointAWorldPosition;
+        }
+
+        if (patrolPointB != null)
+        {
+            patrolPointB.position =
+                patrolPointBWorldPosition;
+        }
     }
 
     private void UpdatePatrol()
     {
+        if (!hasValidPatrolRoute)
+        {
+            StopPlanarMovement();
+            return;
+        }
+
         if (isTurning)
         {
             UpdateTurn();
@@ -453,7 +985,7 @@ public sealed class DroneEnemySearchStrategy :
                 targetVelocity.y -
                 currentVelocity.y,
 
-                0f);
+                -currentVelocity.z);
 
         if (velocityDifference.sqrMagnitude <=
             DIRECTION_EPSILON *
@@ -462,6 +994,8 @@ public sealed class DroneEnemySearchStrategy :
             return;
         }
 
+        // Zは奥行き方向であり巡回軸ではないため、
+        // Search中に外力で生じたZ速度も打ち消してXY移動へ戻す。
         enemyRigidbody.AddForce(
             velocityDifference,
             ForceMode.VelocityChange);
@@ -481,7 +1015,7 @@ public sealed class DroneEnemySearchStrategy :
             new Vector3(
                 -currentVelocity.x,
                 -currentVelocity.y,
-                0f);
+                -currentVelocity.z);
 
         if (velocityDifference.sqrMagnitude <=
             DIRECTION_EPSILON *
@@ -501,24 +1035,24 @@ public sealed class DroneEnemySearchStrategy :
 
         ResolvePlayerReferences();
 
-        if (playerTransform == null)
+        if (!hasSearchCenter ||
+            playerTransform == null)
         {
             return false;
         }
 
-        Vector3 searchOrigin =
-            GetSearchOrigin();
-
+        // DetectionRadiusの中心は現在のDroneではなく、
+        // このSearchへ入った瞬間に固定したSearchCenterを使用する。
         Vector3 playerPosition =
             playerTransform.position;
 
         float deltaX =
             playerPosition.x -
-            searchOrigin.x;
+            searchCenter.x;
 
         float deltaY =
             playerPosition.y -
-            searchOrigin.y;
+            searchCenter.y;
 
         float squaredDistance =
             deltaX * deltaX +
@@ -533,24 +1067,21 @@ public sealed class DroneEnemySearchStrategy :
             return false;
         }
 
-        return HasNoBlockingObstacleToPlayer(
-            playerPosition);
+        return HasDirectLineOfSightToPlayer();
     }
 
-    private bool HasNoBlockingObstacleToPlayer(
-        Vector3 playerPosition)
+    private bool HasDirectLineOfSightToPlayer()
     {
         Vector3 rayOrigin =
-            GetSearchOrigin();
+            enemyBoxCollider.bounds.center;
 
-        Vector3 planarPlayerPosition =
-            new Vector3(
-                playerPosition.x,
-                playerPosition.y,
-                rayOrigin.z);
+        // Playerの位置は毎回Transformから読み、
+        // 巡回中にPlayerが動いてもLOSを継続再評価する。
+        Vector3 playerPosition =
+            playerTransform.position;
 
         Vector3 rayVector =
-            planarPlayerPosition -
+            playerPosition -
             rayOrigin;
 
         float rayDistance =
@@ -575,29 +1106,62 @@ public sealed class DroneEnemySearchStrategy :
                 Physics.DefaultRaycastLayers,
                 QueryTriggerInteraction.Ignore);
 
-        bool hasBlockingObstacle =
-            false;
+        // バッファが満杯の場合、RaycastNonAllocでは最近傍Hitが
+        // 結果に含まれる保証がないため、誤検知を避けて失敗扱いにする。
+        if (hitCount >=
+            raycastHitBuffer.Length)
+        {
+            obstacleCheckDebugRay =
+                new EnemyDebugRay(
+                    rayOrigin,
+                    rayDirection,
+                    rayDistance,
+                    EnemyDebugRayKind.LineOfSight,
+                    EnemyDebugRayResult.Blocked);
 
+            hasObstacleCheckDebugRay = true;
+
+            return false;
+        }
+
+        Collider firstValidHitCollider =
+            null;
+
+        float firstValidHitDistance =
+            float.PositiveInfinity;
+
+        // RaycastNonAllocの結果順序は保証されないため、
+        // Enemy自身を除いたHitのうち最短距離を明示的に選ぶ。
         for (int i = 0;
              i < hitCount;
              i++)
         {
+            RaycastHit hit =
+                raycastHitBuffer[i];
+
             Collider hitCollider =
-                raycastHitBuffer[i].collider;
+                hit.collider;
 
             if (hitCollider == null ||
-                IsEnemyOwnedCollider(hitCollider) ||
-                IsPlayerCollider(hitCollider))
+                IsEnemyOwnedCollider(
+                    hitCollider) ||
+                hit.distance >=
+                firstValidHitDistance)
             {
                 continue;
             }
 
-            hasBlockingObstacle = true;
-            break;
+            firstValidHitCollider =
+                hitCollider;
+
+            firstValidHitDistance =
+                hit.distance;
         }
 
-        bool hasNoBlockingObstacle =
-            !hasBlockingObstacle;
+        bool hasDetectedPlayer =
+            firstValidHitCollider != null &&
+            IsPlayerCollider(
+                firstValidHitCollider);
 
         obstacleCheckDebugRay =
             new EnemyDebugRay(
@@ -605,21 +1169,21 @@ public sealed class DroneEnemySearchStrategy :
                 rayDirection,
                 rayDistance,
                 EnemyDebugRayKind.LineOfSight,
-                hasNoBlockingObstacle
+                hasDetectedPlayer
                     ? EnemyDebugRayResult.Success
                     : EnemyDebugRayResult.Blocked);
 
         hasObstacleCheckDebugRay =
             true;
 
-        return hasNoBlockingObstacle;
+        return hasDetectedPlayer;
     }
 
     private float GetDetectedPlayerDirectionSign()
     {
         float deltaX =
             playerTransform.position.x -
-            GetSearchOrigin().x;
+            enemyRigidbody.position.x;
 
         if (Mathf.Abs(deltaX) >
             DIRECTION_EPSILON)
@@ -641,11 +1205,6 @@ public sealed class DroneEnemySearchStrategy :
 
         return GetVisualHorizontalDirectionSign(
             visualRoot);
-    }
-
-    private Vector3 GetSearchOrigin()
-    {
-        return enemyCollider.bounds.center;
     }
 
     private Vector2 GetCurrentPlanarPosition()

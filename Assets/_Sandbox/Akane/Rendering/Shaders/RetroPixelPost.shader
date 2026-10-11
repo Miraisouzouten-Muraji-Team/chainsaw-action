@@ -1,25 +1,18 @@
+
 Shader "Custom/RetroPixelPost"
 {
     Properties
     {
         // RGBそれぞれを何段階にするか
-        _ColorSteps(
-            "Color Steps",
-            Range(2, 32)) = 8
+        _ColorSteps("Color Steps", Range(2, 32)) = 8
 
         // ディザリングの強さ
-        _DitherStrength(
-            "Dither Strength",
-            Range(0, 10)) = 1
+        _DitherStrength("Dither Strength", Range(0, 10)) = 1
 
         // ディザリング1マスを画面上で何ピクセルにするか
-        _DitherScale(
-            "Dither Scale",
-            Range(1, 8)) = 1
+        _DitherScale("Dither Scale", Range(1, 8)) = 1
 
-        _PixelEffectEnabled(
-            "Pixel Effect Enabled",
-            Float) = 1
+        _PixelEffectEnabled("Pixel Effect Enabled", Float) = 1
     }
 
     SubShader
@@ -67,49 +60,25 @@ Shader "Custom/RetroPixelPost"
                     15.0,  7.0, 13.0,  5.0
                 };
 
-                int x =
-                    pixelPosition.x & 3;
+                int x = pixelPosition.x & 3;
+                int y = pixelPosition.y & 3;
+                int index = y * 4 + x;
 
-                int y =
-                    pixelPosition.y & 3;
-
-                int index =
-                    y * 4 + x;
-
-                return
-                    BAYER[index] / 16.0;
+                return BAYER[index] / 16.0;
             }
 
             // ------------------------------------------------------------
             // 色数を削減
             // ------------------------------------------------------------
-            float3 QuantizeColor(
-                float3 color,
-                float steps,
-                float dither)
+            float3 QuantizeColor(float3 color, float steps, float dither)
             {
-                steps =
-                    max(
-                        steps,
-                        2.0);
-
-                float maxValue =
-                    steps - 1.0;
+                steps = max(steps, 2.0);
+                float maxValue = steps - 1.0;
 
                 // ディザリング値を加えてから量子化する
-                color +=
-                    dither /
-                    maxValue;
-
-                color =
-                    saturate(color);
-
-                color =
-                    floor(
-                        color *
-                        maxValue +
-                        0.5)
-                    / maxValue;
+                color += dither / maxValue;
+                color = saturate(color);
+                color = floor(color * maxValue + 0.5) / maxValue;
 
                 return color;
             }
@@ -118,15 +87,8 @@ Shader "Custom/RetroPixelPost"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
 
-                float2 uv =
-                    input.texcoord.xy;
-
-                half4 color =
-                    SAMPLE_TEXTURE2D_X_LOD(
-                        _BlitTexture,
-                        sampler_PointClamp,
-                        uv,
-                        _BlitMipLevel);
+                float2 uv = input.texcoord.xy;
+                half4 color = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_PointClamp, uv, _BlitMipLevel);
 
                 // ピクセル表現OFFなら、そのまま返す
                 if (_PixelEffectEnabled < 0.5)
@@ -134,31 +96,14 @@ Shader "Custom/RetroPixelPost"
                     return color;
                 }
 
-                float ditherScale =
-                    max(
-                        _DitherScale,
-                        1.0);
+                float ditherScale = max(_DitherScale, 1.0);
+                float2 screenPixelPosition = floor(uv * _ScreenParams.xy / ditherScale);
 
-                float2 screenPixelPosition =
-                    floor(
-                        uv *
-                        _ScreenParams.xy /
-                        ditherScale);
-
-                float dither =
-                    Bayer4x4(
-                        (int2)screenPixelPosition);
-
+                float dither = Bayer4x4((int2)screenPixelPosition);
                 dither -= 0.5;
+                dither *= _DitherStrength;
 
-                dither *=
-                    _DitherStrength;
-
-                color.rgb =
-                    QuantizeColor(
-                        color.rgb,
-                        _ColorSteps,
-                        dither);
+                color.rgb = QuantizeColor(color.rgb, _ColorSteps, dither);
 
                 return color;
             }

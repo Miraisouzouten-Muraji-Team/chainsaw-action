@@ -1,3 +1,4 @@
+
 Shader "Custom/PixelLayerComposite"
 {
     Properties
@@ -12,9 +13,7 @@ Shader "Custom/PixelLayerComposite"
         _PixelFarTex("Far", 2D) = "black" {}
 
         [HideInInspector]
-        _PixelEffectEnabled(
-            "Pixel Effect Enabled",
-            Float) = 1
+        _PixelEffectEnabled("Pixel Effect Enabled", Float) = 1
     }
 
     SubShader
@@ -46,20 +45,10 @@ Shader "Custom/PixelLayerComposite"
 
             float _PixelEffectEnabled;
 
-            half4 AlphaOver(
-                half4 background,
-                half4 foreground)
+            half4 AlphaOver(half4 background, half4 foreground)
             {
-                half3 rgb =
-                    lerp(
-                        background.rgb,
-                        foreground.rgb,
-                        foreground.a);
-
-                half alpha =
-                    foreground.a +
-                    background.a *
-                    (1.0h - foreground.a);
+                half3 rgb = lerp(background.rgb, foreground.rgb, foreground.a);
+                half alpha = foreground.a + background.a * (1.0h - foreground.a);
 
                 return half4(rgb, alpha);
             }
@@ -67,56 +56,24 @@ Shader "Custom/PixelLayerComposite"
             half4 Frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-            
-                float2 uv =
-                    input.texcoord;
-            
-                half4 result =
-                    SAMPLE_TEXTURE2D_X_LOD(
-                        _BlitTexture,
-                        sampler_LinearClamp,
-                        uv,
-                        _BlitMipLevel);
-            
+
+                float2 uv = input.texcoord;
+                half4 result = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_LinearClamp, uv, _BlitMipLevel);
+
                 // Pixel OFFならMain Cameraの結果をそのまま返す
                 if (_PixelEffectEnabled < 0.5)
                 {
                     return result;
                 }
-            
-                half4 farColor =
-                    SAMPLE_TEXTURE2D(
-                        _PixelFarTex,
-                        sampler_PointClamp,
-                        uv);
-            
-                half4 middleColor =
-                    SAMPLE_TEXTURE2D(
-                        _PixelMiddleTex,
-                        sampler_PointClamp,
-                        uv);
-            
-                half4 nearColor =
-                    SAMPLE_TEXTURE2D(
-                        _PixelNearTex,
-                        sampler_PointClamp,
-                        uv);
-            
-                result =
-                    AlphaOver(
-                        result,
-                        farColor);
-            
-                result =
-                    AlphaOver(
-                        result,
-                        middleColor);
-            
-                result =
-                    AlphaOver(
-                        result,
-                        nearColor);
-            
+
+                half4 farColor = SAMPLE_TEXTURE2D(_PixelFarTex, sampler_PointClamp, uv);
+                half4 middleColor = SAMPLE_TEXTURE2D(_PixelMiddleTex, sampler_PointClamp, uv);
+                half4 nearColor = SAMPLE_TEXTURE2D(_PixelNearTex, sampler_PointClamp, uv);
+
+                result = AlphaOver(result, farColor);
+                result = AlphaOver(result, middleColor);
+                result = AlphaOver(result, nearColor);
+
                 return result;
             }
 

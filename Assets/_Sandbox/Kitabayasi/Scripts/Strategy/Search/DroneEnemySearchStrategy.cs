@@ -2,6 +2,12 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+// TODO:
+// 現在のPlayerは身体全体を覆うColliderがなく、足元付近にColliderが配置されている。
+// そのため、見た目上Player本体がDroneの索敵範囲内に入っていても、
+// 判定対象のColliderが索敵範囲外の場合はPlayerを検知できない。
+// Player側のCollider構成が修正された後、身体を表すColliderを基準に索敵判定を行うよう修正する。
+
 // 責務:
 // ・Search開始位置を基準に、XYゲームプレイ平面上の巡回地点A/Bを再配置して往復する。
 // ・Drone本体のBoxCollider形状を使い、巡回地点と巡回経路が安全か検証・補正する。

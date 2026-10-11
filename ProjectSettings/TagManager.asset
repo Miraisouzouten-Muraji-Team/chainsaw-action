@@ -15,6 +15,9 @@ TagManager:
   - Enemy
   - StageCollider
   - 
+  - PixelNear
+  - PixelMiddle
+  - PixelFar
   - 
   - 
   - 

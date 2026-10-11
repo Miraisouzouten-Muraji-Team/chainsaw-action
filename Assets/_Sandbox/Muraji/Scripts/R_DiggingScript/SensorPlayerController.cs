@@ -53,8 +53,8 @@ public class SensorPlayerController : MonoBehaviour
 
     private Quaternion rightFacingRotation;
 
-    // 空中で開始した攻撃は、コンボ終了までその場に留まる。
-    private bool attackGravityOff;
+    // 空中で開始した攻撃は重力変動
+    private bool isAirAttackCombo;
 
     private int jumpsUsed;
     private int pendingJumpCount;
@@ -379,11 +379,27 @@ public class SensorPlayerController : MonoBehaviour
         // 食い込み状態と押し戻しの予約が確定してから猶予を更新する。
         UpdateCoyoteTime();
 
-        Move();
+        // 空中攻撃中は移動入力による加減速を行わず、現在の横速度を引き継ぐ。
+        // 食い込み中は既存の専用移動を優先する。
+        bool preserveAirAttackMomentum =
+            IsAttacking &&
+            !IsGrounded() &&
+            !chainsawDigging.IsDigging;
+
+        if (preserveAirAttackMomentum)
+        {
+            // 物理衝突などによる速度の変化も反映する。
+            currentSpeed = playerRigidbody.linearVelocity.x;
+        }
+        else
+        {
+            Move();
+        }
+
         bool isKnockbackActive =
             knockbackVelocity != 0f || knockbackHopPending;
 
-        // 押し戻し中は移動入力より押し戻し速度を優先。
+        // 押し戻し中は、引き継いだ速度や移動入力より押し戻し速度を優先する。
         if (knockbackVelocity != 0f)
         {
             currentSpeed = knockbackVelocity;
@@ -395,14 +411,9 @@ public class SensorPlayerController : MonoBehaviour
             );
         }
 
-        if (attackGravityOff && !chainsawDigging.IsDigging)
-        {
-            currentSpeed = 0f;
-        }
-
+        // 空中攻撃を理由に横速度をゼロへ上書きしない。
         Vector3 velocity = playerRigidbody.linearVelocity;
         velocity.x = currentSpeed;
-
         if (chainsawDigging.TryTakeDash(out float power))
         {
             currentSpeed += facingDirection * power;
@@ -472,20 +483,16 @@ public class SensorPlayerController : MonoBehaviour
             ignoreGroundUntil = Time.time + 0.1f;
         }
 
-        if (attackGravityOff)
-        {
-            velocity.y = 0f;
-            ascentStartSpeed = 0f;
-            fallElapsedTime = 0f;
-        }
-        else if (!suppressGravity)
+        // 食い込みによる重力抑制を優先する。
+        // 攻撃中も上下速度を維持し、攻撃データの倍率を重力計算内で適用する。
+        if (!suppressGravity)
         {
             ApplyJumpGravity(ref velocity, deltaTime);
         }
 
         // 踏み込みは通常移動とは別に加算する。
         if (isKnockbackActive ||
-            attackGravityOff ||
+            isAirAttackCombo ||
             chainsawDigging.IsDigging)
         {
             ClearAttackMovement();
@@ -824,6 +831,7 @@ public class SensorPlayerController : MonoBehaviour
     }
 
     // 設定アセットの重力倍率と落下上限を使い、上下速度を更新する。
+    // 通常の上昇・落下補正に空中攻撃の重力倍率を掛け、落下速度上限内で速度を更新する。
     private void ApplyJumpGravity(
         ref Vector3 velocity,
         float deltaTime)
@@ -875,15 +883,34 @@ public class SensorPlayerController : MonoBehaviour
             fallElapsedTime += deltaTime;
         }
 
+        // 通常時・接地中・攻撃データ未設定時は、既存の重力を使う。
+        float attackGravityMultiplier = 1f;
+
+        if (IsAttacking &&
+            !isGrounded &&
+            CurrentAttackData != null)
+        {
+            // Inspector以外から負の値が設定されても、重力を反転させない。
+            attackGravityMultiplier = Mathf.Max(
+                0f,
+                CurrentAttackData.airAttackGravityScale
+            );
+        }
+
+        // 速度そのものではなく、今回の物理更新で加える重力に倍率を掛ける。
         velocity +=
             Physics.gravity *
             playerParameter.gravityScale *
             gravityMultiplier *
+            attackGravityMultiplier *
             deltaTime;
 
-        velocity.y = Mathf.Max(velocity.y, -playerParameter.maxFallSpeed);
+        // 攻撃中も既存の落下速度上限を維持する。
+        velocity.y = Mathf.Max(
+            velocity.y,
+            -playerParameter.maxFallSpeed
+        );
     }
-
     private bool IsGrounded()
     {
         if (chainsawDigging != null && chainsawDigging.Surface == ChainsawSurface.Floor)
@@ -1128,7 +1155,7 @@ public class SensorPlayerController : MonoBehaviour
             bool groundedBeforeAttack = IsGrounded();
             chainsawDigging.Cancel(true);
 
-            attackGravityOff = !groundedBeforeAttack;
+            isAirAttackCombo = !groundedBeforeAttack;
             StartSlash(1);
         }
         else if (slashStep < 3)
@@ -1214,7 +1241,7 @@ public class SensorPlayerController : MonoBehaviour
         ClearAttackMovement();
 
         if (data == null ||
-            attackGravityOff ||
+            isAirAttackCombo ||
             !IsGrounded())
         {
             return;
@@ -1302,7 +1329,7 @@ public class SensorPlayerController : MonoBehaviour
         nextSlashReserved = false;
         slashStep = 0;
         CurrentAttackData = null;
-        attackGravityOff = false;
+        isAirAttackCombo = false;
     }
 
     private void CheckDiggingImpactSettings()

@@ -26,4 +26,8 @@ public class AttackData : ScriptableObject
     [Tooltip("ヒットストップ")]
     [Min(0f)]
     public float hitStopTime;
+
+    [Tooltip("空中攻撃での重力設定")]
+    [Min(0f)]
+    public float airAttackGravityScale = 1.0f;
 }

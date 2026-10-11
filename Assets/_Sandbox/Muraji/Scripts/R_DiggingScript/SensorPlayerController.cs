@@ -379,20 +379,16 @@ public class SensorPlayerController : MonoBehaviour
         // 食い込み状態と押し戻しの予約が確定してから猶予を更新する。
         UpdateCoyoteTime();
 
-        // 空中攻撃中は移動入力による加減速を行わず、現在の横速度を引き継ぐ。
-        // 食い込み中は既存の専用移動を優先する。
+        // 空中攻撃中は、直前までの移動処理で管理していた横速度を保持する。
+        // Rigidbodyから速度を取り直さず、通常入力による加減速も行わない。
         bool preserveAirAttackMomentum =
             IsAttacking &&
             !IsGrounded() &&
             !chainsawDigging.IsDigging;
 
-        if (preserveAirAttackMomentum)
+        if (!preserveAirAttackMomentum)
         {
-            // 物理衝突などによる速度の変化も反映する。
-            currentSpeed = playerRigidbody.linearVelocity.x;
-        }
-        else
-        {
+            // 地上・非攻撃時・食い込み中は、既存の移動処理を行う。
             Move();
         }
 

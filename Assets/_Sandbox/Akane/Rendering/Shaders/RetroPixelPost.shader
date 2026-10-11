@@ -117,49 +117,49 @@ Shader "Custom/RetroPixelPost"
             half4 Frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-            
+
                 float2 uv =
                     input.texcoord.xy;
-            
+
                 half4 color =
                     SAMPLE_TEXTURE2D_X_LOD(
                         _BlitTexture,
                         sampler_PointClamp,
                         uv,
                         _BlitMipLevel);
-            
+
                 // ピクセル表現OFFなら、そのまま返す
                 if (_PixelEffectEnabled < 0.5)
                 {
                     return color;
                 }
-            
+
                 float ditherScale =
                     max(
                         _DitherScale,
                         1.0);
-            
+
                 float2 screenPixelPosition =
                     floor(
                         uv *
                         _ScreenParams.xy /
                         ditherScale);
-            
+
                 float dither =
                     Bayer4x4(
                         (int2)screenPixelPosition);
-            
+
                 dither -= 0.5;
-            
+
                 dither *=
                     _DitherStrength;
-            
+
                 color.rgb =
                     QuantizeColor(
                         color.rgb,
                         _ColorSteps,
                         dither);
-            
+
                 return color;
             }
 

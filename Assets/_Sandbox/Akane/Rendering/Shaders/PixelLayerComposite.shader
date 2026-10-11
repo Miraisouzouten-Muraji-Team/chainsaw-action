@@ -4,13 +4,13 @@ Shader "Custom/PixelLayerComposite"
     {
         [HideInInspector]
         _PixelNearTex("Near", 2D) = "black" {}
-    
+
         [HideInInspector]
         _PixelMiddleTex("Middle", 2D) = "black" {}
-    
+
         [HideInInspector]
         _PixelFarTex("Far", 2D) = "black" {}
-    
+
         [HideInInspector]
         _PixelEffectEnabled(
             "Pixel Effect Enabled",

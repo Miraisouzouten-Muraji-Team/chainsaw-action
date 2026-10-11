@@ -1059,8 +1059,10 @@ MonoBehaviour:
   _nearLayerName: PixelNear
   _middleLayerName: PixelMiddle
   _farLayerName: PixelFar
+  _normalRendererIndex: 0
   _captureRendererIndex: 1
-  _pixelRenderingEnabled: 0
+  _pixelRendererIndex: 2
+  _pixelRenderingEnabled: 1
 --- !u!4 &1336692176
 Transform:
   m_ObjectHideFlags: 0

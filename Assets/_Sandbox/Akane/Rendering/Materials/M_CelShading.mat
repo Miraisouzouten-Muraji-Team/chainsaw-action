@@ -106,7 +106,7 @@ Material:
     - _ClearCoatSmoothness: 0
     - _Cull: 2
     - _Cutoff: 0.5
-    - _DarkBrightness: 0.45
+    - _DarkBrightness: 0.8
     - _DarkThreshold: 0.3
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
@@ -119,7 +119,7 @@ Material:
     - _LightBrightness: 1
     - _LightThreshold: 0.7
     - _Metallic: 0
-    - _MiddleBrightness: 0.75
+    - _MiddleBrightness: 0.9
     - _OcclusionStrength: 1
     - _Parallax: 0.005
     - _QueueOffset: 0

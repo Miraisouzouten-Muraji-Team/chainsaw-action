@@ -18,3 +18,4 @@ MonoBehaviour:
   attackMoveDuration: 0.15
   cameraShack: 0
   hitStopTime: 0.15
+  airAttackGravityScale: 2

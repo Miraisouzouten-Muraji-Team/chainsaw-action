@@ -215,26 +215,43 @@ public class SensorChainsawDigging : MonoBehaviour
     }
 
     // 入力時の接触を確認して食い込み要求を開始する。
+    // 入力時に対象があれば食い込みを要求し、対象がなければモーションだけを最後まで再生する。
     private void BeginRequest(float facingDirection)
     {
-        // 押した時点で3つの判定範囲に対象がある場合だけ要求を開始する。
-        // 空振りした入力を保持して、後から自動で食い込むことはしない。
-        if (!detector.TryGetContact(null, out SensorChainsawContact initialContact,
-                ChainsawSurface.None, facingDirection))
+        bool hasContact = detector.TryGetContact(
+            null,
+            out SensorChainsawContact initialContact,
+            ChainsawSurface.None,
+            facingDirection
+        );
+
+        if (!hasContact)
         {
+            // 空振り入力を保持して、後から自動で食い込むことを防ぐ。
             holdBlocked = true;
+
+            // 対象がなくても、既存の基本食い込みモーションを再生する。
+            // 食い込み要求や接触状態は変更しない。
+            if (playerAnimator.StartDiggingAnimation())
+            {
+                // モーション途中の停止を無効にし、終了まで再生する。
+                playerAnimator.ReleaseDiggingAnimation();
+            }
+
             return;
         }
+
+        // 対象がある場合は、接触面に対応した既存のモーションを再生する。
         if (!playerAnimator.StartDiggingAnimation(initialContact.Surface))
         {
             Cancel(true);
             return;
         }
+
         contact = initialContact;
         IsRequested = true;
         wallContactLostTime = 0f;
     }
-
     // PlayerControllerのFixedUpdateから呼び、接触状態の更新と消費処理を行う。
     public void Tick(
     float deltaTime,

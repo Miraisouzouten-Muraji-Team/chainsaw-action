@@ -1,13 +1,29 @@
 using UnityEngine;
 
-[CreateAssetMenu(menuName ="Player/AttackData")]
+[CreateAssetMenu(menuName = "Player/AttackData")]
 public class AttackData : ScriptableObject
 {
-    public int damage; // 攻撃力
+    [Header("弱攻撃設定")]
 
-    public float hitStopTime; // ヒットストップ時間
+    [Tooltip("攻撃力")]
+    public int damage;
 
-    public float attackVector; // 攻撃ベクトル
+    [Tooltip("攻撃ベクトル")]
+    public float attackVector;
 
-    public float attackMoveRange; // 攻撃移動距離
+    [Tooltip("踏み込み移動量")]
+    [Min(0f)]
+    public float attackMoveRange;
+
+    [Tooltip("踏み込みの秒数")]
+    [Min(0.01f)]
+    public float attackMoveDuration = 0.15f;
+
+    [Tooltip("カメラシェイク")]
+    [Min(0f)]
+    public float cameraShack;
+
+    [Tooltip("ヒットストップ")]
+    [Min(0f)]
+    public float hitStopTime;
 }

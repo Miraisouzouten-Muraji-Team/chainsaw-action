@@ -1,37 +1,124 @@
 using UnityEngine;
-using System.Collections;
+using Cysharp.Threading.Tasks;
+using System.Threading;
 
 public class CameraShake_System : MonoBehaviour
 {
-    Vector3 basicPosition;
-    Coroutine shakeCoroutine;
+    [Tooltip("追従処理が直接動かさない、揺れ専用の子Transform。未設定なら自身を使用")]
+    [SerializeField] private Transform shakeTarget;
 
-    void Awake()
+    private Vector3 basicPosition;
+    private CancellationTokenSource shakeCancellation;
+
+    private void Awake()
     {
-        basicPosition = transform.localPosition;
+        if (shakeTarget == null)
+        {
+            shakeTarget = transform;
+        }
+
+        basicPosition = shakeTarget.localPosition;
     }
 
     public void Shake(float duration, float magnitude)
     {
-        if (shakeCoroutine != null)
+        if (!isActiveAndEnabled ||
+            shakeTarget == null ||
+            duration <= 0f ||
+            magnitude <= 0f)
         {
-            StopCoroutine(shakeCoroutine);
-            transform.localPosition = basicPosition;
+            return;
         }
-        shakeCoroutine = StartCoroutine(ShakeCoroutine(duration, magnitude));
+
+        CancelShake();
+
+        // 前の揺れを戻した位置を基準にする。
+        basicPosition = shakeTarget.localPosition;
+
+        CancellationTokenSource source =
+            new CancellationTokenSource();
+
+        shakeCancellation = source;
+
+        ShakeAsync(duration, magnitude, source).Forget();
     }
 
-    IEnumerator ShakeCoroutine(float duration, float magnitude)
+    private async UniTask ShakeAsync(
+        float duration,
+        float magnitude,
+        CancellationTokenSource source)
     {
-        float elapsed = 0.0f;
-        while (elapsed < duration)
+        CancellationToken token = source.Token;
+        float endTime = Time.realtimeSinceStartup + duration;
+
+        try
         {
-            float x = Random.Range(-1f, 1f) * magnitude;
-            float y = Random.Range(-1f, 1f) * magnitude;
-            transform.localPosition = new Vector3(basicPosition.x + x, basicPosition.y + y, basicPosition.z);
-            elapsed += Time.deltaTime;
-            yield return null;
+            while (Time.realtimeSinceStartup < endTime)
+            {
+                token.ThrowIfCancellationRequested();
+
+                if (shakeTarget == null)
+                {
+                    return;
+                }
+
+                float x = Random.Range(-1f, 1f) * magnitude;
+                float y = Random.Range(-1f, 1f) * magnitude;
+
+                shakeTarget.localPosition =
+                    basicPosition + new Vector3(x, y, 0f);
+
+                // ヒットストップ中も演出を進める。
+                await UniTask.Yield(
+                    PlayerLoopTiming.Update,
+                    token
+                );
+            }
         }
-        transform.localPosition = basicPosition;
+        catch (System.OperationCanceledException)
+            when (token.IsCancellationRequested)
+        {
+            // 再命中・無効化による通常のキャンセル。
+        }
+        finally
+        {
+            // 古い処理から新しい揺れの位置を戻さない。
+            if (ReferenceEquals(shakeCancellation, source))
+            {
+                shakeCancellation = null;
+
+                if (shakeTarget != null)
+                {
+                    shakeTarget.localPosition = basicPosition;
+                }
+            }
+
+            source.Dispose();
+        }
+    }
+
+    private void CancelShake()
+    {
+        CancellationTokenSource source = shakeCancellation;
+
+        if (source == null)
+        {
+            return;
+        }
+
+        shakeCancellation = null;
+        source.Cancel();
+
+        if (shakeTarget != null)
+        {
+            shakeTarget.localPosition = basicPosition;
+        }
+
+        // Disposeは非同期処理のfinallyで行う。
+    }
+
+    private void OnDisable()
+    {
+        CancelShake();
     }
 }

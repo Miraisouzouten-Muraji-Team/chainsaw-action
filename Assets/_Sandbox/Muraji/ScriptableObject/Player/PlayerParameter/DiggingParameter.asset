@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9eed7deb3d0276c4f9c77f87ba00ab9d, type: 3}
+  m_Name: DiggingParameter
+  m_EditorClassIdentifier: Assembly-CSharp::DiggingParameter
+  inputMode: 0
+  bonusThreshold: 0.8
+  floorSpeedDivisor: 10
+  floorDashPower: 20
+  floorEvadeTime: 0.5
+  wallConsumeInterval: 0.1
+  wallConsumeAmount: 1
+  wallJumpPower: 50
+  bonusWallJumpPower: 15
+  wallEvadeTime: 0.25
+  wallContactGraceTime: 0.1
+  ceilingSpeedDivisor: 7.5
+  ceilingDashPower: 7.5
+  ceilingEvadeTime: 0.35
+  enemyAttackInterval: 0.1
+  enemyConsumeAmount: 1
+  bonusEnemyConsumeAmount: 2
+  minDamageMultiplier: 0.9
+  maxDamageMultiplier: 1.25
+  bonusDamageMultiplier: 1.5
+  wallClimbInputWindow: 0.2
+  floorTransitionWallGraceTime: 0.05

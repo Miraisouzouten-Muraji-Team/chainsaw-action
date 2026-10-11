@@ -454,6 +454,7 @@ GameObject:
   - component: {fileID: 3601863518267042037}
   - component: {fileID: 2705926445851039698}
   - component: {fileID: 4898117705153392083}
+  - component: {fileID: 8602490176669791178}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -642,6 +643,19 @@ MonoBehaviour:
   jumpState: 
   doubleJumpState: Base Layer.Doublejump
   wallJumpState: Base Layer.Kickjump
+--- !u!114 &8602490176669791178
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6270290766517622607}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1167590c12a273043a926dcdb5492ac6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelRenderOverride
+  _group: 1
 --- !u!1 &6710368214315103302
 GameObject:
   m_ObjectHideFlags: 0

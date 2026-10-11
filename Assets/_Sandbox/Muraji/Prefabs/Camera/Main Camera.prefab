@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 5429733058400219989}
   - component: {fileID: 8887377629267839132}
   - component: {fileID: 5245455651298504968}
+  - component: {fileID: -1970471577715036284}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -171,3 +172,30 @@ MonoBehaviour:
   - {fileID: 0}
   - {fileID: 0}
   - {fileID: 0}
+--- !u!114 &-1970471577715036284
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5595252880141617915}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 132dedf670cbc8544a2a3dc70b0e2abe, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelLayerRenderController
+  _mainCamera: {fileID: 3915223971674057238}
+  _nearCamera: {fileID: 0}
+  _middleCamera: {fileID: 0}
+  _farCamera: {fileID: 0}
+  _compositeMaterial: {fileID: 2100000, guid: 829d71493aac12f46af0c5361e92fca5, type: 2}
+  _retroPixelMaterial: {fileID: 2100000, guid: e7a203898512cc244a3ef3404d8c5be2, type: 2}
+  _volumetricFogMaterial: {fileID: 2100000, guid: f5fae617f0634ee4d8f7e660620b1a32, type: 2}
+  _nearResolution: {x: 640, y: 360}
+  _middleResolution: {x: 320, y: 180}
+  _farResolution: {x: 160, y: 90}
+  _nearLayerName: PixelNear
+  _middleLayerName: PixelMiddle
+  _farLayerName: PixelFar
+  _captureRendererIndex: 1
+  _pixelRenderingEnabled: 0

@@ -229,6 +229,10 @@ PrefabInstance:
       propertyPath: contactDetectorParameter
       value: 
       objectReference: {fileID: 11400000, guid: 29a800746011f10429132adda1c51df1, type: 2}
+    - target: {fileID: 668464074485390800, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: _pixelRenderingEnabled
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 1881424739761464751, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Name
       value: InGameObjects
@@ -272,6 +276,18 @@ PrefabInstance:
     - target: {fileID: 2292058601784843701, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 2326094757250988207, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3052411843547816630, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Layer
+      value: 10
+      objectReference: {fileID: 0}
+    - target: {fileID: 3848346086789356883, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: _group
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 6767748527981177828, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: jumpForce

@@ -25,7 +25,7 @@ MonoBehaviour:
   maxFallSpeed: 20
   groundRayLayers:
     serializedVersion: 2
-    m_Bits: 1
+    m_Bits: 3584
   groundRaySideOffset: 0.02
   groundRayStartHeight: 0.1
   groundRayDistance: 0.1

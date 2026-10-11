@@ -6,7 +6,7 @@ using UnityEngine;
 // ・Search開始位置を基準に、XYゲームプレイ平面上の巡回地点A/Bを再配置して往復する。
 // ・Drone本体のBoxCollider形状を使い、巡回地点と巡回経路が安全か検証・補正する。
 // ・巡回端で停止し、VisualRootだけを指定時間かけて左右反転する。
-// ・固定したSearchCenterの検知範囲と、現在のDrone→Player間のLOS RayからPlayer発見を判定する。
+// ・現在のDrone本体に追従する検知範囲と、Drone→Player間のLOS RayからPlayer発見を判定する。
 // ・索敵中にPlayerへ接触した際の攻撃情報を送信する。
 //
 // 担当しない責務:
@@ -59,7 +59,7 @@ public sealed class DroneEnemySearchStrategy :
     private Vector2 patrolPointAOffset;
     private Vector2 patrolPointBOffset;
 
-    private Vector3 searchCenter;
+    private Vector3 patrolOriginPosition;
     private Vector3 patrolPointAWorldPosition;
     private Vector3 patrolPointBWorldPosition;
 
@@ -67,7 +67,6 @@ public sealed class DroneEnemySearchStrategy :
     private Vector3 boxHalfExtents;
     private Quaternion boxOrientation;
 
-    private bool hasSearchCenter;
     private bool hasValidPatrolRoute;
     private bool hasPhysicsQueryBufferOverflow;
     private bool isMovingToPointB;
@@ -168,16 +167,15 @@ public sealed class DroneEnemySearchStrategy :
         turnElapsedTime = 0f;
 
         // Attack等でDroneが移動した後も同じ巡回形状を使えるよう、
-        // Searchへ入った瞬間の位置を今回の固定基準として取り直す。
-        searchCenter =
+        // Searchへ入った瞬間の位置を今回の巡回基準として取り直す。
+        // 索敵範囲の中心には使用せず、索敵中心は現在のDrone位置へ追従させる。
+        patrolOriginPosition =
             enemyRigidbody.position;
-
-        hasSearchCenter = true;
 
         ResolvePlayerReferences();
         CacheBoxQueryGeometry();
 
-        // 巡回順はSearchCenter→A→B→A...で固定する。
+        // 巡回順はSearch開始位置→A→B→A...で固定する。
         isMovingToPointB = false;
 
         if (!TryBuildPatrolRoute(
@@ -294,16 +292,25 @@ public sealed class DroneEnemySearchStrategy :
     }
 
     /// <summary>
-    /// Sceneビューの索敵範囲表示が実処理と同じ固定中心を使うため、
-    /// 現在のSearchCenterをEditor描画側へ提供する。
+    /// Sceneビューの索敵範囲表示が実処理と同じ位置へ追従するため、
+    /// 現在のDrone本体Collider中心をEditor描画側へ提供する。
     /// </summary>
     public bool TryGetSearchCenter(
         out Vector3 currentSearchCenter)
     {
-        currentSearchCenter =
-            searchCenter;
+        if (enemyBoxCollider == null ||
+            !enemyBoxCollider.enabled ||
+            enemyObject == null ||
+            !enemyObject.activeInHierarchy)
+        {
+            currentSearchCenter = default;
+            return false;
+        }
 
-        return hasSearchCenter;
+        currentSearchCenter =
+            GetCurrentDetectionCenter();
+
+        return true;
     }
 
     private void ValidatePatrolPoints()
@@ -394,27 +401,13 @@ public sealed class DroneEnemySearchStrategy :
     private bool TryBuildPatrolRoute(
         out string failureReason)
     {
-        float detectionRadius =
-            enemyData.DetectionRadius;
-
-        if (detectionRadius <=
-            DIRECTION_EPSILON)
-        {
-            failureReason =
-                " DetectionRadiusが0以下です。";
-
-            return false;
-        }
-
         Vector3 candidateA =
             BuildPatrolCandidate(
-                patrolPointAOffset,
-                detectionRadius);
+                patrolPointAOffset);
 
         Vector3 candidateB =
             BuildPatrolCandidate(
-                patrolPointBOffset,
-                detectionRadius);
+                patrolPointBOffset);
 
         patrolPointAWorldPosition =
             candidateA;
@@ -425,7 +418,7 @@ public sealed class DroneEnemySearchStrategy :
         SyncPatrolPointTransforms();
 
         if (!IsBoxPlacementSafe(
-                searchCenter))
+                patrolOriginPosition))
         {
             failureReason =
                 " Search開始位置でDrone本体のBoxCollider相当形状が" +
@@ -436,12 +429,12 @@ public sealed class DroneEnemySearchStrategy :
         }
 
         if (!TryResolveSafeDestinationAlongPath(
-                searchCenter,
+                patrolOriginPosition,
                 candidateA,
                 out Vector3 resolvedA))
         {
             failureReason =
-                " SearchCenter→PatrolPointAの安全経路を確保できません。" +
+                " Search開始位置→PatrolPointAの安全経路を確保できません。" +
                 GetBufferOverflowMessage();
 
             return false;
@@ -490,45 +483,15 @@ public sealed class DroneEnemySearchStrategy :
     }
 
     private Vector3 BuildPatrolCandidate(
-        Vector2 configuredOffset,
-        float detectionRadius)
+        Vector2 configuredOffset)
     {
-        Vector2 planarCandidate =
-            new Vector2(
-                searchCenter.x +
-                configuredOffset.x,
-
-                searchCenter.y +
-                configuredOffset.y);
-
-        Vector2 center =
-            new Vector2(
-                searchCenter.x,
-                searchCenter.y);
-
-        Vector2 fromCenter =
-            planarCandidate -
-            center;
-
-        float squaredRadius =
-            detectionRadius *
-            detectionRadius;
-
-        if (fromCenter.sqrMagnitude >
-            squaredRadius)
-        {
-            planarCandidate =
-                center +
-                fromCenter.normalized *
-                detectionRadius;
-        }
-
+        // PatrolPoint A/Bは索敵半径とは独立した巡回設定として扱う。
         // PatrolPoint側のZは巡回形状として扱わず、
         // Searchへ入った瞬間のDrone深度を今回の固定深度にする。
         return new Vector3(
-            planarCandidate.x,
-            planarCandidate.y,
-            searchCenter.z);
+            patrolOriginPosition.x + configuredOffset.x,
+            patrolOriginPosition.y + configuredOffset.y,
+            patrolOriginPosition.z);
     }
 
     private bool TryResolveSafeDestinationAlongPath(
@@ -605,30 +568,19 @@ public sealed class DroneEnemySearchStrategy :
             safeDistance;
 
         resolvedDestination.z =
-            searchCenter.z;
+            patrolOriginPosition.z;
 
-        return
-            IsPositionWithinDetectionRadius(
-                resolvedDestination) &&
-            IsDestinationAndPathSafe(
-                pathStart,
-                resolvedDestination);
+        return IsDestinationAndPathSafe(
+            pathStart,
+            resolvedDestination);
     }
 
     private bool ValidateResolvedPatrolRoute()
     {
-        if (!IsPositionWithinDetectionRadius(
-                patrolPointAWorldPosition) ||
-            !IsPositionWithinDetectionRadius(
-                patrolPointBWorldPosition))
-        {
-            return false;
-        }
-
         if ((ToPlanarPosition(
                     patrolPointAWorldPosition) -
                 ToPlanarPosition(
-                    searchCenter)).magnitude <=
+                    patrolOriginPosition)).magnitude <=
             ARRIVAL_TOLERANCE)
         {
             return false;
@@ -649,7 +601,7 @@ public sealed class DroneEnemySearchStrategy :
             IsBoxPlacementSafe(
                 patrolPointBWorldPosition) &&
             IsBoxPathClear(
-                searchCenter,
+                patrolOriginPosition,
                 patrolPointAWorldPosition) &&
             IsBoxPathClear(
                 patrolPointAWorldPosition,
@@ -780,23 +732,6 @@ public sealed class DroneEnemySearchStrategy :
         return
             bodyPosition +
             boxCenterOffsetFromRigidbody;
-    }
-
-    private bool IsPositionWithinDetectionRadius(
-        Vector3 position)
-    {
-        Vector2 delta =
-            ToPlanarPosition(position) -
-            ToPlanarPosition(searchCenter);
-
-        float radius =
-            enemyData.DetectionRadius;
-
-        return
-            delta.sqrMagnitude <=
-            radius * radius +
-            DIRECTION_EPSILON *
-            DIRECTION_EPSILON;
     }
 
     private bool IsIgnoredPatrolObstacle(
@@ -1035,31 +970,37 @@ public sealed class DroneEnemySearchStrategy :
 
         ResolvePlayerReferences();
 
-        if (!hasSearchCenter ||
-            playerTransform == null)
+        if (playerTransform == null)
         {
             return false;
         }
 
-        // DetectionRadiusの中心は現在のDroneではなく、
-        // このSearchへ入った瞬間に固定したSearchCenterを使用する。
+        float detectionRadius =
+            enemyData.DetectionRadius;
+
+        if (detectionRadius <=
+            DIRECTION_EPSILON)
+        {
+            return false;
+        }
+
+        Vector3 detectionCenter =
+            GetCurrentDetectionCenter();
+
         Vector3 playerPosition =
             playerTransform.position;
 
         float deltaX =
             playerPosition.x -
-            searchCenter.x;
+            detectionCenter.x;
 
         float deltaY =
             playerPosition.y -
-            searchCenter.y;
+            detectionCenter.y;
 
         float squaredDistance =
             deltaX * deltaX +
             deltaY * deltaY;
-
-        float detectionRadius =
-            enemyData.DetectionRadius;
 
         if (squaredDistance >
             detectionRadius * detectionRadius)
@@ -1068,6 +1009,11 @@ public sealed class DroneEnemySearchStrategy :
         }
 
         return HasDirectLineOfSightToPlayer();
+    }
+
+    private Vector3 GetCurrentDetectionCenter()
+    {
+        return enemyBoxCollider.bounds.center;
     }
 
     private bool HasDirectLineOfSightToPlayer()

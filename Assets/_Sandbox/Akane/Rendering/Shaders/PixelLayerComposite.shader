@@ -3,25 +3,20 @@ Shader "Custom/PixelLayerComposite"
 {
     Properties
     {
-        [HideInInspector]
-        _PixelNearTex("Near", 2D) = "black" {}
+        [HideInInspector] _PixelNearTex("Near", 2D) = "black" {}
+        [HideInInspector] _PixelMiddleTex("Middle", 2D) = "black" {}
+        [HideInInspector] _PixelFarTex("Far", 2D) = "black" {}
 
-        [HideInInspector]
-        _PixelMiddleTex("Middle", 2D) = "black" {}
+        [HideInInspector] _PixelNearDepthTex("Near Depth", 2D) = "white" {}
+        [HideInInspector] _PixelMiddleDepthTex("Middle Depth", 2D) = "white" {}
+        [HideInInspector] _PixelFarDepthTex("Far Depth", 2D) = "white" {}
 
-        [HideInInspector]
-        _PixelFarTex("Far", 2D) = "black" {}
-
-        [HideInInspector]
-        _PixelEffectEnabled("Pixel Effect Enabled", Float) = 1
+        [HideInInspector] _PixelEffectEnabled("Pixel Effect Enabled", Float) = 1
     }
 
     SubShader
     {
-        Tags
-        {
-            "RenderPipeline" = "UniversalPipeline"
-        }
+        Tags { "RenderPipeline" = "UniversalPipeline" }
 
         ZWrite Off
         ZTest Always
@@ -33,48 +28,112 @@ Shader "Custom/PixelLayerComposite"
 
             HLSLPROGRAM
 
+            #pragma target 4.5
             #pragma vertex Vert
             #pragma fragment Frag
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
             #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 
             TEXTURE2D(_PixelNearTex);
             TEXTURE2D(_PixelMiddleTex);
             TEXTURE2D(_PixelFarTex);
 
+            TEXTURE2D(_PixelNearDepthTex);
+            TEXTURE2D(_PixelMiddleDepthTex);
+            TEXTURE2D(_PixelFarDepthTex);
+
             float _PixelEffectEnabled;
 
-            half4 AlphaOver(half4 background, half4 foreground)
+            // Skyまたは描画物が存在しない深度を判定する。
+            bool IsSkyDepth(float rawDepth)
             {
-                half3 rgb = lerp(background.rgb, foreground.rgb, foreground.a);
-                half alpha = foreground.a + background.a * (1.0h - foreground.a);
+                #if UNITY_REVERSED_Z
+                    return rawDepth <= 0.0001;
+                #else
+                    return rawDepth >= 0.9999;
+                #endif
+            }
 
-                return half4(rgb, alpha);
+            // すべてのCameraで投影設定を揃えているため、
+            // Raw Depthを直接比較できる。
+            bool IsCloserDepth(float candidateDepth, float currentDepth)
+            {
+                #if UNITY_REVERSED_Z
+                    return candidateDepth > currentDepth;
+                #else
+                    return candidateDepth < currentDepth;
+                #endif
+            }
+
+            // 有効な描画ピクセルの中から、最も手前のものを選択する。
+            void SelectNearestPixel(
+                half4 candidateColor,
+                float candidateDepth,
+                inout half4 selectedColor,
+                inout float selectedDepth,
+                inout bool selectedPixel)
+            {
+                if (candidateColor.a <= 0.01 || IsSkyDepth(candidateDepth))
+                {
+                    return;
+                }
+
+                if (IsSkyDepth(selectedDepth) || IsCloserDepth(candidateDepth, selectedDepth))
+                {
+                    selectedColor = candidateColor;
+                    selectedDepth = candidateDepth;
+                    selectedPixel = true;
+                }
             }
 
             half4 Frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
 
-                float2 uv = input.texcoord;
-                half4 result = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_LinearClamp, uv, _BlitMipLevel);
+                float2 colorUv = input.texcoord.xy;
+                float2 depthUv = input.positionCS.xy / _ScaledScreenParams.xy;
 
-                // Pixel OFFならMain Cameraの結果をそのまま返す
+                half4 sceneColor = SAMPLE_TEXTURE2D_X_LOD(
+                    _BlitTexture, sampler_LinearClamp, colorUv, _BlitMipLevel);
+
                 if (_PixelEffectEnabled < 0.5)
                 {
-                    return result;
+                    return sceneColor;
                 }
 
-                half4 farColor = SAMPLE_TEXTURE2D(_PixelFarTex, sampler_PointClamp, uv);
-                half4 middleColor = SAMPLE_TEXTURE2D(_PixelMiddleTex, sampler_PointClamp, uv);
-                half4 nearColor = SAMPLE_TEXTURE2D(_PixelNearTex, sampler_PointClamp, uv);
+                float sceneDepth = SampleSceneDepth(depthUv);
 
-                result = AlphaOver(result, farColor);
-                result = AlphaOver(result, middleColor);
-                result = AlphaOver(result, nearColor);
+                half4 selectedColor = sceneColor;
+                float selectedDepth = sceneDepth;
+                bool selectedPixel = false;
 
-                return result;
+                // Far
+                half4 farColor = SAMPLE_TEXTURE2D(_PixelFarTex, sampler_PointClamp, colorUv);
+                float farDepth = SAMPLE_TEXTURE2D(_PixelFarDepthTex, sampler_PointClamp, colorUv).r;
+                SelectNearestPixel(farColor, farDepth, selectedColor, selectedDepth, selectedPixel);
+
+                // Middle
+                half4 middleColor = SAMPLE_TEXTURE2D(_PixelMiddleTex, sampler_PointClamp, colorUv);
+                float middleDepth = SAMPLE_TEXTURE2D(_PixelMiddleDepthTex, sampler_PointClamp, colorUv).r;
+                SelectNearestPixel(middleColor, middleDepth, selectedColor, selectedDepth, selectedPixel);
+
+                // Near
+                half4 nearColor = SAMPLE_TEXTURE2D(_PixelNearTex, sampler_PointClamp, colorUv);
+                float nearDepth = SAMPLE_TEXTURE2D(_PixelNearDepthTex, sampler_PointClamp, colorUv).r;
+                SelectNearestPixel(nearColor, nearDepth, selectedColor, selectedDepth, selectedPixel);
+
+                if (!selectedPixel)
+                {
+                    return sceneColor;
+                }
+
+                // 基本は不透明オブジェクト向け。
+                // エッジのAlphaを利用して元の背景と合成する。
+                half3 finalColor = lerp(sceneColor.rgb, selectedColor.rgb, saturate(selectedColor.a));
+
+                return half4(finalColor, sceneColor.a);
             }
 
             ENDHLSL

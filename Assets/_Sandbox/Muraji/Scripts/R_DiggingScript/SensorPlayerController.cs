@@ -40,8 +40,9 @@ public class SensorPlayerController : MonoBehaviour
     [Tooltip("足元中央に配置した空のGameObjectのTransform。ここを基準に中央・前・後ろへRayを飛ばします。")]
     [SerializeField] private Transform groundCheckTransform;
 
-    // Rayによる接地判定は実行時に更新する。SOには状態を書き込まない。
-    private bool isGroundedByRay;
+    // 接地判定は実行時に更新する。SOには状態を書き込まない。
+    [Tooltip("接触面と補助判定から求めた接地状態です。実行中に自動更新します。")]
+    [SerializeField] private bool isGroundedByRay;
     private const int MAX_JUMP_COUNT = 2;
 
     private Rigidbody playerRigidbody;
@@ -73,6 +74,41 @@ public class SensorPlayerController : MonoBehaviour
 
     private bool knockbackHopPending;
 
+    // ほぼ水平な床では、従来の通常移動を維持する。
+    private const float FLAT_GROUND_NORMAL_Y = 0.999f;
+
+    // 接触面と補助判定で採用した地面の法線。
+    [Tooltip("移動に使用する地面の法線です。平地は (0, 1, 0)、斜面はXも変化します。")]
+    [SerializeField] private Vector3 groundNormal = Vector3.up;
+
+    private PlayerGroundProbe groundProbe;
+
+    [Header("接地診断（実行中に自動更新）")]
+    [Tooltip("現在の移動に使用している地面のColliderです。")]
+    [SerializeField] private Collider debugGroundCollider;
+    [Tooltip("地面を選んだ根拠です。物理接触・足元Ray・前方の斜面・下り追従を表示します。")]
+    [SerializeField] private string debugGroundSource;
+    [Tooltip("最終的な壁停止判定を適用する前の速度です。")]
+    [SerializeField] private Vector3 debugVelocityBeforeWall;
+    [Tooltip("最終的な壁停止判定の後にRigidbodyへ渡した速度です。")]
+    [SerializeField] private Vector3 debugVelocityAfterWall;
+    [Tooltip("直近の物理更新で壁停止判定が働いたかを表示します。")]
+    [SerializeField] private bool debugWallBlocked;
+
+    // 食い込みと壁判定も、Controllerと同じSOの斜面角度を使用する。
+    public float GroundNormalThreshold => playerParameter != null
+        ? Mathf.Clamp(playerParameter.groundRayNormalThreshold, 0.1f, 1f)
+        : 0.7f;
+
+    // 移動に採用した接地面を公開する。ジャンプ予約中や離地直後は渡さない。
+    public bool TryGetGroundSupport(out SensorChainsawContact contact)
+    {
+        contact = default;
+        return groundProbe != null && !jumpPending && !wallJumpLaunchPending &&
+            wallJumpStunRemaining <= 0f && !IsImpactStunned &&
+            Time.time >= ignoreGroundUntil && groundProbe.TryGetSupport(out contact);
+    }
+
     // 各段の地上攻撃の踏み込み。
     private float attackMoveTimeRemaining;
     private float attackMoveSpeed;
@@ -87,6 +123,9 @@ public class SensorPlayerController : MonoBehaviour
 
     // コンボの次段へ移る再生位置はPlayerParameterから取得する。
     private float ComboAdvanceTime => playerParameter.comboAdvanceTime;
+
+    // カメラが既存の接地判定を参照する。新しい接地判定は行わない。
+    public bool IsGroundedForCamera => IsGrounded();
 
     [Header("食い込み中の強衝突：硬直とカメラシェイク")]
     [SerializeField]
@@ -223,6 +262,9 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        groundProbe = new PlayerGroundProbe(
+            playerRigidbody, groundCheckTransform, playerParameter);
+
         playerRigidbody.useGravity = false;
 
         if (playerRigidbody.isKinematic)
@@ -308,7 +350,7 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
-        // 3本のRayで着地を確認し、空中ジャンプ回数を回復する。
+        // 実接触と補助判定で着地を確認し、空中ジャンプ回数を回復する。
         RefreshGroundRayState();
 
         if (chainsawAccelerator.isActiveAndEnabled)
@@ -532,8 +574,10 @@ public class SensorPlayerController : MonoBehaviour
             ignoreGroundUntil = Time.time + 0.1f;
         }
 
-        velocity.z = 0f;
+        // ジャンプ・壁ジャンプ・角補正の決定後に、通常の斜面歩行だけを適用する。
+        ApplyGroundSlopeMovement(ref velocity, isKnockbackActive);
 
+        velocity.z = 0f;
         // 床の食い込みから続く移動を記録する。
         UpdateFloorTravelImpact(velocity);
         // 物理衝突によって速度が0になる前の移動速度。
@@ -559,7 +603,9 @@ public class SensorPlayerController : MonoBehaviour
 
         // 硬直・シェイクの判定には制限前の速度を残す。
         // Rigidbodyへ渡す実際の移動速度だけを、最後に制限する。
-        ApplyWallMovementBlock(ref velocity);
+        debugVelocityBeforeWall = velocity;
+        debugWallBlocked = ApplyWallMovementBlock(ref velocity);
+        debugVelocityAfterWall = velocity;
         playerRigidbody.linearVelocity = velocity;
 
         playerAnimator.SetSpeed(
@@ -736,104 +782,157 @@ public class SensorPlayerController : MonoBehaviour
         }
     }
 
-    // 足元の中央・前・後ろの3本Rayで床／斜面を調べ、着地時にジャンプ回数を戻す。
+    // 実接触と本体形状の照会で地面を選び、接地状態とジャンプ回数を更新する。
+    // isGroundedByRayは既存参照との互換名で、物理接触による接地も含む。
     private void RefreshGroundRayState()
     {
-        isGroundedByRay = false;
-
-        if (groundCheckTransform == null || playerParameter == null ||
-            playerRigidbody == null || !groundCheckTransform.gameObject.activeInHierarchy ||
-            jumpPending || wallJumpLaunchPending || wallJumpStunRemaining > 0f ||
-            Time.time < ignoreGroundUntil ||
-            playerRigidbody.linearVelocity.y > 0.1f)
+        if (groundProbe == null)
         {
+            isGroundedByRay = false;
+            groundNormal = Vector3.up;
             return;
         }
 
         int groundMask = playerParameter.groundRayLayers.value != 0
             ? playerParameter.groundRayLayers.value
             : ResolvedImpactTerrainLayers;
-        if (groundMask == 0)
+
+        bool allowGrounding = !jumpPending && !wallJumpLaunchPending &&
+            wallJumpStunRemaining <= 0f && !IsImpactStunned &&
+            Time.time >= ignoreGroundUntil;
+
+        float requestedSpeed = currentSpeed;
+        if (Mathf.Abs(requestedSpeed) <= 0.01f)
         {
-            return;
+            float direction = chainsawDigging.IsDigging
+                ? facingDirection : input.MoveInput;
+            requestedSpeed = direction * playerParameter.moveSpeed;
         }
 
-        float sideOffset = Mathf.Max(0f, playerParameter.groundRaySideOffset);
-        float startHeight = Mathf.Max(0.01f, playerParameter.groundRayStartHeight);
-        float distance = Mathf.Max(0.01f, playerParameter.groundRayDistance);
-        float normalThreshold = Mathf.Clamp01(playerParameter.groundRayNormalThreshold);
-        // 足元中央のTransformを原点として、上に開始位置をずらす。
-        Vector3 center = groundCheckTransform.position + Vector3.up * startHeight;
+        groundProbe.Refresh(groundMask, requestedSpeed, Time.fixedDeltaTime, allowGrounding);
+        isGroundedByRay = groundProbe.IsGrounded;
+        groundNormal = groundProbe.Normal;
+        debugGroundSource = groundProbe.Source;
+        debugGroundCollider = groundProbe.TryGetSupport(out SensorChainsawContact support)
+            ? support.Collider : null;
 
-        // 真ん中・前・後ろ。向きが変わっても同じ3か所を検出する。
-        for (int index = 0; index < 3; index++)
-        {
-            float offset = index == 0 ? 0f :
-                index == 1 ? sideOffset * facingDirection :
-                -sideOffset * facingDirection;
-            Vector3 origin = center + Vector3.right * offset;
-            RaycastHit[] hits = Physics.RaycastAll(
-                origin, Vector3.down, distance,
-                groundMask, QueryTriggerInteraction.Ignore);
-
-            foreach (RaycastHit hit in hits)
-            {
-                if (hit.collider == null ||
-                    hit.collider.transform == transform ||
-                    hit.collider.transform.IsChildOf(transform) ||
-                    hit.normal.y < normalThreshold)
-                {
-                    continue;
-                }
-
-                // Rayが遠方の床を発見しただけでは接地にしない。
-                // GroundCheckが足元にある前提で、実際の足元と床との隙間を評価する。
-                // 探索用Rayの距離とは別に、接地確定の許容距離を設定する。
-                float groundGap = hit.distance - startHeight;
-                float contactTolerance = Mathf.Max(0f, playerParameter.groundRayContactTolerance);
-
-                // 足元より上の面を「着地」として採用しない。
-                // 側面の段差・壁際で横のRayが上段の床を拾うと、
-                // 旧実装ではgroundGapが負でも接地が成立していた。
-                // 床の探索距離は変えず、接地できる高さの範囲だけ制限する。
-                if (groundGap < -contactTolerance || groundGap > contactTolerance)
-                {
-                    continue;
-                }
-
-                isGroundedByRay = true;
-                jumpsUsed = 0;
-                return;
-            }
-        }
+        if (isGroundedByRay) jumpsUsed = 0;
     }
 
+    // 許可する斜面の高低差を考慮し、接地Rayの開始高さと探索距離を求める。
+    private void GetGroundRayGeometry(
+        out float sideOffset,
+        out float startHeight,
+        out float rayDistance)
+    {
+        sideOffset = Mathf.Max(
+            0f,
+            playerParameter.groundRaySideOffset);
+
+        float normalThreshold = Mathf.Clamp(
+            playerParameter.groundRayNormalThreshold,
+            0.1f,
+            1f);
+
+        // 法線Yをcosとみなし、許可角度のtanから左右の最大高低差を求める。
+        float maximumSlopeRise =
+            sideOffset *
+            Mathf.Sqrt(Mathf.Max(
+                0f,
+                1f - normalThreshold * normalThreshold)) /
+            normalThreshold;
+
+        startHeight =
+            Mathf.Max(0.01f, playerParameter.groundRayStartHeight) +
+            maximumSlopeRise;
+
+        float searchBelowFeet = Mathf.Max(0f, playerParameter.groundRayContactTolerance);
+
+        rayDistance = Mathf.Max(
+            playerParameter.groundRayDistance,
+            startHeight + searchBelowFeet);
+    }
     // Sceneビューで3本の接地Rayの位置と長さを表示する。
+    // 実際の接地判定と同じ開始位置・長さで3本のRayを表示する。
     private void OnDrawGizmosSelected()
     {
         if (groundCheckTransform == null || playerParameter == null)
-            return;
-
-        float offset = Mathf.Max(0f, playerParameter.groundRaySideOffset);
-        float height = Mathf.Max(0.01f, playerParameter.groundRayStartHeight);
-        float distance = Mathf.Max(0.01f, playerParameter.groundRayDistance);
-        Vector3 center = groundCheckTransform.position + Vector3.up * height;
-        Gizmos.color = Application.isPlaying && isGroundedByRay ? Color.green : Color.yellow;
-        for (int i = -1; i <= 1; i++)
         {
-            Vector3 origin = center + Vector3.right * offset * i;
-            Gizmos.DrawLine(origin, origin + Vector3.down * distance);
+            return;
+        }
+
+        GetGroundRayGeometry(
+            out float sideOffset,
+            out float startHeight,
+            out float rayDistance);
+
+        Vector3 center =
+            groundCheckTransform.position + Vector3.up * startHeight;
+
+        Gizmos.color =
+            Application.isPlaying && isGroundedByRay
+                ? Color.green
+                : Color.yellow;
+
+        for (int index = -1; index <= 1; index++)
+        {
+            Vector3 origin =
+                center + Vector3.right * (sideOffset * index);
+
+            Gizmos.DrawLine(
+                origin,
+                origin + Vector3.down * rayDistance);
         }
     }
 
-    // 設定アセットの重力倍率と落下上限を使い、上下速度を更新する。
+    // 通常接地中の移動速度を斜面に沿わせ、地面へ軽く押し付ける。
+    private void ApplyGroundSlopeMovement(
+        ref Vector3 velocity,
+        bool isKnockbackActive)
+    {
+        // 専用の速度を使う動作は、斜面歩行で上書きしない。
+        if (!isGroundedByRay ||
+            groundNormal.y >= FLAT_GROUND_NORMAL_Y ||
+            chainsawDigging.IsDigging ||
+            isKnockbackActive ||
+            jumpPending ||
+            wallJumpLaunchPending ||
+            wallJumpStunRemaining > 0f ||
+            wallJumpDirectionHoldRemaining > 0f ||
+            Time.time < ignoreGroundUntil)
+        {
+            return;
+        }
+
+        // 右向きの接線。左移動は速度の符号で反転する。
+        Vector3 tangent = new Vector3(
+            groundNormal.y,
+            -groundNormal.x,
+            0f).normalized;
+
+        // 通常移動と攻撃の踏み込みを合わせた速度を、斜面方向へ向ける。
+        float moveSpeed = velocity.x;
+
+        velocity =
+            tangent * moveSpeed -
+            groundNormal * Mathf.Max(
+                0f,
+                playerParameter.slopeGroundStickSpeed);
+
+        ascentStartSpeed = 0f;
+        fallElapsedTime = 0f;
+    }
+
     // 通常の上昇・落下補正に空中攻撃の重力倍率を掛け、落下速度上限内で速度を更新する。
     private void ApplyJumpGravity(
         ref Vector3 velocity,
         float deltaTime)
     {
-        bool isGrounded = isGroundedByRay && velocity.y <= 0.1f;
-
+        // 坂を登る上向き速度を、ジャンプ上昇と誤認しない。
+        // ジャンプや押し戻しの発動直後は、既存の接地無視時間を優先する。
+        bool isGrounded =
+            isGroundedByRay &&
+            Time.time >= ignoreGroundUntil;
         float gravityMultiplier;
 
         if (isGrounded)
@@ -922,6 +1021,9 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        // 移動を止める処理より先に、実際に触れた地形の面を記録する。
+        if (groundProbe != null) groundProbe.RecordContact(collision);
+
         // 頭部が天井の端に軽く当たったときだけ、横移動を予約する。
         bool correctingCeilingCorner = TryQueueCeilingCornerCorrection(collision);
         if (!correctingCeilingCorner)
@@ -937,6 +1039,9 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        // 移動を止める処理より先に、実際に触れた地形の面を記録する。
+        if (groundProbe != null) groundProbe.RecordContact(collision);
+
         // 同じ地形への接触中も、角の状態を判定し直す。
         bool correctingCeilingCorner = TryQueueCeilingCornerCorrection(collision);
         if (!correctingCeilingCorner)
@@ -945,8 +1050,10 @@ public class SensorPlayerController : MonoBehaviour
         UpdateWallContact(collision);
     }
 
+    // 接触が終了した地形を、接地と壁停止の両方から解除する。
     void OnCollisionExit(Collision collision)
     {
+        if (groundProbe != null) groundProbe.RemoveContact(collision.collider);
         if (playerMidCollider != null)
         {
             playerMidCollider.RemoveContact(
@@ -1544,8 +1651,16 @@ public class SensorPlayerController : MonoBehaviour
                 normal.y <= -playerParameter.impactSurfaceNormalThreshold &&
                 lastDiggingPhysicsVelocity.y > 0f;
 
+            // 歩行可能な上向きの面は、食い込み中も壁衝突として扱わない。
+            bool isWalkableSlope =
+                normal.y >= Mathf.Clamp(
+                    playerParameter.groundRayNormalThreshold,
+                    0.1f,
+                    1f);
+
             bool hitsWall =
                 wasSliding &&
+                !isWalkableSlope &&
                 Mathf.Abs(normal.y) < playerParameter.impactSurfaceNormalThreshold;
 
             // 頭部の角を通過している間は、天井硬直だけ抑制する。
@@ -1726,8 +1841,14 @@ public class SensorPlayerController : MonoBehaviour
         impactConstraintsHeld = false;
     }
 
+    // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
+        if (groundProbe != null) groundProbe.Clear();
+        debugGroundCollider = null;
+        debugGroundSource = "未接地";
+        isGroundedByRay = false;
+        groundNormal = Vector3.up;
         // 再有効化時に以前の接地時刻を持ち越さない。
         lastGroundedTime = float.NegativeInfinity;
         isGroundedByRay = false;

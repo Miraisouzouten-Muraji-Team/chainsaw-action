@@ -50,6 +50,21 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
     private Collider[] overlapBuffer = new Collider[32];
 
+    private SensorPlayerController playerController;
+
+    // 所有者のControllerから床・壁分類の共通値を取得する。
+    private float ResolvedSurfaceNormalThreshold
+    {
+        get
+        {
+            if (playerController == null && ownerRoot != null)
+                playerController = ownerRoot.GetComponent<SensorPlayerController>();
+            return playerController != null
+                ? playerController.GroundNormalThreshold
+                : contactDetectorParameter.SurfaceNormalThreshold;
+        }
+    }
+
     private bool configured;
     private float facing = 1f;
     public int TerrainLayerMask => contactDetectorParameter != null ? contactDetectorParameter.TerrainLayers.value : 0;
@@ -212,11 +227,37 @@ public class SensorChainsawContactDetector : MonoBehaviour
             ref bestScore
         );
 
+        // 床候補は通常移動と同じ支持面へそろえる。
+        // 敵・壁・天井の優先順位は既存どおり維持する。
+        ApplyPlayerGroundSupport(currentSurface, ref contact);
+
         detectedSurface = contact.Surface;
         detectedCollider = contact.Collider;
         detectedNormal = contact.Normal;
 
         return contact.Collider != null;
+    }
+
+    // 床を検出した場合、または床食い込み継続中だけ、実際の支持面を共有する。
+    private void ApplyPlayerGroundSupport(
+        ChainsawSurface currentSurface,
+        ref SensorChainsawContact contact)
+    {
+        if (playerController == null && ownerRoot != null)
+            playerController = ownerRoot.GetComponent<SensorPlayerController>();
+
+        bool canReplaceFloor = contact.Surface == ChainsawSurface.Floor ||
+            (contact.Collider == null && currentSurface == ChainsawSurface.Floor);
+
+        if (!canReplaceFloor || playerController == null ||
+            !playerController.TryGetGroundSupport(out SensorChainsawContact ground) ||
+            (TerrainLayerMask & (1 << ground.Collider.gameObject.layer)) == 0 ||
+            ground.Normal.y < ResolvedSurfaceNormalThreshold)
+        {
+            return;
+        }
+
+        contact = ground;
     }
 
     private void CollectContacts(
@@ -468,9 +509,9 @@ public class SensorChainsawContactDetector : MonoBehaviour
             ).normalized;
 
             ChainsawSurface surface =
-                normal.y >= contactDetectorParameter.SurfaceNormalThreshold
+                normal.y >= ResolvedSurfaceNormalThreshold
                     ? ChainsawSurface.Floor
-                    : normal.y <= -contactDetectorParameter.SurfaceNormalThreshold
+                    : normal.y <= -ResolvedSurfaceNormalThreshold
                         ? ChainsawSurface.Ceiling
                         : ChainsawSurface.Wall;
 
@@ -565,7 +606,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
         ).normalized;
 
         // 床・天井に分類される面は、壁として採用しない。
-        if (Mathf.Abs(normal.y) >= contactDetectorParameter.SurfaceNormalThreshold)
+        if (Mathf.Abs(normal.y) >= ResolvedSurfaceNormalThreshold)
         {
             return;
         }

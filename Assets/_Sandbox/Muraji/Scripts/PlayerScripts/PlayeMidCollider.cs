@@ -12,9 +12,23 @@ public class PlayeMidCollider : MonoBehaviour
     [SerializeField]
     private LayerMask wallLayers;
 
-    [Tooltip("面の法線のY成分がこの値以上なら床か天井として扱います。食い込み判定と同じ値にしてください。")]
+    [Tooltip("Controllerがない場合の予備設定です。Controllerがある場合はPlayerParameterの地面判定値を使用します。")]
     [SerializeField, Range(0.1f, 0.95f)]
     private float surfaceNormalThreshold = 0.7f;
+
+    private SensorPlayerController playerController;
+
+    // Controllerがある場合は同じSOの角度を使用し、設定の食い違いを防ぐ。
+    private float ResolvedSurfaceNormalThreshold
+    {
+        get
+        {
+            if (playerController == null)
+                playerController = GetComponent<SensorPlayerController>();
+            return playerController != null
+                ? playerController.GroundNormalThreshold : surfaceNormalThreshold;
+        }
+    }
 
     // 地形ごとに記録し、複数の壁との接触に対応する。
     private readonly Dictionary<Collider, int> contacts =
@@ -85,7 +99,7 @@ public class PlayeMidCollider : MonoBehaviour
             ).normalized;
 
             // 床・天井・歩ける斜面を壁として扱わない。
-            if (Mathf.Abs(normal.y) >= surfaceNormalThreshold)
+            if (Mathf.Abs(normal.y) >= ResolvedSurfaceNormalThreshold)
             {
                 continue;
             }

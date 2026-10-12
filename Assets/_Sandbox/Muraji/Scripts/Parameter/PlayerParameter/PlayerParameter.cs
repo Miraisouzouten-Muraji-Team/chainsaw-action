@@ -48,10 +48,18 @@ public class PlayerParameter : ScriptableObject
     [Min(0.01f)] public float groundRayStartHeight = 0.1f;
     [Tooltip("足元から下向きに地面を探すRayの長さ。開始位置からの距離です。")]
     [Min(0.01f)] public float groundRayDistance = 0.25f;
-    [Tooltip("接地として認める地面の法線Yの下限。0.7なら約45度までの斜面を接地とします。")]
+    [Tooltip("床として認める面の法線Yの下限です。0.7で約45.6度、0.5で60度まで。Controller・壁停止・食い込みで共通使用します。")]
     [Range(0.1f, 1f)] public float groundRayNormalThreshold = 0.7f;
     [Tooltip("Rayが床を検出した際、足元から床までの距離がこの値以下なら接地確定します。Rayの探索距離とは別の値です。")]
     [Min(0f)] public float groundRayContactTolerance = 0.03f;
+
+    [Header("斜面への追従")]
+    [Tooltip("接地直後の短い下り追従距離です。本体の形状で下方向を調べます。大きすぎると小さな段差を降りても接地を維持します。")]
+    [Min(0f)] public float slopeGroundSnapDistance = 0.1f;
+    [Tooltip("通常歩行中に斜面へ押し付ける速度です。食い込み中の押し付けとは別です。")]
+    [Min(0f)] public float slopeGroundStickSpeed = 1f;
+    [Tooltip("本体形状で前方の坂を先読みする最大距離です。実際には1物理更新分の移動距離と小さな余白までに制限します。")]
+    [Min(0f)] public float slopeGroundProbeDistance = 0.2f;
 
     [Header("壁衝突時のパラメータ")]
     // 壁衝突時のパラメータ

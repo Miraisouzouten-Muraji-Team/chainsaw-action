@@ -11,7 +11,7 @@ using UnityEngine;
 // 責務:
 // ・Search開始位置を基準に、XYゲームプレイ平面上の巡回地点A/Bを再配置して往復する。
 // ・Drone本体のBoxCollider形状を使い、巡回地点と巡回経路が安全か検証・補正する。
-// ・巡回端で停止し、VisualRootだけを指定時間かけて左右反転する。
+// ・巡回端で停止し、VisualRootだけを指定時間かけて次の巡回地点へ向ける。
 // ・現在のDrone本体に追従する検知範囲と、Drone→Player間のLOS RayからPlayer発見を判定する。
 // ・索敵中にPlayerへ接触した際の攻撃情報を送信する。
 //
@@ -847,13 +847,11 @@ public sealed class DroneEnemySearchStrategy :
         turnStartRotation =
             visualRoot.rotation;
 
-        // Rigidbody / Colliderは回転させず、
-        // 見た目だけを左右反転する。
+        // 現在到着した巡回地点ではなく、
+        // 振り返り完了後に向かう次の巡回地点を正面にする。
         turnTargetRotation =
-            Quaternion.AngleAxis(
-                180f,
-                Vector3.up) *
-            turnStartRotation;
+            CalculatePatrolFacingRotation(
+                GetNextPatrolTargetPosition());
 
         isTurning = true;
 
@@ -861,6 +859,41 @@ public sealed class DroneEnemySearchStrategy :
         {
             CompleteTurnImmediately();
         }
+    }
+
+    private Vector3 GetNextPatrolTargetPosition()
+    {
+        return isMovingToPointB
+            ? patrolPointAWorldPosition
+            : patrolPointBWorldPosition;
+    }
+
+    private Quaternion CalculatePatrolFacingRotation(
+        Vector3 targetPosition)
+    {
+        Vector2 toTarget =
+            ToPlanarPosition(
+                targetPosition) -
+            GetCurrentPlanarPosition();
+
+        if (toTarget.sqrMagnitude <=
+            DIRECTION_EPSILON *
+            DIRECTION_EPSILON)
+        {
+            return visualRoot.rotation;
+        }
+
+        Vector3 targetDirection =
+            new Vector3(
+                toTarget.x,
+                toTarget.y,
+                0f).normalized;
+
+        // VisualRoot.forwardを次の巡回地点へ向ける。
+        // worldUpを指定し、可能な範囲でモデルの上方向を維持する。
+        return Quaternion.LookRotation(
+            targetDirection,
+            Vector3.up);
     }
 
     private void UpdateTurn()

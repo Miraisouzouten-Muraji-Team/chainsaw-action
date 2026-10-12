@@ -6,8 +6,8 @@ using UnityEngine;
 /// </summary>
 /// <remarks>
 /// 索敵判定そのものは担当しない。
-/// 現行の共通索敵基準であるCollider.bounds.centerと、
-/// EnemyDataのDetectionRadiusを使用して表示する。
+/// ChargeEnemyは従来どおりCollider中心を使用し、
+/// DroneEnemyは実処理と同じSearchCenterを表示する。
 /// </remarks>
 public static class EnemySearchGizmoDrawer
 {
@@ -28,8 +28,16 @@ public static class EnemySearchGizmoDrawer
         EnemyStateMachine stateMachine,
         GizmoType gizmoType)
     {
-        if (stateMachine == null ||
-            !HasSearchStrategy(stateMachine))
+        if (stateMachine == null)
+        {
+            return;
+        }
+
+        object searchStrategy =
+            GetSearchStrategy(
+                stateMachine);
+
+        if (searchStrategy == null)
         {
             return;
         }
@@ -43,14 +51,6 @@ public static class EnemySearchGizmoDrawer
             return;
         }
 
-        Collider enemyCollider =
-            stateMachine.GetComponentInChildren<Collider>();
-
-        if (enemyCollider == null)
-        {
-            return;
-        }
-
         float detectionRadius =
             dataReference.Data.DetectionRadius;
 
@@ -59,18 +59,26 @@ public static class EnemySearchGizmoDrawer
             return;
         }
 
+        if (!TryGetSearchRangeCenter(
+                stateMachine,
+                searchStrategy,
+                out Vector3 searchRangeCenter))
+        {
+            return;
+        }
+
         Handles.color =
             searchRangeColor;
 
-        // 現行の索敵判定はXY平面上で距離を判定しているため、
+        // 現行の索敵距離判定はXYゲームプレイ平面上で行うため、
         // Z方向を法線とする円として表示する。
         Handles.DrawWireDisc(
-            enemyCollider.bounds.center,
+            searchRangeCenter,
             Vector3.forward,
             detectionRadius);
     }
 
-    private static bool HasSearchStrategy(
+    private static object GetSearchStrategy(
         EnemyStateMachine stateMachine)
     {
         SerializedObject serializedStateMachine =
@@ -83,6 +91,48 @@ public static class EnemySearchGizmoDrawer
             serializedStateMachine.FindProperty(
                 SEARCH_STRATEGY_PROPERTY_NAME);
 
-        return searchStrategyProperty?.managedReferenceValue != null;
+        return
+            searchStrategyProperty?
+                .managedReferenceValue;
+    }
+
+    private static bool TryGetSearchRangeCenter(
+        EnemyStateMachine stateMachine,
+        object searchStrategy,
+        out Vector3 searchRangeCenter)
+    {
+        if (searchStrategy is
+                DroneEnemySearchStrategy droneSearchStrategy)
+        {
+            // Play中はStrategyがSearch開始時に固定した値を使い、
+            // Droneが巡回してもGizmo中心だけ追従する不一致を防ぐ。
+            if (EditorApplication.isPlaying &&
+                droneSearchStrategy.TryGetSearchCenter(
+                    out searchRangeCenter))
+            {
+                return true;
+            }
+
+            // Edit時の初回SearchCenterは配置時のDrone本体位置になる。
+            searchRangeCenter =
+                stateMachine.transform.position;
+
+            return true;
+        }
+
+        Collider enemyCollider =
+            stateMachine.GetComponentInChildren<Collider>();
+
+        if (enemyCollider == null)
+        {
+            searchRangeCenter = default;
+            return false;
+        }
+
+        // ChargeEnemy等の既存Strategyは従来どおりCollider中心を使用する。
+        searchRangeCenter =
+            enemyCollider.bounds.center;
+
+        return true;
     }
 }

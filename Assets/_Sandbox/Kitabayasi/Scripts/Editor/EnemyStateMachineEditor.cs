@@ -14,6 +14,7 @@ using UnityEngine;
 /// ・選択されたStrategyをEnemyStateMachineのSerializeReferenceへ設定する。
 /// ・Play中の現在StateをInspectorへ読み取り専用で表示する。
 /// ・ChargeEnemySearchStrategy使用時の巡回範囲編集を行う。
+/// ・DroneEnemySearchStrategy選択時にPatrolPointA/Bを生成・再利用して参照を設定する。
 ///
 /// 担当しない責務:
 /// ・Strategyの実行。
@@ -40,6 +41,21 @@ public sealed class EnemyStateMachineEditor : Editor
 
     private const string PATROL_DISTANCE_PROPERTY_NAME =
         "patrolDistance";
+
+    private const string DRONE_PATROL_POINT_A_NAME =
+        "PatrolPointA";
+
+    private const string DRONE_PATROL_POINT_B_NAME =
+        "PatrolPointB";
+
+    private const string DRONE_PATROL_POINT_A_PROPERTY_NAME =
+        "patrolPointA";
+
+    private const string DRONE_PATROL_POINT_B_PROPERTY_NAME =
+        "patrolPointB";
+
+    private const float DRONE_DEFAULT_PATROL_OFFSET_MINIMUM =
+        0.5f;
 
     private const float DIRECTION_EPSILON =
         0.001f;
@@ -654,6 +670,13 @@ public sealed class EnemyStateMachineEditor : Editor
         string propertyPath,
         Type strategyType)
     {
+        EnemyStateMachine stateMachine =
+            (EnemyStateMachine)target;
+
+        Undo.RecordObject(
+            stateMachine,
+            "Change Enemy Strategy");
+
         serializedObject.Update();
 
         SerializedProperty property =
@@ -667,5 +690,176 @@ public sealed class EnemyStateMachineEditor : Editor
                     strategyType);
 
         serializedObject.ApplyModifiedProperties();
+
+        if (propertyPath ==
+                SEARCH_STRATEGY_PROPERTY_NAME &&
+            strategyType ==
+                typeof(DroneEnemySearchStrategy))
+        {
+            EnsureDronePatrolPoints(
+                stateMachine);
+        }
+
+        PrefabUtility.RecordPrefabInstancePropertyModifications(
+            stateMachine);
+
+        EditorUtility.SetDirty(
+            stateMachine);
+    }
+
+    /// <summary>
+    /// Drone SearchのAuthoring用PointをEnemy直下へ用意し、
+    /// SerializeReference内のStrategyへ参照を設定する。
+    /// 既存Pointは再利用し、Strategyを選び直しても増殖させない。
+    /// </summary>
+    private void EnsureDronePatrolPoints(
+        EnemyStateMachine stateMachine)
+    {
+        int undoGroup =
+            Undo.GetCurrentGroup();
+
+        Undo.SetCurrentGroupName(
+            "Configure Drone Patrol Points");
+
+        Transform enemyTransform =
+            stateMachine.transform;
+
+        float initialOffset =
+            GetDroneInitialPatrolOffset(
+                stateMachine);
+
+        Transform pointA =
+            FindOrCreateDronePatrolPoint(
+                enemyTransform,
+                DRONE_PATROL_POINT_A_NAME,
+                -initialOffset);
+
+        Transform pointB =
+            FindOrCreateDronePatrolPoint(
+                enemyTransform,
+                DRONE_PATROL_POINT_B_NAME,
+                initialOffset);
+
+        serializedObject.Update();
+
+        SerializedProperty droneStrategyProperty =
+            serializedObject.FindProperty(
+                SEARCH_STRATEGY_PROPERTY_NAME);
+
+        if (droneStrategyProperty?.managedReferenceValue
+            is not DroneEnemySearchStrategy)
+        {
+            Undo.CollapseUndoOperations(
+                undoGroup);
+
+            return;
+        }
+
+        SerializedProperty pointAProperty =
+            droneStrategyProperty.FindPropertyRelative(
+                DRONE_PATROL_POINT_A_PROPERTY_NAME);
+
+        SerializedProperty pointBProperty =
+            droneStrategyProperty.FindPropertyRelative(
+                DRONE_PATROL_POINT_B_PROPERTY_NAME);
+
+        if (pointAProperty == null ||
+            pointBProperty == null)
+        {
+            Debug.LogError(
+                $"{nameof(EnemyStateMachineEditor)}: " +
+                $"{nameof(DroneEnemySearchStrategy)}の" +
+                "PatrolPoint参照を取得できません。",
+                stateMachine);
+
+            Undo.CollapseUndoOperations(
+                undoGroup);
+
+            return;
+        }
+
+        Undo.RecordObject(
+            stateMachine,
+            "Assign Drone Patrol Points");
+
+        pointAProperty.objectReferenceValue =
+            pointA;
+
+        pointBProperty.objectReferenceValue =
+            pointB;
+
+        serializedObject.ApplyModifiedProperties();
+
+        PrefabUtility.RecordPrefabInstancePropertyModifications(
+            stateMachine);
+
+        EditorUtility.SetDirty(
+            stateMachine);
+
+        Undo.CollapseUndoOperations(
+            undoGroup);
+
+        SceneView.RepaintAll();
+    }
+
+    private static Transform FindOrCreateDronePatrolPoint(
+        Transform enemyTransform,
+        string pointName,
+        float xOffset)
+    {
+        Transform existingPoint =
+            enemyTransform.Find(
+                pointName);
+
+        if (existingPoint != null)
+        {
+            return existingPoint;
+        }
+
+        GameObject pointObject =
+            new GameObject(
+                pointName);
+
+        Undo.RegisterCreatedObjectUndo(
+            pointObject,
+            $"Create {pointName}");
+
+        Undo.SetTransformParent(
+            pointObject.transform,
+            enemyTransform,
+            $"Parent {pointName}");
+
+        Undo.RecordObject(
+            pointObject.transform,
+            $"Initialize {pointName}");
+
+        pointObject.transform.position =
+            enemyTransform.position +
+            Vector3.right *
+            xOffset;
+
+        PrefabUtility.RecordPrefabInstancePropertyModifications(
+            pointObject.transform);
+
+        EditorUtility.SetDirty(
+            pointObject.transform);
+
+        return pointObject.transform;
+    }
+
+    private static float GetDroneInitialPatrolOffset(
+        EnemyStateMachine stateMachine)
+    {
+        EnemyDataReference dataReference =
+            stateMachine.GetComponent<EnemyDataReference>();
+
+        float detectionRadius =
+            dataReference?.Data?.DetectionRadius
+            ?? 0f;
+
+        return detectionRadius >
+            DIRECTION_EPSILON
+            ? detectionRadius * 0.5f
+            : DRONE_DEFAULT_PATROL_OFFSET_MINIMUM;
     }
 }

@@ -26,11 +26,13 @@ MonoBehaviour:
   groundRayLayers:
     serializedVersion: 2
     m_Bits: 3584
-  groundRaySideOffset: 0.02
+  groundRaySideOffset: 0.4
   groundRayStartHeight: 0.1
-  groundRayDistance: 0.1
+  groundRayDistance: 0.25
   groundRayNormalThreshold: 0.1
   groundRayContactTolerance: 0.1
+  slopeGroundSnapDistance: 0.75
+  slopeGroundStickSpeed: 1
   wallKnockbackSpeed: 8
   wallKnockbackDeceleration: 20
   wallKnockbackUpwardForce: 7

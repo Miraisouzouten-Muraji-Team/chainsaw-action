@@ -455,6 +455,7 @@ GameObject:
   - component: {fileID: 2705926445851039698}
   - component: {fileID: 4898117705153392083}
   - component: {fileID: 8602490176669791178}
+  - component: {fileID: 7539433478415592217}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -527,11 +528,18 @@ MonoBehaviour:
   chainsawDigging: {fileID: 6732003626081136930}
   chainsawAccelerator: {fileID: 5039336180393239376}
   groundCheckTransform: {fileID: 7098819222341421782}
+  isGroundedByRay: 0
   visualRoot: {fileID: 2576167837745099611}
   debugRotationSpeed: 0
   debugSpeedBonus: 0
   debugTargetSpeed: 0
   debugCurrentSpeed: 0
+  groundNormal: {x: 0, y: 1, z: 0}
+  debugGroundCollider: {fileID: 0}
+  debugGroundSource: 
+  debugVelocityBeforeWall: {x: 0, y: 0, z: 0}
+  debugVelocityAfterWall: {x: 0, y: 0, z: 0}
+  debugWallBlocked: 0
   slash1: {fileID: 11400000, guid: 8607520c691a1314eb0173541cd3397a, type: 2}
   slash2: {fileID: 11400000, guid: 5ea1d1f77eb496b498c1ab9404279355, type: 2}
   slash3: {fileID: 11400000, guid: e540abe81fcc379418b2cdafb563b6e8, type: 2}
@@ -574,7 +582,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 07df0dc10ab09434e9092a74805df098, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SensorChainsawContactDetector
-  playerParameter: {fileID: 0}
   ownerRoot: {fileID: 2576167837745099611}
   sensorRoot: {fileID: 8142018818329368728}
   upperSensor: {fileID: 1134152958625072312}
@@ -657,6 +664,20 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelRenderOverride
   _group: 1
+--- !u!114 &7539433478415592217
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6270290766517622607}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5f19d19e401e37149ac114aeb4614f78, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerHealth
+  healthData: {fileID: 11400000, guid: ee7f3a7e895ac5d4897bbeaff20cdfcf, type: 2}
+  currentHealth: 0
 --- !u!1 &6710368214315103302
 GameObject:
   m_ObjectHideFlags: 0
@@ -860,7 +881,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f5bf3cb0e2788ff469866f096c62a9d8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayeMidCollider
-  playerParameter: {fileID: 0}
   wallLayers:
     serializedVersion: 2
     m_Bits: 1

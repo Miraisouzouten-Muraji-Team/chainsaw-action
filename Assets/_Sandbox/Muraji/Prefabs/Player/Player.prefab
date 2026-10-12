@@ -1101,7 +1101,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawDiggingParticles
   chainsawDigging: {fileID: 6732003626081136930}
   playerController: {fileID: 2297365986704426365}
-  particlePrefab: {fileID: 6738715962970879416, guid: 433900216c058ea4aa41a048804046dc, type: 3}
+  particlePrefab: {fileID: 198000012283690144, guid: 96b2ec0239d11fa4b9792311efceb8ed, type: 3}
   emissionPoint: {fileID: 8995091611561932698}
   floorAngle: 135
   wallAngle: 225

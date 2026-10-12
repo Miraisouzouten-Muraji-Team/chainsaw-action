@@ -443,6 +443,96 @@ public class SensorChainsawDigging : MonoBehaviour
         }
 
         timer += deltaTime;
+        // 敵への食い込み中、指定間隔ごとにリソースを消費して攻撃する。
+        if (Surface == ChainsawSurface.Enemy)
+        {
+            float interval =
+                Mathf.Max(0.01f, diggingParameter.enemyAttackInterval);
+
+            while (timer >= interval)
+            {
+                timer -= interval;
+
+                if (contact.Enemy == null ||
+                    !contact.Enemy.CanReceiveHit)
+                {
+                    Cancel(false);
+                    return;
+                }
+
+                float speedRatio =
+                    Mathf.Clamp01(accelerator.SpeedRatio);
+
+                float damageMultiplier =
+                    Mathf.Lerp(
+                        diggingParameter.minDamageMultiplier,
+                        diggingParameter.maxDamageMultiplier,
+                        speedRatio
+                    );
+
+                float consumeAmount =
+                    HasBonus
+                        ? diggingParameter.bonusEnemyConsumeAmount
+                        : diggingParameter.enemyConsumeAmount;
+
+                if (!accelerator.TryConsume(consumeAmount))
+                {
+                    Cancel(false);
+                    return;
+                }
+
+                bool hit = chainsawAttack.HitDigging(
+                    contact.Enemy,
+                    diggingAttackData,
+                    damageMultiplier *
+                        (HasBonus
+                            ? diggingParameter.bonusDamageMultiplier
+                            : 1f),
+                    contact.Point
+                );
+
+                if (!hit)
+                {
+                    Cancel(false);
+                    return;
+                }
+
+                // 命中した敵のRigidbodyを探して、プレイヤーの向きへ押し出す。
+                Rigidbody enemyRigidbody =
+                    contact.Enemy.GetComponent<Rigidbody>();
+
+                if (enemyRigidbody == null)
+                {
+                    enemyRigidbody =
+                        contact.Enemy.GetComponentInParent<Rigidbody>();
+                }
+
+                if (enemyRigidbody == null)
+                {
+                    enemyRigidbody =
+                        contact.Enemy.GetComponentInChildren<Rigidbody>();
+                }
+
+                float direction =
+                    Mathf.Abs(facingDirection) > 0.01f
+                        ? Mathf.Sign(facingDirection)
+                        : 1f;
+
+                if (enemyRigidbody != null &&
+                    !enemyRigidbody.isKinematic &&
+                    diggingParameter.enemyPushPower > 0f)
+                {
+                    enemyRigidbody.AddForce(
+                        Vector3.right *
+                            direction *
+                            diggingParameter.enemyPushPower,
+                        ForceMode.Impulse
+                    );
+                }
+            }
+
+            return;
+        }
 
         if (Surface == ChainsawSurface.Wall)
         {

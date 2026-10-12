@@ -7,7 +7,7 @@ using UnityEngine;
 /// <remarks>
 /// 責務:
 /// ・やられState開始時にダメージ点滅を開始する。
-/// ・やられ中、見た目用TransformをZ軸方向へ傾ける。
+/// ・やられ中、攻撃を受けた側とは反対方向へ見た目用Transformを傾ける。
 /// ・指定時間の経過を管理する。
 /// ・やられ終了後にSearch Stateへの遷移を要求する。
 ///
@@ -29,6 +29,7 @@ public sealed class EnemyDamageState : IEnemyState
     private readonly Action requestSearchState;
 
     private float elapsedTime;
+    private float hitSourceDirectionSign = 1f;
 
     private Quaternion originalLocalRotation;
 
@@ -51,7 +52,7 @@ public sealed class EnemyDamageState : IEnemyState
         this.tiltDuration =
             Mathf.Max(0f, tiltDuration);
 
-        this.tiltAngle = tiltAngle;
+        this.tiltAngle = Mathf.Abs(tiltAngle);
 
         this.requestSearchState = requestSearchState
             ?? throw new ArgumentNullException(
@@ -97,6 +98,23 @@ public sealed class EnemyDamageState : IEnemyState
     }
 
     /// <summary>
+    /// 今回の攻撃がEnemyの左右どちら側から来たかを設定する。
+    /// </summary>
+    /// <remarks>
+    /// X/Yゲームプレイ平面を前提とし、
+    /// -1はEnemyの左側、+1は右側からの攻撃を表す。
+    /// 0は方向不明として従来と同じ+1へ補正する。
+    /// </remarks>
+    public void SetHitSourceDirectionSign(
+        float directionSign)
+    {
+        hitSourceDirectionSign =
+            directionSign < 0f
+                ? -1f
+                : 1f;
+    }
+
+    /// <summary>
     /// やられState中に再度攻撃を受けた場合、
     /// やられ時間と点滅演出を最初からやり直す。
     /// </summary>
@@ -127,8 +145,10 @@ public sealed class EnemyDamageState : IEnemyState
     }
 
     /// <summary>
-    /// X/Yゲームプレイ平面上で身体を傾けるため、
-    /// 見た目用TransformをローカルZ軸周りに回転させる。
+    /// X/Yゲームプレイ平面上で、攻撃を受けた側とは反対へ身体が倒れるように
+    /// 見た目用Transformを親Transform基準のZ軸周りに回転させる。
+    /// VisualRoot自身がY軸反転していても、被弾方向による傾きが反転しないよう
+    /// 傾斜回転を元のローカル回転より先に合成する。
     /// </summary>
     private void ApplyTilt()
     {
@@ -140,12 +160,12 @@ public sealed class EnemyDamageState : IEnemyState
 
         Quaternion tiltRotation =
             Quaternion.AngleAxis(
-                tiltAngle,
+                tiltAngle * hitSourceDirectionSign,
                 Vector3.forward);
 
         tiltTarget.localRotation =
-            originalLocalRotation *
-            tiltRotation;
+            tiltRotation *
+            originalLocalRotation;
     }
 
     /// <summary>

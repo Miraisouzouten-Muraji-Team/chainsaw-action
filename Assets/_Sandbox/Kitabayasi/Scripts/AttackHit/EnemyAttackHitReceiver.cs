@@ -21,6 +21,8 @@ public sealed class EnemyAttackHitReceiver :
     MonoBehaviour,
     IAttackHitReceiver
 {
+    private const float HIT_SIDE_EPSILON = 0.001f;
+
     private EnemyHealth enemyHealth;
     private EnemyStateMachine enemyStateMachine;
 
@@ -115,6 +117,52 @@ public sealed class EnemyAttackHitReceiver :
             return;
         }
 
-        enemyStateMachine.RequestDamageState();
+        float hitSourceDirectionSign =
+            ResolveHitSourceDirectionSign(
+                playerAttackHitData);
+
+        enemyStateMachine.RequestDamageState(
+            hitSourceDirectionSign);
+    }
+
+    /// <summary>
+    /// 命中時点のチェンソー刃の位置から、
+    /// Enemyの左右どちら側から攻撃されたかを求める。
+    /// </summary>
+    /// <remarks>
+    /// Player本体のTransformやAttackDataへ依存せず、
+    /// 既に命中情報として渡されている軌跡の最終サンプルを利用する。
+    /// X/Yゲームプレイ平面を前提とし、左右判定にはX座標だけを使う。
+    /// </remarks>
+    private float ResolveHitSourceDirectionSign(
+        PlayerAttackHitData playerAttackHitData)
+    {
+        ChainsawAttackTrajectory chainsawTrail =
+            playerAttackHitData.ChainsawTrail;
+
+        if (chainsawTrail == null ||
+            chainsawTrail.SampleCount == 0)
+        {
+            return 1f;
+        }
+
+        ChainsawBladeTrajectorySample latestSample =
+            chainsawTrail.Samples[
+                chainsawTrail.SampleCount - 1];
+
+        float bladeCenterX =
+            (latestSample.TipPosition.x +
+             latestSample.RootPosition.x) * 0.5f;
+
+        float horizontalOffset =
+            bladeCenterX - transform.position.x;
+
+        if (Mathf.Abs(horizontalOffset) <=
+            HIT_SIDE_EPSILON)
+        {
+            return 1f;
+        }
+
+        return Mathf.Sign(horizontalOffset);
     }
 }

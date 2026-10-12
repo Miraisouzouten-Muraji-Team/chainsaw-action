@@ -57,7 +57,7 @@ public class EnemyData : ScriptableObject
     [Min(0f)]
     private float hitTiltDuration = 0.5f;
 
-    [Tooltip("被ダメージ時のZ軸回転角度。")]
+    [Tooltip("被ダメージ時のZ軸回転角度。方向は命中側から決定し、この値は角度の大きさとして使用する。")]
     [SerializeField]
     private float hitTiltAngle;
 

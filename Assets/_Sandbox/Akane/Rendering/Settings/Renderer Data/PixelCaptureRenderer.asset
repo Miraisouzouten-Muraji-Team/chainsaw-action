@@ -34,6 +34,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelDepthCaptureRendererFeature
   m_Active: 1
   _volumetricFogMaterial: {fileID: 2100000, guid: f5fae617f0634ee4d8f7e660620b1a32, type: 2}
+  _compositeMaterial: {fileID: 2100000, guid: 829d71493aac12f46af0c5361e92fca5, type: 2}
 --- !u!114 &-837860677647722872
 MonoBehaviour:
   m_ObjectHideFlags: 0

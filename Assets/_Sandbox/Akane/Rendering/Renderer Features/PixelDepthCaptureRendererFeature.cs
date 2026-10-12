@@ -26,6 +26,9 @@ namespace Project.Rendering.Pixel
         [SerializeField]
         private Material _volumetricFogMaterial;
 
+        [Header("Composite Material")]
+        [SerializeField] private Material _compositeMaterial;
+
         // Render Graphの外側で保持するRT。
         // カメラ間・フレーム間で利用する。
         private readonly RTHandle[] _depthTextures =
@@ -46,8 +49,7 @@ namespace Project.Rendering.Pixel
             ScriptableRenderer renderer,
             ref RenderingData renderingData)
         {
-            if (_volumetricFogMaterial == null ||
-                _capturePass == null)
+            if ((_volumetricFogMaterial == null && _compositeMaterial == null) || _capturePass == null)
             {
                 return;
             }
@@ -212,9 +214,17 @@ namespace Project.Rendering.Pixel
                         GetDepthPropertyName(captureIndex));
 
                 // Main Cameraで使用するFogマテリアルへ渡す。
-                _owner._volumetricFogMaterial.SetTexture(
-                    GetDepthPropertyName(captureIndex),
-                    depthTexture.rt);
+                string propertyName = GetDepthPropertyName(captureIndex);
+
+                if (_owner._volumetricFogMaterial != null)
+                {
+                    _owner._volumetricFogMaterial.SetTexture(propertyName, depthTexture.rt);
+                }
+
+                if (_owner._compositeMaterial != null)
+                {
+                    _owner._compositeMaterial.SetTexture(propertyName, depthTexture.rt);
+                }
             }
         }
 

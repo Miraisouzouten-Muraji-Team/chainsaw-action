@@ -181,6 +181,13 @@ namespace Project.Rendering.Pixel
 
         private void ConfigureCaptureCamera(Camera captureCamera, RenderTexture targetTexture, int layer, float depthOffset)
         {
+            if (!captureCamera.TryGetComponent(out PixelCaptureViewMarker marker))
+            {
+                marker = captureCamera.gameObject
+                    .AddComponent<PixelCaptureViewMarker>();
+            }
+
+            marker.SetView(PixelCaptureView.Game);
             UniversalAdditionalCameraData cameraData = captureCamera.GetUniversalAdditionalCameraData();
             cameraData.SetRenderer(_captureRendererIndex);
             cameraData.renderPostProcessing = false;

@@ -61,6 +61,8 @@ MonoBehaviour:
   m_Active: 1
   _volumetricFogMaterial: {fileID: 2100000, guid: fb861e3ff9c8f724f99d4916ce5d764d, type: 2}
   _compositeMaterial: {fileID: 2100000, guid: 4aa34f71a53ba11489906ada66f28fb9, type: 2}
+  _sceneVolumetricFogMaterial: {fileID: 0}
+  _sceneCompositeMaterial: {fileID: 0}
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0

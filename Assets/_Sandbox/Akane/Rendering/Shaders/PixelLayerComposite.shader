@@ -12,6 +12,9 @@ Shader "Custom/PixelLayerComposite"
         [HideInInspector] _PixelFarDepthTex("Far Depth", 2D) = "white" {}
 
         [HideInInspector] _PixelEffectEnabled("Pixel Effect Enabled", Float) = 1
+
+        [HideInInspector] _SceneNormalTex("Scene Normal", 2D) = "black" {}
+        [HideInInspector] _SceneNormalPreviewEnabled("Scene Normal Preview Enabled", Float) = 0
     }
 
     SubShader
@@ -44,7 +47,10 @@ Shader "Custom/PixelLayerComposite"
             TEXTURE2D(_PixelMiddleDepthTex);
             TEXTURE2D(_PixelFarDepthTex);
 
+            TEXTURE2D(_SceneNormalTex);
+
             float _PixelEffectEnabled;
+            float _SceneNormalPreviewEnabled;
 
             // Skyまたは描画物が存在しない深度を判定する。
             bool IsSkyDepth(float rawDepth)
@@ -95,8 +101,13 @@ Shader "Custom/PixelLayerComposite"
                 float2 colorUv = input.texcoord.xy;
                 float2 depthUv = input.positionCS.xy / _ScaledScreenParams.xy;
 
-                half4 sceneColor = SAMPLE_TEXTURE2D_X_LOD(
-                    _BlitTexture, sampler_LinearClamp, colorUv, _BlitMipLevel);
+                half4 sceneColor = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_LinearClamp, colorUv, _BlitMipLevel);
+
+                // SceneビューのPixel OFF時は、通常解像度のRTを表示する。
+                if (_SceneNormalPreviewEnabled > 0.5)
+                {
+                    return SAMPLE_TEXTURE2D(_SceneNormalTex, sampler_LinearClamp,colorUv);
+                }
 
                 if (_PixelEffectEnabled < 0.5)
                 {

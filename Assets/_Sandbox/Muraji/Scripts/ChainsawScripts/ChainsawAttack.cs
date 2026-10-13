@@ -49,8 +49,9 @@ public class ChainsawAttack : MonoBehaviour
     private bool hitWindowOpen;
     private bool diggingActive;
 
-    private readonly HashSet<ChainsawDamageReceiver> hitEnemies =
-        new HashSet<ChainsawDamageReceiver>();
+    // 通常攻撃の1段ごとに、送信済みの敵を記録する。
+    private readonly HashSet<EnemyAttackHitReceiver> hitEnemies =
+        new HashSet<EnemyAttackHitReceiver>();
 
     private void Awake()
     {
@@ -202,18 +203,20 @@ public class ChainsawAttack : MonoBehaviour
         EndBladeRecording("食い込み終了");
     }
 
+    /// <summary>
+    /// 食い込み対象の敵へ命中情報を送り、送信できた場合に専用演出を再生する。
+    /// </summary>
+    /// <remarks>
+    /// 対象をComponentで受け取り、既存の食い込み側からの呼び出しを維持する。
+    /// multiplierは呼び出し互換性のため保持する。
+    /// 現在の受信側はAttackData.damageを使用するため、倍率は反映されない。
+    /// </remarks>
     public bool HitDigging(
-        ChainsawDamageReceiver enemy,
+        Component enemy,
         AttackData data,
         float multiplier,
         Vector3 point)
     {
-        // 食い込み攻撃が呼ばれたかと、実行に必要な条件を確認する。
-        Debug.Log(
-            $"[食い込み入口] 有効={isActiveAndEnabled}, " +
-            $"食い込み中={diggingActive}, " +
-            $"敵あり={enemy != null}, データあり={data != null}",
-            this);
         if (!isActiveAndEnabled ||
             !diggingActive ||
             enemy == null ||
@@ -222,49 +225,34 @@ public class ChainsawAttack : MonoBehaviour
             return false;
         }
 
-        ChainsawHitInfo hit =
-            CreateHit(data, multiplier, point, true);
+        EnemyAttackHitReceiver receiver =
+            enemy.GetComponentInParent<EnemyAttackHitReceiver>();
 
-        if (!enemy.ReceiveHit(hit))
+        if (receiver == null)
+        {
+            if (enableTrajectoryDebugLog)
+            {
+                Debug.LogWarning(
+                    LOG_PREFIX +
+                    $"食い込み対象自身または親にEnemyAttackHitReceiverがありません: " +
+                    $"対象={enemy.name}",
+                    enemy);
+            }
+
+            return false;
+        }
+
+        if (!SendAttackHit(receiver, data))
         {
             return false;
         }
 
-        // 食い込みの送信先と、送信前後の実HPを確認する。
-        EnemyHealth targetHealth =
-            enemy.GetComponentInParent<EnemyHealth>();
-
-        IAttackHitReceiver targetReceiver =
-            enemy.GetComponentInParent<IAttackHitReceiver>();
-
-        int healthBefore =
-            targetHealth != null ? targetHealth.CurrentHealth : -1;
-
-        Debug.Log(
-            $"[食い込み送信前] 対象={enemy.name}, " +
-            $"基礎ダメージ={data.damage}, 倍率={multiplier}, " +
-            $"軌跡Recorderあり={bladeTrajectoryRecorder != null}, " +
-            $"受信先あり={targetReceiver != null}, " +
-            $"実HPあり={targetHealth != null}, " +
-            $"テストHP={enemy.TestHealth}",
-            enemy);
-
-        SendAttackHit(enemy, data);
-
-        // -1は、この検索範囲でEnemyHealthが見つからなかったことを表す。
-        int healthAfter =
-            targetHealth != null ? targetHealth.CurrentHealth : -1;
-
-        Debug.Log(
-            $"[食い込み送信後] 実HP={healthBefore} → {healthAfter}",
-            this);
-        // 食い込みは既存の専用演出設定を維持。
+        // 既存の食い込み専用演出設定を使用する。
         PlayHitEffects(
             point,
             diggingHitStopTime,
             shakeOnDigging,
-            magnitude
-        );
+            magnitude);
 
         return true;
     }
@@ -301,6 +289,9 @@ public class ChainsawAttack : MonoBehaviour
         TryHitSlash(other);
     }
 
+    /// <summary>
+    /// 通常攻撃の命中を確認し、同じ敵へ1段につき1回だけ命中情報を送る。
+    /// </summary>
     private void TryHitSlash(Collider other)
     {
         if (!isActiveAndEnabled ||
@@ -308,17 +299,18 @@ public class ChainsawAttack : MonoBehaviour
             !hitWindowOpen ||
             hitBox == null ||
             !hitBox.enabled ||
+            other == null ||
             Time.timeScale <= 0f)
         {
             return;
         }
 
-        ChainsawDamageReceiver enemy =
-            other.GetComponentInParent<ChainsawDamageReceiver>();
+        EnemyAttackHitReceiver receiver =
+            other.GetComponentInParent<EnemyAttackHitReceiver>();
 
-        if (enemy == null ||
-            !enemy.CanReceiveHit ||
-            hitEnemies.Contains(enemy))
+        if (receiver == null ||
+            !receiver.isActiveAndEnabled ||
+            hitEnemies.Contains(receiver))
         {
             return;
         }
@@ -326,26 +318,22 @@ public class ChainsawAttack : MonoBehaviour
         Vector3 point =
             other.ClosestPoint(hitBox.bounds.center);
 
-        // 複数Colliderでも、同じ敵には1段につき1回。
-        hitEnemies.Add(enemy);
+        // 送信先の処理中に再度呼ばれても重複送信しないよう、先に登録する。
+        hitEnemies.Add(receiver);
 
-        if (!enemy.ReceiveHit(
-                CreateHit(currentData, 1f, point, false)))
+        if (!SendAttackHit(receiver, currentData))
         {
-            hitEnemies.Remove(enemy);
+            // 送信できなかった場合は、次の接触通知で再試行できるようにする。
+            hitEnemies.Remove(receiver);
             return;
         }
-
-        SendAttackHit(other, currentData);
 
         PlayHitEffects(
             point,
             attackHitStopTime,
             true,
-            attackShakeMagnitude
-        );
+            attackShakeMagnitude);
     }
-
     private void PlayHitEffects(
         Vector3 point,
         float hitStop,
@@ -436,63 +424,87 @@ public class ChainsawAttack : MonoBehaviour
         }
     }
 
-    private void SendAttackHit(
-        Component target,
-        ScriptableObject attackData)
+    /// <summary>
+    /// 生存中の敵へ、攻撃データと軌跡をIAttackHitReceiver経由で送信する。
+    /// </summary>
+    /// <returns>
+    /// 命中情報を送信した場合はtrue。実際のHP変更は受信側が担当する。
+    /// </returns>
+    private bool SendAttackHit(
+        EnemyAttackHitReceiver target,
+        AttackData attackData)
     {
-        if (bladeTrajectoryRecorder == null || target == null)
+        if (target == null ||
+            !target.isActiveAndEnabled ||
+            attackData == null)
         {
-            return;
+            return false;
+        }
+
+        EnemyHealth enemyHealth =
+            target.GetComponent<EnemyHealth>();
+
+        if (enemyHealth == null || enemyHealth.IsDead)
+        {
+            return false;
+        }
+
+        if (bladeTrajectoryRecorder == null)
+        {
+            if (enableTrajectoryDebugLog)
+            {
+                Debug.LogWarning(
+                    LOG_PREFIX +
+                    "Blade Trajectory Recorderが未設定のため送信できません。",
+                    this);
+            }
+
+            return false;
         }
 
         if (!bladeTrajectoryRecorder.TryCreateTrajectorySnapshot(
                 out ChainsawAttackTrajectory trajectory))
         {
-            if (enableTrajectoryDebugLog)
+            // 攻撃開始直後など、まだ物理更新で記録されていない場合は、
+            // 記録中であることを確認して命中時点のサンプルを追加する。
+            if (bladeTrajectoryRecorder.IsRecording)
             {
-                Debug.LogWarning(
-                    LOG_PREFIX +
-                    $"命中したが軌跡サンプルが0件のため送信しません: 対象={target.name}",
-                    target
-                );
+                bladeTrajectoryRecorder.RecordSample();
             }
 
-            return;
-        }
-
-        IAttackHitReceiver receiver =
-            target.GetComponentInParent<IAttackHitReceiver>();
-
-        if (receiver == null)
-        {
-            if (enableTrajectoryDebugLog)
+            if (!bladeTrajectoryRecorder.TryCreateTrajectorySnapshot(
+                    out trajectory))
             {
-                Debug.LogWarning(
-                    LOG_PREFIX +
-                    $"命中対象にIAttackHitReceiverがありません: 対象={target.name}",
-                    target
-                );
-            }
+                if (enableTrajectoryDebugLog)
+                {
+                    Debug.LogWarning(
+                        LOG_PREFIX +
+                        $"軌跡を取得できないため送信できません: 対象={target.name}",
+                        target);
+                }
 
-            return;
+                return false;
+            }
         }
+
+        // 敵の受信実装を、既存の共通インターフェース経由で呼び出す。
+        IAttackHitReceiver receiver = target;
 
         receiver.ReceiveAttackHit(
-            new PlayerAttackHitData(attackData, trajectory)
-        );
+            new PlayerAttackHitData(attackData, trajectory));
 
         if (enableTrajectoryDebugLog)
         {
             Debug.Log(
                 LOG_PREFIX +
                 $"命中情報を送信: 対象={target.name}, " +
-                $"攻撃データ={(attackData != null ? attackData.name : "なし")}, " +
+                $"攻撃データ={attackData.name}, " +
                 $"軌跡サンプル数={trajectory.SampleCount}",
-                target
-            );
+                target);
         }
-    }
 
+        return true;
+    }
     private void OnDisable()
     {
         EndDigging();

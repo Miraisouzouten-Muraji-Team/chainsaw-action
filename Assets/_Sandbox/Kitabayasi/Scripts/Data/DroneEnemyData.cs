@@ -90,10 +90,15 @@ public sealed class DroneEnemyData : EnemyData
     [Min(0f)]
     private float brakePauseDuration = 0.15f;
 
-    [Tooltip("次回突進前に後退する速度。")]
+    [Tooltip("次回突進前に後退する最大速度。")]
     [SerializeField]
     [Min(0f)]
     private float retreatSpeed = 5f;
+
+    [Tooltip("後退の開始・終了を滑らかにする時間。0でイージングなし。")]
+    [SerializeField]
+    [Min(0f)]
+    private float retreatEaseDuration = 0.1f;
 
     [Tooltip("次回突進前に後退する距離。")]
     [SerializeField]
@@ -147,6 +152,9 @@ public sealed class DroneEnemyData : EnemyData
 
     public float RetreatSpeed =>
         retreatSpeed;
+
+    public float RetreatEaseDuration =>
+        retreatEaseDuration;
 
     public float RetreatDistance =>
         retreatDistance;

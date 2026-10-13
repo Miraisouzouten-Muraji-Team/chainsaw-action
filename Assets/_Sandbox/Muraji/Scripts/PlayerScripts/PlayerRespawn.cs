@@ -46,6 +46,19 @@ public sealed class PlayerRespawn : MonoBehaviour
     [SerializeField]
     private string idleState = "Base Layer.Idle";
 
+    [Header("エフェクトPrefab")]
+    [SerializeField] private GameObject deathEffectPrefab;
+    [SerializeField] private GameObject respawnEffectPrefab;
+    [SerializeField, Min(0f)] private float effectLifetime = 5f;
+    [SerializeField] private Vector3 effectOffset = Vector3.zero;
+
+    private void SpawnEffect(GameObject prefab, Vector3 position)
+    {
+        if (prefab == null) return;
+        GameObject instance = Instantiate(prefab, position + effectOffset, Quaternion.identity);
+        if (effectLifetime > 0f) Destroy(instance, effectLifetime);
+    }
+
     [Header("演出の追加先")]
 
     [Tooltip("死亡モーション開始時に呼びます。死亡エフェクトなどを登録できます。")]
@@ -386,6 +399,7 @@ public sealed class PlayerRespawn : MonoBehaviour
         fadeGroup.blocksRaycasts = true;
 
         animator.Play(Animator.StringToHash(deathState), 0, 0f);
+        SpawnEffect(deathEffectPrefab, playerController.transform.position);
         deathStarted.Invoke();
     }
 
@@ -453,6 +467,7 @@ public sealed class PlayerRespawn : MonoBehaviour
         animator.Play(Animator.StringToHash(respawnState), 0, 0f);
 
         ChangePhase(RespawnPhase.RespawnMotion);
+        SpawnEffect(respawnEffectPrefab, selectedPoint.Position);
         respawnStarted.Invoke();
     }
 

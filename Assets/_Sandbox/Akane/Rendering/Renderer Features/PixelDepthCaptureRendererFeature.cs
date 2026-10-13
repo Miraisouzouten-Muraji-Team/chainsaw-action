@@ -29,10 +29,20 @@ namespace Project.Rendering.Pixel
         [Header("Composite Material")]
         [SerializeField] private Material _compositeMaterial;
 
-        // Render Graphの外側で保持するRT。
-        // カメラ間・フレーム間で利用する。
-        private readonly RTHandle[] _depthTextures =
-            new RTHandle[3];
+        [Header("Scene Fog Material")]
+        [SerializeField]
+        private Material _sceneVolumetricFogMaterial;
+
+        [Header("Scene Composite Material")]
+        [SerializeField]
+        private Material _sceneCompositeMaterial;
+
+        // Game / SceneそれぞれNear・Middle・Farの3枚を保持する。
+        private readonly RTHandle[][] _depthTextures =
+        {
+            new RTHandle[3],
+            new RTHandle[3]
+        };
 
         private DepthCapturePass _capturePass;
 
@@ -116,6 +126,7 @@ namespace Project.Rendering.Pixel
         /// 解像度が同じなら再確保しない。
         /// </summary>
         private RTHandle GetOrCreateDepthTexture(
+            PixelCaptureView view,
             int index,
             RenderTextureDescriptor descriptor)
         {
@@ -127,14 +138,16 @@ namespace Project.Rendering.Pixel
             descriptor.autoGenerateMips = false;
             descriptor.sRGB = false;
 
+            RTHandle[] depthTextures = _depthTextures[(int)view];
+
             RenderingUtils.ReAllocateHandleIfNeeded(
-                ref _depthTextures[index],
+                ref depthTextures[index],
                 descriptor,
                 FilterMode.Point,
                 TextureWrapMode.Clamp,
-                name: GetDepthPropertyName(index));
+                name: $"{view}_{GetDepthPropertyName(index)}");
 
-            return _depthTextures[index];
+            return depthTextures[index];
         }
 
         /// <summary>
@@ -171,6 +184,16 @@ namespace Project.Rendering.Pixel
                     return;
                 }
 
+                Camera camera = cameraData.camera;
+
+                if (!camera.TryGetComponent(
+                        out PixelCaptureViewMarker marker))
+                {
+                    return;
+                }
+
+                PixelCaptureView view = marker.View;
+
                 // URPのCopyDepthで生成された深度。
                 TextureHandle source =
                     resourceData.cameraDepthTexture;
@@ -191,10 +214,7 @@ namespace Project.Rendering.Pixel
                 descriptor.height = sourceDesc.height;
 
                 // 別カメラから使えるRTを確保。
-                RTHandle depthTexture =
-                    _owner.GetOrCreateDepthTexture(
-                        captureIndex,
-                        descriptor);
+                RTHandle depthTexture = _owner.GetOrCreateDepthTexture(view, captureIndex, descriptor);
 
                 // Render Graphへ外部RTを登録。
                 TextureHandle destination =
@@ -216,14 +236,22 @@ namespace Project.Rendering.Pixel
                 // Main Cameraで使用するFogマテリアルへ渡す。
                 string propertyName = GetDepthPropertyName(captureIndex);
 
-                if (_owner._volumetricFogMaterial != null)
+                Material fogMaterial = view == PixelCaptureView.Scene
+                    ? _owner._sceneVolumetricFogMaterial
+                    : _owner._volumetricFogMaterial;
+
+                Material compositeMaterial = view == PixelCaptureView.Scene
+                    ? _owner._sceneCompositeMaterial
+                    : _owner._compositeMaterial;
+
+                if (fogMaterial != null)
                 {
-                    _owner._volumetricFogMaterial.SetTexture(propertyName, depthTexture.rt);
+                    fogMaterial.SetTexture(propertyName, depthTexture.rt);
                 }
 
-                if (_owner._compositeMaterial != null)
+                if (compositeMaterial != null)
                 {
-                    _owner._compositeMaterial.SetTexture(propertyName, depthTexture.rt);
+                    compositeMaterial.SetTexture(propertyName, depthTexture.rt);
                 }
             }
         }
@@ -235,10 +263,13 @@ namespace Project.Rendering.Pixel
                 return;
             }
 
-            for (int i = 0; i < _depthTextures.Length; i++)
+            foreach (RTHandle[] depthTextures in _depthTextures)
             {
-                _depthTextures[i]?.Release();
-                _depthTextures[i] = null;
+                for (int i = 0; i < depthTextures.Length; i++)
+                {
+                    depthTextures[i]?.Release();
+                    depthTextures[i] = null;
+                }
             }
         }
     }

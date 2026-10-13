@@ -15,6 +15,8 @@ Shader "Custom/VolumetricFog"
         [HideInInspector] _PixelMiddleDepthTex("Middle Depth", 2D) = "white" {}
         [HideInInspector] _PixelFarDepthTex("Far Depth", 2D) = "white" {}
 
+        [HideInInspector] _SceneNormalPreviewEnabled("Scene Normal Preview Enabled", Float) = 0
+
         _PixelEffectEnabled("Pixel Effect Enabled", Float) = 0
 
         // ============================================================
@@ -166,6 +168,7 @@ Shader "Custom/VolumetricFog"
                 float _SampleCount;
 
                 float _PixelEffectEnabled;
+                float _SceneNormalPreviewEnabled;
 
             CBUFFER_END
 
@@ -305,37 +308,31 @@ Shader "Custom/VolumetricFog"
                 // 2. Scene Color
                 // ====================================================
 
-                half4 sceneColor = SAMPLE_TEXTURE2D_X_LOD(
-                    _BlitTexture,
-                    sampler_LinearClamp,
-                    colorUv,
-                    _BlitMipLevel);
+                half4 sceneColor = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_LinearClamp, colorUv, _BlitMipLevel);
+                // Scene通常プレビュー時はFogを追加しない。
+                // 通常表示RTにはGameRendererの描画結果が含まれる。
+                if (_SceneNormalPreviewEnabled > 0.5)
+                {
+                    return sceneColor;
+                }
 
                 // ====================================================
                 // 3. Scene Depth
                 // ====================================================
 
-                float rawDepth = GetCompositeDepth(
-                    colorUv,
-                    depthUv);
+                float rawDepth = GetCompositeDepth(colorUv, depthUv);
 
                 float deviceDepth = rawDepth;
 
                 #if !UNITY_REVERSED_Z
-                    deviceDepth = lerp(
-                        UNITY_NEAR_CLIP_VALUE,
-                        1.0,
-                        rawDepth);
+                    deviceDepth = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, rawDepth);
                 #endif
 
                 // ====================================================
                 // 4. Surface World Position
                 // ====================================================
 
-                float3 surfacePositionWS = ComputeWorldSpacePosition(
-                    depthUv,
-                    deviceDepth,
-                    UNITY_MATRIX_I_VP);
+                float3 surfacePositionWS = ComputeWorldSpacePosition(depthUv, deviceDepth, UNITY_MATRIX_I_VP);
 
                 float3 cameraPositionWS = _WorldSpaceCameraPos;
 

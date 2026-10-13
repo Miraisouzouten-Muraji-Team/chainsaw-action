@@ -26,26 +26,6 @@ MonoBehaviour:
     BlurQuality: 0
     Falloff: 100
     SampleCount: -1
---- !u!114 &-4780272361684570940
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b00045f12942b46c698459096c89274e, type: 3}
-  m_Name: Scene View Pixel Preview
-  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.FullScreenPassRendererFeature
-  m_Active: 0
-  injectionPoint: 600
-  fetchColorBuffer: 1
-  requirements: 1
-  passMaterial: {fileID: 2100000, guid: 2ceb08bd15be18e4ab7ffb7c11c4e0b2, type: 2}
-  passIndex: 0
-  bindDepthStencilAttachment: 0
-  m_Version: 1
 --- !u!114 &-1172159134056201380
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -93,12 +73,11 @@ MonoBehaviour:
   m_RendererFeatures:
   - {fileID: -1172159134056201380}
   - {fileID: -5791863826025335512}
+  - {fileID: 7551552043721812693}
   - {fileID: 7218563272067358311}
   - {fileID: 4080925466021557763}
   - {fileID: 5258720680466886612}
-  - {fileID: -4780272361684570940}
-  - {fileID: 7551552043721812693}
-  m_RendererFeatureMap: 5cc3595a7aa7bbef2835536e892a9faf679e41e40c7d2d6403760ff5165ca238d4af3ad498bafa48c46c2c309d0fa9bdd5eae9ec9280cc68
+  m_RendererFeatureMap: 5cc3595a7aa7bbef2835536e892a9fafd5eae9ec9280cc68679e41e40c7d2d6403760ff5165ca238d4af3ad498bafa48
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -108,10 +87,10 @@ MonoBehaviour:
     m_Bits: 4294967295
   m_OpaqueLayerMask:
     serializedVersion: 2
-    m_Bits: 247
+    m_Bits: 0
   m_TransparentLayerMask:
     serializedVersion: 2
-    m_Bits: 247
+    m_Bits: 0
   m_DefaultStencilState:
     overrideStencilState: 0
     stencilReference: 0
@@ -179,7 +158,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b00045f12942b46c698459096c89274e, type: 3}
   m_Name: Volumetric Fog
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.FullScreenPassRendererFeature
-  m_Active: 0
+  m_Active: 1
   injectionPoint: 550
   fetchColorBuffer: 1
   requirements: 5

@@ -12,6 +12,9 @@ using UnityEngine;
 /// EnemyCutPieceBurstへ渡して吹き飛ばしを開始し、
 /// EnemyCutPieceShrinkへ渡して縮小シーケンスを開始する。
 ///
+/// 死亡開始時にはEnemy本体と子階層に存在していたColliderを無効化し、
+/// 死亡演出中にGameplay上の当たり判定が残らないようにする。
+///
 /// Mesh分割アルゴリズム、切断片の具体的な移動・縮小処理、
 /// State切り替え、HPの保持・死亡判定、
 /// Enemy本体の最終破棄は担当しない。
@@ -33,6 +36,8 @@ public sealed class StandardEnemyDeathStrategy :
 
     private EnemyCutPieceShrink
         enemyCutPieceShrink;
+
+    private Collider[] enemyColliders;
 
     private bool isDeathActive;
 
@@ -66,6 +71,13 @@ public sealed class StandardEnemyDeathStrategy :
         enemyCutPieceShrink =
             enemyObject.GetComponent<
                 EnemyCutPieceShrink>();
+
+        // 死亡時に生成される切断片は対象にせず、
+        // 死亡前からEnemyを構成しているColliderだけを無効化するため、
+        // 初期化時点で参照を確定しておく。
+        enemyColliders =
+            enemyObject.GetComponentsInChildren<Collider>(
+                true);
 
         if (enemyAttackHitReceiver == null)
         {
@@ -115,6 +127,7 @@ public sealed class StandardEnemyDeathStrategy :
     {
         isDeathActive = true;
 
+        DisableEnemyColliders();
         TryCutDeathMesh();
     }
 
@@ -143,6 +156,26 @@ public sealed class StandardEnemyDeathStrategy :
 
         enemyCutPieceBurst?.StopBurst();
         enemyCutPieceShrink?.StopShrink();
+    }
+
+    /// <summary>
+    /// 死亡開始時点でEnemy本体と子階層のColliderを無効化し、
+    /// 死亡演出中にGameplay上の当たり判定が残らないようにする。
+    /// </summary>
+    private void DisableEnemyColliders()
+    {
+        if (enemyColliders == null)
+        {
+            return;
+        }
+
+        foreach (Collider enemyCollider in enemyColliders)
+        {
+            if (enemyCollider != null)
+            {
+                enemyCollider.enabled = false;
+            }
+        }
     }
 
     /// <summary>

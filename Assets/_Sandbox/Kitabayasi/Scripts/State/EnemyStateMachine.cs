@@ -226,9 +226,14 @@ public class EnemyStateMachine : MonoBehaviour
     /// </summary>
     /// <remarks>
     /// 既にDamage State中の場合はStateを切り替えず、
-    /// やられ時間と点滅演出だけを最初からやり直す。
+    /// やられ方向・やられ時間・点滅演出を今回の命中で更新する。
     /// </remarks>
-    public void RequestDamageState()
+    /// <param name="hitSourceDirectionSign">
+    /// X/Yゲームプレイ平面上で見た攻撃元の左右方向。
+    /// -1はEnemyの左側、+1は右側。
+    /// </param>
+    public void RequestDamageState(
+        float hitSourceDirectionSign)
     {
         if (!isActiveAndEnabled ||
             !isInitialized ||
@@ -237,6 +242,9 @@ public class EnemyStateMachine : MonoBehaviour
         {
             return;
         }
+
+        damageState.SetHitSourceDirectionSign(
+            hitSourceDirectionSign);
 
         if (ReferenceEquals(
                 CurrentState,

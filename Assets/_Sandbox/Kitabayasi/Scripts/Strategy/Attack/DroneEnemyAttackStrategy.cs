@@ -55,6 +55,7 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
     private float homingStallElapsedTime;
     private float retreatElapsedTime;
     private float expectedRetreatDuration;
+    private float effectiveRetreatEaseDuration;
 
     private bool isAttackActive;
     private bool isHomingActive;
@@ -541,12 +542,30 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
 
         retreatElapsedTime = 0f;
 
-        expectedRetreatDuration =
-            enemyData.RetreatSpeed >
-            DIRECTION_EPSILON
-                ? enemyData.RetreatDistance /
-                  enemyData.RetreatSpeed
-                : 0f;
+        if (enemyData.RetreatSpeed >
+            DIRECTION_EPSILON)
+        {
+            float constantSpeedDuration =
+                enemyData.RetreatDistance /
+                enemyData.RetreatSpeed;
+
+            effectiveRetreatEaseDuration =
+                Mathf.Clamp(
+                    enemyData.RetreatEaseDuration,
+                    0f,
+                    constantSpeedDuration);
+
+            // EaseIn / EaseOut区間では平均速度が最大速度より低くなるため、
+            // 設定距離を維持できるよう、その分だけ理論移動時間を延ばす。
+            expectedRetreatDuration =
+                constantSpeedDuration +
+                effectiveRetreatEaseDuration;
+        }
+        else
+        {
+            effectiveRetreatEaseDuration = 0f;
+            expectedRetreatDuration = 0f;
+        }
 
         BeginVisualPreparation();
 
@@ -584,7 +603,7 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
         }
 
         // 壁などで後退量を満たせない場合にAttackが永久停止しないよう、
-        // 設定速度なら指定距離へ到達する理論時間で後退フェーズを打ち切る。
+        // イージング込みの理論移動時間で後退フェーズを打ち切る。
         if (expectedRetreatDuration >
                 DIRECTION_EPSILON &&
             retreatElapsedTime >=
@@ -596,7 +615,58 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
 
         SetPlanarVelocity(
             retreatDirection *
-            enemyData.RetreatSpeed);
+            CalculateCurrentRetreatSpeed());
+    }
+
+    /// <summary>
+    /// 後退開始と終了だけをSmoothStepで滑らかにし、
+    /// 中間区間ではRetreatSpeedを維持する。
+    /// </summary>
+    private float CalculateCurrentRetreatSpeed()
+    {
+        float maximumSpeed =
+            enemyData.RetreatSpeed;
+
+        if (effectiveRetreatEaseDuration <=
+                DIRECTION_EPSILON ||
+            expectedRetreatDuration <=
+                DIRECTION_EPSILON)
+        {
+            return maximumSpeed;
+        }
+
+        if (retreatElapsedTime <
+            effectiveRetreatEaseDuration)
+        {
+            float easeInTime =
+                retreatElapsedTime /
+                effectiveRetreatEaseDuration;
+
+            return Mathf.SmoothStep(
+                0f,
+                maximumSpeed,
+                easeInTime);
+        }
+
+        float easeOutStartTime =
+            expectedRetreatDuration -
+            effectiveRetreatEaseDuration;
+
+        if (retreatElapsedTime >
+            easeOutStartTime)
+        {
+            float easeOutTime =
+                (retreatElapsedTime -
+                 easeOutStartTime) /
+                effectiveRetreatEaseDuration;
+
+            return Mathf.SmoothStep(
+                maximumSpeed,
+                0f,
+                easeOutTime);
+        }
+
+        return maximumSpeed;
     }
 
     private void CompleteRetreatPreparation()
@@ -1037,6 +1107,7 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
         homingStallElapsedTime = 0f;
         retreatElapsedTime = 0f;
         expectedRetreatDuration = 0f;
+        effectiveRetreatEaseDuration = 0f;
 
         hasDamagedPlayerThisPass = false;
         hasWarnedMissingPlayerReceiver = false;

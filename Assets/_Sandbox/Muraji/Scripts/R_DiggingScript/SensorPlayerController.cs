@@ -1785,6 +1785,60 @@ public class SensorPlayerController : MonoBehaviour
             lastGroundedTime = Time.time;
         }
     }
+
+    // 操作を停止し、通常の無効化処理とリスポーン専用の状態初期化を行う。
+    public void PrepareForRespawn()
+    {
+        // OnDisableで接地・壁・角補正・硬直・攻撃・食い込みを解除する。
+        enabled = false;
+
+        // 既存のOnDisableで初期化されていない移動状態を解除する。
+        knockbackVelocity = 0f;
+        knockbackHopPending = false;
+        pendingJumpPower = 0f;
+        wallTravelSpeed = 0f;
+        ascentStartSpeed = 0f;
+        fallElapsedTime = 0f;
+        ignoreGroundUntil = 0f;
+
+        attackStartFrame = 0;
+        attackStateObserved = false;
+        stateWaitTime = 0f;
+
+        // 食い込み解除後に残る可能性がある反発予約を消費する。
+        if (chainsawDigging != null)
+        {
+            chainsawDigging.TryTakeWallBounce(out _);
+        }
+
+        if (playerAnimator != null)
+        {
+            playerAnimator.SetSpeed(0f);
+        }
+
+        ClearRespawnInput();
+    }
+
+    // 演出中や操作再開直前に、予約されている入力を破棄する。
+    public void ClearRespawnInput()
+    {
+        if (input != null)
+        {
+            input.ResetInput();
+        }
+    }
+
+    // 復活時の向きを、見た目・カメラ参照値・食い込み判定へ反映する。
+    public void SetRespawnFacing(bool faceRight)
+    {
+        facingDirection = faceRight ? 1f : -1f;
+        ApplyFacingRotation();
+
+        if (chainsawDigging != null)
+        {
+            chainsawDigging.SetFacingDirection(facingDirection);
+        }
+    }
     // 実行中の硬直残り時間を減らし、終了時に設定アセットの速度で押し戻す。
     private bool TickDiggingImpactStun(float deltaTime)
     {

@@ -38,23 +38,45 @@ public sealed class PlayerHealth : MonoBehaviour
         public double LastFixedTime = double.NegativeInfinity;
     }
 
-    // 同じオブジェクトのRigidbodyと本体Colliderを取得し、HPを初期化する。
+    // 親の移動用Rigidbodyと、HP側のColliderを取得してHPを初期化する。
     private void Awake()
     {
-        playerBody = GetComponent<Rigidbody>();
-        if (healthData == null || playerBody == null)
+        SensorPlayerController controller =
+            GetComponentInParent<SensorPlayerController>();
+
+        if (controller == null)
         {
-            Debug.LogError("PlayerHealth：HP設定と、同じオブジェクトのRigidbodyが必要です。", this);
+            Debug.LogError(
+                "PlayerHealth：自分または親に"
+                + "SensorPlayerControllerが必要です。",
+                this);
+
             enabled = false;
             return;
         }
 
+        // Mid_Colliderではなく、移動ControllerがあるPlayerのRigidbodyを使う。
+        playerBody = controller.GetComponent<Rigidbody>();
+
+        if (healthData == null || playerBody == null)
+        {
+            Debug.LogError(
+                "PlayerHealth：Health Dataと、"
+                + "SensorPlayerControllerと同じオブジェクトの"
+                + "Rigidbodyが必要です。",
+                this);
+
+            enabled = false;
+            return;
+        }
+
+        // ダメージ床の判定対象は、これまでどおりHP側のColliderを使用する。
         bodyColliders = GetComponentsInChildren<Collider>(true);
+
         maxHealth = healthData.MaxHealth;
         currentHealth = maxHealth;
         initialized = true;
     }
-
     // 有効なプレイヤーを床の照会対象へ登録する。HPはリセットしない。
     private void OnEnable()
     {

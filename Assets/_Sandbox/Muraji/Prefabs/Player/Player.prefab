@@ -455,6 +455,7 @@ GameObject:
   - component: {fileID: 2705926445851039698}
   - component: {fileID: 4898117705153392083}
   - component: {fileID: 8602490176669791178}
+  - component: {fileID: 4482065994242162528}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -568,7 +569,7 @@ MonoBehaviour:
   accelerator: {fileID: 5039336180393239376}
   playerAnimator: {fileID: 4898117705153392083}
   chainsawAttack: {fileID: 220597037484416876}
-  diggingAttackData: {fileID: 0}
+  diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
 --- !u!114 &5176221053347166965
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -663,6 +664,35 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelRenderOverride
   _group: 1
+--- !u!114 &4482065994242162528
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6270290766517622607}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ca4946cf803e1274088d781e80276460, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerRespawn
+  stageData: {fileID: 11400000, guid: e8bfaa789d57e8547a102d33b7421ced, type: 2}
+  playerController: {fileID: 2297365986704426365}
+  playerCamera: {fileID: 5245455651298504968, guid: 222bfb40d9d8c07429223c6c89cc414f, type: 3}
+  fadeGroup: {fileID: 0}
+  deathState: Base Layer.Death
+  respawnState: Base Layer.Respawn
+  idleState: Base Layer.Idle
+  deathStarted:
+    m_PersistentCalls:
+      m_Calls: []
+  respawnStarted:
+    m_PersistentCalls:
+      m_Calls: []
+  respawnCompleted:
+    m_PersistentCalls:
+      m_Calls: []
+  playerHealth: {fileID: 2177246958733011521}
 --- !u!1 &6710368214315103302
 GameObject:
   m_ObjectHideFlags: 0
@@ -813,7 +843,6 @@ GameObject:
   - component: {fileID: 4670979581367789999}
   - component: {fileID: 2177246958733011521}
   - component: {fileID: 5226360341938398712}
-  - component: {fileID: 3019680357668492995}
   m_Layer: 0
   m_Name: Mid_Collider
   m_TagString: Untagged
@@ -855,8 +884,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.005, y: 0.017499253, z: 0.0055622626}
-  m_Center: {x: 2.0126052e-11, y: -0.00063928025, z: 0.00028113043}
+  m_Size: {x: 0.003447193, y: 0.0147690335, z: 0.0044404087}
+  m_Center: {x: 0.000005179431, y: -0.00047267845, z: 0.000238429}
 --- !u!114 &4670979581367789999
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -900,33 +929,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAttackHitReceiver
   playerController: {fileID: 2297365986704426365}
---- !u!54 &3019680357668492995
-Rigidbody:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8550267900710244304}
-  serializedVersion: 5
-  m_Mass: 1
-  m_LinearDamping: 0
-  m_AngularDamping: 0.05
-  m_CenterOfMass: {x: 0, y: 0, z: 0}
-  m_InertiaTensor: {x: 1, y: 1, z: 1}
-  m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ImplicitCom: 1
-  m_ImplicitTensor: 1
-  m_UseGravity: 1
-  m_IsKinematic: 0
-  m_Interpolate: 0
-  m_Constraints: 120
-  m_CollisionDetection: 0
 --- !u!1 &9179662568313126272
 GameObject:
   m_ObjectHideFlags: 0

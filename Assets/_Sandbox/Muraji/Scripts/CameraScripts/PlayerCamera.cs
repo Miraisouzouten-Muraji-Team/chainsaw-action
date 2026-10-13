@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 
 public class PlayerCamera : MonoBehaviour
@@ -28,6 +29,8 @@ public class PlayerCamera : MonoBehaviour
     private Camera targetCamera;
     private Collider currentArea;
     private float smoothedFacingDirection;
+    // 登録されているエリア数を公開する。
+    public int AreaCount => cameraAreas != null ? cameraAreas.Length : 0;
 
     // 必要な参照を確認し、初期位置と左右の視野方向を設定する。
     private void Awake()
@@ -156,6 +159,88 @@ public class PlayerCamera : MonoBehaviour
             transform.position,
             targetPosition,
             positionInterpolation);
+    }
+
+
+    // エリア番号に対応する、有効なColliderを取得する。
+    public Collider GetRespawnArea(int areaNumber)
+    {
+        int areaIndex = areaNumber - 1;
+
+        if (cameraAreas == null ||
+            areaIndex < 0 ||
+            areaIndex >= cameraAreas.Length)
+        {
+            return null;
+        }
+
+        Collider area = cameraAreas[areaIndex];
+
+        if (area == null ||
+            !area.enabled ||
+            !area.gameObject.activeInHierarchy)
+        {
+            return null;
+        }
+
+        return area;
+    }
+
+    // 死亡した瞬間の位置でエリアを更新し、1始まりのエリア番号を返す。
+    // エリア外では既存仕様と同じく直前のエリアを使用する。
+    public int GetRespawnAreaNumber()
+    {
+        if (playerController == null)
+            return 0;
+
+        UpdateCurrentArea();
+
+        for (int areaIndex = 0; areaIndex < AreaCount; areaIndex++)
+        {
+            Collider area = GetRespawnArea(areaIndex + 1);
+
+            if (area != null && area == currentArea)
+                return areaIndex + 1;
+        }
+
+        return 0;
+    }
+
+    // 復活先のエリアと向きを反映し、補間せずにカメラを即時配置する。
+    public bool SnapToRespawnArea(int areaNumber)
+    {
+        Collider area = GetRespawnArea(areaNumber);
+
+        if (area == null ||
+            targetCamera == null ||
+            playerController == null ||
+            cameraData == null ||
+            chainsawDigging == null)
+        {
+            return false;
+        }
+
+        currentArea = area;
+
+        // 死亡前の視野方向を残さず、復活時の向きへ即座に合わせる。
+        smoothedFacingDirection = playerController.FacingDirection;
+
+        // 通常のカメラ更新と同じ条件でオフセットを取得する。
+        GetFollowSettings(out Vector2 offset, out _);
+
+        // このメソッド内で使用するローカル変数として宣言する。
+        Vector3 targetPosition = CalculateTargetPosition(offset);
+        targetPosition = ClampToCurrentArea(targetPosition);
+
+        transform.position = targetPosition;
+
+        return true;
+    }
+
+    // カメラとリスポーン処理が、同じプレイヤーを参照しているか確認する。
+    public bool UsesPlayer(SensorPlayerController controller)
+    {
+        return playerController == controller;
     }
 
     // 食い込み状態を優先し、それ以外は接地状態からSOの設定を選ぶ。

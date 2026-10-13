@@ -91,6 +91,10 @@ public class DiggingParameter : ScriptableObject
     [Min(0f)]
     public float bonusDamageMultiplier = 1.5f;
 
+    [Tooltip("敵に食い込み攻撃が命中したときの押し出し力")]
+    [Min(0f)]
+    public float enemyPushPower = 2f;
+
     [Header("床から壁への切り替え")]
     [Tooltip("壁を検出する直前に押していれば、壁登りになる猶予時間（秒）")]
     [Min(0f)]

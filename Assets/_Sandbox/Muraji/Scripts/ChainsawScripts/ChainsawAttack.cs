@@ -208,6 +208,12 @@ public class ChainsawAttack : MonoBehaviour
         float multiplier,
         Vector3 point)
     {
+        // 食い込み攻撃が呼ばれたかと、実行に必要な条件を確認する。
+        Debug.Log(
+            $"[食い込み入口] 有効={isActiveAndEnabled}, " +
+            $"食い込み中={diggingActive}, " +
+            $"敵あり={enemy != null}, データあり={data != null}",
+            this);
         if (!isActiveAndEnabled ||
             !diggingActive ||
             enemy == null ||
@@ -224,8 +230,34 @@ public class ChainsawAttack : MonoBehaviour
             return false;
         }
 
+        // 食い込みの送信先と、送信前後の実HPを確認する。
+        EnemyHealth targetHealth =
+            enemy.GetComponentInParent<EnemyHealth>();
+
+        IAttackHitReceiver targetReceiver =
+            enemy.GetComponentInParent<IAttackHitReceiver>();
+
+        int healthBefore =
+            targetHealth != null ? targetHealth.CurrentHealth : -1;
+
+        Debug.Log(
+            $"[食い込み送信前] 対象={enemy.name}, " +
+            $"基礎ダメージ={data.damage}, 倍率={multiplier}, " +
+            $"軌跡Recorderあり={bladeTrajectoryRecorder != null}, " +
+            $"受信先あり={targetReceiver != null}, " +
+            $"実HPあり={targetHealth != null}, " +
+            $"テストHP={enemy.TestHealth}",
+            enemy);
+
         SendAttackHit(enemy, data);
 
+        // -1は、この検索範囲でEnemyHealthが見つからなかったことを表す。
+        int healthAfter =
+            targetHealth != null ? targetHealth.CurrentHealth : -1;
+
+        Debug.Log(
+            $"[食い込み送信後] 実HP={healthBefore} → {healthAfter}",
+            this);
         // 食い込みは既存の専用演出設定を維持。
         PlayHitEffects(
             point,

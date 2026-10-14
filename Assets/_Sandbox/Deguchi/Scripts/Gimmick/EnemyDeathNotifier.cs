@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using NaughtyAttributes;
 
 /// 敵が死亡したことを他のシステムへ通知するためのコンポーネント。
 /// 敵本体のHP管理とは分離しておくことで、
@@ -14,6 +15,7 @@ public class EnemyDeathNotifier : MonoBehaviour
 
     /// 敵が死亡したときに呼び出してください。
     /// 二重に呼ばれても死亡通知は1回しか発生しません。
+    [Button]
     public void NotifyDied()
     {
         if (IsDead)

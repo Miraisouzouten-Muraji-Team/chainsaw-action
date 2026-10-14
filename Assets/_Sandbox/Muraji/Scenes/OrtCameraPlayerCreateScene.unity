@@ -497,8 +497,24 @@ PrefabInstance:
       value: Base Layer.Slash1
       objectReference: {fileID: 0}
     - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: deathEffectPrefab
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnEffectPrefab
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: deathStarted.m_PersistentCalls.m_Calls.Array.size
-      value: 1
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnStarted.m_PersistentCalls.m_Calls.Array.size
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnCompleted.m_PersistentCalls.m_Calls.Array.size
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: deathStarted.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
@@ -507,21 +523,65 @@ PrefabInstance:
     - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: deathStarted.m_PersistentCalls.m_Calls.Array.data[0].m_Target
       value: 
-      objectReference: {fileID: 2170137756795623322, guid: 8b653b8ed8f598c42baa0eca3fd64bea, type: 3}
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnStarted.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
+      value: 6
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnCompleted.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
+      value: 6
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnStarted.m_PersistentCalls.m_Calls.Array.data[0].m_Target
+      value: 
+      objectReference: {fileID: 0}
     - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: deathStarted.m_PersistentCalls.m_Calls.Array.data[0].m_CallState
       value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: deathStarted.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
-      value: Play
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnCompleted.m_PersistentCalls.m_Calls.Array.data[0].m_Target
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnStarted.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnCompleted.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
+      value: 
       objectReference: {fileID: 0}
     - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: deathStarted.m_PersistentCalls.m_Calls.Array.data[0].m_TargetAssemblyTypeName
       value: UnityEngine.ParticleSystem, UnityEngine
       objectReference: {fileID: 0}
     - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnStarted.m_PersistentCalls.m_Calls.Array.data[0].m_TargetAssemblyTypeName
+      value: UnityEngine.GameObject, UnityEngine
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnCompleted.m_PersistentCalls.m_Calls.Array.data[0].m_TargetAssemblyTypeName
+      value: UnityEngine.GameObject, UnityEngine
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnStarted.m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_BoolArgument
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnCompleted.m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_BoolArgument
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: deathStarted.m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_ObjectArgumentAssemblyTypeName
+      value: UnityEngine.Object, UnityEngine
+      objectReference: {fileID: 0}
+    - target: {fileID: 8951258417725559289, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: respawnStarted.m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_ObjectArgumentAssemblyTypeName
       value: UnityEngine.Object, UnityEngine
       objectReference: {fileID: 0}
     m_RemovedComponents:

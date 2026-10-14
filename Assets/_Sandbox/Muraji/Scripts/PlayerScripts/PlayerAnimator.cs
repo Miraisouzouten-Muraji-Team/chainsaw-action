@@ -28,6 +28,7 @@ public class PlayerAnimator : MonoBehaviour
         None,
         Starting,
         Holding,
+        Playing,
         Ending
     }
 
@@ -148,6 +149,22 @@ public class PlayerAnimator : MonoBehaviour
         animator.SetFloat(DIGGING_PLAYBACK_SPEED, 0f);
     }
 
+    // 食い込み状態を維持したまま、停止中のモーションを現在位置から再開する。
+    public void ResumeDiggingAnimation()
+    {
+        if (animator == null ||
+            !animator.isActiveAndEnabled ||
+            !IsDiggingAnimationActive)
+        {
+            return;
+        }
+
+        // Endingにしないことで、再生終了を理由にIdleへ戻さない。
+        // Startingにもしないため、停止用Animation Eventで再停止しない。
+        diggingAnimationPhase = DiggingAnimationPhase.Playing;
+
+        animator.SetFloat(DIGGING_PLAYBACK_SPEED, 1f);
+    }
 
     // 通常の食い込み解除時にControllerから呼ぶ。
     public void ReleaseDiggingAnimation()

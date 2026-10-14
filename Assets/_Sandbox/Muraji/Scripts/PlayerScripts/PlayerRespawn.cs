@@ -54,9 +54,18 @@ public sealed class PlayerRespawn : MonoBehaviour
 
     private void SpawnEffect(GameObject prefab, Vector3 position)
     {
-        if (prefab == null) return;
-        GameObject instance = Instantiate(prefab, position + effectOffset, Quaternion.identity);
-        if (effectLifetime > 0f) Destroy(instance, effectLifetime);
+        if (prefab == null)
+            return;
+
+        GameObject instance = Instantiate(
+            prefab,
+            position + effectOffset,
+            Quaternion.identity);
+
+        instance.SetActive(true);
+
+        if (effectLifetime > 0f)
+            Destroy(instance, effectLifetime);
     }
 
     [Header("演出の追加先")]

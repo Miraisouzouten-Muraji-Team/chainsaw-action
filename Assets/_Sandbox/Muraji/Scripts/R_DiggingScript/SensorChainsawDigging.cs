@@ -73,6 +73,8 @@ public class SensorChainsawDigging : MonoBehaviour
 
     private bool hasPendingBounce;
     private float pendingBounceDirection;
+    // 空中で食い込みを入力し、最初の接触を待っている状態。
+    private bool isWaitingForContact;
 
     // Floor → Wallの切り替え直後に一時的に保持するWall候補。
     private Collider pendingWallCollider;
@@ -137,11 +139,13 @@ public class SensorChainsawDigging : MonoBehaviour
     }
 
     // PlayerControllerから呼び、操作モードに応じて食い込み要求を更新する。
+    // 操作モードと接地状態に応じて、食い込み要求を更新する。
     public void HandleInput(
         bool pressed,
         bool held,
         bool attacking,
-        float facingDirection = 1f)
+        float facingDirection = 1f,
+        bool isGrounded = true)
     {
         if (!isActiveAndEnabled)
         {
@@ -187,7 +191,7 @@ public class SensorChainsawDigging : MonoBehaviour
             }
             else
             {
-                BeginRequest(facingDirection);
+                BeginRequest(facingDirection, !isGrounded);
             }
         }
         else
@@ -203,7 +207,7 @@ public class SensorChainsawDigging : MonoBehaviour
 
             if (pressed && requested && !IsRequested)
             {
-                BeginRequest(facingDirection);
+                BeginRequest(facingDirection, !isGrounded);
             }
         }
     }
@@ -216,7 +220,10 @@ public class SensorChainsawDigging : MonoBehaviour
 
     // 入力時の接触を確認して食い込み要求を開始する。
     // 入力時に対象があれば食い込みを要求し、対象がなければモーションだけを最後まで再生する。
-    private void BeginRequest(float facingDirection)
+    // 接触対象があれば通常開始し、空中で未接触ならモーションを停止して接触を待つ。
+    private void BeginRequest(
+        float facingDirection,
+        bool waitForContact)
     {
         bool hasContact = detector.TryGetContact(
             null,
@@ -227,21 +234,42 @@ public class SensorChainsawDigging : MonoBehaviour
 
         if (!hasContact)
         {
-            // 空振り入力を保持して、後から自動で食い込むことを防ぐ。
+            if (waitForContact)
+            {
+                // モーションを開始できない場合は、待機状態を残さない。
+                if (!playerAnimator.StartDiggingAnimation())
+                {
+                    Cancel(true);
+                    return;
+                }
+
+                contact = default;
+                Surface = ChainsawSurface.None;
+                HasBonus = false;
+                timer = 0f;
+                wallContactLostTime = 0f;
+
+                // 未接触でも要求を保持し、FixedUpdateから接触を探し続ける。
+                IsRequested = true;
+                isWaitingForContact = true;
+
+                // 既存の停止処理を使い、モーションを保持する。
+                playerAnimator.HoldDiggingAnimationImmediately();
+                return;
+            }
+
+            // 地上での空振りは、従来どおり最後まで再生する。
             holdBlocked = true;
 
-            // 対象がなくても、既存の基本食い込みモーションを再生する。
-            // 食い込み要求や接触状態は変更しない。
             if (playerAnimator.StartDiggingAnimation())
             {
-                // モーション途中の停止を無効にし、終了まで再生する。
                 playerAnimator.ReleaseDiggingAnimation();
             }
 
             return;
         }
 
-        // 対象がある場合は、接触面に対応した既存のモーションを再生する。
+        // 入力時に対象がある場合は、接触面に対応したモーションを使う。
         if (!playerAnimator.StartDiggingAnimation(initialContact.Surface))
         {
             Cancel(true);
@@ -250,9 +278,9 @@ public class SensorChainsawDigging : MonoBehaviour
 
         contact = initialContact;
         IsRequested = true;
+        isWaitingForContact = false;
         wallContactLostTime = 0f;
-    }
-    // PlayerControllerのFixedUpdateから呼び、接触状態の更新と消費処理を行う。
+    }    // PlayerControllerのFixedUpdateから呼び、接触状態の更新と消費処理を行う。
     public void Tick(
     float deltaTime,
     float facingDirection = 0f,
@@ -311,7 +339,13 @@ public class SensorChainsawDigging : MonoBehaviour
 
             if (!foundContact)
             {
-                Cancel(false);
+                // 空中入力後の最初の接触待ちでは、要求とモーションを維持する。
+                // 接触後に対象を見失った場合は、従来どおり解除する。
+                if (!isWaitingForContact)
+                {
+                    Cancel(false);
+                }
+
                 return;
             }
         }
@@ -706,6 +740,15 @@ public class SensorChainsawDigging : MonoBehaviour
                 diggingParameter.ceilingDashPower;
         }
 
+        // 空中の接触待ちから食い込みが成立した場合だけ、モーションを再開する。
+        if (isWaitingForContact)
+        {
+            playerAnimator.ResumeDiggingAnimation();
+        }
+
+        // 接触後は、既存の食い込み継続・解除処理へ移行する。
+        isWaitingForContact = false;
+
         LogDiggingContact();
 
         return true;
@@ -767,6 +810,8 @@ public class SensorChainsawDigging : MonoBehaviour
     public void Cancel(
         bool immediate)
     {
+        // 攻撃・ジャンプ・無効化でも、接触待ちを残さない。
+        isWaitingForContact = false;
         IsRequested = false;
         Surface =
             ChainsawSurface.None;

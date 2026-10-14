@@ -257,6 +257,10 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: 140633332249559882, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: slash1State
+      value: Base Layer.Slash1
+      objectReference: {fileID: 0}
+    - target: {fileID: 140633332249559882, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: slashTrailEffect
       value: 
       objectReference: {fileID: 930093647}
@@ -272,9 +276,17 @@ PrefabInstance:
       propertyPath: contactDetectorParameter
       value: 
       objectReference: {fileID: 11400000, guid: 29a800746011f10429132adda1c51df1, type: 2}
+    - target: {fileID: 483905726833112176, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_IsTrigger
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 530655893479950742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 15.280985
+      objectReference: {fileID: 0}
     - target: {fileID: 530655893479950742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -2.68
+      value: -2.5845
       objectReference: {fileID: 0}
     - target: {fileID: 530655893479950742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.y
@@ -288,6 +300,10 @@ PrefabInstance:
       propertyPath: _pixelRenderingEnabled
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 918029009687324684, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: accelerationParameter
+      value: 
+      objectReference: {fileID: 11400000, guid: 49f0f6b37d9166b4393cdf12508c13ad, type: 2}
     - target: {fileID: 1517345183352060374, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_IsActive
       value: 1
@@ -296,6 +312,10 @@ PrefabInstance:
       propertyPath: m_TagString
       value: Player
       objectReference: {fileID: 0}
+    - target: {fileID: 1581509915466692768, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: chainsawAccelerator
+      value: 
+      objectReference: {fileID: 721231156}
     - target: {fileID: 1881424739761464751, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Name
       value: InGameObjects
@@ -352,6 +372,10 @@ PrefabInstance:
       propertyPath: chainsawDigging
       value: 
       objectReference: {fileID: 818305193}
+    - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: playerController
+      value: 
+      objectReference: {fileID: 818305201}
     - target: {fileID: 3052411843547816630, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Layer
       value: 10
@@ -467,6 +491,10 @@ PrefabInstance:
     - target: {fileID: 7825294758511356720, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Enabled
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8177089103862375041, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Layer
+      value: 9
       objectReference: {fileID: 0}
     - target: {fileID: 8401115230034182340, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_IsActive
@@ -589,6 +617,7 @@ PrefabInstance:
     - {fileID: 5476469829858308533, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
     m_RemovedGameObjects:
     - {fileID: 5565908797997960837, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+    - {fileID: 5641995441097259229, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
@@ -1658,6 +1687,17 @@ TrailRenderer:
   m_Autodestruct: 0
   m_Emitting: 1
   m_ApplyActiveColorSpace: 1
+--- !u!114 &721231156 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 918029009687324684, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 169322074}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7e624b05775fca847a22140969b8b248, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ChainsawAccelerator
 --- !u!114 &818305193 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 2262738845891927995, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
@@ -1669,6 +1709,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a98080f99fe6d7d478157f08d4acecd1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SensorChainsawDigging
+--- !u!114 &818305201 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 6767748527981177828, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 169322074}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cea2bfeaf7c54a74590b3da1d613afbe, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SensorPlayerController
 --- !u!114 &930093647 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 7217592104680922282, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
@@ -1979,11 +2030,8 @@ MonoBehaviour:
   hitParticle: {fileID: 6176228616533195752, guid: 8b653b8ed8f598c42baa0eca3fd64bea, type: 3}
   cameraShake: {fileID: 0}
   duration: 0.05
-  magnitude: 0.05
   hitStopSystem: {fileID: 630910035}
   trajectoryRecorder: {fileID: 0}
-  diggingHitStopTime: 0
-  shakeOnDigging: 0
   bladeTrajectoryRecorder: {fileID: 1450766279}
   enableTrajectoryDebugLog: 1
   sampleLogInterval: 10

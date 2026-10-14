@@ -21,10 +21,12 @@ public sealed class EnemyAttackHitReceiver :
     MonoBehaviour,
     IAttackHitReceiver
 {
+    private const string PLAYER_TAG = "Player";
     private const float HIT_SIDE_EPSILON = 0.001f;
 
     private EnemyHealth enemyHealth;
     private EnemyStateMachine enemyStateMachine;
+    private Transform playerTransform;
 
     /// <summary>
     /// このEnemyが最後に受け取ったPlayerからの攻撃命中情報。
@@ -39,6 +41,8 @@ public sealed class EnemyAttackHitReceiver :
 
         enemyStateMachine =
             GetComponent<EnemyStateMachine>();
+
+        ResolvePlayerTransform();
     }
 
     /// <summary>
@@ -118,44 +122,44 @@ public sealed class EnemyAttackHitReceiver :
         }
 
         float hitSourceDirectionSign =
-            ResolveHitSourceDirectionSign(
-                playerAttackHitData);
+            ResolveHitSourceDirectionSign();
 
         enemyStateMachine.RequestDamageState(
             hitSourceDirectionSign);
     }
 
     /// <summary>
-    /// 命中時点のチェンソー刃の位置から、
+    /// Player本体の現在位置から、
     /// Enemyの左右どちら側から攻撃されたかを求める。
     /// </summary>
     /// <remarks>
-    /// Player本体のTransformやAttackDataへ依存せず、
-    /// 既に命中情報として渡されている軌跡の最終サンプルを利用する。
-    /// X/Yゲームプレイ平面を前提とし、左右判定にはX座標だけを使う。
+    /// チェンソーのTipやRoot位置ではなくPlayer本体を基準にすることで、
+    /// 武器がEnemy中心を通過しても被弾方向が反転しないようにする。
+    /// 現在のゲームプレイ上の左右方向に合わせ、X座標だけを比較する。
     /// </remarks>
-    private float ResolveHitSourceDirectionSign(
-        PlayerAttackHitData playerAttackHitData)
+    private float ResolveHitSourceDirectionSign()
     {
-        ChainsawAttackTrajectory chainsawTrail =
-            playerAttackHitData.ChainsawTrail;
-
-        if (chainsawTrail == null ||
-            chainsawTrail.SampleCount == 0)
+        // PlayerがEnemyより後から生成された場合にも対応できるよう、
+        // 初期取得に失敗している場合だけ命中時に再取得する。
+        if (playerTransform == null)
         {
+            ResolvePlayerTransform();
+        }
+
+        if (playerTransform == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(EnemyAttackHitReceiver)}: " +
+                $"{PLAYER_TAG} TagのPlayerが見つからないため、" +
+                "攻撃方向を正しく判定できません。",
+                this);
+
             return 1f;
         }
 
-        ChainsawBladeTrajectorySample latestSample =
-            chainsawTrail.Samples[
-                chainsawTrail.SampleCount - 1];
-
-        float bladeCenterX =
-            (latestSample.TipPosition.x +
-             latestSample.RootPosition.x) * 0.5f;
-
         float horizontalOffset =
-            bladeCenterX - transform.position.x;
+            playerTransform.position.x -
+            transform.position.x;
 
         if (Mathf.Abs(horizontalOffset) <=
             HIT_SIDE_EPSILON)
@@ -164,5 +168,33 @@ public sealed class EnemyAttackHitReceiver :
         }
 
         return Mathf.Sign(horizontalOffset);
+    }
+
+    /// <summary>
+    /// Player Tagが付いたGameObjectのTransformを取得して保持する。
+    /// </summary>
+    /// <remarks>
+    /// 攻撃のたびに検索せず、一度取得した参照を再利用する。
+    /// 左右判定にはこのTransformの位置を使用するため、
+    /// Player TagはPlayer本体の位置を表すGameObjectに設定する必要がある。
+    /// </remarks>
+    private void ResolvePlayerTransform()
+    {
+        if (playerTransform != null)
+        {
+            return;
+        }
+
+        GameObject playerObject =
+            GameObject.FindWithTag(
+                PLAYER_TAG);
+
+        if (playerObject == null)
+        {
+            return;
+        }
+
+        playerTransform =
+            playerObject.transform;
     }
 }

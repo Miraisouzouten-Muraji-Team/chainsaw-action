@@ -53,6 +53,44 @@ namespace Project.Rendering.Pixel
 
         public bool PixelRenderingEnabled => _pixelRenderingEnabled;
 
+        // Editorプレビューから参照するための公開プロパティ。
+        public Camera MainCamera => _mainCamera;
+
+        public Material CompositeMaterial => _compositeMaterial;
+        public Material VolumetricFogMaterial => _volumetricFogMaterial;
+
+        public int NormalRendererIndex => _normalRendererIndex;
+        public int CaptureRendererIndex => _captureRendererIndex;
+        public int PixelRendererIndex => _pixelRendererIndex;
+
+        /// <summary>
+        /// 指定したCapture番号のレイヤー名を取得する。
+        /// </summary>
+        public string GetCaptureLayerName(int index)
+        {
+            return index switch
+            {
+                0 => _nearLayerName,
+                1 => _middleLayerName,
+                2 => _farLayerName,
+                _ => string.Empty
+            };
+        }
+
+        /// <summary>
+        /// 指定したCapture番号の解像度を取得する。
+        /// </summary>
+        public Vector2Int GetCaptureResolution(int index)
+        {
+            return index switch
+            {
+                0 => _nearResolution,
+                1 => _middleResolution,
+                2 => _farResolution,
+                _ => Vector2Int.zero
+            };
+        }
+
         private void Awake()
         {
             if (!Initialize())

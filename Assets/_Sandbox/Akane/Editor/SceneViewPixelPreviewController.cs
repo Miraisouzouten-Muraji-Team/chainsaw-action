@@ -10,26 +10,29 @@ using UnityEngine.SceneManagement;
 
 namespace Project.Rendering.Pixel.Editor
 {
-    /// <summary>
-    /// Unity Editor起動時に自動登録する。
-    /// </summary>
     [InitializeOnLoad]
-    internal static class ScenePixelCaptureBootstrap
+    internal static class EditorPixelPreviewBootstrap
     {
-        static ScenePixelCaptureBootstrap()
+        static EditorPixelPreviewBootstrap()
         {
-            ScenePixelCaptureService service = ScenePixelCaptureService.instance;
+            ScenePixelCaptureService service =
+                ScenePixelCaptureService.instance;
 
             EditorApplication.update += service.UpdatePreview;
             EditorApplication.hierarchyChanged += service.MarkDirty;
             EditorApplication.projectChanged += service.MarkDirty;
-            EditorApplication.playModeStateChanged += service.OnPlayModeStateChanged;
+            EditorApplication.playModeStateChanged +=
+                service.OnPlayModeStateChanged;
 
             EditorSceneManager.sceneDirtied += service.OnSceneDirtied;
+            EditorSceneManager.sceneSaving += service.OnSceneSaving;
+            EditorSceneManager.sceneSaved += service.OnSceneSaved;
+
             SceneView.duringSceneGui += service.OnSceneGui;
 
             Undo.undoRedoPerformed += service.MarkDirty;
-            Undo.postprocessModifications += service.OnPostprocessModifications;
+            Undo.postprocessModifications +=
+                service.OnPostprocessModifications;
 
             AssemblyReloadEvents.beforeAssemblyReload += service.Cleanup;
             EditorApplication.quitting += service.Cleanup;
@@ -37,23 +40,33 @@ namespace Project.Rendering.Pixel.Editor
     }
 
     /// <summary>
-    /// Sceneビューの変化を検出し、必要なときだけ3層のRTを更新する。
-    /// Gameビュー用のRTやマテリアルは変更しない。
+    /// Game / SceneのEditorプレビューを制御する。
+    /// Gameは停止中のみ、Sceneは停止中とPlay中に更新する。
     /// </summary>
-    internal sealed class ScenePixelCaptureService : ScriptableSingleton<ScenePixelCaptureService>
+    internal sealed class ScenePixelCaptureService
+        : ScriptableSingleton<ScenePixelCaptureService>
     {
         private const int NORMAL_RENDERER_INDEX = 0;
+        private const int CAPTURE_RENDERER_INDEX = 1;
         private const int SCENE_PREVIEW_RENDERER_INDEX = 3;
-        private const int SCENE_CAPTURE_RENDERER_INDEX = 1;
 
-        // sceneビュー中の更新頻度(15FPS)
+        private const int CAPTURE_COUNT = 3;
         private const double UPDATE_INTERVAL = 1.0 / 15.0;
 
-        private const string COMPOSITE_MATERIAL_PATH = "Assets/_Sandbox/Akane/Rendering/Materials/M_ScenePixelComposite.mat";
+        private const string PIXEL_EFFECT_ENABLED =
+            "_PixelEffectEnabled";
 
-        private const string FOG_MATERIAL_PATH = "Assets/_Sandbox/Akane/Rendering/Materials/M_SceneViewVolumetricFog.mat";
+        private const string SCENE_NORMAL_TEXTURE =
+            "_SceneNormalTex";
 
-        private const string PIXEL_EFFECT_ENABLED = "_PixelEffectEnabled";
+        private const string SCENE_NORMAL_PREVIEW_ENABLED =
+            "_SceneNormalPreviewEnabled";
+
+        private const string SCENE_COMPOSITE_MATERIAL_PATH =
+            "Assets/_Sandbox/Akane/Rendering/Materials/M_ScenePixelComposite.mat";
+
+        private const string SCENE_FOG_MATERIAL_PATH =
+            "Assets/_Sandbox/Akane/Rendering/Materials/M_SceneViewVolumetricFog.mat";
 
         private readonly string[] _layerNames =
         {
@@ -62,52 +75,58 @@ namespace Project.Rendering.Pixel.Editor
             "PixelFar"
         };
 
-        private readonly string[] _textureNames =
+        private readonly string[] _colorNames =
         {
             "_PixelNearTex",
             "_PixelMiddleTex",
             "_PixelFarTex"
         };
 
+        private readonly string[] _depthNames =
+        {
+            "_PixelNearDepthTex",
+            "_PixelMiddleDepthTex",
+            "_PixelFarDepthTex"
+        };
+
         private readonly int[] _pixelSizes = { 3, 6, 12 };
 
-        private readonly Camera[] _captureCameras = new Camera[3];
-        private readonly RenderTexture[] _captureTextures = new RenderTexture[3];
+        // 内部ロジックは共有し、RTとCameraは分離する。
+        private readonly EditorPixelCaptureSet _gameCaptures =
+            new("EditorGamePixel");
 
-        private Material _compositeMaterial;
-        private Material _fogMaterial;
+        private readonly EditorPixelCaptureSet _sceneCaptures =
+            new("EditorScenePixel");
 
-        private Camera _lastSceneCamera;
-        private Vector3 _lastCameraPosition;
-        private Quaternion _lastCameraRotation;
-        private Vector2Int _lastViewSize;
+        private PixelLayerRenderController _gameController;
+        private Camera _gameCamera;
 
-        private float _lastFieldOfView;
-        private float _lastOrthographicSize;
-        private float _lastNearClip;
-        private float _lastFarClip;
-        private bool _lastOrthographic;
+        private Camera _sceneCamera;
+        private Camera _sceneNormalCamera;
+        private RenderTexture _sceneNormalTexture;
 
-        private double _lastCaptureTime;
-        private bool _dirty = true;
+        private Material _sceneCompositeMaterial;
+        private Material _sceneFogMaterial;
+
+        private CameraState _gameState;
+        private CameraState _sceneState;
+
+        private double _lastGameCaptureTime;
+        private double _lastSceneCaptureTime;
+
+        private bool _gameDirty = true;
+        private bool _sceneDirty = true;
+        private bool _gamePreviewActive;
+        private bool _sceneModeKnown;
+        private bool _lastScenePixelEnabled;
+        private bool _gameRendererRestoredForSave;
         private bool _rendering;
         private bool _reportedError;
 
-        private const string SCENE_NORMAL_TEXTURE = "_SceneNormalTex";
-        private const string SCENE_NORMAL_PREVIEW_ENABLED = "_SceneNormalPreviewEnabled";
-
-        private Camera _normalCaptureCamera;
-        private RenderTexture _normalCaptureTexture;
-
-        private bool _lastPixelRenderingEnabled;
-        private bool _hasLastPixelRenderingState;
-
-        /// <summary>
-        /// シーン内の変更を検出する。
-        /// </summary>
         public void MarkDirty()
         {
-            _dirty = true;
+            _gameDirty = true;
+            _sceneDirty = true;
         }
 
         public void OnSceneDirtied(Scene scene)
@@ -115,51 +134,42 @@ namespace Project.Rendering.Pixel.Editor
             MarkDirty();
         }
 
-        public UndoPropertyModification[] OnPostprocessModifications(UndoPropertyModification[] modifications)
+        public UndoPropertyModification[] OnPostprocessModifications(
+            UndoPropertyModification[] modifications)
         {
             MarkDirty();
             return modifications;
         }
 
-        /// <summary>
-        /// Pixel RenderingのON/OFFを取得する。
-        /// Edit ModeでもInspectorの設定値を参照する。
-        /// </summary>
-        private static bool GetPixelRenderingEnabled()
-        {
-            PixelLayerRenderController controller =
-                UnityEngine.Object.FindFirstObjectByType<PixelLayerRenderController>();
-
-            if (controller == null)
-            {
-                return true;
-            }
-
-            return controller.PixelRenderingEnabled;
-        }
-
-        /// <summary>
-        /// Play中は通常Rendererを使用する。
-        /// Edit中はScene専用Rendererを使用する。
-        /// </summary>
         public void OnSceneGui(SceneView sceneView)
         {
-            if (sceneView == null || sceneView.camera == null ||
-                Event.current == null || Event.current.type != EventType.Repaint)
+            if (sceneView == null ||
+                sceneView.camera == null ||
+                Event.current == null ||
+                Event.current.type != EventType.Repaint)
             {
                 return;
             }
 
-            UniversalAdditionalCameraData cameraData = sceneView.camera.GetUniversalAdditionalCameraData();
-            cameraData.SetRenderer(SCENE_PREVIEW_RENDERER_INDEX);
+            sceneView.camera.GetUniversalAdditionalCameraData()
+                .SetRenderer(SCENE_PREVIEW_RENDERER_INDEX);
         }
 
         public void OnPlayModeStateChanged(PlayModeStateChange state)
         {
-            if (state == PlayModeStateChange.ExitingEditMode ||
-                state == PlayModeStateChange.EnteredPlayMode)
+            if (state == PlayModeStateChange.ExitingEditMode)
             {
-                Cleanup();
+                // RuntimeのAwakeに先立ってEditor用Game RTを解放。
+                StopGamePreview();
+                StopScenePreview();
+            }
+            else if (state == PlayModeStateChange.EnteredPlayMode)
+            {
+                _sceneDirty = true;
+            }
+            else if (state == PlayModeStateChange.ExitingPlayMode)
+            {
+                StopScenePreview();
             }
             else if (state == PlayModeStateChange.EnteredEditMode)
             {
@@ -170,8 +180,51 @@ namespace Project.Rendering.Pixel.Editor
         }
 
         /// <summary>
-        /// Scene Cameraの変更とPixel Renderingの状態に応じて
-        /// Sceneビュー用のRenderTextureを更新する。
+        /// Scene保存時はMain CameraのRendererを通常値へ戻す。
+        /// </summary>
+        public void OnSceneSaving(Scene scene, string path)
+        {
+            if (!_gamePreviewActive ||
+                _gameController == null ||
+                _gameCamera == null ||
+                _gameCamera.gameObject.scene != scene)
+            {
+                return;
+            }
+
+            _gameCamera.GetUniversalAdditionalCameraData()
+                .SetRenderer(_gameController.NormalRendererIndex);
+
+            _gameRendererRestoredForSave = true;
+        }
+
+        /// <summary>
+        /// 保存後、Editor表示用のRendererを再適用する。
+        /// </summary>
+        public void OnSceneSaved(Scene scene)
+        {
+            if (!_gameRendererRestoredForSave)
+            {
+                return;
+            }
+
+            _gameRendererRestoredForSave = false;
+
+            if (_gamePreviewActive &&
+                _gameCamera != null &&
+                _gameController != null &&
+                _gameController.PixelRenderingEnabled &&
+                !EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                _gameCamera.GetUniversalAdditionalCameraData()
+                    .SetRenderer(_gameController.PixelRendererIndex);
+
+                RepaintGameViews();
+            }
+        }
+
+        /// <summary>
+        /// Editor更新処理。
         /// </summary>
         public void UpdatePreview()
         {
@@ -182,6 +235,173 @@ namespace Project.Rendering.Pixel.Editor
                 return;
             }
 
+            _rendering = true;
+
+            try
+            {
+                PixelLayerRenderController controller =
+                    UnityEngine.Object
+                        .FindFirstObjectByType<PixelLayerRenderController>();
+
+                bool pixelEnabled =
+                    controller == null || controller.PixelRenderingEnabled;
+
+                if (!EditorApplication.isPlayingOrWillChangePlaymode)
+                {
+                    UpdateGamePreview(controller);
+                }
+
+                // SceneビューはPlay中もEditor側で管理する。
+                UpdateScenePreview(pixelEnabled);
+
+                _reportedError = false;
+            }
+            catch (Exception exception)
+            {
+                if (!_reportedError)
+                {
+                    Debug.LogException(exception);
+                    _reportedError = true;
+                }
+            }
+            finally
+            {
+                _rendering = false;
+            }
+        }
+
+        /// <summary>
+        /// 停止中のGameビューを更新する。
+        /// </summary>
+        private void UpdateGamePreview(
+            PixelLayerRenderController controller)
+        {
+            if (controller == null ||
+                !controller.isActiveAndEnabled ||
+                controller.MainCamera == null ||
+                !controller.PixelRenderingEnabled)
+            {
+                if (_gamePreviewActive || _gameController != null)
+                {
+                    StopGamePreview();
+                }
+
+                return;
+            }
+
+            Camera mainCamera = controller.MainCamera;
+
+            if (_gameController != controller ||
+                _gameCamera != mainCamera)
+            {
+                StopGamePreview();
+
+                _gameController = controller;
+                _gameCamera = mainCamera;
+                _gameDirty = true;
+            }
+
+            if (controller.CompositeMaterial == null)
+            {
+                throw new InvalidOperationException(
+                    "Game用Composite Materialが未設定です。");
+            }
+
+            // Cameraやシーンが変わっていなければ再Captureしない。
+            if (_gamePreviewActive &&
+                !_gameDirty &&
+                _gameState.Matches(mainCamera))
+            {
+                return;
+            }
+
+            double currentTime = EditorApplication.timeSinceStartup;
+
+            if (currentTime - _lastGameCaptureTime < UPDATE_INTERVAL)
+            {
+                return;
+            }
+
+            _lastGameCaptureTime = currentTime;
+
+            _gameCaptures.Capture(
+                mainCamera,
+                PixelCaptureView.Game,
+                controller.CaptureRendererIndex,
+                controller.GetCaptureLayerName,
+                controller.GetCaptureResolution);
+
+            ApplyColors(
+                _gameCaptures,
+                controller.CompositeMaterial,
+                controller.VolumetricFogMaterial);
+
+            controller.CompositeMaterial.SetFloat(
+                PIXEL_EFFECT_ENABLED, 1.0f);
+
+            controller.CompositeMaterial.SetFloat(
+                SCENE_NORMAL_PREVIEW_ENABLED, 0.0f);
+
+            if (controller.VolumetricFogMaterial != null)
+            {
+                controller.VolumetricFogMaterial.SetFloat(
+                    PIXEL_EFFECT_ENABLED, 1.0f);
+
+                controller.VolumetricFogMaterial.SetFloat(
+                    SCENE_NORMAL_PREVIEW_ENABLED, 0.0f);
+            }
+
+            // Capture完成後、Main CameraのみPixel Rendererへ。
+            if (!_gamePreviewActive)
+            {
+                mainCamera.GetUniversalAdditionalCameraData()
+                    .SetRenderer(controller.PixelRendererIndex);
+            }
+
+            _gamePreviewActive = true;
+            _gameDirty = false;
+            _gameState.Save(mainCamera);
+
+            RepaintGameViews();
+        }
+
+        /// <summary>
+        /// GameビューのEditor用Captureを終了する。
+        /// </summary>
+        private void StopGamePreview()
+        {
+            if (_gameController != null)
+            {
+                if (_gameCamera != null && _gamePreviewActive)
+                {
+                    _gameCamera.GetUniversalAdditionalCameraData()
+                        .SetRenderer(_gameController.NormalRendererIndex);
+                }
+
+                Material composite = _gameController.CompositeMaterial;
+                Material fog = _gameController.VolumetricFogMaterial;
+
+                ClearMaterial(composite);
+                ClearMaterial(fog);
+            }
+
+            _gameCaptures.Release();
+
+            _gameController = null;
+            _gameCamera = null;
+            _gamePreviewActive = false;
+            _gameRendererRestoredForSave = false;
+            _gameDirty = true;
+            _gameState.Reset();
+
+            RepaintGameViews();
+        }
+
+        /// <summary>
+        /// SceneビューのPixel / Normalプレビューを更新する。
+        /// </summary>
+        private void UpdateScenePreview(bool pixelEnabled)
+        {
             SceneView sceneView = SceneView.lastActiveSceneView;
 
             if (sceneView == null || sceneView.camera == null)
@@ -189,24 +409,20 @@ namespace Project.Rendering.Pixel.Editor
                 return;
             }
 
-            Camera sceneCamera = sceneView.camera;
+            Camera camera = sceneView.camera;
 
-            if (sceneCamera.pixelWidth <= 0 || sceneCamera.pixelHeight <= 0)
+            if (camera.pixelWidth <= 0 || camera.pixelHeight <= 0)
             {
                 return;
             }
 
-            bool pixelEnabled = GetPixelRenderingEnabled();
-
             bool modeChanged =
-                !_hasLastPixelRenderingState ||
-                pixelEnabled != _lastPixelRenderingEnabled;
+                !_sceneModeKnown ||
+                pixelEnabled != _lastScenePixelEnabled;
 
-            bool cameraChanged = HasCameraChanged(sceneCamera);
-
-            if (!_dirty &&
+            if (!_sceneDirty &&
                 !modeChanged &&
-                !cameraChanged &&
+                _sceneState.Matches(camera) &&
                 !EditorApplication.isPlaying)
             {
                 return;
@@ -214,139 +430,141 @@ namespace Project.Rendering.Pixel.Editor
 
             double currentTime = EditorApplication.timeSinceStartup;
 
-            if (currentTime - _lastCaptureTime < UPDATE_INTERVAL)
+            if (currentTime - _lastSceneCaptureTime < UPDATE_INTERVAL)
             {
                 return;
             }
 
-            if (!LoadMaterials())
+            LoadSceneMaterials();
+
+            _lastSceneCaptureTime = currentTime;
+            _sceneCamera = camera;
+
+            if (pixelEnabled)
             {
-                return;
-            }
+                _sceneCaptures.Capture(
+                    camera,
+                    PixelCaptureView.Scene,
+                    CAPTURE_RENDERER_INDEX,
+                    index => _layerNames[index],
+                    index => GetSceneResolution(camera, index));
 
-            _lastCaptureTime = currentTime;
-            _rendering = true;
+                ApplyColors(
+                    _sceneCaptures,
+                    _sceneCompositeMaterial,
+                    _sceneFogMaterial);
 
-            bool succeeded = false;
+                _sceneCompositeMaterial.SetFloat(
+                    PIXEL_EFFECT_ENABLED, 1.0f);
 
-            try
-            {
-                if (pixelEnabled)
+                _sceneCompositeMaterial.SetFloat(
+                    SCENE_NORMAL_PREVIEW_ENABLED, 0.0f);
+
+                if (_sceneFogMaterial != null)
                 {
-                    // Pixel ON：既存の3層Captureを使用。
-                    succeeded = CapturePixelScene(sceneCamera);
+                    _sceneFogMaterial.SetFloat(
+                        PIXEL_EFFECT_ENABLED, 1.0f);
 
-                    if (succeeded)
-                    {
-                        ApplyCaptureTextures();
-                    }
+                    _sceneFogMaterial.SetFloat(
+                        SCENE_NORMAL_PREVIEW_ENABLED, 0.0f);
                 }
-                else
+            }
+            else
+            {
+                CaptureNormalScene(camera);
+
+                _sceneCompositeMaterial.SetTexture(
+                    SCENE_NORMAL_TEXTURE,
+                    _sceneNormalTexture);
+
+                _sceneCompositeMaterial.SetFloat(
+                    SCENE_NORMAL_PREVIEW_ENABLED, 1.0f);
+
+                _sceneCompositeMaterial.SetFloat(
+                    PIXEL_EFFECT_ENABLED, 0.0f);
+
+                if (_sceneFogMaterial != null)
                 {
-                    // Pixel OFF：通常解像度でCapture。
-                    succeeded = CaptureNormalScene(sceneCamera);
+                    _sceneFogMaterial.SetFloat(
+                        SCENE_NORMAL_PREVIEW_ENABLED, 1.0f);
 
-                    if (succeeded)
-                    {
-                        ApplyNormalTexture();
-                    }
+                    _sceneFogMaterial.SetFloat(
+                        PIXEL_EFFECT_ENABLED, 0.0f);
                 }
             }
-            catch (Exception exception)
-            {
-                Debug.LogException(exception);
-                succeeded = false;
-            }
-            finally
-            {
-                _rendering = false;
-            }
 
-            if (!succeeded)
-            {
-                return;
-            }
-
-            _lastPixelRenderingEnabled = pixelEnabled;
-            _hasLastPixelRenderingState = true;
-
-            SaveCameraState(sceneCamera);
-
-            _dirty = false;
-            _reportedError = false;
+            _lastScenePixelEnabled = pixelEnabled;
+            _sceneModeKnown = true;
+            _sceneDirty = false;
+            _sceneState.Save(camera);
 
             SceneView.RepaintAll();
         }
 
-        /// <summary>
-        /// Scene Camera視点でNear / Middle / Farを描画する。
-        /// </summary>
-        private bool CapturePixelScene(Camera sceneCamera)
+        private Vector2Int GetSceneResolution(
+            Camera sceneCamera,
+            int index)
         {
-            for (int i = 0; i < _captureCameras.Length; i++)
-            {
-                if (!PrepareCaptureCamera(i, sceneCamera))
-                {
-                    return false;
-                }
+            int pixelSize = _pixelSizes[index];
 
-                Camera captureCamera = _captureCameras[i];
-
-                UniversalRenderPipeline.SingleCameraRequest request = new()
-                {
-                    destination = _captureTextures[i]
-                };
-
-                if (!RenderPipeline.SupportsRenderRequest(
-                        captureCamera,
-                        request))
-                {
-                    ReportError("Pixel CaptureのRenderRequestに対応していません。");
-                    return false;
-                }
-
-                RenderPipeline.SubmitRenderRequest(
-                    captureCamera,
-                    request);
-            }
-
-            return true;
+            return new Vector2Int(
+                Mathf.Max(1, Mathf.CeilToInt(
+                    (float)sceneCamera.pixelWidth / pixelSize)),
+                Mathf.Max(1, Mathf.CeilToInt(
+                    (float)sceneCamera.pixelHeight / pixelSize)));
         }
 
         /// <summary>
-        /// Pixel OFF時に、Scene Camera視点の通常描画を取得する。
-        /// 描画にはGameRendererを使用する。
+        /// Sceneビューの通常解像度Capture。
         /// </summary>
-        private bool CaptureNormalScene(Camera sceneCamera)
+        private void CaptureNormalScene(Camera sceneCamera)
         {
-            if (_normalCaptureCamera == null)
+            if (_sceneNormalCamera == null)
             {
-                GameObject cameraObject = new("SceneNormalCapture");
+                GameObject cameraObject = new("EditorSceneNormal");
                 cameraObject.hideFlags = HideFlags.HideAndDontSave;
 
-                _normalCaptureCamera = cameraObject.AddComponent<Camera>();
-                _normalCaptureCamera.enabled = false;
+                _sceneNormalCamera =
+                    cameraObject.AddComponent<Camera>();
+
+                _sceneNormalCamera.enabled = false;
             }
 
             int width = Mathf.Max(1, sceneCamera.pixelWidth);
             int height = Mathf.Max(1, sceneCamera.pixelHeight);
 
-            EnsureNormalRenderTexture(width, height);
+            if (_sceneNormalTexture == null ||
+                _sceneNormalTexture.width != width ||
+                _sceneNormalTexture.height != height)
+            {
+                ReleaseNormalTexture();
 
-            Camera camera = _normalCaptureCamera;
+                _sceneNormalTexture = new RenderTexture(
+                    width, height, 24, RenderTextureFormat.ARGBHalf)
+                {
+                    name = "RT_EditorSceneNormal",
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp,
+                    useMipMap = false,
+                    autoGenerateMips = false,
+                    hideFlags = HideFlags.HideAndDontSave
+                };
 
-            // Sceneビューの視点・投影設定をコピーする。
+                _sceneNormalTexture.Create();
+            }
+
+            Camera camera = _sceneNormalCamera;
+
             camera.CopyFrom(sceneCamera);
 
             camera.transform.SetPositionAndRotation(
                 sceneCamera.transform.position,
                 sceneCamera.transform.rotation);
 
-            // Capture用Cameraとして必要な設定を復元する。
             camera.enabled = false;
             camera.cameraType = CameraType.Game;
             camera.cullingMask = sceneCamera.cullingMask;
-            camera.targetTexture = _normalCaptureTexture;
+            camera.targetTexture = _sceneNormalTexture;
             camera.rect = new Rect(0, 0, 1, 1);
             camera.allowHDR = true;
 
@@ -359,340 +577,218 @@ namespace Project.Rendering.Pixel.Editor
 
             UniversalRenderPipeline.SingleCameraRequest request = new()
             {
-                destination = _normalCaptureTexture
+                destination = _sceneNormalTexture
             };
 
             if (!RenderPipeline.SupportsRenderRequest(camera, request))
             {
-                ReportError("通常表示用のRenderRequestに対応していません。");
-                return false;
+                throw new NotSupportedException(
+                    "Scene Normal CaptureのRenderRequest非対応");
             }
 
             RenderPipeline.SubmitRenderRequest(camera, request);
+        }
 
-            return true;
+        private void LoadSceneMaterials()
+        {
+            if (_sceneCompositeMaterial == null)
+            {
+                _sceneCompositeMaterial =
+                    AssetDatabase.LoadAssetAtPath<Material>(
+                        SCENE_COMPOSITE_MATERIAL_PATH);
+            }
+
+            if (_sceneFogMaterial == null)
+            {
+                _sceneFogMaterial =
+                    AssetDatabase.LoadAssetAtPath<Material>(
+                        SCENE_FOG_MATERIAL_PATH);
+            }
+
+            if (_sceneCompositeMaterial == null)
+            {
+                throw new InvalidOperationException(
+                    "M_ScenePixelCompositeが見つかりません。");
+            }
         }
 
         /// <summary>
-        /// Sceneビューと同じ解像度のRTを確保する。
+        /// CaptureしたColor RTを指定したMaterialへ設定する。
+        /// Depth RTはPixelDepthCaptureRendererFeature側で設定。
         /// </summary>
-        private void EnsureNormalRenderTexture(int width, int height)
+        private void ApplyColors(
+            EditorPixelCaptureSet captureSet,
+            Material composite,
+            Material fog)
         {
-            if (_normalCaptureTexture != null &&
-                _normalCaptureTexture.width == width &&
-                _normalCaptureTexture.height == height)
+            for (int i = 0; i < CAPTURE_COUNT; i++)
             {
-                return;
-            }
+                RenderTexture texture = captureSet.GetTexture(i);
 
-            ReleaseNormalRenderTexture();
-
-            _normalCaptureTexture = new RenderTexture(
-                width,
-                height,
-                24,
-                RenderTextureFormat.ARGBHalf)
-            {
-                name = "RT_SceneNormal",
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp,
-                useMipMap = false,
-                autoGenerateMips = false,
-                hideFlags = HideFlags.HideAndDontSave
-            };
-
-            _normalCaptureTexture.Create();
-        }
-
-        /// <summary>
-        /// 通常表示用RTを解放する。
-        /// </summary>
-        private void ReleaseNormalRenderTexture()
-        {
-            if (_normalCaptureTexture == null)
-            {
-                return;
-            }
-
-            _normalCaptureTexture.Release();
-            UnityEngine.Object.DestroyImmediate(_normalCaptureTexture);
-            _normalCaptureTexture = null;
-        }
-
-        private bool HasCameraChanged(Camera camera)
-        {
-            if (_lastSceneCamera != camera)
-            {
-                return true;
-            }
-
-            if ((camera.transform.position - _lastCameraPosition).sqrMagnitude > 0.000001f)
-            {
-                return true;
-            }
-
-            if (Quaternion.Angle(camera.transform.rotation, _lastCameraRotation) > 0.01f)
-            {
-                return true;
-            }
-
-            if (_lastViewSize.x != camera.pixelWidth || _lastViewSize.y != camera.pixelHeight)
-            {
-                return true;
-            }
-
-            return camera.orthographic != _lastOrthographic ||
-                Mathf.Abs(camera.fieldOfView - _lastFieldOfView) > 0.001f ||
-                Mathf.Abs(camera.orthographicSize - _lastOrthographicSize) > 0.001f ||
-                Mathf.Abs(camera.nearClipPlane - _lastNearClip) > 0.001f ||
-                Mathf.Abs(camera.farClipPlane - _lastFarClip) > 0.001f;
-        }
-
-        private void SaveCameraState(Camera camera)
-        {
-            _lastSceneCamera = camera;
-            _lastCameraPosition = camera.transform.position;
-            _lastCameraRotation = camera.transform.rotation;
-            _lastViewSize = new Vector2Int(camera.pixelWidth, camera.pixelHeight);
-
-            _lastFieldOfView = camera.fieldOfView;
-            _lastOrthographicSize = camera.orthographicSize;
-            _lastNearClip = camera.nearClipPlane;
-            _lastFarClip = camera.farClipPlane;
-            _lastOrthographic = camera.orthographic;
-        }
-
-        private bool LoadMaterials()
-        {
-            if (_compositeMaterial == null)
-            {
-                _compositeMaterial = AssetDatabase.LoadAssetAtPath<Material>(COMPOSITE_MATERIAL_PATH);
-            }
-
-            if (_fogMaterial == null)
-            {
-                _fogMaterial = AssetDatabase.LoadAssetAtPath<Material>(FOG_MATERIAL_PATH);
-            }
-
-            if (_compositeMaterial == null)
-            {
-                ReportError($"Scene用Compositeマテリアルがありません: {COMPOSITE_MATERIAL_PATH}");
-                return false;
-            }
-
-            return true;
-        }
-
-        private bool PrepareCaptureCamera(int index, Camera sceneCamera)
-        {
-            int layer = LayerMask.NameToLayer(_layerNames[index]);
-
-            if (layer < 0)
-            {
-                ReportError($"Layerがありません: {_layerNames[index]}");
-                return false;
-            }
-
-            if (_captureCameras[index] == null)
-            {
-                GameObject cameraObject = new($"ScenePixelCapture_{_layerNames[index]}");
-                cameraObject.hideFlags = HideFlags.HideAndDontSave;
-
-                Camera captureCamera = cameraObject.AddComponent<Camera>();
-                captureCamera.enabled = false;
-
-                _captureCameras[index] = captureCamera;
-            }
-
-            int width = Mathf.Max(1, Mathf.CeilToInt((float)sceneCamera.pixelWidth / _pixelSizes[index]));
-            int height = Mathf.Max(1, Mathf.CeilToInt((float)sceneCamera.pixelHeight / _pixelSizes[index]));
-
-            EnsureRenderTexture(index, width, height);
-
-            Camera camera = _captureCameras[index];
-
-            // Scene用Capture Cameraとして識別する。
-            if (!camera.TryGetComponent(out PixelCaptureViewMarker marker))
-            {
-                marker = camera.gameObject.AddComponent<PixelCaptureViewMarker>();
-            }
-
-            marker.SetView(PixelCaptureView.Scene);
-
-            // Scene Cameraの設定をコピーする。
-            camera.CopyFrom(sceneCamera);
-            camera.transform.SetPositionAndRotation(sceneCamera.transform.position, sceneCamera.transform.rotation);
-
-            // Sceneビューの設定をコピーした後、Capture固有の設定を復元する。
-            camera.enabled = false;
-            camera.cameraType = CameraType.Game;
-            camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = Color.clear;
-            camera.cullingMask = 1 << layer;
-            camera.targetTexture = _captureTextures[index];
-            camera.rect = new Rect(0, 0, 1, 1);
-            camera.allowHDR = true;
-
-            UniversalAdditionalCameraData cameraData = camera.GetUniversalAdditionalCameraData();
-            cameraData.renderType = CameraRenderType.Base;
-            cameraData.SetRenderer(SCENE_CAPTURE_RENDERER_INDEX);
-            cameraData.renderPostProcessing = false;
-
-            return true;
-        }
-
-        private void EnsureRenderTexture(int index, int width, int height)
-        {
-            RenderTexture texture = _captureTextures[index];
-
-            if (texture != null && texture.width == width && texture.height == height)
-            {
-                return;
-            }
-
-            ReleaseRenderTexture(index);
-
-            RenderTexture newTexture = new(width, height, 24, RenderTextureFormat.ARGBHalf)
-            {
-                name = $"RT_ScenePixel_{_layerNames[index]}",
-                filterMode = FilterMode.Point,
-                wrapMode = TextureWrapMode.Clamp,
-                useMipMap = false,
-                autoGenerateMips = false,
-                hideFlags = HideFlags.HideAndDontSave
-            };
-
-            newTexture.Create();
-            _captureTextures[index] = newTexture;
-        }
-
-        private void ApplyCaptureTextures()
-        {
-            for (int i = 0; i < _captureTextures.Length; i++)
-            {
-                _compositeMaterial.SetTexture(_textureNames[i], _captureTextures[i]);
-
-                if (_fogMaterial != null)
+                if (composite != null)
                 {
-                    _fogMaterial.SetTexture(_textureNames[i], _captureTextures[i]);
+                    composite.SetTexture(_colorNames[i], texture);
+                }
+
+                if (fog != null)
+                {
+                    fog.SetTexture(_colorNames[i], texture);
                 }
             }
-
-            _compositeMaterial.SetFloat(PIXEL_EFFECT_ENABLED, 1.0f);
-
-            if (_fogMaterial != null)
-            {
-                _fogMaterial.SetFloat(PIXEL_EFFECT_ENABLED, 1.0f);
-            }
-
-            // Pixel ON：通常表示RTを使わない。
-            _compositeMaterial.SetFloat(SCENE_NORMAL_PREVIEW_ENABLED, 0.0f);
-
-            if (_fogMaterial != null)
-            {
-                _fogMaterial.SetFloat(SCENE_NORMAL_PREVIEW_ENABLED, 0.0f);
-            }
         }
 
-        /// <summary>
-        /// Pixel OFF時の通常解像度RTをSceneビューへ渡す。
-        /// </summary>
-        private void ApplyNormalTexture()
+        private void ClearMaterial(Material material)
         {
-            _compositeMaterial.SetTexture(SCENE_NORMAL_TEXTURE, _normalCaptureTexture);
-
-            _compositeMaterial.SetFloat(SCENE_NORMAL_PREVIEW_ENABLED, 1.0f);
-
-            _compositeMaterial.SetFloat(PIXEL_EFFECT_ENABLED, 0.0f);
-
-            if (_fogMaterial != null)
-            {
-                _fogMaterial.SetFloat(SCENE_NORMAL_PREVIEW_ENABLED, 1.0f);
-                _fogMaterial.SetFloat(PIXEL_EFFECT_ENABLED, 0.0f);
-            }
-        }
-
-        private void ReleaseRenderTexture(int index)
-        {
-            if (_captureTextures[index] == null)
+            if (material == null)
             {
                 return;
             }
 
-            _captureTextures[index].Release();
-            UnityEngine.Object.DestroyImmediate(_captureTextures[index]);
-            _captureTextures[index] = null;
+            for (int i = 0; i < CAPTURE_COUNT; i++)
+            {
+                material.SetTexture(_colorNames[i], null);
+                material.SetTexture(_depthNames[i], null);
+            }
+
+            material.SetFloat(PIXEL_EFFECT_ENABLED, 0.0f);
         }
 
-        private void ReportError(string message)
+        private void ReleaseNormalTexture()
         {
-            if (_reportedError)
+            if (_sceneNormalTexture == null)
             {
                 return;
             }
 
-            Debug.LogError(message);
-            _reportedError = true;
+            if (_sceneNormalCamera != null)
+            {
+                _sceneNormalCamera.targetTexture = null;
+            }
+
+            _sceneNormalTexture.Release();
+            UnityEngine.Object.DestroyImmediate(_sceneNormalTexture);
+            _sceneNormalTexture = null;
+        }
+
+        private void StopScenePreview()
+        {
+            ClearMaterial(_sceneCompositeMaterial);
+            ClearMaterial(_sceneFogMaterial);
+
+            if (_sceneCompositeMaterial != null)
+            {
+                _sceneCompositeMaterial.SetTexture(
+                    SCENE_NORMAL_TEXTURE, null);
+
+                _sceneCompositeMaterial.SetFloat(
+                    SCENE_NORMAL_PREVIEW_ENABLED, 0.0f);
+            }
+
+            if (_sceneFogMaterial != null)
+            {
+                _sceneFogMaterial.SetFloat(
+                    SCENE_NORMAL_PREVIEW_ENABLED, 0.0f);
+            }
+
+            _sceneCaptures.Release();
+
+            if (_sceneNormalCamera != null)
+            {
+                UnityEngine.Object.DestroyImmediate(
+                    _sceneNormalCamera.gameObject);
+
+                _sceneNormalCamera = null;
+            }
+
+            ReleaseNormalTexture();
+
+            _sceneCamera = null;
+            _sceneDirty = true;
+            _sceneModeKnown = false;
+            _sceneState.Reset();
+        }
+
+        private static void RepaintGameViews()
+        {
+            EditorApplication.QueuePlayerLoopUpdate();
+
+            foreach (EditorWindow window in
+                     Resources.FindObjectsOfTypeAll<EditorWindow>())
+            {
+                if (window.GetType().FullName == "UnityEditor.GameView")
+                {
+                    window.Repaint();
+                }
+            }
         }
 
         public void Cleanup()
         {
-            if (_compositeMaterial != null)
+            StopGamePreview();
+            StopScenePreview();
+        }
+
+        /// <summary>
+        /// Capture元Cameraの視点変更を検出する。
+        /// </summary>
+        private struct CameraState
+        {
+            private Camera _camera;
+            private Vector3 _position;
+            private Quaternion _rotation;
+            private Vector2Int _size;
+            private float _fieldOfView;
+            private float _orthographicSize;
+            private float _aspect;
+            private float _near;
+            private float _far;
+            private bool _orthographic;
+            private bool _valid;
+
+            public bool Matches(Camera camera)
             {
-                _compositeMaterial.SetFloat(PIXEL_EFFECT_ENABLED, 0.0f);
+                if (!_valid || _camera != camera)
+                {
+                    return false;
+                }
+
+                return
+                    (camera.transform.position - _position).sqrMagnitude
+                        <= 0.000001f &&
+                    Quaternion.Angle(
+                        camera.transform.rotation, _rotation) <= 0.01f &&
+                    camera.pixelWidth == _size.x &&
+                    camera.pixelHeight == _size.y &&
+                    Mathf.Abs(camera.fieldOfView - _fieldOfView) <= 0.001f &&
+                    Mathf.Abs(camera.orthographicSize - _orthographicSize)
+                        <= 0.001f &&
+                    Mathf.Abs(camera.aspect - _aspect) <= 0.001f &&
+                    Mathf.Abs(camera.nearClipPlane - _near) <= 0.001f &&
+                    Mathf.Abs(camera.farClipPlane - _far) <= 0.001f &&
+                    camera.orthographic == _orthographic;
             }
 
-            if (_fogMaterial != null)
+            public void Save(Camera camera)
             {
-                _fogMaterial.SetFloat(PIXEL_EFFECT_ENABLED, 0.0f);
+                _camera = camera;
+                _position = camera.transform.position;
+                _rotation = camera.transform.rotation;
+                _size = new Vector2Int(
+                    camera.pixelWidth, camera.pixelHeight);
+                _fieldOfView = camera.fieldOfView;
+                _orthographicSize = camera.orthographicSize;
+                _aspect = camera.aspect;
+                _near = camera.nearClipPlane;
+                _far = camera.farClipPlane;
+                _orthographic = camera.orthographic;
+                _valid = true;
             }
 
-            for (int i = 0; i < _captureCameras.Length; i++)
+            public void Reset()
             {
-                if (_compositeMaterial != null)
-                {
-                    _compositeMaterial.SetTexture(_textureNames[i], null);
-                }
-
-                if (_fogMaterial != null)
-                {
-                    _fogMaterial.SetTexture(_textureNames[i], null);
-                }
-
-                if (_captureCameras[i] != null)
-                {
-                    UnityEngine.Object.DestroyImmediate(_captureCameras[i].gameObject);
-                    _captureCameras[i] = null;
-                }
-
-                if (_normalCaptureCamera != null)
-                {
-                    UnityEngine.Object.DestroyImmediate(
-                        _normalCaptureCamera.gameObject);
-
-                    _normalCaptureCamera = null;
-                }
-
-                ReleaseNormalRenderTexture();
-
-                if (_compositeMaterial != null)
-                {
-                    _compositeMaterial.SetTexture(SCENE_NORMAL_TEXTURE, null);
-                    _compositeMaterial.SetFloat(SCENE_NORMAL_PREVIEW_ENABLED, 0.0f);
-                }
-
-                if (_fogMaterial != null)
-                {
-                    _fogMaterial.SetFloat(SCENE_NORMAL_PREVIEW_ENABLED, 0.0f);
-                }
-
-                _hasLastPixelRenderingState = false;
-
-                ReleaseRenderTexture(i);
+                _valid = false;
+                _camera = null;
             }
-
-            _lastSceneCamera = null;
-            _dirty = true;
         }
     }
 }

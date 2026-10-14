@@ -15,7 +15,9 @@ Shader "Custom/VolumetricFog"
         [HideInInspector] _PixelMiddleDepthTex("Middle Depth", 2D) = "white" {}
         [HideInInspector] _PixelFarDepthTex("Far Depth", 2D) = "white" {}
 
-        [HideInInspector] _PixelEffectEnabled("Pixel Effect Enabled", Float) = 0
+        [HideInInspector] _SceneNormalPreviewEnabled("Scene Normal Preview Enabled", Float) = 0
+
+        _PixelEffectEnabled("Pixel Effect Enabled", Float) = 0
 
         // ============================================================
         // Fog
@@ -166,6 +168,7 @@ Shader "Custom/VolumetricFog"
                 float _SampleCount;
 
                 float _PixelEffectEnabled;
+                float _SceneNormalPreviewEnabled;
 
             CBUFFER_END
 
@@ -230,6 +233,22 @@ Shader "Custom/VolumetricFog"
                 #endif
             }
 
+            float SelectNearestDepth(float currentDepth, float candidateDepth, float candidateAlpha)
+            {
+                if (candidateAlpha <= 0.01 || IsSkyDepth(candidateDepth))
+                {
+                    return currentDepth;
+                }
+
+                #if UNITY_REVERSED_Z
+                    bool isCloser = candidateDepth > currentDepth;
+                #else
+                    bool isCloser = candidateDepth < currentDepth;
+                #endif
+
+                return IsSkyDepth(currentDepth) || isCloser ? candidateDepth : currentDepth;
+            }
+
             // ========================================================
             // Composite Depth
             //
@@ -243,88 +262,29 @@ Shader "Custom/VolumetricFog"
             // かつSky以外の深度がある場合のみ上書きする。
             // ========================================================
 
-            float GetCompositeDepth(
-                float2 colorUv,
-                float2 depthUv)
+            float GetCompositeDepth(float2 colorUv, float2 depthUv)
             {
-                // Main Cameraの深度を取得する。
                 float result = SampleSceneDepth(depthUv);
 
-                // Pixel Renderingが無効ならMain Cameraの深度を使用。
                 if (_PixelEffectEnabled < 0.5)
                 {
                     return result;
                 }
 
-                // ----------------------------------------------------
-                // Far
-                // ----------------------------------------------------
+                float farAlpha = SAMPLE_TEXTURE2D(_PixelFarTex, sampler_PointClamp, colorUv).a;
+                float farDepth = SAMPLE_TEXTURE2D(_PixelFarDepthTex, sampler_PointClamp, colorUv).r;
+                result = SelectNearestDepth(result, farDepth, farAlpha);
 
-                float farAlpha = SAMPLE_TEXTURE2D(
-                    _PixelFarTex,
-                    sampler_PointClamp,
-                    colorUv).a;
+                float middleAlpha = SAMPLE_TEXTURE2D(_PixelMiddleTex, sampler_PointClamp, colorUv).a;
+                float middleDepth = SAMPLE_TEXTURE2D(_PixelMiddleDepthTex, sampler_PointClamp, colorUv).r;
+                result = SelectNearestDepth(result, middleDepth, middleAlpha);
 
-                if (farAlpha > 0.01)
-                {
-                    float farDepth = SAMPLE_TEXTURE2D(
-                        _PixelFarDepthTex,
-                        sampler_PointClamp,
-                        colorUv).r;
-
-                    if (!IsSkyDepth(farDepth))
-                    {
-                        result = farDepth;
-                    }
-                }
-
-                // ----------------------------------------------------
-                // Middle
-                // ----------------------------------------------------
-
-                float middleAlpha = SAMPLE_TEXTURE2D(
-                    _PixelMiddleTex,
-                    sampler_PointClamp,
-                    colorUv).a;
-
-                if (middleAlpha > 0.01)
-                {
-                    float middleDepth = SAMPLE_TEXTURE2D(
-                        _PixelMiddleDepthTex,
-                        sampler_PointClamp,
-                        colorUv).r;
-
-                    if (!IsSkyDepth(middleDepth))
-                    {
-                        result = middleDepth;
-                    }
-                }
-
-                // ----------------------------------------------------
-                // Near
-                // ----------------------------------------------------
-
-                float nearAlpha = SAMPLE_TEXTURE2D(
-                    _PixelNearTex,
-                    sampler_PointClamp,
-                    colorUv).a;
-
-                if (nearAlpha > 0.01)
-                {
-                    float nearDepth = SAMPLE_TEXTURE2D(
-                        _PixelNearDepthTex,
-                        sampler_PointClamp,
-                        colorUv).r;
-
-                    if (!IsSkyDepth(nearDepth))
-                    {
-                        result = nearDepth;
-                    }
-                }
+                float nearAlpha = SAMPLE_TEXTURE2D(_PixelNearTex, sampler_PointClamp, colorUv).a;
+                float nearDepth = SAMPLE_TEXTURE2D(_PixelNearDepthTex, sampler_PointClamp, colorUv).r;
+                result = SelectNearestDepth(result, nearDepth, nearAlpha);
 
                 return result;
             }
-
             // ========================================================
             // Fragment Shader
             // ========================================================
@@ -348,37 +308,31 @@ Shader "Custom/VolumetricFog"
                 // 2. Scene Color
                 // ====================================================
 
-                half4 sceneColor = SAMPLE_TEXTURE2D_X_LOD(
-                    _BlitTexture,
-                    sampler_LinearClamp,
-                    colorUv,
-                    _BlitMipLevel);
+                half4 sceneColor = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_LinearClamp, colorUv, _BlitMipLevel);
+                // Scene通常プレビュー時はFogを追加しない。
+                // 通常表示RTにはGameRendererの描画結果が含まれる。
+                if (_SceneNormalPreviewEnabled > 0.5)
+                {
+                    return sceneColor;
+                }
 
                 // ====================================================
                 // 3. Scene Depth
                 // ====================================================
 
-                float rawDepth = GetCompositeDepth(
-                    colorUv,
-                    depthUv);
+                float rawDepth = GetCompositeDepth(colorUv, depthUv);
 
                 float deviceDepth = rawDepth;
 
                 #if !UNITY_REVERSED_Z
-                    deviceDepth = lerp(
-                        UNITY_NEAR_CLIP_VALUE,
-                        1.0,
-                        rawDepth);
+                    deviceDepth = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, rawDepth);
                 #endif
 
                 // ====================================================
                 // 4. Surface World Position
                 // ====================================================
 
-                float3 surfacePositionWS = ComputeWorldSpacePosition(
-                    depthUv,
-                    deviceDepth,
-                    UNITY_MATRIX_I_VP);
+                float3 surfacePositionWS = ComputeWorldSpacePosition(depthUv, deviceDepth, UNITY_MATRIX_I_VP);
 
                 float3 cameraPositionWS = _WorldSpaceCameraPos;
 

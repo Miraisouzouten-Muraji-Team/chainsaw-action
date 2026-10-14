@@ -34,6 +34,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelDepthCaptureRendererFeature
   m_Active: 1
   _volumetricFogMaterial: {fileID: 2100000, guid: f5fae617f0634ee4d8f7e660620b1a32, type: 2}
+  _compositeMaterial: {fileID: 2100000, guid: 829d71493aac12f46af0c5361e92fca5, type: 2}
+  _sceneVolumetricFogMaterial: {fileID: 2100000, guid: fb861e3ff9c8f724f99d4916ce5d764d, type: 2}
+  _sceneCompositeMaterial: {fileID: 2100000, guid: 4aa34f71a53ba11489906ada66f28fb9, type: 2}
 --- !u!114 &-837860677647722872
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -46,7 +49,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b00045f12942b46c698459096c89274e, type: 3}
   m_Name: Outline Depth Normal
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.FullScreenPassRendererFeature
-  m_Active: 0
+  m_Active: 1
   injectionPoint: 450
   fetchColorBuffer: 1
   requirements: 7
@@ -82,7 +85,8 @@ MonoBehaviour:
   - {fileID: -3687941216449012512}
   - {fileID: -1030799635876245500}
   - {fileID: -837860677647722872}
-  m_RendererFeatureMap: e0dc08d100cdd1cc0490fe4c31ddb1f188168a2127525ff4
+  - {fileID: 4058787219662103675}
+  m_RendererFeatureMap: e0dc08d100cdd1cc0490fe4c31ddb1f188168a2127525ff47be4dace78b55338
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -111,3 +115,29 @@ MonoBehaviour:
   m_DepthTextureFormat: 0
   m_AccurateGbufferNormals: 0
   m_IntermediateTextureMode: 1
+--- !u!114 &4058787219662103675
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f62c9c65cf3354c93be831c8bc075510, type: 3}
+  m_Name: ScreenSpaceAmbientOcclusion
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.ScreenSpaceAmbientOcclusion
+  m_Active: 1
+  m_Settings:
+    AOMethod: 0
+    Downsample: 0
+    AfterOpaque: 0
+    Source: 1
+    NormalSamples: 1
+    Intensity: 3
+    DirectLightingStrength: 0.25
+    Radius: 0.2
+    Samples: 1
+    BlurQuality: 1
+    Falloff: 100
+    SampleCount: -1

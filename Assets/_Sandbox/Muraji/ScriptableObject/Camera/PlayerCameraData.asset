@@ -12,15 +12,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 503cd16b15f1cc045b2bc342e8850a07, type: 3}
   m_Name: PlayerCameraData
   m_EditorClassIdentifier: Assembly-CSharp::CameraData
-  followOffset: {x: 3, y: 3}
+  followOffset: {x: 3, y: 1}
   followPercent: 0.1
-  floorOffset: {x: 5, y: 3}
+  floorOffset: {x: 3, y: 2}
   floorFollowPercent: 0.2
-  wallOffset: {x: 3, y: 5}
+  wallOffset: {x: 3, y: 3}
   wallFollowPercent: 0.2
-  ceilingOffset: {x: 5, y: 0}
+  ceilingOffset: {x: 3, y: -1}
   ceilingFollowPercent: 0.2
   airOffset: {x: 3, y: 0}
-  airFollowPercent: 0.03
+  airFollowPercent: 0.1
   directionChangePercent: 0.03
   directionLookAhead: 3.5

@@ -26,6 +26,21 @@ public class PlayerCamera : MonoBehaviour
     [SerializeField]
     private Collider[] cameraAreas;
 
+    [Tooltip("オンなら画面をエリア内へ収めます。オフセットが反映されない原因を調べる場合だけ、一時的にオフにして比較してください。エリア判定とリスポーン用のエリア番号は維持します。")]
+    [SerializeField] private bool useAreaPositionLimit = true;
+
+    [Header("オフセットの確認（実行中に自動更新）")]
+    [Tooltip("カメラが参照している食い込み状態です。壁登り中はWallになります。")]
+    [SerializeField] private ChainsawSurface debugSurface;
+    [Tooltip("今回SOから読み取ったオフセットです。壁登り中はWall Offsetと一致します。")]
+    [SerializeField] private Vector2 debugSelectedOffset;
+    [Tooltip("エリア制限を適用する前の目標位置です。")]
+    [SerializeField] private Vector3 debugTargetBeforeLimit;
+    [Tooltip("エリア制限を適用した後の目標位置です。実際の位置は追従率でここへ近づきます。")]
+    [SerializeField] private Vector3 debugTargetAfterLimit;
+    [Tooltip("エリア制限によって目標位置が変わった場合にオンになります。")]
+    [SerializeField] private bool debugAreaLimited;
+
     private Camera targetCamera;
     private Collider currentArea;
     private float smoothedFacingDirection;
@@ -93,6 +108,15 @@ public class PlayerCamera : MonoBehaviour
             return;
         }
 
+        // 別プレイヤーの状態を参照している場合、設定を修正できるよう通知する。
+        if (chainsawDigging != playerController.GetComponent<SensorChainsawDigging>())
+        {
+            Debug.LogWarning(
+                "PlayerCameraのChainsaw DiggingがPlayer Controllerと一致していません。"
+                + "同じプレイヤーのSensorChainsawDiggingを指定してください。",
+                this);
+        }
+
         smoothedFacingDirection =
             playerController.FacingDirection;
 
@@ -101,13 +125,7 @@ public class PlayerCamera : MonoBehaviour
 
         // 接地判定の初回更新前なので、初期配置には通常設定を使用する。
         Vector3 initialPosition =
-            CalculateTargetPosition(cameraData.followOffset);
-
-        if (currentArea != null)
-        {
-            initialPosition =
-                ClampToCurrentArea(initialPosition);
-        }
+            CalculateFollowTargetPosition(cameraData.followOffset);
 
         // 初期位置のみ即座に設定する。
         transform.position = initialPosition;
@@ -141,13 +159,7 @@ public class PlayerCamera : MonoBehaviour
             directionInterpolation);
 
         Vector3 targetPosition =
-            CalculateTargetPosition(offset);
-
-        if (currentArea != null)
-        {
-            targetPosition =
-                ClampToCurrentArea(targetPosition);
-        }
+            CalculateFollowTargetPosition(offset);
 
         // 現在の状態に対応した追従率で、目標位置へ近づける。
         float positionInterpolation =
@@ -229,8 +241,7 @@ public class PlayerCamera : MonoBehaviour
         GetFollowSettings(out Vector2 offset, out _);
 
         // このメソッド内で使用するローカル変数として宣言する。
-        Vector3 targetPosition = CalculateTargetPosition(offset);
-        targetPosition = ClampToCurrentArea(targetPosition);
+        Vector3 targetPosition = CalculateFollowTargetPosition(offset);
 
         transform.position = targetPosition;
 
@@ -283,6 +294,23 @@ public class PlayerCamera : MonoBehaviour
             offset = cameraData.airOffset;
             followPercent = cameraData.airFollowPercent;
         }
+    }
+
+    // 使用中の設定と制限前後の目標位置を記録し、必要な場合だけエリア制限を適用する。
+    private Vector3 CalculateFollowTargetPosition(Vector2 offset)
+    {
+        debugSurface = chainsawDigging != null && chainsawDigging.isActiveAndEnabled
+            ? chainsawDigging.Surface
+            : ChainsawSurface.None;
+        debugSelectedOffset = offset;
+        debugTargetBeforeLimit = CalculateTargetPosition(offset);
+        debugTargetAfterLimit = useAreaPositionLimit && currentArea != null
+            ? ClampToCurrentArea(debugTargetBeforeLimit)
+            : debugTargetBeforeLimit;
+        debugAreaLimited =
+            (debugTargetAfterLimit - debugTargetBeforeLimit).sqrMagnitude > 0.000001f;
+
+        return debugTargetAfterLimit;
     }
 
     // Xは左右の視野方向、Yは高さだけを使い、目標位置を計算する。

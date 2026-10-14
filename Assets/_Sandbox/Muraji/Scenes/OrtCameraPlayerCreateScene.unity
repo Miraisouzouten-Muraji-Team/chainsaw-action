@@ -282,7 +282,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 530655893479950742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalScale.x
-      value: 15.280985
+      value: 26.121317
       objectReference: {fileID: 0}
     - target: {fileID: 530655893479950742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalScale.z
@@ -290,7 +290,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 530655893479950742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -2.5845
+      value: -8.0044
       objectReference: {fileID: 0}
     - target: {fileID: 530655893479950742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.y
@@ -308,6 +308,14 @@ PrefabInstance:
       propertyPath: accelerationParameter
       value: 
       objectReference: {fileID: 11400000, guid: 49f0f6b37d9166b4393cdf12508c13ad, type: 2}
+    - target: {fileID: 1065567314792741323, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 25.601938
+      objectReference: {fileID: 0}
+    - target: {fileID: 1065567314792741323, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 6.3624
+      objectReference: {fileID: 0}
     - target: {fileID: 1517345183352060374, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_IsActive
       value: 1
@@ -435,6 +443,22 @@ PrefabInstance:
     - target: {fileID: 5704232057980973483, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_IsTrigger
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5710632816284679427, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Size.x
+      value: 30.205153
+      objectReference: {fileID: 0}
+    - target: {fileID: 5710632816284679427, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Size.y
+      value: 32.860523
+      objectReference: {fileID: 0}
+    - target: {fileID: 5710632816284679427, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Center.x
+      value: -6.782054
+      objectReference: {fileID: 0}
+    - target: {fileID: 5710632816284679427, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Center.y
+      value: 14.881399
       objectReference: {fileID: 0}
     - target: {fileID: 5770307143627000759, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_IsActive

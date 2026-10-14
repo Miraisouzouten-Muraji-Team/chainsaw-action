@@ -108,7 +108,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f194eeeb4cd914d4497cdc968e22ec9e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CameraShake
-  shakeTarget: {fileID: 0}
+  shakeTarget: {fileID: 6930742646086974981}
 --- !u!114 &8887377629267839132
 MonoBehaviour:
   m_ObjectHideFlags: 0

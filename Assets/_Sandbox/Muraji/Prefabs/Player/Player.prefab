@@ -1,5 +1,58 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!1 &161280807849815385
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7181459585829911945}
+  - component: {fileID: 1850203381623567079}
+  m_Layer: 0
+  m_Name: Head_Collider
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7181459585829911945
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 161280807849815385}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2576167837745099611}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &1850203381623567079
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 161280807849815385}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.16762903, y: 0.03263235, z: 0.15274186}
+  m_Center: {x: -0.021365695, y: 1.6395695, z: 0.020470284}
 --- !u!1 &451060670484972439
 GameObject:
   m_ObjectHideFlags: 0
@@ -85,8 +138,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.005, y: 0.0064803916, z: 0.005}
-  m_Center: {x: 0, y: 0.0007401956, z: 0}
+  m_Size: {x: 0.005, y: 0.0034344802, z: 0.003474456}
+  m_Center: {x: 1.6217483e-13, y: 0.0022631523, z: -0.0007627704}
 --- !u!1 &2172936383169993347
 GameObject:
   m_ObjectHideFlags: 0
@@ -383,8 +436,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.005, y: 0.011284974, z: 0.0060969177}
-  m_Center: {x: -5.6364483e-12, y: -0.00009670428, z: 0.0005484587}
+  m_Size: {x: 0.005, y: 0.017074373, z: 0.0057323193}
+  m_Center: {x: -8.9659406e-14, y: 0.002797991, z: 0.0003661591}
 --- !u!1 &6270290766517622607
 GameObject:
   m_ObjectHideFlags: 0
@@ -429,6 +482,7 @@ Transform:
   - {fileID: 4733158416737725769}
   - {fileID: 7341091790671466356}
   - {fileID: 7098819222341421782}
+  - {fileID: 7181459585829911945}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!54 &2378771857761810598
@@ -585,7 +639,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
   attackHitBox: {fileID: 6711951221994413545}
-  slash1State: Base Layer.Slash0
+  slash1State: Base Layer.Slash1
   slash2State: Base Layer.Slash2
   slash3State: Base Layer.Slash3
   idleState: Base Layer.Idle
@@ -690,6 +744,7 @@ GameObject:
   - component: {fileID: 7121988084403410591}
   - component: {fileID: 4953133777003125481}
   - component: {fileID: 6711951221994413545}
+  - component: {fileID: 5471175804612744787}
   m_Layer: 0
   m_Name: Chainsaw_AttackCollider
   m_TagString: Untagged
@@ -751,14 +806,23 @@ MonoBehaviour:
   hitParticle: {fileID: 6176228616533195752, guid: 8b653b8ed8f598c42baa0eca3fd64bea, type: 3}
   cameraShake: {fileID: 5429733058400219989, guid: 222bfb40d9d8c07429223c6c89cc414f, type: 3}
   duration: 0.05
-  magnitude: 0.05
-  hitStopSystem: {fileID: 0}
+  hitStopSystem: {fileID: 5471175804612744787}
   trajectoryRecorder: {fileID: 6943853005728417369}
-  diggingHitStopTime: 0
-  shakeOnDigging: 0
   bladeTrajectoryRecorder: {fileID: 2526683457047687724}
   enableTrajectoryDebugLog: 1
   sampleLogInterval: 10
+--- !u!114 &5471175804612744787
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6415935171194727921}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6a59dfd6bb5c6e6438a0a548f2fcb9aa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HitStop_System
 --- !u!1 &6710368214315103302
 GameObject:
   m_ObjectHideFlags: 0
@@ -810,8 +874,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.2641356, y: 0.0673058, z: 0.28791136}
-  m_Center: {x: 0.021882534, y: 0.08572427, z: -0.035824046}
+  m_Size: {x: 0.4095017, y: 0.0673058, z: 0.4015433}
+  m_Center: {x: 0.017408356, y: 0.08572427, z: -0.020158455}
 --- !u!1 &6874388743141161285
 GameObject:
   m_ObjectHideFlags: 0
@@ -894,8 +958,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.005, y: 0.005, z: 0.005}
-  m_Center: {x: 0, y: 0, z: 0}
+  m_Size: {x: 0.006458829, y: 0.0035331135, z: 0.007204771}
+  m_Center: {x: 0.0003283788, y: 0.0007334443, z: -0.0011023836}
 --- !u!1 &8550267900710244304
 GameObject:
   m_ObjectHideFlags: 0
@@ -950,8 +1014,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.003447193, y: 0.0147690335, z: 0.0044404087}
-  m_Center: {x: 0.000005179431, y: -0.00047267845, z: 0.000238429}
+  m_Size: {x: 0.006625871, y: 0.023006644, z: 0.007033432}
+  m_Center: {x: 0.00030876612, y: 0.0011416419, z: 0.00034260473}
 --- !u!114 &4670979581367789999
 MonoBehaviour:
   m_ObjectHideFlags: 0

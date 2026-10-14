@@ -166,7 +166,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerCamera
   cameraData: {fileID: 11400000, guid: 74c3f388950de894ea1ab89a13e9339f, type: 2}
-  playerController: {fileID: 0}
+  playerController: {fileID: 2297365986704426365, guid: 5e486360759a8f349a0deef4b73daadd, type: 3}
+  chainsawDigging: {fileID: 6732003626081136930, guid: 5e486360759a8f349a0deef4b73daadd, type: 3}
   cameraAreas:
   - {fileID: 0}
   - {fileID: 0}

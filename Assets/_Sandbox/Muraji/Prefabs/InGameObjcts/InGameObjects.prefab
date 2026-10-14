@@ -2597,9 +2597,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7e624b05775fca847a22140969b8b248, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawRotation
---- !u!114 &3074638655593022848 stripped
+--- !u!114 &4952440372729245247 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7539433478415592217, guid: 5e486360759a8f349a0deef4b73daadd, type: 3}
+  m_CorrespondingSourceObject: {fileID: 482068895008342182, guid: 5e486360759a8f349a0deef4b73daadd, type: 3}
   m_PrefabInstance: {fileID: 4758683424836333209}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
@@ -2635,7 +2635,7 @@ PrefabInstance:
     - target: {fileID: 1277151774839084522, guid: faf750e57e389604f9f73c3d1c5bf329, type: 3}
       propertyPath: playerHealth
       value: 
-      objectReference: {fileID: 3074638655593022848}
+      objectReference: {fileID: 4952440372729245247}
     - target: {fileID: 7219073780597730696, guid: faf750e57e389604f9f73c3d1c5bf329, type: 3}
       propertyPath: m_Name
       value: InGameCanvas

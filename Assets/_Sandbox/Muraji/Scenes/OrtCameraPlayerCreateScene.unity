@@ -281,8 +281,12 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 530655893479950742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 15.280985
+      objectReference: {fileID: 0}
+    - target: {fileID: 530655893479950742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -2.68
+      value: -2.5845
       objectReference: {fileID: 0}
     - target: {fileID: 530655893479950742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.y
@@ -487,6 +491,10 @@ PrefabInstance:
     - target: {fileID: 7825294758511356720, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Enabled
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8177089103862375041, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Layer
+      value: 9
       objectReference: {fileID: 0}
     - target: {fileID: 8401115230034182340, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_IsActive
@@ -2022,11 +2030,8 @@ MonoBehaviour:
   hitParticle: {fileID: 6176228616533195752, guid: 8b653b8ed8f598c42baa0eca3fd64bea, type: 3}
   cameraShake: {fileID: 0}
   duration: 0.05
-  magnitude: 0.05
   hitStopSystem: {fileID: 630910035}
   trajectoryRecorder: {fileID: 0}
-  diggingHitStopTime: 0
-  shakeOnDigging: 0
   bladeTrajectoryRecorder: {fileID: 1450766279}
   enableTrajectoryDebugLog: 1
   sampleLogInterval: 10

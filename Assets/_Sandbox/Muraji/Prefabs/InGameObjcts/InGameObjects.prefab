@@ -2586,9 +2586,9 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 5e486360759a8f349a0deef4b73daadd, type: 3}
---- !u!114 &568980580485844425 stripped
+--- !u!114 &918029009687324684 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 5039336180393239376, guid: 5e486360759a8f349a0deef4b73daadd, type: 3}
+  m_CorrespondingSourceObject: {fileID: 5672076857265227413, guid: 5e486360759a8f349a0deef4b73daadd, type: 3}
   m_PrefabInstance: {fileID: 4758683424836333209}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
@@ -2596,7 +2596,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 7e624b05775fca847a22140969b8b248, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ChainsawRotation
+  m_EditorClassIdentifier: Assembly-CSharp::ChainsawAccelerator
 --- !u!114 &6646503596646728920 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 2177246958733011521, guid: 5e486360759a8f349a0deef4b73daadd, type: 3}
@@ -2723,7 +2723,7 @@ PrefabInstance:
     - target: {fileID: 8936538478619320292, guid: faf750e57e389604f9f73c3d1c5bf329, type: 3}
       propertyPath: chainsawAccelerator
       value: 
-      objectReference: {fileID: 568980580485844425}
+      objectReference: {fileID: 918029009687324684}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

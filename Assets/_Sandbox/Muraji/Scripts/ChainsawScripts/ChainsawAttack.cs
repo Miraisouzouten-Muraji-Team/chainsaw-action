@@ -8,24 +8,16 @@ public class ChainsawAttack : MonoBehaviour
 
     [Header("ヒット演出")]
     [SerializeField] private GameObject hitParticle;
+    [Tooltip("ゲーム画面のカメラを揺らすコンポーネントを指定してください。未設定なら自動取得します。")]
     [SerializeField] private CameraShake_System cameraShake;
 
-    [Tooltip("通常攻撃・食い込み共通のカメラシェイク時間（実時間の秒）")]
+    [Tooltip("通常攻撃・食い込み共通の揺れ時間です。0なら0.15秒を使用します。揺れの強さは各攻撃SOで設定します。")]
     [SerializeField, Min(0f)]
-    private float duration;
+    private float duration = 0.15f;
 
-    [Tooltip("食い込み専用の揺れの強さ。通常攻撃ではAttackData.cameraShackを使用")]
-    [SerializeField, Min(0f)]
-    private float magnitude;
-
+    [Tooltip("命中時に時間を停止するコンポーネントを指定してください。未設定なら自動取得します。")]
     [SerializeField] private HitStop_System hitStopSystem;
     [SerializeField] private ChainsawTrajectoryRecorder trajectoryRecorder;
-
-    [Header("食い込みの演出（0秒ならヒットストップなし）")]
-    [SerializeField, Min(0f)]
-    private float diggingHitStopTime = 0f;
-
-    [SerializeField] private bool shakeOnDigging = false;
 
     [Header("新軌跡記録（IAttackHitReceiver送信用）")]
     [SerializeField]
@@ -40,6 +32,11 @@ public class ChainsawAttack : MonoBehaviour
 
     private int sampleCallCount;
     private const string LOG_PREFIX = "[ChainsawTrail] ";
+    private const float DEFAULT_SHAKE_DURATION = 0.15f;
+
+    // 設定不足の警告を、食い込みの連続命中で繰り返さないための記録。
+    private bool shakeWarningLogged;
+    private bool hitStopWarningLogged;
 
     private AttackData currentData;
     private float attackHitStopTime;
@@ -247,12 +244,12 @@ public class ChainsawAttack : MonoBehaviour
             return false;
         }
 
-        // 既存の食い込み専用演出設定を使用する。
+        // 食い込みも、呼び出し元が渡した攻撃SOの演出設定を使用する。
         PlayHitEffects(
             point,
-            diggingHitStopTime,
-            shakeOnDigging,
-            magnitude);
+            Mathf.Max(0f, data.hitStopTime),
+            true,
+            Mathf.Max(0f, data.cameraShack));
 
         return true;
     }
@@ -318,6 +315,10 @@ public class ChainsawAttack : MonoBehaviour
         Vector3 point =
             other.ClosestPoint(hitBox.bounds.center);
 
+        // 受信側で攻撃が中断されても、今回の命中に使う演出値を維持する。
+        float hitStopTime = attackHitStopTime;
+        float shakeMagnitude = attackShakeMagnitude;
+
         // 送信先の処理中に再度呼ばれても重複送信しないよう、先に登録する。
         hitEnemies.Add(receiver);
 
@@ -330,27 +331,51 @@ public class ChainsawAttack : MonoBehaviour
 
         PlayHitEffects(
             point,
-            attackHitStopTime,
+            hitStopTime,
             true,
-            attackShakeMagnitude);
+            shakeMagnitude);
     }
+    // 命中送信が成功したときに、攻撃SOの設定で揺れ・時間停止・命中エフェクトを実行する。
     private void PlayHitEffects(
         Vector3 point,
         float hitStop,
         bool shake,
         float shakeMagnitude)
     {
-        if (shake &&
-            cameraShake != null &&
-            shakeMagnitude > 0f &&
-            duration > 0f)
+        if (shake && shakeMagnitude > 0f)
         {
-            cameraShake.Shake(duration, shakeMagnitude);
+            if (cameraShake != null && cameraShake.isActiveAndEnabled)
+            {
+                float shakeDuration = duration > 0f
+                    ? duration
+                    : DEFAULT_SHAKE_DURATION;
+
+                cameraShake.Shake(shakeDuration, shakeMagnitude);
+            }
+            else if (!shakeWarningLogged)
+            {
+                shakeWarningLogged = true;
+                Debug.LogWarning(
+                    "命中しましたがカメラシェイクを実行できません。"
+                    + "Camera Shakeにゲーム画面の有効なCameraShake_Systemを指定してください。",
+                    this);
+            }
         }
 
-        if (hitStopSystem != null && hitStop > 0f)
+        if (hitStop > 0f)
         {
-            hitStopSystem.StopTime(hitStop);
+            if (hitStopSystem != null && hitStopSystem.isActiveAndEnabled)
+            {
+                hitStopSystem.StopTime(hitStop);
+            }
+            else if (!hitStopWarningLogged)
+            {
+                hitStopWarningLogged = true;
+                Debug.LogWarning(
+                    "命中しましたがヒットストップを実行できません。"
+                    + "Hit Stop Systemに有効なHitStop_Systemを指定してください。",
+                    this);
+            }
         }
 
         if (hitParticle == null)

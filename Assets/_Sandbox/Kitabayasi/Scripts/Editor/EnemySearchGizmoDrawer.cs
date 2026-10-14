@@ -6,8 +6,8 @@ using UnityEngine;
 /// </summary>
 /// <remarks>
 /// 索敵判定そのものは担当しない。
-/// ChargeEnemyは従来どおりCollider中心を使用し、
-/// DroneEnemyは実処理と同じSearchCenterを表示する。
+/// ChargeEnemyは個体のSearch Strategyに設定された索敵半径とCollider中心を使用し、
+/// DroneEnemyはEnemyDataの索敵半径と実処理と同じSearchCenterを表示する。
 /// </remarks>
 public static class EnemySearchGizmoDrawer
 {
@@ -42,17 +42,28 @@ public static class EnemySearchGizmoDrawer
             return;
         }
 
-        EnemyDataReference dataReference =
-            stateMachine.GetComponent<EnemyDataReference>();
+        float detectionRadius;
 
-        if (dataReference == null ||
-            dataReference.Data == null)
+        if (searchStrategy is
+                ChargeEnemySearchStrategy chargeEnemySearchStrategy)
         {
-            return;
+            detectionRadius =
+                chargeEnemySearchStrategy.DetectionRadius;
         }
+        else
+        {
+            EnemyDataReference dataReference =
+                stateMachine.GetComponent<EnemyDataReference>();
 
-        float detectionRadius =
-            dataReference.Data.DetectionRadius;
+            if (dataReference == null ||
+                dataReference.Data == null)
+            {
+                return;
+            }
+
+            detectionRadius =
+                dataReference.Data.DetectionRadius;
+        }
 
         if (detectionRadius <= 0f)
         {

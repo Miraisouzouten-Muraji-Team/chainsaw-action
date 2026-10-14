@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /// 責務:
 /// ・ゲーム開始時、またはDamage復帰時に更新された位置を基準に巡回する。
-/// ・巡回基準時点のFacing方向へPatrolDistanceだけ移動して往復する。
+/// ・巡回基準時点のFacing方向を正方向とする符号付きPatrolOffsetで巡回端を決定し、往復する。
 /// ・巡回端または平坦面の終端で停止し、VisualRootだけを指定時間かけて180度反転する。
 /// ・巡回中に進行方向を塞ぐ壁面へ衝突した場合は反転する。
 /// ・巡回前に平坦面を判定し、穴・段差・坂へ進入しない。
@@ -25,6 +26,17 @@ public sealed class ChargeEnemySearchStrategy :
     private const float ARRIVAL_TOLERANCE = 0.05f;
     private const float DIRECTION_EPSILON = 0.001f;
     private const float WALL_NORMAL_X_THRESHOLD = 0.7f;
+
+    [Header("個体設定")]
+    [Tooltip("このChargeEnemyがPlayerを検知する半径。ChargeEnemyDataのDetectionRadiusは使用しない。")]
+    [SerializeField]
+    [Min(0f)]
+    private float detectionRadius;
+
+    [Tooltip("このChargeEnemyの巡回開始地点から折り返し地点までの符号付きオフセット。正数は巡回基準時点のFacing方向、負数はその反対方向。ChargeEnemyDataのPatrolDistanceは使用しない。")]
+    [FormerlySerializedAs("patrolDistance")]
+    [SerializeField]
+    private float patrolOffset;
 
     private ChargeEnemyData enemyData;
 
@@ -57,6 +69,16 @@ public sealed class ChargeEnemySearchStrategy :
 
     private Quaternion turnStartRotation;
     private Quaternion turnTargetRotation;
+
+    /// <summary>
+    /// このChargeEnemy個体に設定された索敵半径。
+    /// </summary>
+    public float DetectionRadius => detectionRadius;
+
+    /// <summary>
+    /// このChargeEnemy個体に設定された巡回開始地点から折り返し地点までの符号付きオフセット。
+    /// </summary>
+    public float PatrolOffset => patrolOffset;
 
     /// ゲーム開始時の巡回開始位置もここで固定する。
     public void Initialize(
@@ -138,7 +160,9 @@ public sealed class ChargeEnemySearchStrategy :
         isMovingToPatrolEnd = true;
 
         currentMoveDirectionSign =
-            initialPatrolDirectionSign;
+            GetPatrolEndDirectionSign();
+
+        AlignVisualWithCurrentMoveDirection();
 
         turnElapsedTime = 0f;
 
@@ -343,7 +367,8 @@ public sealed class ChargeEnemySearchStrategy :
     /// </summary>
     private void UpdatePatrol()
     {
-        if (enemyData.PatrolDistance <= 0f)
+        if (Mathf.Abs(patrolOffset) <=
+            DIRECTION_EPSILON)
         {
             StopHorizontalMovement();
             return;
@@ -397,7 +422,52 @@ public sealed class ChargeEnemySearchStrategy :
 
         return patrolStartPosition.x +
                initialPatrolDirectionSign *
-               enemyData.PatrolDistance;
+               patrolOffset;
+    }
+
+    /// <summary>
+    /// 巡回基準時点のFacing方向とPatrolOffsetの符号から、
+    /// 巡回端へ向かうX方向の符号を取得する。
+    /// </summary>
+    private float GetPatrolEndDirectionSign()
+    {
+        if (Mathf.Abs(patrolOffset) <=
+            DIRECTION_EPSILON)
+        {
+            return 0f;
+        }
+
+        return initialPatrolDirectionSign *
+               Mathf.Sign(patrolOffset);
+    }
+
+    /// <summary>
+    /// Search開始時の見た目方向を、実際の初回巡回方向へ合わせる。
+    /// 負のPatrolOffsetでも移動方向とFacingが逆転しないようにする。
+    /// </summary>
+    private void AlignVisualWithCurrentMoveDirection()
+    {
+        if (Mathf.Abs(currentMoveDirectionSign) <=
+            DIRECTION_EPSILON)
+        {
+            return;
+        }
+
+        float visualDirectionSign =
+            GetHorizontalDirectionSign(
+                visualRoot);
+
+        if (visualDirectionSign *
+            currentMoveDirectionSign > 0f)
+        {
+            return;
+        }
+
+        visualRoot.rotation =
+            Quaternion.AngleAxis(
+                180f,
+                Vector3.up) *
+            visualRoot.rotation;
     }
 
     /// <summary>
@@ -598,9 +668,6 @@ public sealed class ChargeEnemySearchStrategy :
         float squaredDistance =
             deltaX * deltaX +
             deltaY * deltaY;
-
-        float detectionRadius =
-            enemyData.DetectionRadius;
 
         if (squaredDistance >
             detectionRadius *

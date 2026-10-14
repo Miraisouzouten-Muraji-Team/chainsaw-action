@@ -8,8 +8,9 @@ using UnityEngine.Serialization;
 /// 索敵・攻撃Stateで使用する速度・時間・ダメージ割合、
 /// 平坦面移動制限など、突進エネミー固有の調整値を保持する。
 ///
-/// 最大HP、攻撃力、索敵半径、共通の攻撃予告、被ダメージ演出、死亡演出など、
+/// 最大HP、攻撃力、共通の攻撃予告、被ダメージ演出、死亡演出など、
 /// 全Enemy共通の設定値はEnemyDataから継承する。
+/// 索敵半径と巡回距離はChargeEnemySearchStrategyの個体設定を使用する。
 ///
 /// 現在HP、現在State、現在位置など、
 /// 実行中に変化する状態は保持しない。
@@ -20,7 +21,7 @@ using UnityEngine.Serialization;
 public sealed class ChargeEnemyData : EnemyData
 {
     [Header("索敵")]
-    [Tooltip("巡回開始地点からの片道距離。")]
+    [Tooltip("互換性のため保持している旧巡回距離。現在のChargeEnemySearchStrategyでは使用せず、個体側のPatrol Distanceを使用します。")]
     [SerializeField]
     [Min(0f)]
     private float patrolDistance;

@@ -13,7 +13,7 @@ using UnityEngine;
 /// ・Inspectorから使用するSearch / Alert / Attack Strategyとその設定を編集できるようにする。
 /// ・選択されたStrategyをEnemyStateMachineのSerializeReferenceへ設定する。
 /// ・Play中の現在StateをInspectorへ読み取り専用で表示する。
-/// ・ChargeEnemySearchStrategy使用時の巡回範囲編集を行う。
+/// ・ChargeEnemySearchStrategy使用時の巡回範囲と符号付きオフセットの編集を行う。
 /// ・DroneEnemySearchStrategy選択時にPatrolPointA/Bを生成・再利用して参照を設定する。
 ///
 /// 担当しない責務:
@@ -39,8 +39,8 @@ public sealed class EnemyStateMachineEditor : Editor
     private const string VISUAL_ROOT_PROPERTY_NAME =
         "visualRoot";
 
-    private const string PATROL_DISTANCE_PROPERTY_NAME =
-        "patrolDistance";
+    private const string PATROL_OFFSET_PROPERTY_NAME =
+        "patrolOffset";
 
     private const string DRONE_PATROL_POINT_A_NAME =
         "PatrolPointA";
@@ -223,7 +223,7 @@ public sealed class EnemyStateMachineEditor : Editor
                 SEARCH_STRATEGY_PROPERTY_NAME);
 
         if (searchStrategyProperty?.managedReferenceValue
-            is not ChargeEnemySearchStrategy)
+            is not ChargeEnemySearchStrategy chargeEnemySearchStrategy)
         {
             return;
         }
@@ -236,10 +236,7 @@ public sealed class EnemyStateMachineEditor : Editor
             visualRootProperty?.objectReferenceValue
             as Transform;
 
-        if (visualRoot == null ||
-            !TryGetChargeEnemyData(
-                stateMachine,
-                out ChargeEnemyData chargeEnemyData))
+        if (visualRoot == null)
         {
             return;
         }
@@ -255,7 +252,7 @@ public sealed class EnemyStateMachineEditor : Editor
         Vector3 patrolEndPosition =
             patrolStartPosition +
             patrolDirection *
-            chargeEnemyData.PatrolDistance;
+            chargeEnemySearchStrategy.PatrolOffset;
 
         DrawPatrolRange(
             patrolStartPosition,
@@ -279,6 +276,15 @@ public sealed class EnemyStateMachineEditor : Editor
             return;
         }
 
+        SerializedProperty patrolOffsetProperty =
+            searchStrategyProperty.FindPropertyRelative(
+                PATROL_OFFSET_PROPERTY_NAME);
+
+        if (patrolOffsetProperty == null)
+        {
+            return;
+        }
+
         Transform visualRoot =
             visualRootProperty?.objectReferenceValue
             as Transform;
@@ -291,44 +297,24 @@ public sealed class EnemyStateMachineEditor : Editor
         EnemyStateMachine stateMachine =
             (EnemyStateMachine)target;
 
-        if (!TryGetChargeEnemyData(
-                stateMachine,
-                out ChargeEnemyData chargeEnemyData))
-        {
-            return;
-        }
-
-        DrawPatrolDistanceEditor(
+        DrawPatrolOffsetEditor(
             stateMachine,
             visualRoot,
-            chargeEnemyData);
+            serializedObject,
+            patrolOffsetProperty);
     }
 
     /// <summary>
     /// 選択中のChargeEnemyについて、
-    /// 巡回折り返し地点の編集ハンドルをSceneビューへ描画する。
+    /// 巡回折り返し地点の符号付きオフセット編集ハンドルをSceneビューへ描画する。
     /// 常時表示する巡回範囲自体はDrawPatrolRangeGizmoが担当する。
     /// </summary>
-    private static void DrawPatrolDistanceEditor(
+    private static void DrawPatrolOffsetEditor(
         EnemyStateMachine stateMachine,
         Transform visualRoot,
-        ChargeEnemyData chargeEnemyData)
+        SerializedObject stateMachineSerializedObject,
+        SerializedProperty patrolOffsetProperty)
     {
-        SerializedObject dataSerializedObject =
-            new SerializedObject(
-                chargeEnemyData);
-
-        dataSerializedObject.Update();
-
-        SerializedProperty patrolDistanceProperty =
-            dataSerializedObject.FindProperty(
-                PATROL_DISTANCE_PROPERTY_NAME);
-
-        if (patrolDistanceProperty == null)
-        {
-            return;
-        }
-
         Vector3 patrolStartPosition =
             stateMachine.transform.position;
 
@@ -340,19 +326,19 @@ public sealed class EnemyStateMachineEditor : Editor
         Vector3 endPosition =
             patrolStartPosition +
             patrolDirection *
-            patrolDistanceProperty.floatValue;
+            patrolOffsetProperty.floatValue;
 
-        DrawPatrolDistanceHandle(
-            chargeEnemyData,
-            dataSerializedObject,
-            patrolDistanceProperty,
+        DrawPatrolOffsetHandle(
+            stateMachine,
+            stateMachineSerializedObject,
+            patrolOffsetProperty,
             patrolStartPosition,
             endPosition,
             patrolDirection);
     }
 
     /// <summary>
-    /// 巡回開始地点から折り返し地点までを常時描画する。
+    /// 巡回開始地点から符号付きオフセットで決まる折り返し地点までを常時描画する。
     /// </summary>
     private static void DrawPatrolRange(
         Vector3 startPosition,
@@ -395,12 +381,12 @@ public sealed class EnemyStateMachineEditor : Editor
     }
 
     /// <summary>
-    /// 巡回折り返し地点をSceneビューから編集する。
+    /// 巡回折り返し地点の符号付きオフセットをSceneビューから編集する。
     /// </summary>
-    private static void DrawPatrolDistanceHandle(
-        ChargeEnemyData chargeEnemyData,
-        SerializedObject dataSerializedObject,
-        SerializedProperty patrolDistanceProperty,
+    private static void DrawPatrolOffsetHandle(
+        EnemyStateMachine stateMachine,
+        SerializedObject stateMachineSerializedObject,
+        SerializedProperty patrolOffsetProperty,
         Vector3 startPosition,
         Vector3 endPosition,
         Vector3 patrolDirection)
@@ -433,34 +419,32 @@ public sealed class EnemyStateMachineEditor : Editor
                 endPosition +
                 Vector3.up *
                 handleSize,
-                $"Patrol Distance: " +
-                $"{patrolDistanceProperty.floatValue:0.##}");
+                $"Patrol Offset: " +
+                $"{patrolOffsetProperty.floatValue:0.##}");
 
             return;
         }
 
-        float newDistance =
+        float newOffset =
             Vector3.Dot(
                 movedPosition -
                 startPosition,
                 patrolDirection);
 
-        newDistance =
-            Mathf.Max(
-                0f,
-                newDistance);
-
         Undo.RecordObject(
-            chargeEnemyData,
-            "Change Patrol Distance");
+            stateMachine,
+            "Change Patrol Offset");
 
-        patrolDistanceProperty.floatValue =
-            newDistance;
+        patrolOffsetProperty.floatValue =
+            newOffset;
 
-        dataSerializedObject.ApplyModifiedProperties();
+        stateMachineSerializedObject.ApplyModifiedProperties();
+
+        PrefabUtility.RecordPrefabInstancePropertyModifications(
+            stateMachine);
 
         EditorUtility.SetDirty(
-            chargeEnemyData);
+            stateMachine);
 
         SceneView.RepaintAll();
     }
@@ -493,20 +477,6 @@ public sealed class EnemyStateMachineEditor : Editor
         }
 
         return 1f;
-    }
-
-    private static bool TryGetChargeEnemyData(
-        EnemyStateMachine stateMachine,
-        out ChargeEnemyData chargeEnemyData)
-    {
-        EnemyDataReference dataReference =
-            stateMachine.GetComponent<EnemyDataReference>();
-
-        chargeEnemyData =
-            dataReference?.Data
-            as ChargeEnemyData;
-
-        return chargeEnemyData != null;
     }
 
     /// <summary>

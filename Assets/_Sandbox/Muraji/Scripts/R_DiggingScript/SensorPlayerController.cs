@@ -13,6 +13,10 @@ public class SensorPlayerController : MonoBehaviour
     [SerializeField] private SensorChainsawDigging chainsawDigging;
     [SerializeField] private ChainsawAccelerator chainsawAccelerator;
 
+    [Header("壁への直接食い込み速度")]
+    [Tooltip("回転速度をこの値で割って、壁登りの基本速度に加えます。小さいほど回転速度による加速が大きくなります。床から壁への速度引き継ぎには使用しません。")]
+    [SerializeField, Min(0.01f)] private float directWallSpeedDivisor = 100f;
+
     public bool CanTakeDamage =>
         chainsawDigging == null || !chainsawDigging.IsEvading;
 
@@ -68,7 +72,10 @@ public class SensorPlayerController : MonoBehaviour
     [SerializeField] private float debugTargetSpeed;
     [SerializeField] private float debugCurrentSpeed;
 
-    private float wallTravelSpeed;
+    [Tooltip("現在の壁登り速度です。実行中に自動更新します。")]
+    [SerializeField] private float wallTravelSpeed;
+    // 床からの速度引き継ぎと、直接開始時の回転速度連動を区別する。
+    private bool useDirectWallSpeed;
 
     private float knockbackVelocity;
 
@@ -310,6 +317,7 @@ public class SensorPlayerController : MonoBehaviour
 
         if (chainsawDigging.Surface != ChainsawSurface.Floor &&
             chainsawDigging.Surface != ChainsawSurface.Ceiling &&
+            chainsawDigging.Surface != ChainsawSurface.Enemy &&
             input.MoveInput != 0f)
         {
             facingDirection = Mathf.Sign(input.MoveInput);
@@ -413,10 +421,11 @@ public class SensorPlayerController : MonoBehaviour
 
         if (enteredWall)
         {
+            useDirectWallSpeed = previousSurface != ChainsawSurface.Floor;
             wallTravelSpeed =
-                previousSurface == ChainsawSurface.Floor
-                    ? previousMoveSpeed
-                    : playerParameter.wallClimbSpeed;
+                useDirectWallSpeed
+                    ? CalculateDirectWallSpeed()
+                    : previousMoveSpeed;
         }
 
         // 食い込み状態と押し戻しの予約が確定してから猶予を更新する。
@@ -470,6 +479,12 @@ public class SensorPlayerController : MonoBehaviour
             {
                 case ChainsawSurface.Wall:
                     {
+                        // 直接開始した壁登りだけ、現在の回転速度を毎物理更新で反映する。
+                        if (useDirectWallSpeed)
+                        {
+                            wallTravelSpeed = CalculateDirectWallSpeed();
+                        }
+
                         currentSpeed = 0f;
                         Vector3 normal = chainsawDigging.SurfaceNormal;
                         Vector3 tangent = new Vector3(normal.y, -normal.x, 0f).normalized;
@@ -578,6 +593,16 @@ public class SensorPlayerController : MonoBehaviour
         // ジャンプ・壁ジャンプ・角補正の決定後に、通常の斜面歩行だけを適用する。
         ApplyGroundSlopeMovement(ref velocity, isKnockbackActive);
 
+        // 敵への食い込み中だけ、開始時の位置差を維持する速度で追従する。
+        // 最後に適用し、通常移動や残っていた移動予約による上書きを防ぐ。
+        // Transformを直接移動せず、既存のRigidbodyと物理衝突を使用する。
+        if (deltaTime > 0f &&
+            chainsawDigging.TryGetEnemyFollowPosition(out Vector3 enemyFollowPosition))
+        {
+            velocity = (enemyFollowPosition - playerRigidbody.position) / deltaTime;
+            currentSpeed = 0f;
+        }
+
         velocity.z = 0f;
         // 床の食い込みから続く移動を記録する。
         UpdateFloorTravelImpact(velocity);
@@ -614,9 +639,30 @@ public class SensorPlayerController : MonoBehaviour
         );
     }
 
+    // 壁への直接食い込み速度を、基本速度と現在の回転速度から計算する。
+    private float CalculateDirectWallSpeed()
+    {
+        float rotationSpeed = chainsawAccelerator != null
+            ? Mathf.Max(0f, chainsawAccelerator.CurrentSpeed)
+            : 0f;
+
+        return Mathf.Max(0f, playerParameter.wallClimbSpeed)
+            + rotationSpeed / Mathf.Max(0.01f, directWallSpeedDivisor);
+    }
+
     // 設定アセットの移動速度と加減速を使い、現在速度を更新する。
     void Move()
     {
+        // 敵への食い込み中は移動入力で加速せず、敵への追従処理だけで移動する。
+        if (chainsawDigging.Surface == ChainsawSurface.Enemy)
+        {
+            currentSpeed = 0f;
+            debugRotationSpeed = chainsawAccelerator.CurrentSpeed;
+            debugSpeedBonus = 0f;
+            debugTargetSpeed = 0f;
+            return;
+        }
+
         bool isAutoMoving =
             chainsawDigging.Surface == ChainsawSurface.Floor ||
             chainsawDigging.Surface == ChainsawSurface.Ceiling;
@@ -1933,6 +1979,10 @@ public class SensorPlayerController : MonoBehaviour
         pendingJumpCount = 0;
         jumpPending = false;
         currentSpeed = 0f;
+
+        // 再有効化時に、以前の壁登りの速度方式を持ち越さない。
+        useDirectWallSpeed = false;
+        wallTravelSpeed = 0f;
 
         if (chainsawDigging != null)
         {

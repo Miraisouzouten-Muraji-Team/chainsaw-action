@@ -318,11 +318,12 @@ public class SensorPlayerController : MonoBehaviour
 
         chainsawDigging.SetFacingDirection(facingDirection);
         chainsawDigging.HandleInput(
-            input.WedgieInput,
-            input.WedgieHeld,
-            IsAttacking,
-            facingDirection
-        );
+    input.WedgieInput,
+    input.WedgieHeld,
+    IsAttacking,
+    facingDirection,
+    IsGrounded()
+);
 
         // 同時押しの優先順位：弱攻撃 > ジャンプ > 食い込み。
         if (input.SlashInput)

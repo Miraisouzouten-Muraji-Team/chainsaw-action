@@ -527,6 +527,7 @@ MonoBehaviour:
   playerParameter: {fileID: 11400000, guid: 95f83e18d5c42904aa49a97890997239, type: 2}
   chainsawDigging: {fileID: 6732003626081136930}
   chainsawAccelerator: {fileID: 5672076857265227413}
+  directWallSpeedDivisor: 100
   groundCheckTransform: {fileID: 7098819222341421782}
   isGroundedByRay: 0
   visualRoot: {fileID: 2576167837745099611}
@@ -534,6 +535,7 @@ MonoBehaviour:
   debugSpeedBonus: 0
   debugTargetSpeed: 0
   debugCurrentSpeed: 0
+  wallTravelSpeed: 0
   groundNormal: {x: 0, y: 1, z: 0}
   debugGroundCollider: {fileID: 0}
   debugGroundSource: 
@@ -1010,7 +1012,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 1
+  m_IsTrigger: 0
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3

@@ -64,6 +64,29 @@ public class SensorChainsawDigging : MonoBehaviour
                     : 0f;
 
     private SensorChainsawContact contact;
+    // 食い込み開始時の敵との位置差。敵の回転ではプレイヤーを振り回さない。
+    private Vector3 enemyFollowOffset;
+    // 敵が移動しても命中位置を更新できるよう、敵基準の座標を保存する。
+    private Vector3 enemyLocalHitPoint;
+    // 同じ食い込み中に押し出しを繰り返し、敵と追従中のプレイヤーを加速させない。
+    private bool enemyPushApplied;
+
+    // 継続中の敵に対して、開始時の位置差を保つプレイヤーの追従先を返す。
+    public bool TryGetEnemyFollowPosition(out Vector3 position)
+    {
+        position = default;
+
+        if (!isActiveAndEnabled ||
+            !IsRequested ||
+            Surface != ChainsawSurface.Enemy ||
+            !SensorChainsawContactDetector.CanReceiveEnemyHit(contact.Enemy))
+        {
+            return false;
+        }
+
+        position = contact.Enemy.transform.position + enemyFollowOffset;
+        return true;
+    }
     private float timer;
     private float evadeUntil;
     private bool holdBlocked;
@@ -293,11 +316,31 @@ public class SensorChainsawDigging : MonoBehaviour
             return;
         }
 
-        bool foundContact = detector.TryGetContact(
-            contact.Collider,
-            out SensorChainsawContact next,
-            Surface,
-            facingDirection);
+        bool foundContact;
+        SensorChainsawContact next;
+
+        if (Surface == ChainsawSurface.Enemy)
+        {
+            // 一度開始した敵は再検出しない。範囲外や他の敵への切り替えで解除しない。
+            if (!SensorChainsawContactDetector.CanReceiveEnemyHit(contact.Enemy))
+            {
+                Cancel(false);
+                return;
+            }
+
+            next = contact;
+            next.Point = contact.Enemy.transform.TransformPoint(enemyLocalHitPoint);
+            foundContact = true;
+        }
+        else
+        {
+            // 地形と最初の接触は従来のセンサー判定を使用する。
+            foundContact = detector.TryGetContact(
+                contact.Collider,
+                out next,
+                Surface,
+                facingDirection);
+        }
 
         // 前方の敵を検出した場合は、
         // 壁の接触猶予より敵への遷移を優先する。
@@ -487,8 +530,8 @@ public class SensorChainsawDigging : MonoBehaviour
             {
                 timer -= interval;
 
-                if (contact.Enemy == null ||
-                    !contact.Enemy.CanReceiveHit)
+                // 検出時と同じ条件で、敵が食い込みを受けられる状態か確認する。
+                if (!SensorChainsawContactDetector.CanReceiveEnemyHit(contact.Enemy))
                 {
                     Cancel(false);
                     return;
@@ -511,7 +554,9 @@ public class SensorChainsawDigging : MonoBehaviour
 
                 if (!accelerator.TryConsume(consumeAmount))
                 {
-                    Cancel(false);
+                    // リソース不足でも接続は保持し、今回のダメージだけを停止する。
+                    // 回復後の一括攻撃を防ぐため、未実行の間隔を持ち越さない。
+                    timer = 0f;
                     return;
                 }
 
@@ -527,11 +572,25 @@ public class SensorChainsawDigging : MonoBehaviour
 
                 if (!hit)
                 {
+                    // 一時的な送信失敗で接続を解除せず、次の攻撃間隔で再試行する。
+                    timer = 0f;
+                    return;
+                }
+
+                // 今回の攻撃で死亡・削除された場合、押し出し前に接続を終了する。
+                if (!SensorChainsawContactDetector.CanReceiveEnemyHit(contact.Enemy))
+                {
                     Cancel(false);
                     return;
                 }
 
-                // 命中した敵のRigidbodyを探して、プレイヤーの向きへ押し出す。
+                // 押し出し済みなら、以降はダメージだけを継続する。
+                if (enemyPushApplied)
+                {
+                    continue;
+                }
+
+                // 最初の命中時だけ、敵のRigidbodyへ押し出しを加える。
                 Rigidbody enemyRigidbody =
                     contact.Enemy.GetComponent<Rigidbody>();
 
@@ -556,6 +615,7 @@ public class SensorChainsawDigging : MonoBehaviour
                     !enemyRigidbody.isKinematic &&
                     diggingParameter.enemyPushPower > 0f)
                 {
+                    enemyPushApplied = true;
                     enemyRigidbody.AddForce(
                         Vector3.right *
                             direction *
@@ -705,6 +765,16 @@ public class SensorChainsawDigging : MonoBehaviour
         if (Surface ==
             ChainsawSurface.Enemy)
         {
+            // 開始した敵と位置差を保持し、被弾による移動にも追従する。
+            if (!SensorChainsawContactDetector.CanReceiveEnemyHit(contact.Enemy))
+            {
+                Cancel(false);
+                return false;
+            }
+
+            enemyFollowOffset = transform.position - contact.Enemy.transform.position;
+            enemyLocalHitPoint = contact.Enemy.transform.InverseTransformPoint(contact.Point);
+            enemyPushApplied = false;
             chainsawAttack.BeginDigging();
         }
 
@@ -818,6 +888,11 @@ public class SensorChainsawDigging : MonoBehaviour
 
         HasBonus = false;
         contact = default;
+
+        // 次の食い込みへ、前の敵との位置情報を持ち越さない。
+        enemyFollowOffset = Vector3.zero;
+        enemyLocalHitPoint = Vector3.zero;
+        enemyPushApplied = false;
 
         timer = 0f;
         ceilingBonusRamp = 0f;

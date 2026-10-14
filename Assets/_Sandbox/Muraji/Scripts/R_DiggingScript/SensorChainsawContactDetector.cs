@@ -6,7 +6,7 @@ using UnityEngine;
 public struct SensorChainsawContact
 {
     public Collider Collider;
-    public ChainsawDamageReceiver Enemy;
+    public EnemyAttackHitReceiver Enemy;
     public ChainsawSurface Surface;
     public Vector3 Point;
     public Vector3 Normal;
@@ -68,6 +68,21 @@ public class SensorChainsawContactDetector : MonoBehaviour
     private bool configured;
     private float facing = 1f;
     public int TerrainLayerMask => contactDetectorParameter != null ? contactDetectorParameter.TerrainLayers.value : 0;
+
+    // Receiverを変更せず、敵の有効状態と同じオブジェクトのHPから食い込み可能かを調べる。
+    public static bool CanReceiveEnemyHit(EnemyAttackHitReceiver enemy)
+    {
+        if (enemy == null || !enemy.isActiveAndEnabled)
+        {
+            return false;
+        }
+
+        EnemyHealth health = enemy.GetComponent<EnemyHealth>();
+
+        return health != null &&
+            health.isActiveAndEnabled &&
+            !health.IsDead;
+    }
 
     // 壁の優先順位に隠されないように、Upperだけで天井を調べる。
     public bool TryGetCeilingContact(out SensorChainsawContact contact)
@@ -331,10 +346,10 @@ public class SensorChainsawContactDetector : MonoBehaviour
                     continue;
                 }
 
-                ChainsawDamageReceiver enemy =
-                    target.GetComponentInParent<ChainsawDamageReceiver>();
+                EnemyAttackHitReceiver enemy =
+                    target.GetComponentInParent<EnemyAttackHitReceiver>();
 
-                if (enemy == null || !enemy.CanReceiveHit)
+                if (!CanReceiveEnemyHit(enemy))
                 {
                     continue;
                 }
@@ -677,7 +692,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
     private void Consider(
         Collider target,
-        ChainsawDamageReceiver enemy,
+        EnemyAttackHitReceiver enemy,
         ChainsawSurface surface,
         Vector3 point,
         Vector3 normal,

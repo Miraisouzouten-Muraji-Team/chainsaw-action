@@ -1,0 +1,192 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 08b26dee7676c3f4ba721b84739b53f7, type: 3}
+  m_Name: Slash1_ChainsawAttackTrajectory
+  m_EditorClassIdentifier: Assembly-CSharp::ChainsawAttackTrajectoryProfile
+  attackData: {fileID: 11400000, guid: 8607520c691a1314eb0173541cd3397a, type: 2}
+  sourceAnimationClip: {fileID: -203655887218126122, guid: 414e6e783be085d438385c08635fddb7, type: 3}
+  trajectoryReferencePath: 
+  samples:
+  - tipPosition: {x: 0.02802372, y: 1.5501982, z: 0.42446184}
+    rootPosition: {x: -0.23804426, y: 1.2419468, z: 0.11553764}
+    sampleTime: 0
+  - tipPosition: {x: 0.1599021, y: 1.5381079, z: 0.40486813}
+    rootPosition: {x: -0.17200994, y: 1.2736067, z: 0.120054245}
+    sampleTime: 0.016374269500374794
+  - tipPosition: {x: 0.29908657, y: 1.5017586, z: 0.3717842}
+    rootPosition: {x: -0.09536886, y: 1.2926656, z: 0.122926235}
+    sampleTime: 0.03274853900074959
+  - tipPosition: {x: 0.3908615, y: 1.4682616, z: 0.3504238}
+    rootPosition: {x: -0.037442684, y: 1.3132583, z: 0.11853027}
+    sampleTime: 0.04912281036376953
+  - tipPosition: {x: 0.49158144, y: 1.4093004, z: 0.3197422}
+    rootPosition: {x: 0.03164959, y: 1.3191276, z: 0.115837574}
+    sampleTime: 0.06549707800149918
+  - tipPosition: {x: 0.5507932, y: 1.3474823, z: 0.30459642}
+    rootPosition: {x: 0.080598354, y: 1.3305205, z: 0.10491037}
+    sampleTime: 0.08187135308980942
+  - tipPosition: {x: 0.6158929, y: 1.27502, z: 0.27308416}
+    rootPosition: {x: 0.13927364, y: 1.3289807, z: 0.09654093}
+    sampleTime: 0.09824562072753906
+  - tipPosition: {x: 0.64543915, y: 1.207584, z: 0.24565792}
+    rootPosition: {x: 0.18157244, y: 1.3316332, z: 0.070487976}
+    sampleTime: 0.11461988836526871
+  - tipPosition: {x: 0.6829376, y: 1.1585829, z: 0.20738506}
+    rootPosition: {x: 0.23064423, y: 1.3344332, z: 0.04690838}
+    sampleTime: 0.13099415600299835
+  - tipPosition: {x: 0.6983495, y: 1.1342032, z: 0.19710112}
+    rootPosition: {x: 0.26881075, y: 1.3440537, z: 0.016257763}
+    sampleTime: 0.1473684310913086
+  - tipPosition: {x: 0.72154236, y: 1.1299788, z: 0.19860315}
+    rootPosition: {x: 0.31517982, y: 1.3605334, z: -0.0086631775}
+    sampleTime: 0.16374270617961884
+  - tipPosition: {x: 0.7049718, y: 1.1870477, z: 0.2551527}
+    rootPosition: {x: 0.338943, y: 1.3938347, z: -0.035549164}
+    sampleTime: 0.18011696636676788
+  - tipPosition: {x: 0.68305206, y: 1.2402549, z: 0.30394363}
+    rootPosition: {x: 0.37690783, y: 1.418214, z: -0.064637184}
+    sampleTime: 0.19649124145507812
+  - tipPosition: {x: 0.5942669, y: 1.3074455, z: 0.34964752}
+    rootPosition: {x: 0.38891983, y: 1.4341105, z: -0.10094547}
+    sampleTime: 0.21286550164222717
+  - tipPosition: {x: 0.500422, y: 1.3950009, z: 0.3507023}
+    rootPosition: {x: 0.4088006, y: 1.4423773, z: -0.14990377}
+    sampleTime: 0.22923977673053741
+  - tipPosition: {x: 0.41306162, y: 1.4957118, z: 0.3001027}
+    rootPosition: {x: 0.43339968, y: 1.4456532, z: -0.20815516}
+    sampleTime: 0.24561406672000885
+  - tipPosition: {x: 0.34784174, y: 1.5873721, z: 0.20206356}
+    rootPosition: {x: 0.46686506, y: 1.4323351, z: -0.27021027}
+    sampleTime: 0.2619883120059967
+  - tipPosition: {x: 0.3803153, y: 1.685198, z: 0.05671549}
+    rootPosition: {x: 0.5346699, y: 1.3997803, z: -0.33819818}
+    sampleTime: 0.27836260199546814
+  - tipPosition: {x: 0.45451593, y: 1.7352164, z: -0.08106518}
+    rootPosition: {x: 0.60774994, y: 1.3517206, z: -0.38222218}
+    sampleTime: 0.2947368621826172
+  - tipPosition: {x: 0.6033244, y: 1.7356454, z: -0.21485424}
+    rootPosition: {x: 0.6955967, y: 1.274337, z: -0.41466904}
+    sampleTime: 0.3111111521720886
+  - tipPosition: {x: 0.7927575, y: 1.6651225, z: -0.32212877}
+    rootPosition: {x: 0.77968836, y: 1.1649966, z: -0.42676258}
+    sampleTime: 0.32748541235923767
+  - tipPosition: {x: 0.9133954, y: 1.5822592, z: -0.37843227}
+    rootPosition: {x: 0.8310852, y: 1.0784842, z: -0.40453053}
+    sampleTime: 0.3438596725463867
+  - tipPosition: {x: 1.0545311, y: 1.4493442, z: -0.39651966}
+    rootPosition: {x: 0.8724146, y: 0.9728606, z: -0.36423635}
+    sampleTime: 0.36023393273353577
+  - tipPosition: {x: 1.1430964, y: 1.320205, z: -0.3507142}
+    rootPosition: {x: 0.8790803, y: 0.8853276, z: -0.30149984}
+    sampleTime: 0.3766082227230072
+  - tipPosition: {x: 1.1732626, y: 1.240859, z: -0.2896266}
+    rootPosition: {x: 0.8634486, y: 0.83817196, z: -0.23391819}
+    sampleTime: 0.39298248291015625
+  - tipPosition: {x: 1.1677628, y: 1.212237, z: -0.2232418}
+    rootPosition: {x: 0.8390374, y: 0.8247063, z: -0.1684227}
+    sampleTime: 0.4093567430973053
+  - tipPosition: {x: 1.1380534, y: 1.2236986, z: -0.16511631}
+    rootPosition: {x: 0.8087692, y: 0.83693886, z: -0.10824537}
+    sampleTime: 0.42573100328445435
+  - tipPosition: {x: 1.1018624, y: 1.2508543, z: -0.12908316}
+    rootPosition: {x: 0.7803111, y: 0.85829914, z: -0.067837715}
+    sampleTime: 0.4421052932739258
+  - tipPosition: {x: 1.0608516, y: 1.2902565, z: -0.107298374}
+    rootPosition: {x: 0.7548423, y: 0.8864063, z: -0.040148735}
+    sampleTime: 0.45847955346107483
+  - tipPosition: {x: 1.0204773, y: 1.3311378, z: -0.10629988}
+    rootPosition: {x: 0.73428106, y: 0.91452277, z: -0.030345917}
+    sampleTime: 0.47485384345054626
+  - tipPosition: {x: 0.9792228, y: 1.3721261, z: -0.120221615}
+    rootPosition: {x: 0.7186141, y: 0.94054127, z: -0.036180496}
+    sampleTime: 0.4912281334400177
+  - tipPosition: {x: 0.9267678, y: 1.4188423, z: -0.13986254}
+    rootPosition: {x: 0.6992612, y: 0.9699869, z: -0.05033636}
+    sampleTime: 0.5076023936271667
+  - tipPosition: {x: 0.8609524, y: 1.468663, z: -0.16390657}
+    rootPosition: {x: 0.6741061, y: 1.0017159, z: -0.0728364}
+    sampleTime: 0.5239766240119934
+  - tipPosition: {x: 0.77901983, y: 1.5260974, z: -0.1849103}
+    rootPosition: {x: 0.646173, y: 1.0405664, z: -0.096274376}
+    sampleTime: 0.5403509140014648
+  - tipPosition: {x: 0.68355083, y: 1.5841285, z: -0.20573616}
+    rootPosition: {x: 0.6124344, y: 1.0848551, z: -0.12258816}
+    sampleTime: 0.5567252039909363
+  - tipPosition: {x: 0.5896969, y: 1.6315832, z: -0.21597338}
+    rootPosition: {x: 0.5763221, y: 1.1257282, z: -0.14402008}
+    sampleTime: 0.5730994343757629
+  - tipPosition: {x: 0.48423004, y: 1.6742634, z: -0.19645596}
+    rootPosition: {x: 0.53732634, y: 1.1676869, z: -0.15395164}
+    sampleTime: 0.5894737243652344
+  - tipPosition: {x: 0.3884077, y: 1.7022214, z: -0.1611185}
+    rootPosition: {x: 0.4990964, y: 1.2032452, z: -0.15713024}
+    sampleTime: 0.6058480143547058
+  - tipPosition: {x: 0.3084402, y: 1.7148794, z: -0.09899092}
+    rootPosition: {x: 0.46839142, y: 1.2319362, z: -0.14825058}
+    sampleTime: 0.6222223043441772
+  - tipPosition: {x: 0.2478199, y: 1.713273, z: -0.024710655}
+    rootPosition: {x: 0.44322157, y: 1.253772, z: -0.13390017}
+    sampleTime: 0.6385965347290039
+  - tipPosition: {x: 0.22086906, y: 1.7047366, z: 0.043910027}
+    rootPosition: {x: 0.43263865, y: 1.2696857, z: -0.120800495}
+    sampleTime: 0.6549708247184753
+  - tipPosition: {x: 0.20980358, y: 1.6883959, z: 0.11197138}
+    rootPosition: {x: 0.42543125, y: 1.2803037, z: -0.10759783}
+    sampleTime: 0.671345055103302
+  - tipPosition: {x: 0.22140837, y: 1.6770215, z: 0.15720749}
+    rootPosition: {x: 0.42552376, y: 1.2865493, z: -0.10185528}
+    sampleTime: 0.6877193450927734
+  - tipPosition: {x: 0.24614954, y: 1.6629405, z: 0.1977129}
+    rootPosition: {x: 0.42960262, y: 1.288703, z: -0.09815264}
+    sampleTime: 0.7040935754776001
+  - tipPosition: {x: 0.2848897, y: 1.6583841, z: 0.2165103}
+    rootPosition: {x: 0.44007444, y: 1.2889429, z: -0.100785255}
+    sampleTime: 0.7204678654670715
+  - tipPosition: {x: 0.3278551, y: 1.6527284, z: 0.2282219}
+    rootPosition: {x: 0.45046806, y: 1.2861102, z: -0.10614681}
+    sampleTime: 0.736842155456543
+  - tipPosition: {x: 0.36743212, y: 1.6482719, z: 0.23088646}
+    rootPosition: {x: 0.45835447, y: 1.2793567, z: -0.110991}
+    sampleTime: 0.7532164454460144
+  - tipPosition: {x: 0.4059739, y: 1.6421088, z: 0.22969913}
+    rootPosition: {x: 0.4647088, y: 1.270814, z: -0.11661768}
+    sampleTime: 0.7695907354354858
+  - tipPosition: {x: 0.4340644, y: 1.6369673, z: 0.22631264}
+    rootPosition: {x: 0.46547127, y: 1.2618933, z: -0.11948824}
+    sampleTime: 0.7859649658203125
+  - tipPosition: {x: 0.45880604, y: 1.6311432, z: 0.22123003}
+    rootPosition: {x: 0.46430826, y: 1.2526218, z: -0.122189045}
+    sampleTime: 0.8023392558097839
+  - tipPosition: {x: 0.47043085, y: 1.627588, z: 0.21538544}
+    rootPosition: {x: 0.4562888, y: 1.2448184, z: -0.12304115}
+    sampleTime: 0.8187134861946106
+  - tipPosition: {x: 0.4785471, y: 1.6241686, z: 0.20983028}
+    rootPosition: {x: 0.44686556, y: 1.2374226, z: -0.122838974}
+    sampleTime: 0.835087776184082
+  - tipPosition: {x: 0.47592592, y: 1.6218929, z: 0.20643473}
+    rootPosition: {x: 0.4335642, y: 1.2313279, z: -0.12053585}
+    sampleTime: 0.8514620065689087
+  - tipPosition: {x: 0.47104216, y: 1.6198925, z: 0.20451832}
+    rootPosition: {x: 0.4196968, y: 1.2259084, z: -0.11701822}
+    sampleTime: 0.8678363561630249
+  - tipPosition: {x: 0.46419668, y: 1.6172127, z: 0.20424843}
+    rootPosition: {x: 0.40767193, y: 1.2202045, z: -0.11266661}
+    sampleTime: 0.8842105865478516
+  - tipPosition: {x: 0.45617437, y: 1.6148698, z: 0.20501375}
+    rootPosition: {x: 0.39541817, y: 1.2151418, z: -0.107670784}
+    sampleTime: 0.900584876537323
+  - tipPosition: {x: 0.44994926, y: 1.6123635, z: 0.2065258}
+    rootPosition: {x: 0.3871374, y: 1.210675, z: -0.10322571}
+    sampleTime: 0.9169591069221497
+  - tipPosition: {x: 0.44320917, y: 1.6104352, z: 0.20804548}
+    rootPosition: {x: 0.37871933, y: 1.2065984, z: -0.098552704}
+    sampleTime: 0.9333333969116211

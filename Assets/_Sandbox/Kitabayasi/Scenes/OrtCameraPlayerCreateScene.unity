@@ -692,6 +692,22 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 563163852684737319, guid: 8b6c165a24a7021498124562437e381e, type: 3}
+      propertyPath: managedReferences[2559746691593404481].chainsawAttackTrajectoryProfiles.Array.size
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 563163852684737319, guid: 8b6c165a24a7021498124562437e381e, type: 3}
+      propertyPath: 'managedReferences[2559746691593404481].chainsawAttackTrajectoryProfiles.Array.data[0]'
+      value: 
+      objectReference: {fileID: 11400000, guid: e2dc96d5bbd2d8746a2fe4f25ccf2bae, type: 2}
+    - target: {fileID: 563163852684737319, guid: 8b6c165a24a7021498124562437e381e, type: 3}
+      propertyPath: 'managedReferences[2559746691593404481].chainsawAttackTrajectoryProfiles.Array.data[1]'
+      value: 
+      objectReference: {fileID: 11400000, guid: 61602f79a95b44545aeaaa498e3d0c4b, type: 2}
+    - target: {fileID: 563163852684737319, guid: 8b6c165a24a7021498124562437e381e, type: 3}
+      propertyPath: 'managedReferences[2559746691593404481].chainsawAttackTrajectoryProfiles.Array.data[2]'
+      value: 
+      objectReference: {fileID: 11400000, guid: 51cf14bc037d2294990288d016e884dc, type: 2}
     - target: {fileID: 1408522875948655144, guid: 8b6c165a24a7021498124562437e381e, type: 3}
       propertyPath: m_Layer
       value: 6

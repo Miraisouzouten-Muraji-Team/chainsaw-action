@@ -352,11 +352,11 @@ public sealed class ChainsawMeshCutProcessor
             cutRangeMinimum,
             cutRangeMaximum);
 
-        // 有効範囲の軸判定はEnemyMeshCutter側のローカル空間で行う。
-        // FBXのSkinnedMeshRenderer子Transformに軸補正回転があっても、
-        // Inspectorで指定したY等がEnemy本体の見た目の軸と一致する。
+        // Cut Range Axisだけを有効範囲内へ補正する。
+        // それ以外の軸は実際の命中位置を維持し、
+        // Cut PlaneがBounds中心へ不必要に移動することを防ぐ。
         Vector3 correctedPlanePointInCutRangeSpace =
-            cutRangeSpaceBounds.center;
+            originalPlanePointInCutRangeSpace;
 
         SetAxisValue(
             ref correctedPlanePointInCutRangeSpace,

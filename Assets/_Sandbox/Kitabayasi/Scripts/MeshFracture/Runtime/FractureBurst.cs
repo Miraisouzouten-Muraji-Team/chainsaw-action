@@ -95,6 +95,7 @@ namespace MeshFracture
         private MeshRenderer[] fragmentRenderers;
         private Rigidbody[] fragmentRigidbodies;
         private TrailRenderer[] fragmentTrails;
+        private Mesh[] runtimeColliderMeshes;
         private MaterialPropertyBlock[] propBlocks;
         private FragmentState[] cpuStates;
         private int fragmentCount;
@@ -140,11 +141,11 @@ namespace MeshFracture
         // All; spreading the same work across ~4 frames keeps each frame
         // under the 16 ms budget.
         private FragmentResult[] pendingFragments;
-        private Quaternion       pendingMeshRotation;
-        private Gradient         pendingTrailGradient;
-        private float            pendingTrailWidth;
-        private PhysicsMaterial  pendingPhysicsMat;
-        private int              buildIndex;            // next fragment to instantiate
+        private Quaternion pendingMeshRotation;
+        private Gradient pendingTrailGradient;
+        private float pendingTrailWidth;
+        private PhysicsMaterial pendingPhysicsMat;
+        private int buildIndex;            // next fragment to instantiate
         private const int BUILD_BATCH_SIZE = 2;         // fragments built per Update tick
 
         /// <summary>Optional pre-baked convex collider meshes paired one-to-one with the fragments passed to <see cref="Initialize"/>. When set, the fragments use these meshes directly — and because the collision data is already cooked (see <see cref="FragmentCache.CachedData.ColliderMeshes"/>), the MeshCollider assignment skips Unity's convex-hull cook entirely. The single biggest contributor to per-fracture cost on dense source meshes; setting this field eliminates it.</summary>
@@ -193,6 +194,7 @@ namespace MeshFracture
             fragmentRenderers = new MeshRenderer[fragmentCount];
             fragmentRigidbodies = new Rigidbody[fragmentCount];
             fragmentTrails = new TrailRenderer[fragmentCount];
+            runtimeColliderMeshes = new Mesh[fragmentCount];
             propBlocks = new MaterialPropertyBlock[fragmentCount];
             cpuStates = new FragmentState[fragmentCount];
             baseTrailWidth = trailWidth;
@@ -250,11 +252,11 @@ namespace MeshFracture
             {
                 sharedPhys = new PhysicsMaterial("FragmentPhysics")
                 {
-                    bounciness       = Bounciness,
-                    dynamicFriction  = Friction,
-                    staticFriction   = Friction,
-                    bounceCombine    = PhysicsMaterialCombine.Average,
-                    frictionCombine  = PhysicsMaterialCombine.Average,
+                    bounciness = Bounciness,
+                    dynamicFriction = Friction,
+                    staticFriction = Friction,
+                    bounceCombine = PhysicsMaterialCombine.Average,
+                    frictionCombine = PhysicsMaterialCombine.Average,
                 };
             }
 
@@ -336,7 +338,7 @@ namespace MeshFracture
                 if (EnableTrails)
                 {
                     trailNoiseOffsets[i] = Random.Range(0f, 100f);
-                    trailNoiseFreqs[i]   = Random.Range(3f, 8f);
+                    trailNoiseFreqs[i] = Random.Range(3f, 8f);
                 }
             }
 
@@ -344,12 +346,12 @@ namespace MeshFracture
             // Update ticks. initialized stays false until the build loop in
             // Update finishes — Update's motion + dissolve passes early-out
             // until then.
-            pendingFragments     = fragments;
-            pendingMeshRotation  = meshRotation;
+            pendingFragments = fragments;
+            pendingMeshRotation = meshRotation;
             pendingTrailGradient = trailGradient;
-            pendingTrailWidth    = trailWidth;
-            pendingPhysicsMat    = sharedPhys;
-            buildIndex           = 0;
+            pendingTrailWidth = trailWidth;
+            pendingPhysicsMat = sharedPhys;
+            buildIndex = 0;
         }
 
         // Build one fragment — instantiate its GameObject, components, and
@@ -402,11 +404,24 @@ namespace MeshFracture
                 // build frame. When PreBakedColliderMeshes is null we
                 // fall back to building + cooking on demand here, which
                 // is what the standalone (non-cache) usage paths get.
-                Mesh collMesh = (PreBakedColliderMeshes != null
-                                  && i < PreBakedColliderMeshes.Length
-                                  && PreBakedColliderMeshes[i] != null)
+                bool usesPreBakedCollider =
+                    PreBakedColliderMeshes != null &&
+                    i < PreBakedColliderMeshes.Length &&
+                    PreBakedColliderMeshes[i] != null;
+
+                Mesh collMesh = usesPreBakedCollider
                     ? PreBakedColliderMeshes[i]
                     : BuildColliderMesh(frag.Mesh);
+
+                // Runtime生成したCollider専用Meshだけを所有する。
+                // Cache由来Meshとvisual fragment自身は呼び出し側の所有物なので破棄しない。
+                if (!usesPreBakedCollider &&
+                    collMesh != null &&
+                    collMesh != frag.Mesh)
+                {
+                    runtimeColliderMeshes[i] =
+                        collMesh;
+                }
 
                 Collider col;
                 if (collMesh.vertexCount <= COLLIDER_VERT_LIMIT)
@@ -421,19 +436,19 @@ namespace MeshFracture
                     var bc = go.AddComponent<BoxCollider>();
                     var b = frag.Mesh.bounds;
                     bc.center = b.center;
-                    bc.size   = b.size;
+                    bc.size = b.size;
                     col = bc;
                 }
                 col.sharedMaterial = pendingPhysicsMat;
 
                 var rb = go.AddComponent<Rigidbody>();
                 rb.mass = FragmentMass;
-                rb.linearDamping  = 0.05f;
+                rb.linearDamping = 0.05f;
                 rb.angularDamping = 0.5f;
                 rb.useGravity = true;
                 rb.interpolation = RigidbodyInterpolation.Interpolate;
                 rb.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
-                rb.linearVelocity  = cpuStates[i].velocity;
+                rb.linearVelocity = cpuStates[i].velocity;
                 rb.angularVelocity = cpuStates[i].angularVelocity;
                 fragmentRigidbodies[i] = rb;
             }
@@ -621,7 +636,7 @@ namespace MeshFracture
                 {
                     var rb = fragmentRigidbodies[i];
                     if (rb == null) continue;
-                    if (rb.linearVelocity.sqrMagnitude  > SETTLE_LIN_SPEED_SQ) return false;
+                    if (rb.linearVelocity.sqrMagnitude > SETTLE_LIN_SPEED_SQ) return false;
                     if (rb.angularVelocity.sqrMagnitude > SETTLE_ANG_SPEED_SQ) return false;
                 }
                 else
@@ -716,6 +731,29 @@ namespace MeshFracture
             if (mag < 0.0001f) return Quaternion.identity;
             float inv = 1f / mag;
             return new Quaternion(q.x * inv, q.y * inv, q.z * inv, q.w * inv);
+        }
+
+        private void OnDestroy()
+        {
+            if (runtimeColliderMeshes == null)
+            {
+                return;
+            }
+
+            for (int i = 0;
+                 i < runtimeColliderMeshes.Length;
+                 i++)
+            {
+                Mesh runtimeColliderMesh =
+                    runtimeColliderMeshes[i];
+
+                if (runtimeColliderMesh != null)
+                {
+                    Destroy(runtimeColliderMesh);
+                }
+            }
+
+            runtimeColliderMeshes = null;
         }
 
         // Noisy width curve: tapered envelope multiplied by per-key random

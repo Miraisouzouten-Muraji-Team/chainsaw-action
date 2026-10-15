@@ -40,7 +40,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     [SerializeField]
     private int cutDirectionSampleCount = 4;
 
-    [Tooltip("Meshローカル空間で切断位置の有効範囲を定義する軸。")]
+    [Tooltip("EnemyMeshCutterが付いているEnemy本体のローカル空間で、切断位置の有効範囲を定義する軸。")]
     [SerializeField]
     private MeshCutRangeAxis cutRangeAxis = MeshCutRangeAxis.Y;
 
@@ -132,11 +132,16 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 out List<Vector3> localTipPositions,
                 out List<Vector3> localRootPositions);
 
+            Matrix4x4 sourceToCutRangeSpace =
+                transform.worldToLocalMatrix
+                * sourceRenderer.transform.localToWorldMatrix;
+
             bool succeeded = cutProcessor.TryCut(
                 sourceMesh,
                 localTipPositions,
                 localRootPositions,
                 cutDirectionSampleCount,
+                sourceToCutRangeSpace,
                 cutRangeAxis,
                 cutRangeMinimumNormalized,
                 cutRangeMaximumNormalized,
@@ -367,14 +372,12 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                     $"{targetSkinnedMeshRenderer.name}_DeathBake"
             };
 
-            // 現在のSkinnedMesh姿勢を、
-            // Renderer Transform基準の静的Meshへ保存する。
-            //
-            // useScale=trueでRenderer TransformのScaleを
-            // 補償したMeshを取得する。
+            // BakeMeshの頂点はSkinnedMeshRenderer Transform基準。
+            // 生成片も同Rendererの子へlocal identityで配置するため、
+            // ScaleをMesh側へ焼き込まず、元Transform側で一度だけ適用する。
             targetSkinnedMeshRenderer.BakeMesh(
                 bakedMesh,
-                true);
+                false);
 
             bakedMesh.RecalculateBounds();
 
@@ -708,8 +711,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         }
 
         if (!TryGetPreviewBounds(
-                out Bounds sourceBounds,
-                out Transform sourceTransform))
+                out Bounds sourceBounds))
         {
             return;
         }
@@ -730,8 +732,11 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         Color previousColor =
             Gizmos.color;
 
+        // Cut Range AxisはEnemyMeshCutterが付いている本体のローカル軸。
+        // SkinnedMeshRenderer子階層のFBX回転に引きずられないよう、
+        // Gizmoも同じ基準空間で描画する。
         Gizmos.matrix =
-            sourceTransform.localToWorldMatrix;
+            transform.localToWorldMatrix;
 
         Gizmos.color =
             new Color(
@@ -763,41 +768,81 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     }
 
     /// <summary>
-    /// Sceneビューで切断位置有効範囲を表示するための
-    /// ローカルBoundsとTransformを取得する。
+    /// Sceneビューで切断位置有効範囲を表示するため、
+    /// 切断対象Meshの現在形状をEnemyMeshCutterローカル空間のBoundsへ変換する。
     /// </summary>
     private bool TryGetPreviewBounds(
-        out Bounds sourceBounds,
-        out Transform sourceTransform)
+        out Bounds sourceBounds)
     {
         if (targetMeshFilter != null &&
             targetMeshFilter.sharedMesh != null)
         {
-            sourceBounds =
-                targetMeshFilter.sharedMesh.bounds;
-
-            sourceTransform =
-                targetMeshFilter.transform;
-
-            return true;
+            return TryCalculateBoundsInCutRangeSpace(
+                targetMeshFilter.sharedMesh,
+                targetMeshFilter.transform,
+                out sourceBounds);
         }
 
         if (targetSkinnedMeshRenderer != null &&
             targetSkinnedMeshRenderer.sharedMesh != null)
         {
-            // SkinnedMeshRendererは実行時にBakeしたMeshを切断するため、
-            // Scene表示ではRendererローカルBoundsを設定確認用の近似として使用する。
-            sourceBounds =
-                targetSkinnedMeshRenderer.localBounds;
+            var previewMesh = new Mesh
+            {
+                name =
+                    $"{targetSkinnedMeshRenderer.name}_CutRangePreview",
+                hideFlags = HideFlags.HideAndDontSave
+            };
 
-            sourceTransform =
-                targetSkinnedMeshRenderer.transform;
+            // BakeMeshの頂点はSkinnedMeshRenderer Transform基準。
+            // そのままBoundsを使うとFBX側のローカル軸がCut Range Axisへ混ざるため、
+            // EnemyMeshCutterローカル空間へ変換してからBoundsを求める。
+            targetSkinnedMeshRenderer.BakeMesh(
+                previewMesh,
+                false);
 
-            return true;
+            bool succeeded =
+                TryCalculateBoundsInCutRangeSpace(
+                    previewMesh,
+                    targetSkinnedMeshRenderer.transform,
+                    out sourceBounds);
+
+            DestroyRuntimeMesh(
+                previewMesh);
+
+            return succeeded;
         }
 
         sourceBounds = default;
-        sourceTransform = null;
         return false;
     }
+
+    /// <summary>
+    /// sourceTransformローカルのMesh頂点をEnemyMeshCutterローカル空間へ変換し、
+    /// Cut Range表示・判定に使用するBoundsを求める。
+    /// </summary>
+    private bool TryCalculateBoundsInCutRangeSpace(
+        Mesh mesh,
+        Transform sourceTransform,
+        out Bounds bounds)
+    {
+        bounds = default;
+
+        if (mesh == null ||
+            sourceTransform == null ||
+            !mesh.isReadable ||
+            mesh.vertexCount == 0)
+        {
+            return false;
+        }
+
+        Matrix4x4 sourceToCutRangeSpace =
+            transform.worldToLocalMatrix
+            * sourceTransform.localToWorldMatrix;
+
+        return ChainsawMeshCutProcessor.TryCalculateMeshBoundsInSpace(
+            mesh,
+            sourceToCutRangeSpace,
+            out bounds);
+    }
+
 }

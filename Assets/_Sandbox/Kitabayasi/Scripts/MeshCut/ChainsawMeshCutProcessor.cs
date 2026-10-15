@@ -23,6 +23,7 @@ public sealed class ChainsawMeshCutProcessor
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
         int cutDirectionSampleCount,
+        Matrix4x4 sourceToCutRangeSpace,
         MeshCutRangeAxis cutRangeAxis,
         float cutRangeMinimumNormalized,
         float cutRangeMaximumNormalized,
@@ -51,10 +52,11 @@ public sealed class ChainsawMeshCutProcessor
         float geometryEpsilon = CalculateGeometryEpsilon(sourceMesh.bounds);
 
         if (!TryCreateCutPlane(
-                sourceMesh.bounds,
+                sourceMesh,
                 localTipPositions,
                 localRootPositions,
                 cutDirectionSampleCount,
+                sourceToCutRangeSpace,
                 cutRangeAxis,
                 cutRangeMinimumNormalized,
                 cutRangeMaximumNormalized,
@@ -168,10 +170,11 @@ public sealed class ChainsawMeshCutProcessor
     }
 
     private bool TryCreateCutPlane(
-        Bounds sourceBounds,
+        Mesh sourceMesh,
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
         int cutDirectionSampleCount,
+        Matrix4x4 sourceToCutRangeSpace,
         MeshCutRangeAxis cutRangeAxis,
         float cutRangeMinimumNormalized,
         float cutRangeMaximumNormalized,
@@ -254,12 +257,12 @@ public sealed class ChainsawMeshCutProcessor
             localRootPositions[sampleCount - 1]);
 
         if (!TryCreateCutPlanePoint(
-                sourceBounds,
+                sourceMesh,
                 originalPlanePoint,
+                sourceToCutRangeSpace,
                 cutRangeAxis,
                 cutRangeMinimumNormalized,
                 cutRangeMaximumNormalized,
-                geometryEpsilon,
                 out Vector3 correctedPlanePoint,
                 out failureReason))
         {
@@ -283,27 +286,42 @@ public sealed class ChainsawMeshCutProcessor
     }
 
     private static bool TryCreateCutPlanePoint(
-        Bounds sourceBounds,
+        Mesh sourceMesh,
         Vector3 originalPlanePoint,
+        Matrix4x4 sourceToCutRangeSpace,
         MeshCutRangeAxis cutRangeAxis,
         float cutRangeMinimumNormalized,
         float cutRangeMaximumNormalized,
-        float geometryEpsilon,
         out Vector3 correctedPlanePoint,
         out string failureReason)
     {
+        if (!TryCalculateMeshBoundsInSpace(
+                sourceMesh,
+                sourceToCutRangeSpace,
+                out Bounds cutRangeSpaceBounds))
+        {
+            correctedPlanePoint = default;
+            failureReason =
+                "Cut Range判定用のMesh Boundsを算出できませんでした。";
+            return false;
+        }
+
         float boundsMinimum = GetAxisValue(
-            sourceBounds.min,
+            cutRangeSpaceBounds.min,
             cutRangeAxis);
 
         float boundsMaximum = GetAxisValue(
-            sourceBounds.max,
+            cutRangeSpaceBounds.max,
             cutRangeAxis);
 
         float axisSize =
             boundsMaximum - boundsMinimum;
 
-        if (axisSize <= geometryEpsilon)
+        float cutRangeGeometryEpsilon =
+            CalculateGeometryEpsilon(
+                cutRangeSpaceBounds);
+
+        if (axisSize <= cutRangeGeometryEpsilon)
         {
             correctedPlanePoint = default;
             failureReason =
@@ -321,8 +339,12 @@ public sealed class ChainsawMeshCutProcessor
             boundsMaximum,
             cutRangeMaximumNormalized);
 
+        Vector3 originalPlanePointInCutRangeSpace =
+            sourceToCutRangeSpace.MultiplyPoint3x4(
+                originalPlanePoint);
+
         float originalAxisPosition = GetAxisValue(
-            originalPlanePoint,
+            originalPlanePointInCutRangeSpace,
             cutRangeAxis);
 
         float correctedAxisPosition = Mathf.Clamp(
@@ -330,20 +352,101 @@ public sealed class ChainsawMeshCutProcessor
             cutRangeMinimum,
             cutRangeMaximum);
 
-        // 切断位置として使う軸だけ実際の命中位置を反映し、
-        // それ以外の軸はMesh Bounds中央へ寄せる。
-        // これにより奥行き方向などの端をかすった命中位置が
-        // そのまま切断Plane基準点になることを防ぐ。
-        correctedPlanePoint =
-            sourceBounds.center;
+        // 有効範囲の軸判定はEnemyMeshCutter側のローカル空間で行う。
+        // FBXのSkinnedMeshRenderer子Transformに軸補正回転があっても、
+        // Inspectorで指定したY等がEnemy本体の見た目の軸と一致する。
+        Vector3 correctedPlanePointInCutRangeSpace =
+            cutRangeSpaceBounds.center;
 
         SetAxisValue(
-            ref correctedPlanePoint,
+            ref correctedPlanePointInCutRangeSpace,
             cutRangeAxis,
             correctedAxisPosition);
 
+        Matrix4x4 cutRangeSpaceToSource =
+            sourceToCutRangeSpace.inverse;
+
+        correctedPlanePoint =
+            cutRangeSpaceToSource.MultiplyPoint3x4(
+                correctedPlanePointInCutRangeSpace);
+
+        // sourceToCutRangeSpaceが特異行列の場合はinverseから有効な点を得られない。
+        if (!IsFinite(correctedPlanePoint))
+        {
+            correctedPlanePoint = default;
+            failureReason =
+                "切断対象TransformのScaleに0が含まれるため、Cut Range座標を変換できません。";
+            return false;
+        }
+
         failureReason = null;
         return true;
+    }
+
+    internal static bool TryCalculateMeshBoundsInSpace(
+        Mesh sourceMesh,
+        Matrix4x4 sourceToTargetSpace,
+        out Bounds bounds)
+    {
+        bounds = default;
+
+        if (sourceMesh == null ||
+            sourceMesh.vertexCount == 0)
+        {
+            return false;
+        }
+
+        Vector3[] vertices =
+            sourceMesh.vertices;
+
+        Vector3 firstVertex =
+            sourceToTargetSpace.MultiplyPoint3x4(
+                vertices[0]);
+
+        if (!IsFinite(firstVertex))
+        {
+            return false;
+        }
+
+        bounds =
+            new Bounds(
+                firstVertex,
+                Vector3.zero);
+
+        for (int i = 1; i < vertices.Length; i++)
+        {
+            Vector3 vertex =
+                sourceToTargetSpace.MultiplyPoint3x4(
+                    vertices[i]);
+
+            if (!IsFinite(vertex))
+            {
+                return false;
+            }
+
+            bounds.Encapsulate(
+                vertex);
+        }
+
+        return true;
+    }
+
+    private static bool IsFinite(
+        Vector3 value)
+    {
+        return !float.IsNaN(value.x) &&
+               !float.IsInfinity(value.x) &&
+               !float.IsNaN(value.y) &&
+               !float.IsInfinity(value.y) &&
+               !float.IsNaN(value.z) &&
+               !float.IsInfinity(value.z);
+    }
+
+    private static bool IsFinite(
+        float value)
+    {
+        return !float.IsNaN(value) &&
+               !float.IsInfinity(value);
     }
 
     /// <summary>
@@ -580,6 +683,15 @@ public sealed class ChainsawMeshCutProcessor
                 float distanceC = cutPlane.GetDistanceToPoint(
                     triangle[2].Position);
 
+                if (!IsFinite(distanceA) ||
+                    !IsFinite(distanceB) ||
+                    !IsFinite(distanceC))
+                {
+                    failureReason =
+                        "PlaneとTriangleの距離計算でNaN / Infinityを検出しました。";
+                    return false;
+                }
+
                 float[] distances =
                 {
                     distanceA,
@@ -647,10 +759,19 @@ public sealed class ChainsawMeshCutProcessor
                         triangle,
                         distances,
                         geometryEpsilon,
-                        out CutSegment cutSegment))
+                        out CutSegment cutSegment,
+                        out bool isDegenerateSegment))
                 {
+                    // PlaneがTriangleの頂点・辺付近を通ると、交点同士が
+                    // geometryEpsilon以下へ潰れる場合がある。これは局所的な
+                    // 縮退なのでMesh全体の切断失敗にはせず、境界線分だけ除外する。
+                    if (isDegenerateSegment)
+                    {
+                        continue;
+                    }
+
                     failureReason =
-                        "交差Triangleから有効な切断線分を生成できませんでした.";
+                        "交差Triangleの切断線分計算中にNaN / Infinity等の不正値を検出しました。";
                     return false;
                 }
 
@@ -891,8 +1012,21 @@ public sealed class ChainsawMeshCutProcessor
         IReadOnlyList<VertexData> triangle,
         IReadOnlyList<float> distances,
         float geometryEpsilon,
-        out CutSegment cutSegment)
+        out CutSegment cutSegment,
+        out bool isDegenerateSegment)
     {
+        cutSegment = default;
+        isDegenerateSegment = false;
+
+        if (!IsFinite(geometryEpsilon) ||
+            geometryEpsilon <= 0.0f ||
+            triangle == null ||
+            distances == null ||
+            triangle.Count != distances.Count)
+        {
+            return false;
+        }
+
         var points =
             new List<Vector3>(3);
 
@@ -903,18 +1037,32 @@ public sealed class ChainsawMeshCutProcessor
             int nextIndex =
                 (i + 1) % triangle.Count;
 
+            Vector3 currentPosition =
+                triangle[i].Position;
+
+            Vector3 nextPosition =
+                triangle[nextIndex].Position;
+
             float currentDistance =
                 distances[i];
 
             float nextDistance =
                 distances[nextIndex];
 
+            if (!IsFinite(currentPosition) ||
+                !IsFinite(nextPosition) ||
+                !IsFinite(currentDistance) ||
+                !IsFinite(nextDistance))
+            {
+                return false;
+            }
+
             if (Mathf.Abs(currentDistance) <=
                 geometryEpsilon)
             {
                 AddDistinctPoint(
                     points,
-                    triangle[i].Position,
+                    currentPosition,
                     geometryEpsilon);
             }
 
@@ -936,6 +1084,11 @@ public sealed class ChainsawMeshCutProcessor
                     currentDistance,
                     nextDistance);
 
+            if (!IsFinite(intersection.Position))
+            {
+                return false;
+            }
+
             AddDistinctPoint(
                 points,
                 intersection.Position,
@@ -944,18 +1097,24 @@ public sealed class ChainsawMeshCutProcessor
 
         if (points.Count < 2)
         {
-            cutSegment = default;
+            isDegenerateSegment = true;
             return false;
         }
 
         if (points.Count == 2)
         {
-            if (ArePositionsClose(
-                    points[0],
-                    points[1],
-                    geometryEpsilon))
+            float sqrDistance =
+                (points[0] - points[1]).sqrMagnitude;
+
+            if (!IsFinite(sqrDistance))
             {
-                cutSegment = default;
+                return false;
+            }
+
+            if (sqrDistance <=
+                geometryEpsilon * geometryEpsilon)
+            {
+                isDegenerateSegment = true;
                 return false;
             }
 
@@ -988,6 +1147,11 @@ public sealed class ChainsawMeshCutProcessor
                     (points[firstIndex] -
                      points[secondIndex]).sqrMagnitude;
 
+                if (!IsFinite(sqrDistance))
+                {
+                    return false;
+                }
+
                 if (sqrDistance <=
                     greatestSqrDistance)
                 {
@@ -1008,7 +1172,7 @@ public sealed class ChainsawMeshCutProcessor
         if (greatestSqrDistance <=
             geometryEpsilon * geometryEpsilon)
         {
-            cutSegment = default;
+            isDegenerateSegment = true;
             return false;
         }
 
@@ -1346,27 +1510,83 @@ public sealed class ChainsawMeshCutProcessor
                 preparedLoop);
         }
 
-        if (ContainsNestedLoops(
-                preparedLoops))
+        if (!TryAssignLoopHierarchy(
+                preparedLoops,
+                geometryEpsilon,
+                out failureReason))
         {
-            failureReason =
-                "polygon-with-holesとなる切断境界は初版では対応しません。";
-
             return false;
         }
 
         float earEpsilon =
             geometryEpsilon * geometryEpsilon;
 
-        for (int loopIndex = 0;
-             loopIndex < preparedLoops.Count;
-             loopIndex++)
+        for (int outerLoopIndex = 0;
+             outerLoopIndex < preparedLoops.Count;
+             outerLoopIndex++)
         {
-            PreparedBoundaryLoop loop =
-                preparedLoops[loopIndex];
+            PreparedBoundaryLoop outerLoop =
+                preparedLoops[outerLoopIndex];
+
+            // Even depth is material, odd depth is a hole.
+            // depth 2, 4... are islands inside holes and are triangulated
+            // as independent filled regions by their own iteration.
+            if ((outerLoop.NestingDepth & 1) != 0)
+            {
+                continue;
+            }
+
+            var mergedPositions =
+                new List<Vector3>(
+                    outerLoop.Positions);
+
+            var mergedProjectedPoints =
+                new List<Vector2>(
+                    outerLoop.ProjectedPoints);
+
+            var directHoles =
+                new List<PreparedBoundaryLoop>();
+
+            for (int loopIndex = 0;
+                 loopIndex < preparedLoops.Count;
+                 loopIndex++)
+            {
+                PreparedBoundaryLoop candidate =
+                    preparedLoops[loopIndex];
+
+                if (candidate.ParentIndex == outerLoopIndex &&
+                    (candidate.NestingDepth & 1) != 0)
+                {
+                    directHoles.Add(candidate);
+                }
+            }
+
+            // 右端が外側に近いHoleから橋渡しする方が、
+            // Bridge同士が交差するケースを減らせる。
+            directHoles.Sort(
+                (first, second) =>
+                    GetRightmostX(second.ProjectedPoints)
+                        .CompareTo(
+                            GetRightmostX(first.ProjectedPoints)));
+
+            for (int holeIndex = 0;
+                 holeIndex < directHoles.Count;
+                 holeIndex++)
+            {
+                if (!TryMergeHoleIntoPolygon(
+                        mergedPositions,
+                        mergedProjectedPoints,
+                        directHoles[holeIndex],
+                        directHoles,
+                        geometryEpsilon,
+                        out failureReason))
+                {
+                    return false;
+                }
+            }
 
             if (!TryTriangulateEarClipping(
-                    loop.ProjectedPoints,
+                    mergedProjectedPoints,
                     earEpsilon,
                     out List<int> triangleIndices))
             {
@@ -1381,15 +1601,15 @@ public sealed class ChainsawMeshCutProcessor
                  triangleIndex += 3)
             {
                 Vector3 pointA =
-                    loop.Positions[
+                    mergedPositions[
                         triangleIndices[triangleIndex]];
 
                 Vector3 pointB =
-                    loop.Positions[
+                    mergedPositions[
                         triangleIndices[triangleIndex + 1]];
 
                 Vector3 pointC =
-                    loop.Positions[
+                    mergedPositions[
                         triangleIndices[triangleIndex + 2]];
 
                 AddCapTriangle(
@@ -1646,38 +1866,518 @@ public sealed class ChainsawMeshCutProcessor
         return area * 0.5f;
     }
 
-    private static bool ContainsNestedLoops(
-        IReadOnlyList<PreparedBoundaryLoop> loops)
+    private static bool TryAssignLoopHierarchy(
+        IReadOnlyList<PreparedBoundaryLoop> loops,
+        float geometryEpsilon,
+        out string failureReason)
     {
+        float areaEpsilon =
+            geometryEpsilon * geometryEpsilon;
+
         for (int innerIndex = 0;
              innerIndex < loops.Count;
              innerIndex++)
         {
+            PreparedBoundaryLoop innerLoop =
+                loops[innerIndex];
+
+            innerLoop.ParentIndex = -1;
+            innerLoop.NestingDepth = 0;
+
+            float innerArea =
+                Mathf.Abs(
+                    CalculateSignedArea(
+                        innerLoop.ProjectedPoints));
+
+            float bestParentArea =
+                float.PositiveInfinity;
+
             Vector2 testPoint =
-                loops[innerIndex]
-                    .ProjectedPoints[0];
+                innerLoop.ProjectedPoints[0];
 
             for (int outerIndex = 0;
                  outerIndex < loops.Count;
                  outerIndex++)
             {
-                if (innerIndex ==
-                    outerIndex)
+                if (outerIndex == innerIndex)
                 {
                     continue;
                 }
 
-                if (IsPointInsidePolygon(
-                        testPoint,
-                        loops[outerIndex]
-                            .ProjectedPoints))
+                PreparedBoundaryLoop outerLoop =
+                    loops[outerIndex];
+
+                float outerArea =
+                    Mathf.Abs(
+                        CalculateSignedArea(
+                            outerLoop.ProjectedPoints));
+
+                if (outerArea <=
+                    innerArea + areaEpsilon)
                 {
-                    return true;
+                    continue;
+                }
+
+                if (!IsPointInsidePolygon(
+                        testPoint,
+                        outerLoop.ProjectedPoints))
+                {
+                    continue;
+                }
+
+                if (outerArea < bestParentArea)
+                {
+                    bestParentArea =
+                        outerArea;
+
+                    innerLoop.ParentIndex =
+                        outerIndex;
                 }
             }
         }
 
+        for (int loopIndex = 0;
+             loopIndex < loops.Count;
+             loopIndex++)
+        {
+            int depth = 0;
+            int parentIndex =
+                loops[loopIndex].ParentIndex;
+
+            int guard = 0;
+
+            while (parentIndex >= 0)
+            {
+                depth++;
+                parentIndex =
+                    loops[parentIndex].ParentIndex;
+
+                guard++;
+
+                if (guard > loops.Count)
+                {
+                    failureReason =
+                        "切断境界の入れ子関係に循環が検出されました。";
+
+                    return false;
+                }
+            }
+
+            loops[loopIndex].NestingDepth =
+                depth;
+        }
+
+        failureReason = null;
+        return true;
+    }
+
+    private static float GetRightmostX(
+        IReadOnlyList<Vector2> polygon)
+    {
+        float rightmostX =
+            float.NegativeInfinity;
+
+        for (int i = 0;
+             i < polygon.Count;
+             i++)
+        {
+            rightmostX =
+                Mathf.Max(
+                    rightmostX,
+                    polygon[i].x);
+        }
+
+        return rightmostX;
+    }
+
+    /// <summary>
+    /// Holeを外周へ可視なBridgeで接続し、Ear Clipping可能な弱単純Polygonへ変換する。
+    /// </summary>
+    /// <remarks>
+    /// Bridgeの両端は意図的に2回現れる。これはHoleを切り開いて外周へ接続するために必要で、
+    /// 通常の重複頂点除去を行うとHoleが再び閉じてしまう。
+    /// </remarks>
+    private static bool TryMergeHoleIntoPolygon(
+        List<Vector3> polygonPositions,
+        List<Vector2> polygonProjectedPoints,
+        PreparedBoundaryLoop hole,
+        IReadOnlyList<PreparedBoundaryLoop> siblingHoles,
+        float geometryEpsilon,
+        out string failureReason)
+    {
+        int holeBridgeIndex =
+            FindRightmostVertexIndex(
+                hole.ProjectedPoints);
+
+        Vector2 holeBridgePoint =
+            hole.ProjectedPoints[
+                holeBridgeIndex];
+
+        int polygonBridgeIndex = -1;
+        float bestSqrDistance =
+            float.PositiveInfinity;
+
+        for (int candidateIndex = 0;
+             candidateIndex < polygonProjectedPoints.Count;
+             candidateIndex++)
+        {
+            Vector2 candidatePoint =
+                polygonProjectedPoints[
+                    candidateIndex];
+
+            float sqrDistance =
+                (candidatePoint -
+                 holeBridgePoint).sqrMagnitude;
+
+            if (sqrDistance <=
+                geometryEpsilon * geometryEpsilon ||
+                sqrDistance >= bestSqrDistance)
+            {
+                continue;
+            }
+
+            if (!IsBridgeVisible(
+                    holeBridgePoint,
+                    candidatePoint,
+                    candidateIndex,
+                    polygonProjectedPoints,
+                    holeBridgeIndex,
+                    hole.ProjectedPoints,
+                    siblingHoles,
+                    hole,
+                    geometryEpsilon))
+            {
+                continue;
+            }
+
+            polygonBridgeIndex =
+                candidateIndex;
+
+            bestSqrDistance =
+                sqrDistance;
+        }
+
+        if (polygonBridgeIndex < 0)
+        {
+            failureReason =
+                "切断面Holeを外周へ接続できるBridgeが見つかりませんでした。";
+
+            return false;
+        }
+
+        var mergedPositions =
+            new List<Vector3>(
+                polygonPositions.Count +
+                hole.Positions.Count +
+                2);
+
+        var mergedProjectedPoints =
+            new List<Vector2>(
+                polygonProjectedPoints.Count +
+                hole.ProjectedPoints.Count +
+                2);
+
+        for (int i = 0;
+             i <= polygonBridgeIndex;
+             i++)
+        {
+            mergedPositions.Add(
+                polygonPositions[i]);
+
+            mergedProjectedPoints.Add(
+                polygonProjectedPoints[i]);
+        }
+
+        // PreparedBoundaryLoopは全てCCWへ正規化されている。
+        // Holeは逆向き(CW)に辿ることでeven-oddの空洞を維持する。
+        for (int offset = 0;
+             offset < hole.Positions.Count;
+             offset++)
+        {
+            int holeIndex =
+                (holeBridgeIndex - offset +
+                 hole.Positions.Count) %
+                hole.Positions.Count;
+
+            mergedPositions.Add(
+                hole.Positions[holeIndex]);
+
+            mergedProjectedPoints.Add(
+                hole.ProjectedPoints[holeIndex]);
+        }
+
+        mergedPositions.Add(
+            hole.Positions[holeBridgeIndex]);
+
+        mergedProjectedPoints.Add(
+            hole.ProjectedPoints[holeBridgeIndex]);
+
+        mergedPositions.Add(
+            polygonPositions[polygonBridgeIndex]);
+
+        mergedProjectedPoints.Add(
+            polygonProjectedPoints[polygonBridgeIndex]);
+
+        for (int i = polygonBridgeIndex + 1;
+             i < polygonPositions.Count;
+             i++)
+        {
+            mergedPositions.Add(
+                polygonPositions[i]);
+
+            mergedProjectedPoints.Add(
+                polygonProjectedPoints[i]);
+        }
+
+        polygonPositions.Clear();
+        polygonPositions.AddRange(
+            mergedPositions);
+
+        polygonProjectedPoints.Clear();
+        polygonProjectedPoints.AddRange(
+            mergedProjectedPoints);
+
+        failureReason = null;
+        return true;
+    }
+
+    private static int FindRightmostVertexIndex(
+        IReadOnlyList<Vector2> polygon)
+    {
+        int bestIndex = 0;
+
+        for (int i = 1;
+             i < polygon.Count;
+             i++)
+        {
+            Vector2 candidate =
+                polygon[i];
+
+            Vector2 currentBest =
+                polygon[bestIndex];
+
+            if (candidate.x > currentBest.x ||
+                (Mathf.Approximately(
+                     candidate.x,
+                     currentBest.x) &&
+                 candidate.y < currentBest.y))
+            {
+                bestIndex = i;
+            }
+        }
+
+        return bestIndex;
+    }
+
+    private static bool IsBridgeVisible(
+        Vector2 holePoint,
+        Vector2 polygonPoint,
+        int polygonPointIndex,
+        IReadOnlyList<Vector2> polygon,
+        int holePointIndex,
+        IReadOnlyList<Vector2> hole,
+        IReadOnlyList<PreparedBoundaryLoop> siblingHoles,
+        PreparedBoundaryLoop currentHole,
+        float geometryEpsilon)
+    {
+        if (SegmentIntersectsPolygon(
+                holePoint,
+                polygonPoint,
+                polygon,
+                polygonPointIndex,
+                geometryEpsilon))
+        {
+            return false;
+        }
+
+        if (SegmentIntersectsPolygon(
+                holePoint,
+                polygonPoint,
+                hole,
+                holePointIndex,
+                geometryEpsilon))
+        {
+            return false;
+        }
+
+        for (int holeIndex = 0;
+             holeIndex < siblingHoles.Count;
+             holeIndex++)
+        {
+            PreparedBoundaryLoop siblingHole =
+                siblingHoles[holeIndex];
+
+            if (object.ReferenceEquals(
+                    siblingHole,
+                    currentHole))
+            {
+                continue;
+            }
+
+            if (SegmentIntersectsPolygon(
+                    holePoint,
+                    polygonPoint,
+                    siblingHole.ProjectedPoints,
+                    -1,
+                    geometryEpsilon))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool SegmentIntersectsPolygon(
+        Vector2 segmentStart,
+        Vector2 segmentEnd,
+        IReadOnlyList<Vector2> polygon,
+        int allowedEndpointIndex,
+        float geometryEpsilon)
+    {
+        float sqrEpsilon =
+            geometryEpsilon * geometryEpsilon;
+
+        for (int edgeStartIndex = 0;
+             edgeStartIndex < polygon.Count;
+             edgeStartIndex++)
+        {
+            int edgeEndIndex =
+                (edgeStartIndex + 1) %
+                polygon.Count;
+
+            Vector2 edgeStart =
+                polygon[edgeStartIndex];
+
+            Vector2 edgeEnd =
+                polygon[edgeEndIndex];
+
+            if (allowedEndpointIndex >= 0 &&
+                (edgeStartIndex == allowedEndpointIndex ||
+                 edgeEndIndex == allowedEndpointIndex))
+            {
+                continue;
+            }
+
+            // Holeを複数Bridgeした後は同じ座標のBridge端点が
+            // 非隣接Indexとして残るため、座標一致も共有端点として扱う。
+            if ((edgeStart - segmentEnd).sqrMagnitude <= sqrEpsilon ||
+                (edgeEnd - segmentEnd).sqrMagnitude <= sqrEpsilon ||
+                (edgeStart - segmentStart).sqrMagnitude <= sqrEpsilon ||
+                (edgeEnd - segmentStart).sqrMagnitude <= sqrEpsilon)
+            {
+                continue;
+            }
+
+            if (DoSegmentsIntersect(
+                    segmentStart,
+                    segmentEnd,
+                    edgeStart,
+                    edgeEnd,
+                    geometryEpsilon))
+            {
+                return true;
+            }
+        }
+
         return false;
+    }
+
+    private static bool DoSegmentsIntersect(
+        Vector2 firstStart,
+        Vector2 firstEnd,
+        Vector2 secondStart,
+        Vector2 secondEnd,
+        float epsilon)
+    {
+        float firstCross =
+            Cross2D(
+                firstEnd - firstStart,
+                secondStart - firstStart);
+
+        float secondCross =
+            Cross2D(
+                firstEnd - firstStart,
+                secondEnd - firstStart);
+
+        float thirdCross =
+            Cross2D(
+                secondEnd - secondStart,
+                firstStart - secondStart);
+
+        float fourthCross =
+            Cross2D(
+                secondEnd - secondStart,
+                firstEnd - secondStart);
+
+        if (((firstCross > epsilon && secondCross < -epsilon) ||
+             (firstCross < -epsilon && secondCross > epsilon)) &&
+            ((thirdCross > epsilon && fourthCross < -epsilon) ||
+             (thirdCross < -epsilon && fourthCross > epsilon)))
+        {
+            return true;
+        }
+
+        if (Mathf.Abs(firstCross) <= epsilon &&
+            IsPointOnSegment(
+                secondStart,
+                firstStart,
+                firstEnd,
+                epsilon))
+        {
+            return true;
+        }
+
+        if (Mathf.Abs(secondCross) <= epsilon &&
+            IsPointOnSegment(
+                secondEnd,
+                firstStart,
+                firstEnd,
+                epsilon))
+        {
+            return true;
+        }
+
+        if (Mathf.Abs(thirdCross) <= epsilon &&
+            IsPointOnSegment(
+                firstStart,
+                secondStart,
+                secondEnd,
+                epsilon))
+        {
+            return true;
+        }
+
+        return Mathf.Abs(fourthCross) <= epsilon &&
+               IsPointOnSegment(
+                   firstEnd,
+                   secondStart,
+                   secondEnd,
+                   epsilon);
+    }
+
+    private static bool IsPointOnSegment(
+        Vector2 point,
+        Vector2 segmentStart,
+        Vector2 segmentEnd,
+        float epsilon)
+    {
+        return point.x >=
+                   Mathf.Min(
+                       segmentStart.x,
+                       segmentEnd.x) - epsilon &&
+               point.x <=
+                   Mathf.Max(
+                       segmentStart.x,
+                       segmentEnd.x) + epsilon &&
+               point.y >=
+                   Mathf.Min(
+                       segmentStart.y,
+                       segmentEnd.y) - epsilon &&
+               point.y <=
+                   Mathf.Max(
+                       segmentStart.y,
+                       segmentEnd.y) + epsilon;
     }
 
     private static bool IsPointInsidePolygon(
@@ -1808,8 +2508,21 @@ public sealed class ChainsawMeshCutProcessor
                         continue;
                     }
 
+                    Vector2 testPoint =
+                        polygon[testIndex];
+
+                    // Hole Bridgeでは同一座標が意図的に2回現れる。
+                    // それを「Ear内部の別頂点」と判定すると、Bridge周辺の
+                    // Earが永久に除外されて三角形分割できなくなる。
+                    if ((testPoint - previous).sqrMagnitude <= areaEpsilon ||
+                        (testPoint - current).sqrMagnitude <= areaEpsilon ||
+                        (testPoint - next).sqrMagnitude <= areaEpsilon)
+                    {
+                        continue;
+                    }
+
                     if (IsPointInsideTriangle(
-                            polygon[testIndex],
+                            testPoint,
                             previous,
                             current,
                             next,
@@ -2115,6 +2828,8 @@ public sealed class ChainsawMeshCutProcessor
     {
         public List<Vector3> Positions { get; }
         public List<Vector2> ProjectedPoints { get; }
+        public int ParentIndex { get; set; }
+        public int NestingDepth { get; set; }
 
         public PreparedBoundaryLoop(
             List<Vector3> positions,
@@ -2125,6 +2840,9 @@ public sealed class ChainsawMeshCutProcessor
 
             ProjectedPoints =
                 projectedPoints;
+
+            ParentIndex = -1;
+            NestingDepth = 0;
         }
     }
 
@@ -2314,7 +3032,7 @@ public sealed class ChainsawMeshCutProcessor
 
 
 /// <summary>
-/// Meshローカル空間で切断位置の有効範囲を定義する軸。
+/// EnemyMeshCutterが付いているEnemy本体のローカル空間で、切断位置の有効範囲を定義する軸。
 /// </summary>
 public enum MeshCutRangeAxis
 {

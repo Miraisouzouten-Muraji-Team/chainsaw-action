@@ -4,38 +4,84 @@ using UnityEngine;
 /// PlayerからEnemyへ渡す、1回の攻撃命中に対応する情報。
 /// </summary>
 /// <remarks>
-/// このクラスはGameObjectへアタッチして使用するコンポーネントではない。
-/// Player側で攻撃がEnemyへ命中した時点で生成し、
-/// 命中対象のIAttackHitReceiver.ReceiveAttackHitへ渡す。
+/// 通常チェンソー攻撃では、AttackDataと今回の命中時点で確定した
+/// ChainsawCutKinematicsを渡す。
+/// ChainsawCutKinematicsのBladeCenterWorldは実測値、
+/// BladeDirectionWorld / BladeMovementDirectionWorldは
+/// 事前生成済みChainsawAttackTrajectoryProfileから解決した値を使用する。
 ///
-/// 基本的な使用手順:
-/// 1. 攻撃開始時にChainsawBladeTrajectoryRecorder.BeginRecording()を呼ぶ。
-/// 2. 攻撃中、武器のTransform更新タイミングに合わせてRecordSample()を継続的に呼ぶ。
-/// 3. Enemyへの命中時にTryCreateTrajectorySnapshot()で、その時点までの軌跡を取得する。
-/// 4. 今回使用した攻撃のScriptableObjectと軌跡からPlayerAttackHitDataを生成する。
-/// 5. 命中対象のIAttackHitReceiverへReceiveAttackHit()で渡す。
-/// 6. 攻撃自体が終了した時点でChainsawBladeTrajectoryRecorder.EndRecording()を呼ぶ。
+/// 食い込み攻撃は通常攻撃用Trajectory Profileへ依存しないため、
+/// 必要なCut Kinematicsがない場合はAttackDataだけを渡せる。
 ///
-/// 注意:
-/// ・命中しただけでは軌跡記録を終了しない。
-///   1回の攻撃中に複数のEnemyへ命中する可能性があるため、
-///   命中時はTryCreateTrajectorySnapshot()を使用する。
-/// ・AttackDataには「今回の命中だけの一時的な状態」を書き込まないこと。
-///   ScriptableObjectは参照として共有されるため、基本的には攻撃の固定データとして扱う。
+/// ChainsawTrailは旧Runtime Trajectory方式から段階移行するための互換情報。
+/// Player側を新方式へ切り替えて検証が完了した後に削除する。
 /// </remarks>
-
 public sealed class PlayerAttackHitData : AttackHitData
 {
     /// <summary>
-    /// 今回のチェンソー攻撃で記録された軌跡データ。
+    /// 通常チェンソー攻撃のMeshCutに必要な、今回の命中時点の情報。
+    /// 食い込み攻撃など通常切断情報を持たない場合はnull。
+    /// </summary>
+    public ChainsawCutKinematics? ChainsawCutKinematics { get; }
+
+    /// <summary>
+    /// 旧Runtime Trajectory方式との移行互換用データ。
+    /// 新方式への移行完了後に削除する。
     /// </summary>
     public ChainsawAttackTrajectory ChainsawTrail { get; }
 
+    public bool HasChainsawCutKinematics =>
+        ChainsawCutKinematics.HasValue;
+
+    /// <summary>
+    /// 通常攻撃以外など、通常切断用Kinematicsを持たない命中情報を生成する。
+    /// </summary>
+    public PlayerAttackHitData(
+        ScriptableObject attackData)
+        : base(attackData)
+    {
+        ChainsawCutKinematics = null;
+        ChainsawTrail = null;
+    }
+
+    /// <summary>
+    /// 新方式の通常チェンソー命中情報を生成する。
+    /// </summary>
+    public PlayerAttackHitData(
+        ScriptableObject attackData,
+        ChainsawCutKinematics chainsawCutKinematics)
+        : base(attackData)
+    {
+        ChainsawCutKinematics =
+            chainsawCutKinematics;
+
+        ChainsawTrail = null;
+    }
+
+    /// <summary>
+    /// 新旧方式を比較する移行期間中の通常チェンソー命中情報を生成する。
+    /// </summary>
+    public PlayerAttackHitData(
+        ScriptableObject attackData,
+        ChainsawAttackTrajectory chainsawTrail,
+        ChainsawCutKinematics chainsawCutKinematics)
+        : base(attackData)
+    {
+        ChainsawTrail = chainsawTrail;
+        ChainsawCutKinematics =
+            chainsawCutKinematics;
+    }
+
+    /// <summary>
+    /// 旧Runtime Trajectory方式からの呼び出しを壊さないための互換Constructor。
+    /// Player側の新方式移行完了後に削除する。
+    /// </summary>
     public PlayerAttackHitData(
         ScriptableObject attackData,
         ChainsawAttackTrajectory chainsawTrail)
         : base(attackData)
     {
         ChainsawTrail = chainsawTrail;
+        ChainsawCutKinematics = null;
     }
 }

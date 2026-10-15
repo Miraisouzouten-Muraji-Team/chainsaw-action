@@ -1,19 +1,28 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
 /// Enemy死亡時に切断対象Meshを取得し、
-/// チェンソー軌跡を使って2つの静的Meshへ分割して表示する。
+/// 命中時に確定済みのチェンソー切断情報を使って2つの静的Meshへ分割して表示する。
 /// </summary>
 /// <remarks>
-/// SkinnedMeshRendererの場合は死亡時の現在姿勢をBakeしてから切断する。
-/// MeshFilter + MeshRendererの場合はMeshFilterのMeshを切断する。
+/// SkinnedMeshRendererの場合は死亡時の現在姿勢をBakeしてから、
+/// EnemyMeshCutter自身のTransformを基準とする切断空間へ変換して切断する。
+/// MeshFilter + MeshRendererの場合も同じ切断空間へ変換してから切断する。
 ///
-/// HP計算、死亡判定、攻撃受信、チェンソー軌跡記録、
+/// これにより、モデル側のローカル軸・階層Rotation・Scaleに依存せず、
+/// Cut Range Axisは常にEnemyMeshCutterのローカル軸として扱われる。
+///
+/// HP計算、死亡判定、攻撃受信、Player側のProfile解決、
 /// Triangle分割アルゴリズム、切断後の物理演出は担当しない。
 /// </remarks>
 public sealed class EnemyMeshCutter : MonoBehaviour
 {
+    private const float MIN_TRANSFORM_DETERMINANT =
+        0.00000001f;
+
+    private const float MIN_DIRECTION_SQR_MAGNITUDE =
+        0.00000001f;
+
     [Header("切断対象")]
 
     [Tooltip(
@@ -35,12 +44,9 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
     [Header("切断Plane設定")]
 
-    [Tooltip("命中直前から代表刃方向・代表移動方向の算出に使用するサンプル数。")]
-    [Min(2)]
-    [SerializeField]
-    private int cutDirectionSampleCount = 4;
-
-    [Tooltip("Meshローカル空間で切断位置の有効範囲を定義する軸。")]
+    [Tooltip(
+        "EnemyMeshCutterのローカル空間で、"
+        + "切断位置の有効範囲を定義する軸。")]
     [SerializeField]
     private MeshCutRangeAxis cutRangeAxis = MeshCutRangeAxis.Y;
 
@@ -77,15 +83,16 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     private bool hasCompletedCut;
 
     /// <summary>
-    /// 確定済みチェンソー軌跡を使ってEnemy Meshの切断を試みる。
+    /// 命中時に確定済みのチェンソー切断情報を使ってEnemy Meshの切断を試みる。
     /// </summary>
-    /// <param name="trajectory">
-    /// 死亡させたチェンソー攻撃が保持している確定済み軌跡。
+    /// <param name="cutKinematics">
+    /// Player側で命中時に確定したWorld空間の刃中心・刃方向・移動方向。
     /// </param>
     /// <returns>
     /// 2つのMesh生成と表示切り替えまで成功した場合はtrue。
     /// </returns>
-    public bool TryCut(ChainsawAttackTrajectory trajectory)
+    public bool TryCut(
+        ChainsawCutKinematics cutKinematics)
     {
         if (hasCompletedCut)
         {
@@ -98,17 +105,16 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         }
 
         if (!ValidateCutRequest(
-                trajectory,
+                cutKinematics,
                 out string failureReason))
         {
             LogCutFailure(failureReason);
             return false;
         }
 
-        if (!TryGetCutSource(
+        if (!TryCreateCutSpaceSource(
                 out Mesh sourceMesh,
                 out Renderer sourceRenderer,
-                out bool destroySourceMeshAfterCut,
                 out failureReason))
         {
             LogCutFailure(failureReason);
@@ -126,17 +132,17 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 return false;
             }
 
-            ConvertTrajectoryToRendererLocalSpace(
-                trajectory,
-                sourceRenderer.transform,
-                out List<Vector3> localTipPositions,
-                out List<Vector3> localRootPositions);
+            ConvertCutKinematicsToCutSpace(
+                cutKinematics,
+                out Vector3 bladeCenterLocal,
+                out Vector3 bladeDirectionLocal,
+                out Vector3 bladeMovementDirectionLocal);
 
             bool succeeded = cutProcessor.TryCut(
                 sourceMesh,
-                localTipPositions,
-                localRootPositions,
-                cutDirectionSampleCount,
+                bladeCenterLocal,
+                bladeDirectionLocal,
+                bladeMovementDirectionLocal,
                 cutRangeAxis,
                 cutRangeMinimumNormalized,
                 cutRangeMaximumNormalized,
@@ -180,10 +186,9 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         }
         finally
         {
-            if (destroySourceMeshAfterCut)
-            {
-                DestroyRuntimeMesh(sourceMesh);
-            }
+            // CutSpaceへ変換した入力MeshはこのComponentが一時生成したRuntime Mesh。
+            // 分割後のPiece Meshへ必要な頂点情報は複製済みなのでここで破棄する。
+            DestroyRuntimeMesh(sourceMesh);
         }
     }
 
@@ -216,7 +221,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     /// 切断要求に必要な設定と入力を検証する。
     /// </summary>
     private bool ValidateCutRequest(
-        ChainsawAttackTrajectory trajectory,
+        ChainsawCutKinematics cutKinematics,
         out string failureReason)
     {
         bool hasSkinnedMeshTarget =
@@ -320,19 +325,11 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             return false;
         }
 
-        if (trajectory == null)
+        if (!cutKinematics.HasValidDirections)
         {
             failureReason =
-                "ChainsawAttackTrajectoryがnullです。";
-
-            return false;
-        }
-
-        if (trajectory.SampleCount < 2)
-        {
-            failureReason =
-                "Mesh切断には2サンプル以上の"
-                + "チェンソー軌跡が必要です。";
+                "ChainsawCutKinematicsに有効な"
+                + "刃方向または移動方向がありません。";
 
             return false;
         }
@@ -342,22 +339,21 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     }
 
     /// <summary>
-    /// 現在設定されている切断対象から、
-    /// ChainsawMeshCutProcessorへ渡すMeshとRendererを取得する。
+    /// 設定されたRendererの見た目をRuntime Meshへ固定し、
+    /// EnemyMeshCutterのローカル空間へ変換した切断入力Meshを生成する。
     /// </summary>
     /// <remarks>
-    /// SkinnedMeshRendererの場合は現在姿勢をRuntime MeshへBakeする。
-    /// MeshFilterの場合はsharedMeshを読み取り専用の入力として使用する。
+    /// SkinnedMeshRendererではBakeMeshによって死亡時点のスキニング結果を取得する。
+    /// Bake結果はRendererローカル空間なので、そのまま切断には使わず、
+    /// MeshFilterの場合と同様にEnemyMeshCutter基準の空間へ統一する。
     /// </remarks>
-    private bool TryGetCutSource(
+    private bool TryCreateCutSpaceSource(
         out Mesh sourceMesh,
         out Renderer sourceRenderer,
-        out bool destroySourceMeshAfterCut,
         out string failureReason)
     {
         sourceMesh = null;
         sourceRenderer = null;
-        destroySourceMeshAfterCut = false;
 
         if (targetSkinnedMeshRenderer != null)
         {
@@ -367,20 +363,25 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                     $"{targetSkinnedMeshRenderer.name}_DeathBake"
             };
 
-            // 現在のSkinnedMesh姿勢を、
-            // Renderer Transform基準の静的Meshへ保存する。
-            //
-            // useScale=trueでRenderer TransformのScaleを
-            // 補償したMeshを取得する。
+            // useScale=trueではSkinnedMeshRendererのScaleを補償した
+            // Rendererローカル座標のMeshが得られる。
+            // この後localToWorldMatrixを使ってCutSpaceへ変換するため、
+            // Transform Scaleを頂点へ二重適用しないことが重要。
             targetSkinnedMeshRenderer.BakeMesh(
                 bakedMesh,
                 true);
 
-            bakedMesh.RecalculateBounds();
+            if (!TryTransformMeshToCutSpace(
+                    bakedMesh,
+                    targetSkinnedMeshRenderer.transform,
+                    out failureReason))
+            {
+                DestroyRuntimeMesh(bakedMesh);
+                return false;
+            }
 
             sourceMesh = bakedMesh;
             sourceRenderer = targetSkinnedMeshRenderer;
-            destroySourceMeshAfterCut = true;
 
             failureReason = null;
             return true;
@@ -400,15 +401,34 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 return false;
             }
 
-            sourceMesh =
+            Mesh sharedMesh =
                 targetMeshFilter.sharedMesh;
 
-            sourceRenderer =
-                meshRenderer;
+            if (sharedMesh == null)
+            {
+                failureReason =
+                    "Target Mesh FilterにsharedMeshがありません。";
 
-            // sharedMeshはProject AssetまたはUnityが管理するMeshなので、
-            // このEnemyMeshCutterからDestroyしてはいけない。
-            destroySourceMeshAfterCut = false;
+                return false;
+            }
+
+            var runtimeMesh =
+                Instantiate(sharedMesh);
+
+            runtimeMesh.name =
+                $"{sharedMesh.name}_CutSource";
+
+            if (!TryTransformMeshToCutSpace(
+                    runtimeMesh,
+                    targetMeshFilter.transform,
+                    out failureReason))
+            {
+                DestroyRuntimeMesh(runtimeMesh);
+                return false;
+            }
+
+            sourceMesh = runtimeMesh;
+            sourceRenderer = meshRenderer;
 
             failureReason = null;
             return true;
@@ -418,6 +438,211 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             "切断対象からMeshを取得できませんでした。";
 
         return false;
+    }
+
+    /// <summary>
+    /// RendererローカルMeshをEnemyMeshCutterローカル空間へ変換する。
+    /// </summary>
+    /// <remarks>
+    /// PositionだけでなくNormal / Tangentも同じ空間へ揃える。
+    /// 負Scaleを含むTransformで座標系のHandednessが反転する場合は、
+    /// 表裏が逆転しないようTriangle windingとTangent handednessも反転する。
+    /// </remarks>
+    private bool TryTransformMeshToCutSpace(
+        Mesh mesh,
+        Transform sourceTransform,
+        out string failureReason)
+    {
+        if (mesh == null)
+        {
+            failureReason =
+                "CutSpaceへ変換するMeshがnullです。";
+
+            return false;
+        }
+
+        if (sourceTransform == null)
+        {
+            failureReason =
+                "切断対象RendererのTransformがnullです。";
+
+            return false;
+        }
+
+        Matrix4x4 cutSpaceFromSourceLocal =
+            transform.worldToLocalMatrix *
+            sourceTransform.localToWorldMatrix;
+
+        float determinant =
+            cutSpaceFromSourceLocal.determinant;
+
+        if (Mathf.Abs(determinant) <=
+            MIN_TRANSFORM_DETERMINANT)
+        {
+            failureReason =
+                "切断対象またはEnemyMeshCutterのTransformに"
+                + "0に近いScaleが含まれているため、"
+                + "安全にMesh座標を変換できません。";
+
+            return false;
+        }
+
+        Vector3[] vertices =
+            mesh.vertices;
+
+        for (int i = 0;
+             i < vertices.Length;
+             i++)
+        {
+            vertices[i] =
+                cutSpaceFromSourceLocal.MultiplyPoint3x4(
+                    vertices[i]);
+        }
+
+        mesh.vertices =
+            vertices;
+
+        Vector3[] normals =
+            mesh.normals;
+
+        bool hasNormals =
+            normals != null &&
+            normals.Length == vertices.Length;
+
+        Matrix4x4 normalMatrix =
+            cutSpaceFromSourceLocal.inverse.transpose;
+
+        if (hasNormals)
+        {
+            for (int i = 0;
+                 i < normals.Length;
+                 i++)
+            {
+                Vector3 transformedNormal =
+                    normalMatrix.MultiplyVector(
+                        normals[i]);
+
+                if (transformedNormal.sqrMagnitude >
+                    MIN_DIRECTION_SQR_MAGNITUDE)
+                {
+                    transformedNormal.Normalize();
+                }
+
+                normals[i] =
+                    transformedNormal;
+            }
+
+            mesh.normals =
+                normals;
+        }
+
+        Vector4[] tangents =
+            mesh.tangents;
+
+        bool hasTangents =
+            tangents != null &&
+            tangents.Length == vertices.Length;
+
+        bool reversesHandedness =
+            determinant < 0.0f;
+
+        if (hasTangents)
+        {
+            for (int i = 0;
+                 i < tangents.Length;
+                 i++)
+            {
+                Vector4 sourceTangent =
+                    tangents[i];
+
+                Vector3 tangentDirection =
+                    cutSpaceFromSourceLocal.MultiplyVector(
+                        new Vector3(
+                            sourceTangent.x,
+                            sourceTangent.y,
+                            sourceTangent.z));
+
+                if (hasNormals)
+                {
+                    // 非一様Scaleを含む変換後もNormalと直交するよう、
+                    // Tangentを変換済みNormalへ再直交化する。
+                    tangentDirection -=
+                        normals[i] *
+                        Vector3.Dot(
+                            normals[i],
+                            tangentDirection);
+                }
+
+                if (tangentDirection.sqrMagnitude >
+                    MIN_DIRECTION_SQR_MAGNITUDE)
+                {
+                    tangentDirection.Normalize();
+                }
+
+                tangents[i] =
+                    new Vector4(
+                        tangentDirection.x,
+                        tangentDirection.y,
+                        tangentDirection.z,
+                        reversesHandedness
+                            ? -sourceTangent.w
+                            : sourceTangent.w);
+            }
+
+            mesh.tangents =
+                tangents;
+        }
+
+        if (reversesHandedness)
+        {
+            ReverseTriangleWinding(mesh);
+        }
+
+        mesh.RecalculateBounds();
+
+        failureReason = null;
+        return true;
+    }
+
+    /// <summary>
+    /// 負Scaleによる座標系反転後も表面の向きを維持するため、
+    /// Triangle topologyのSubMeshだけ頂点順を反転する。
+    /// </summary>
+    private static void ReverseTriangleWinding(
+        Mesh mesh)
+    {
+        for (int subMeshIndex = 0;
+             subMeshIndex < mesh.subMeshCount;
+             subMeshIndex++)
+        {
+            if (mesh.GetTopology(subMeshIndex) !=
+                MeshTopology.Triangles)
+            {
+                continue;
+            }
+
+            int[] triangles =
+                mesh.GetTriangles(subMeshIndex);
+
+            for (int triangleIndex = 0;
+                 triangleIndex + 2 < triangles.Length;
+                 triangleIndex += 3)
+            {
+                int temporary =
+                    triangles[triangleIndex + 1];
+
+                triangles[triangleIndex + 1] =
+                    triangles[triangleIndex + 2];
+
+                triangles[triangleIndex + 2] =
+                    temporary;
+            }
+
+            mesh.SetTriangles(
+                triangles,
+                subMeshIndex,
+                false);
+        }
     }
 
     /// <summary>
@@ -473,37 +698,31 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     }
 
     /// <summary>
-    /// World座標で記録されたチェンソー軌跡を、
-    /// 切断対象RendererのLocal座標へ変換する。
+    /// Player側で確定したWorld空間のCut情報を、
+    /// EnemyMeshCutterのローカル切断空間へ変換する。
     /// </summary>
-    private void ConvertTrajectoryToRendererLocalSpace(
-        ChainsawAttackTrajectory trajectory,
-        Transform rendererTransform,
-        out List<Vector3> localTipPositions,
-        out List<Vector3> localRootPositions)
+    /// <remarks>
+    /// 刃中心は位置なのでInverseTransformPoint、
+    /// 刃方向と移動方向はベクトルなのでInverseTransformVectorを使用する。
+    /// Mesh自体も同じCut Spaceへ変換済みのため、Plane生成時に空間を混在させない。
+    /// </remarks>
+    private void ConvertCutKinematicsToCutSpace(
+        ChainsawCutKinematics cutKinematics,
+        out Vector3 bladeCenterLocal,
+        out Vector3 bladeDirectionLocal,
+        out Vector3 bladeMovementDirectionLocal)
     {
-        int sampleCount =
-            trajectory.SampleCount;
+        bladeCenterLocal =
+            transform.InverseTransformPoint(
+                cutKinematics.BladeCenterWorld);
 
-        localTipPositions =
-            new List<Vector3>(sampleCount);
+        bladeDirectionLocal =
+            transform.InverseTransformVector(
+                cutKinematics.BladeDirectionWorld);
 
-        localRootPositions =
-            new List<Vector3>(sampleCount);
-
-        for (int i = 0; i < sampleCount; i++)
-        {
-            ChainsawBladeTrajectorySample sample =
-                trajectory.Samples[i];
-
-            localTipPositions.Add(
-                rendererTransform.InverseTransformPoint(
-                    sample.TipPosition));
-
-            localRootPositions.Add(
-                rendererTransform.InverseTransformPoint(
-                    sample.RootPosition));
-        }
+        bladeMovementDirectionLocal =
+            transform.InverseTransformVector(
+                cutKinematics.BladeMovementDirectionWorld);
     }
 
     /// <summary>
@@ -551,8 +770,10 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         Transform pieceTransform =
             pieceObject.transform;
 
+        // Piece Meshの頂点はEnemyMeshCutterローカルへ変換済みなので、
+        // 元Renderer配下ではなくCutSpaceそのものへ配置する。
         pieceTransform.SetParent(
-            sourceRenderer.transform,
+            transform,
             false);
 
         pieceTransform.localPosition =
@@ -662,11 +883,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 #if UNITY_EDITOR
     private void OnValidate()
     {
-        cutDirectionSampleCount =
-            Mathf.Max(
-                2,
-                cutDirectionSampleCount);
-
         cutRangeMinimumNormalized =
             Mathf.Clamp01(
                 cutRangeMinimumNormalized);
@@ -708,8 +924,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         }
 
         if (!TryGetPreviewBounds(
-                out Bounds sourceBounds,
-                out Transform sourceTransform))
+                out Bounds sourceBounds))
         {
             return;
         }
@@ -730,8 +945,10 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         Color previousColor =
             Gizmos.color;
 
+        // Runtime切断と同じEnemyMeshCutterローカル空間で表示するため、
+        // モデル子階層のRotationやFBX由来の軸には依存しない。
         Gizmos.matrix =
-            sourceTransform.localToWorldMatrix;
+            transform.localToWorldMatrix;
 
         Gizmos.color =
             new Color(
@@ -763,41 +980,72 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     }
 
     /// <summary>
-    /// Sceneビューで切断位置有効範囲を表示するための
-    /// ローカルBoundsとTransformを取得する。
+    /// Sceneビューの表示もRuntime切断と同じ条件にするため、
+    /// 一時Meshを生成してEnemyMeshCutterローカルBoundsを取得する。
     /// </summary>
     private bool TryGetPreviewBounds(
-        out Bounds sourceBounds,
-        out Transform sourceTransform)
+        out Bounds sourceBounds)
     {
-        if (targetMeshFilter != null &&
-            targetMeshFilter.sharedMesh != null)
-        {
-            sourceBounds =
-                targetMeshFilter.sharedMesh.bounds;
+        sourceBounds = default;
 
-            sourceTransform =
-                targetMeshFilter.transform;
-
-            return true;
-        }
+        Mesh previewMesh = null;
 
         if (targetSkinnedMeshRenderer != null &&
             targetSkinnedMeshRenderer.sharedMesh != null)
         {
-            // SkinnedMeshRendererは実行時にBakeしたMeshを切断するため、
-            // Scene表示ではRendererローカルBoundsを設定確認用の近似として使用する。
-            sourceBounds =
-                targetSkinnedMeshRenderer.localBounds;
+            previewMesh =
+                new Mesh
+                {
+                    name =
+                        $"{targetSkinnedMeshRenderer.name}_CutPreview"
+                };
 
-            sourceTransform =
-                targetSkinnedMeshRenderer.transform;
+            // Runtimeと同じBake条件を使い、現在姿勢の頂点から
+            // Cut Range GizmoのBoundsを求める。
+            targetSkinnedMeshRenderer.BakeMesh(
+                previewMesh,
+                true);
 
-            return true;
+            if (!TryTransformMeshToCutSpace(
+                    previewMesh,
+                    targetSkinnedMeshRenderer.transform,
+                    out _))
+            {
+                DestroyRuntimeMesh(previewMesh);
+                return false;
+            }
+        }
+        else if (targetMeshFilter != null &&
+                 targetMeshFilter.sharedMesh != null &&
+                 targetMeshFilter.sharedMesh.isReadable)
+        {
+            previewMesh =
+                Instantiate(
+                    targetMeshFilter.sharedMesh);
+
+            previewMesh.name =
+                $"{targetMeshFilter.sharedMesh.name}_CutPreview";
+
+            if (!TryTransformMeshToCutSpace(
+                    previewMesh,
+                    targetMeshFilter.transform,
+                    out _))
+            {
+                DestroyRuntimeMesh(previewMesh);
+                return false;
+            }
         }
 
-        sourceBounds = default;
-        sourceTransform = null;
-        return false;
+        if (previewMesh == null)
+        {
+            return false;
+        }
+
+        sourceBounds =
+            previewMesh.bounds;
+
+        DestroyRuntimeMesh(previewMesh);
+
+        return true;
     }
 }

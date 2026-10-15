@@ -80,9 +80,6 @@ public sealed class EnemyAttackHitReceiver :
             $"Enemy: {gameObject.name}",
             this);
 
-        // State遷移より先に保存する。
-        // Damage Stateやその他の処理から
-        // 今回の命中情報を参照できるようにする。
         LastPlayerAttackHitData =
             playerAttackHitData;
 
@@ -101,17 +98,11 @@ public sealed class EnemyAttackHitReceiver :
         enemyHealth.TakeDamage(
             playerAttackData.damage);
 
-        // TakeDamageによって死亡した場合は、
-        // EnemyHealth.Died経由で死亡処理が行われるため
-        // Damage Stateには遷移しない。
         if (enemyHealth.IsDead)
         {
             return;
         }
 
-        // EnemyHealthでは0以下のダメージを無効としているため、
-        // 実際にダメージが成立しない場合は
-        // やられStateにも遷移させない。
         if (playerAttackData.damage <= 0)
         {
             return;
@@ -126,17 +117,28 @@ public sealed class EnemyAttackHitReceiver :
     }
 
     /// <summary>
-    /// 命中時点のチェンソー刃の位置から、
+    /// 命中時点のチェンソー刃中心から、
     /// Enemyの左右どちら側から攻撃されたかを求める。
     /// </summary>
     /// <remarks>
-    /// Player本体のTransformやAttackDataへ依存せず、
-    /// 既に命中情報として渡されている軌跡の最終サンプルを利用する。
-    /// X/Yゲームプレイ平面を前提とし、左右判定にはX座標だけを使う。
+    /// 新方式ではPlayerから渡されたBladeCenterWorldを使用する。
+    /// 旧Runtime Trajectoryしか渡されていない場合だけ移行互換として
+    /// ChainsawTrailの最終サンプルへフォールバックする。
+    /// 既存実装と同様、左右判定軸としてWorld X座標だけを使う。
+    /// 移動平面のもう一軸や奥行き方向はこの判定には使用しない。
     /// </remarks>
     private float ResolveHitSourceDirectionSign(
         PlayerAttackHitData playerAttackHitData)
     {
+        if (playerAttackHitData.ChainsawCutKinematics.HasValue)
+        {
+            return ResolveHorizontalDirectionSign(
+                playerAttackHitData
+                    .ChainsawCutKinematics
+                    .Value
+                    .BladeCenterWorld.x);
+        }
+
         ChainsawAttackTrajectory chainsawTrail =
             playerAttackHitData.ChainsawTrail;
 
@@ -150,12 +152,19 @@ public sealed class EnemyAttackHitReceiver :
             chainsawTrail.Samples[
                 chainsawTrail.SampleCount - 1];
 
-        float bladeCenterX =
+        float legacyBladeCenterX =
             (latestSample.TipPosition.x +
              latestSample.RootPosition.x) * 0.5f;
 
+        return ResolveHorizontalDirectionSign(
+            legacyBladeCenterX);
+    }
+
+    private float ResolveHorizontalDirectionSign(
+        float hitSourceWorldX)
+    {
         float horizontalOffset =
-            bladeCenterX - transform.position.x;
+            hitSourceWorldX - transform.position.x;
 
         if (Mathf.Abs(horizontalOffset) <=
             HIT_SIDE_EPSILON)

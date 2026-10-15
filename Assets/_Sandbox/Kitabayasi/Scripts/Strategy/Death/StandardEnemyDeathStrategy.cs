@@ -6,11 +6,13 @@ using UnityEngine;
 /// </summary>
 /// <remarks>
 /// 死亡開始時に、死亡原因となったPlayerの攻撃情報から
-/// チェンソー軌跡を取得し、EnemyMeshCutterへメッシュ分割を要求する。
+/// 通常チェンソー攻撃の切断情報を取得し、EnemyMeshCutterへメッシュ分割を要求する。
 ///
 /// Mesh分割成功後は、生成された切断片を
 /// EnemyCutPieceBurstへ渡して吹き飛ばしを開始し、
 /// EnemyCutPieceShrinkへ渡して縮小シーケンスを開始する。
+/// Mesh分割に失敗した場合は即座に死亡完了とはせず、
+/// 既存の死亡演出時間をフォールバック待機時間として使用する。
 ///
 /// 死亡開始時にはEnemy本体と子階層に存在していたColliderを無効化し、
 /// 死亡演出中にGameplay上の当たり判定が残らないようにする。
@@ -40,6 +42,8 @@ public sealed class StandardEnemyDeathStrategy :
     private Collider[] enemyColliders;
 
     private bool isDeathActive;
+    private bool hasStartedCutPieceEffects;
+    private float deathFallbackElapsedTime;
 
     public void Initialize(
         EnemyData enemyData,
@@ -126,9 +130,13 @@ public sealed class StandardEnemyDeathStrategy :
     public void BeginDeath()
     {
         isDeathActive = true;
+        hasStartedCutPieceEffects = false;
+        deathFallbackElapsedTime = 0.0f;
 
         DisableEnemyColliders();
-        TryCutDeathMesh();
+
+        hasStartedCutPieceEffects =
+            TryCutDeathMesh();
     }
 
     public bool UpdateDeath()
@@ -136,6 +144,21 @@ public sealed class StandardEnemyDeathStrategy :
         if (!isDeathActive)
         {
             return false;
+        }
+
+        if (!hasStartedCutPieceEffects)
+        {
+            deathFallbackElapsedTime +=
+                Time.deltaTime;
+
+            float fallbackDuration =
+                Mathf.Max(
+                    0.0f,
+                    enemyData.DeathShrinkDelay +
+                    enemyData.DeathShrinkDuration);
+
+            return deathFallbackElapsedTime >=
+                   fallbackDuration;
         }
 
         bool hasCompletedBurst =
@@ -153,6 +176,8 @@ public sealed class StandardEnemyDeathStrategy :
     public void EndDeath()
     {
         isDeathActive = false;
+        hasStartedCutPieceEffects = false;
+        deathFallbackElapsedTime = 0.0f;
 
         enemyCutPieceBurst?.StopBurst();
         enemyCutPieceShrink?.StopShrink();
@@ -179,16 +204,22 @@ public sealed class StandardEnemyDeathStrategy :
     }
 
     /// <summary>
-    /// 死亡原因となったPlayerの攻撃情報から
-    /// チェンソー軌跡を取得し、
+    /// 死亡原因となったPlayerの攻撃情報から通常切断用Kinematicsを取得し、
     /// メッシュ分割と切断片演出の開始を要求する。
     /// </summary>
-    private void TryCutDeathMesh()
+    /// <remarks>
+    /// Enemy側ではPlayerのAnimatorやTrajectory Profileを参照しない。
+    /// Player側で命中時に確定済みのWorld空間Cut情報だけを使用する。
+    ///
+    /// 食い込み攻撃は通常攻撃用Kinematicsを持たない前提なので、
+    /// ここでは通常2分割を実行しない。
+    /// </remarks>
+    private bool TryCutDeathMesh()
     {
         if (enemyAttackHitReceiver == null ||
             enemyMeshCutter == null)
         {
-            return;
+            return false;
         }
 
         PlayerAttackHitData lastPlayerAttackHitData =
@@ -203,41 +234,55 @@ public sealed class StandardEnemyDeathStrategy :
                 + "PlayerAttackHitDataがありません。 "
                 + "メッシュ分割は実行されません.");
 
-            return;
+            return false;
         }
 
-        ChainsawAttackTrajectory chainsawTrail =
+        ChainsawCutKinematics? nullableCutKinematics =
             lastPlayerAttackHitData
-                .ChainsawTrail;
+                .ChainsawCutKinematics;
 
-        if (chainsawTrail == null)
+        if (!nullableCutKinematics.HasValue)
         {
             Debug.LogWarning(
                 $"{nameof(StandardEnemyDeathStrategy)}: "
                 + "死亡原因となった攻撃に"
-                + "ChainsawTrailがありません。 "
+                + "ChainsawCutKinematicsがありません。 "
+                + "通常の2分割MeshCutは実行されません.");
+
+            return false;
+        }
+
+        ChainsawCutKinematics cutKinematics =
+            nullableCutKinematics.Value;
+
+        if (!cutKinematics.HasValidDirections)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: "
+                + "ChainsawCutKinematicsに有効な"
+                + "刃方向または移動方向がありません。 "
                 + "メッシュ分割は実行されません.");
 
-            return;
+            return false;
         }
 
         bool cutSucceeded =
             enemyMeshCutter.TryCut(
-                chainsawTrail);
+                cutKinematics);
 
         if (!cutSucceeded)
         {
-            return;
+            return false;
         }
 
-        TryBeginCutPieceEffects();
+        return TryBeginCutPieceEffects();
     }
 
     /// <summary>
     /// Mesh分割によって生成された2つの切断片を取得し、
     /// 吹き飛ばしと縮小の開始を要求する。
     /// </summary>
-    private void TryBeginCutPieceEffects()
+    private bool TryBeginCutPieceEffects()
     {
         bool hasCutPieces =
             enemyMeshCutter
@@ -252,7 +297,7 @@ public sealed class StandardEnemyDeathStrategy :
                 + "Mesh分割には成功しましたが、"
                 + "生成された切断片を取得できませんでした.");
 
-            return;
+            return false;
         }
 
         enemyCutPieceBurst?.BeginBurst(
@@ -264,5 +309,8 @@ public sealed class StandardEnemyDeathStrategy :
             secondPiece,
             enemyData.DeathShrinkDelay,
             enemyData.DeathShrinkDuration);
+
+        return enemyCutPieceBurst != null ||
+               enemyCutPieceShrink != null;
     }
 }

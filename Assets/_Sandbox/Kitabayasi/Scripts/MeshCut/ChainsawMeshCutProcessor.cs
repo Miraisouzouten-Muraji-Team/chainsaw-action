@@ -3,11 +3,13 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 /// <summary>
-/// チェンソー軌跡から切断Planeを求め、Bake済みMeshを2つへ分割する。
+/// 命中時に確定済みの刃中心・刃方向・移動方向から切断Planeを求め、
+/// Bake済みMeshを2つへ分割する。
 /// </summary>
 /// <remarks>
 /// GameObject生成、Renderer操作、HP、死亡判定、攻撃受信は担当しない。
-/// 入力するTip / Root位置は、切断対象Meshと同じローカル空間へ変換済みであること。
+/// 入力する刃中心・刃方向・移動方向は、切断対象Meshと同じCut Spaceへ
+/// 変換済みであること。
 /// </remarks>
 public sealed class ChainsawMeshCutProcessor
 {
@@ -16,13 +18,13 @@ public sealed class ChainsawMeshCutProcessor
     private const float MIN_DIRECTION_SQR_MAGNITUDE = 0.00000001f;
 
     /// <summary>
-    /// Bake済みMeshをチェンソー軌跡由来のPlaneで2つへ分割する。
+    /// Bake済みMeshを、命中時に確定済みの刃情報から生成したPlaneで2つへ分割する。
     /// </summary>
     public bool TryCut(
         Mesh sourceMesh,
-        IReadOnlyList<Vector3> localTipPositions,
-        IReadOnlyList<Vector3> localRootPositions,
-        int cutDirectionSampleCount,
+        Vector3 bladeCenterLocal,
+        Vector3 bladeDirectionLocal,
+        Vector3 bladeMovementDirectionLocal,
         MeshCutRangeAxis cutRangeAxis,
         float cutRangeMinimumNormalized,
         float cutRangeMaximumNormalized,
@@ -37,9 +39,9 @@ public sealed class ChainsawMeshCutProcessor
 
         if (!ValidateInputs(
                 sourceMesh,
-                localTipPositions,
-                localRootPositions,
-                cutDirectionSampleCount,
+                bladeCenterLocal,
+                bladeDirectionLocal,
+                bladeMovementDirectionLocal,
                 cutRangeMinimumNormalized,
                 cutRangeMaximumNormalized,
                 cutSurfaceUvScale,
@@ -48,13 +50,15 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
-        float geometryEpsilon = CalculateGeometryEpsilon(sourceMesh.bounds);
+        float geometryEpsilon =
+            CalculateGeometryEpsilon(
+                sourceMesh.bounds);
 
         if (!TryCreateCutPlane(
                 sourceMesh.bounds,
-                localTipPositions,
-                localRootPositions,
-                cutDirectionSampleCount,
+                bladeCenterLocal,
+                bladeDirectionLocal,
+                bladeMovementDirectionLocal,
                 cutRangeAxis,
                 cutRangeMinimumNormalized,
                 cutRangeMaximumNormalized,
@@ -82,9 +86,9 @@ public sealed class ChainsawMeshCutProcessor
 
     private static bool ValidateInputs(
         Mesh sourceMesh,
-        IReadOnlyList<Vector3> localTipPositions,
-        IReadOnlyList<Vector3> localRootPositions,
-        int cutDirectionSampleCount,
+        Vector3 bladeCenterLocal,
+        Vector3 bladeDirectionLocal,
+        Vector3 bladeMovementDirectionLocal,
         float cutRangeMinimumNormalized,
         float cutRangeMaximumNormalized,
         float cutSurfaceUvScale,
@@ -108,27 +112,28 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
-        if (localTipPositions == null || localRootPositions == null)
+        if (!IsFinite(bladeCenterLocal) ||
+            !IsFinite(bladeDirectionLocal) ||
+            !IsFinite(bladeMovementDirectionLocal))
         {
-            failureReason = "ローカル変換済みのTip / Root軌跡がnullです。";
+            failureReason =
+                "切断情報にNaNまたはInfinityが含まれています。";
             return false;
         }
 
-        if (localTipPositions.Count != localRootPositions.Count)
+        if (bladeDirectionLocal.sqrMagnitude <=
+            MIN_DIRECTION_SQR_MAGNITUDE)
         {
-            failureReason = "TipとRootの軌跡サンプル数が一致していません。";
+            failureReason =
+                "有効な刃方向を取得できませんでした。";
             return false;
         }
 
-        if (localTipPositions.Count < 2)
+        if (bladeMovementDirectionLocal.sqrMagnitude <=
+            MIN_DIRECTION_SQR_MAGNITUDE)
         {
-            failureReason = "切断Plane算出には2サンプル以上の軌跡が必要です。";
-            return false;
-        }
-
-        if (cutDirectionSampleCount < 2)
-        {
-            failureReason = "cutDirectionSampleCountは2以上である必要があります。";
+            failureReason =
+                "有効なチェンソー移動方向を取得できませんでした。";
             return false;
         }
 
@@ -152,7 +157,8 @@ public sealed class ChainsawMeshCutProcessor
 
         if (cutSurfaceUvScale <= 0.0f)
         {
-            failureReason = "cutSurfaceUvScaleは0より大きい値である必要があります。";
+            failureReason =
+                "cutSurfaceUvScaleは0より大きい値である必要があります。";
             return false;
         }
 
@@ -160,18 +166,35 @@ public sealed class ChainsawMeshCutProcessor
         return true;
     }
 
-    private static float CalculateGeometryEpsilon(Bounds bounds)
+    private static bool IsFinite(
+        Vector3 value)
+    {
+        return IsFinite(value.x) &&
+               IsFinite(value.y) &&
+               IsFinite(value.z);
+    }
+
+    private static bool IsFinite(
+        float value)
+    {
+        return !float.IsNaN(value) &&
+               !float.IsInfinity(value);
+    }
+
+    private static float CalculateGeometryEpsilon(
+        Bounds bounds)
     {
         return Mathf.Max(
-            bounds.size.magnitude * GEOMETRY_EPSILON_RATIO,
+            bounds.size.magnitude *
+            GEOMETRY_EPSILON_RATIO,
             MIN_GEOMETRY_EPSILON);
     }
 
     private bool TryCreateCutPlane(
         Bounds sourceBounds,
-        IReadOnlyList<Vector3> localTipPositions,
-        IReadOnlyList<Vector3> localRootPositions,
-        int cutDirectionSampleCount,
+        Vector3 bladeCenterLocal,
+        Vector3 bladeDirectionLocal,
+        Vector3 bladeMovementDirectionLocal,
         MeshCutRangeAxis cutRangeAxis,
         float cutRangeMinimumNormalized,
         float cutRangeMaximumNormalized,
@@ -179,83 +202,26 @@ public sealed class ChainsawMeshCutProcessor
         out Plane correctedCutPlane,
         out string failureReason)
     {
-        int sampleCount = localTipPositions.Count;
-        int usedSampleCount = Mathf.Min(sampleCount, cutDirectionSampleCount);
-        int startIndex = sampleCount - usedSampleCount;
+        Vector3 planeNormal =
+            Vector3.Cross(
+                bladeDirectionLocal.normalized,
+                bladeMovementDirectionLocal.normalized);
 
-        Vector3 bladeDirectionSum = Vector3.zero;
-        int validBladeDirectionCount = 0;
-
-        for (int i = startIndex; i < sampleCount; i++)
-        {
-            Vector3 bladeVector =
-                localTipPositions[i] - localRootPositions[i];
-
-            if (bladeVector.sqrMagnitude <= MIN_DIRECTION_SQR_MAGNITUDE)
-            {
-                continue;
-            }
-
-            bladeDirectionSum += bladeVector.normalized;
-            validBladeDirectionCount++;
-        }
-
-        if (validBladeDirectionCount == 0 ||
-            bladeDirectionSum.sqrMagnitude <= MIN_DIRECTION_SQR_MAGNITUDE)
-        {
-            correctedCutPlane = default;
-            failureReason = "有効な代表刃方向を算出できませんでした。";
-            return false;
-        }
-
-        Vector3 representativeBladeDirection =
-            bladeDirectionSum.normalized;
-
-        Vector3 movementSum = Vector3.zero;
-
-        Vector3 previousCenter = GetBladeCenter(
-            localTipPositions[startIndex],
-            localRootPositions[startIndex]);
-
-        for (int i = startIndex + 1; i < sampleCount; i++)
-        {
-            Vector3 currentCenter = GetBladeCenter(
-                localTipPositions[i],
-                localRootPositions[i]);
-
-            movementSum += currentCenter - previousCenter;
-            previousCenter = currentCenter;
-        }
-
-        if (movementSum.sqrMagnitude <= geometryEpsilon * geometryEpsilon)
-        {
-            correctedCutPlane = default;
-            failureReason = "命中直前の軌跡から有効なチェンソー移動方向を算出できませんでした。";
-            return false;
-        }
-
-        Vector3 representativeMovementDirection = movementSum.normalized;
-        Vector3 planeNormal = Vector3.Cross(
-            representativeBladeDirection,
-            representativeMovementDirection);
-
-        if (planeNormal.sqrMagnitude <= MIN_DIRECTION_SQR_MAGNITUDE)
+        if (planeNormal.sqrMagnitude <=
+            MIN_DIRECTION_SQR_MAGNITUDE)
         {
             correctedCutPlane = default;
             failureReason =
-                "刃方向と移動方向がほぼ平行なため、有効な切断Planeを算出できませんでした。";
+                "刃方向と移動方向がほぼ平行なため、"
+                + "有効な切断Planeを算出できませんでした。";
             return false;
         }
 
         planeNormal.Normalize();
 
-        Vector3 originalPlanePoint = GetBladeCenter(
-            localTipPositions[sampleCount - 1],
-            localRootPositions[sampleCount - 1]);
-
         if (!TryCreateCutPlanePoint(
                 sourceBounds,
-                originalPlanePoint,
+                bladeCenterLocal,
                 cutRangeAxis,
                 cutRangeMinimumNormalized,
                 cutRangeMaximumNormalized,
@@ -267,19 +233,13 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
-        correctedCutPlane = new Plane(
-            planeNormal,
-            correctedPlanePoint);
+        correctedCutPlane =
+            new Plane(
+                planeNormal,
+                correctedPlanePoint);
 
         failureReason = null;
         return true;
-    }
-
-    private static Vector3 GetBladeCenter(
-        Vector3 tipPosition,
-        Vector3 rootPosition)
-    {
-        return (tipPosition + rootPosition) * 0.5f;
     }
 
     private static bool TryCreateCutPlanePoint(
@@ -646,6 +606,7 @@ public sealed class ChainsawMeshCutProcessor
                 if (!TryGetCutSegment(
                         triangle,
                         distances,
+                        cutPlane.normal,
                         geometryEpsilon,
                         out CutSegment cutSegment))
                 {
@@ -890,6 +851,7 @@ public sealed class ChainsawMeshCutProcessor
     private static bool TryGetCutSegment(
         IReadOnlyList<VertexData> triangle,
         IReadOnlyList<float> distances,
+        Vector3 cutPlaneNormal,
         float geometryEpsilon,
         out CutSegment cutSegment)
     {
@@ -960,9 +922,11 @@ public sealed class ChainsawMeshCutProcessor
             }
 
             cutSegment =
-                new CutSegment(
+                CreateOrientedCutSegment(
                     points[0],
-                    points[1]);
+                    points[1],
+                    triangle,
+                    cutPlaneNormal);
 
             return true;
         }
@@ -1013,11 +977,61 @@ public sealed class ChainsawMeshCutProcessor
         }
 
         cutSegment =
-            new CutSegment(
+            CreateOrientedCutSegment(
                 firstPoint,
-                secondPoint);
+                secondPoint,
+                triangle,
+                cutPlaneNormal);
 
         return true;
+    }
+
+    /// <summary>
+    /// 元Triangleのwindingを利用して切断線分の向きを揃える。
+    /// </summary>
+    /// <remarks>
+    /// 切断境界を無向グラフとして追跡するとループ方向が失われ、
+    /// 入れ子ループが「別shell」なのか「穴」なのかを判定できない。
+    /// Plane法線とTriangle法線から得られる交線方向へ線分を揃えることで、
+    /// 外周と穴のwinding差を後段まで保持する。
+    /// </remarks>
+    private static CutSegment CreateOrientedCutSegment(
+        Vector3 firstPoint,
+        Vector3 secondPoint,
+        IReadOnlyList<VertexData> triangle,
+        Vector3 cutPlaneNormal)
+    {
+        Vector3 triangleNormal =
+            Vector3.Cross(
+                triangle[1].Position -
+                triangle[0].Position,
+                triangle[2].Position -
+                triangle[0].Position);
+
+        Vector3 expectedDirection =
+            Vector3.Cross(
+                cutPlaneNormal,
+                triangleNormal);
+
+        if (expectedDirection.sqrMagnitude >
+                MIN_DIRECTION_SQR_MAGNITUDE &&
+            Vector3.Dot(
+                secondPoint - firstPoint,
+                expectedDirection) < 0.0f)
+        {
+            Vector3 temporary =
+                firstPoint;
+
+            firstPoint =
+                secondPoint;
+
+            secondPoint =
+                temporary;
+        }
+
+        return new CutSegment(
+            firstPoint,
+            secondPoint);
     }
 
     private static void AddDistinctPoint(
@@ -1062,6 +1076,12 @@ public sealed class ChainsawMeshCutProcessor
         var uniqueEdges =
             new HashSet<long>();
 
+        // 無向Edgeでループを構築しつつ、
+        // 元Triangle winding由来の線分方向を別途保持する。
+        // 追跡開始方向が逆でも、完了後に本来のwindingへ戻せる。
+        var directedEdgeByUndirectedEdge =
+            new Dictionary<long, long>();
+
         for (int i = 0;
              i < cutSegments.Count;
              i++)
@@ -1093,6 +1113,11 @@ public sealed class ChainsawMeshCutProcessor
             {
                 continue;
             }
+
+            directedEdgeByUndirectedEdge[edgeKey] =
+                CreateDirectedEdgeKey(
+                    firstNodeIndex,
+                    secondNodeIndex);
 
             nodes[firstNodeIndex]
                 .Neighbors
@@ -1157,6 +1182,7 @@ public sealed class ChainsawMeshCutProcessor
 
                 if (!TryTraceBoundaryLoop(
                         nodes,
+                        directedEdgeByUndirectedEdge,
                         nodeIndex,
                         neighbor,
                         visitedEdges,
@@ -1223,6 +1249,8 @@ public sealed class ChainsawMeshCutProcessor
 
     private static bool TryTraceBoundaryLoop(
         IReadOnlyList<BoundaryNode> nodes,
+        IReadOnlyDictionary<long, long>
+            directedEdgeByUndirectedEdge,
         int startNode,
         int firstNextNode,
         HashSet<long> visitedEdges,
@@ -1234,6 +1262,7 @@ public sealed class ChainsawMeshCutProcessor
         int previousNode = -1;
         int currentNode = startNode;
         int nextNode = firstNextNode;
+        int orientationBalance = 0;
         int guard = 0;
         int maximumSteps = nodes.Count + 1;
 
@@ -1242,10 +1271,26 @@ public sealed class ChainsawMeshCutProcessor
             loop.Add(
                 nodes[currentNode].Position);
 
-            visitedEdges.Add(
+            long edgeKey =
                 CreateEdgeKey(
                     currentNode,
-                    nextNode));
+                    nextNode);
+
+            visitedEdges.Add(
+                edgeKey);
+
+            if (directedEdgeByUndirectedEdge.TryGetValue(
+                    edgeKey,
+                    out long directedEdge))
+            {
+                orientationBalance +=
+                    directedEdge ==
+                    CreateDirectedEdgeKey(
+                        currentNode,
+                        nextNode)
+                        ? 1
+                        : -1;
+            }
 
             previousNode =
                 currentNode;
@@ -1255,6 +1300,13 @@ public sealed class ChainsawMeshCutProcessor
 
             if (currentNode == startNode)
             {
+                // 無向グラフのどちら向きから追跡を開始しても、
+                // 元Triangle windingから得た向きへ最終ループを揃える。
+                if (orientationBalance < 0)
+                {
+                    loop.Reverse();
+                }
+
                 return true;
             }
 
@@ -1306,6 +1358,14 @@ public sealed class ChainsawMeshCutProcessor
                (uint)maximum;
     }
 
+    private static long CreateDirectedEdgeKey(
+        int firstNode,
+        int secondNode)
+    {
+        return ((long)(uint)firstNode << 32) |
+               (uint)secondNode;
+    }
+
     private static bool TryAddCutSurfaceCaps(
         IReadOnlyList<List<Vector3>> boundaryLoops,
         Plane cutPlane,
@@ -1337,7 +1397,7 @@ public sealed class ChainsawMeshCutProcessor
                     out PreparedBoundaryLoop preparedLoop))
             {
                 failureReason =
-                    "切断境界を断面三角形分割用の単純Polygonへ変換できませんでした。";
+                    "切断境界を断面三角形分割用のPolygonへ変換できませんでした。";
 
                 return false;
             }
@@ -1346,27 +1406,192 @@ public sealed class ChainsawMeshCutProcessor
                 preparedLoop);
         }
 
-        if (ContainsNestedLoops(
-                preparedLoops))
+        if (!TryAddPreparedLoopCaps(
+                preparedLoops,
+                cutPlane,
+                cutSurfaceUvScale,
+                geometryEpsilon,
+                cutSurfaceSubMeshIndex,
+                planeAxisU,
+                planeAxisV,
+                firstBuilder,
+                secondBuilder,
+                out failureReason))
+        {
+            return false;
+        }
+
+        failureReason = null;
+        return true;
+    }
+
+    /// <summary>
+    /// windingを保持した切断境界から、別shellと穴を区別して断面を生成する。
+    /// </summary>
+    /// <remarks>
+    /// 同じwindingを持つ入れ子ループはBodyと衣服などの別shellとして
+    /// それぞれ独立した断面にする。
+    /// 反対windingのループが外周内に存在する場合だけ穴として扱い、
+    /// 外周へブリッジした弱単純Polygonへ変換してEar Clippingする。
+    /// </remarks>
+    private static bool TryAddPreparedLoopCaps(
+        IReadOnlyList<PreparedBoundaryLoop> loops,
+        Plane cutPlane,
+        float cutSurfaceUvScale,
+        float geometryEpsilon,
+        int cutSurfaceSubMeshIndex,
+        Vector3 planeAxisU,
+        Vector3 planeAxisV,
+        PieceMeshBuilder firstBuilder,
+        PieceMeshBuilder secondBuilder,
+        out string failureReason)
+    {
+        if (loops == null ||
+            loops.Count == 0)
         {
             failureReason =
-                "polygon-with-holesとなる切断境界は初版では対応しません。";
+                "切断断面として処理できる境界ループがありません。";
 
             return false;
         }
 
-        float earEpsilon =
-            geometryEpsilon * geometryEpsilon;
+        int referenceLoopIndex =
+            FindLargestAbsoluteAreaLoopIndex(
+                loops);
+
+        if (referenceLoopIndex < 0)
+        {
+            failureReason =
+                "切断境界ループのwinding基準を決定できませんでした。";
+
+            return false;
+        }
+
+        float solidWindingSign =
+            Mathf.Sign(
+                loops[referenceLoopIndex]
+                    .SignedArea);
+
+        if (Mathf.Approximately(
+                solidWindingSign,
+                0.0f))
+        {
+            failureReason =
+                "切断境界ループの面積が小さすぎます。";
+
+            return false;
+        }
+
+        var solidLoopIndices =
+            new List<int>();
+
+        var oppositeLoopIndices =
+            new List<int>();
 
         for (int loopIndex = 0;
-             loopIndex < preparedLoops.Count;
+             loopIndex < loops.Count;
              loopIndex++)
         {
-            PreparedBoundaryLoop loop =
-                preparedLoops[loopIndex];
+            if (Mathf.Sign(
+                    loops[loopIndex]
+                        .SignedArea) ==
+                solidWindingSign)
+            {
+                solidLoopIndices.Add(
+                    loopIndex);
+            }
+            else
+            {
+                oppositeLoopIndices.Add(
+                    loopIndex);
+            }
+        }
+
+        var holeIndicesBySolidLoop =
+            new Dictionary<int, List<int>>();
+
+        var standaloneLoopIndices =
+            new List<int>(
+                solidLoopIndices);
+
+        for (int oppositeListIndex = 0;
+             oppositeListIndex <
+             oppositeLoopIndices.Count;
+             oppositeListIndex++)
+        {
+            int holeCandidateIndex =
+                oppositeLoopIndices[
+                    oppositeListIndex];
+
+            int ownerLoopIndex =
+                FindSmallestContainingSolidLoop(
+                    loops,
+                    solidLoopIndices,
+                    holeCandidateIndex);
+
+            if (ownerLoopIndex < 0)
+            {
+                // 反対windingでも他ループに包含されていない場合は、
+                // windingが反転した独立shellである可能性が高い。
+                // 穴として捨てず、独立断面として三角形分割する。
+                standaloneLoopIndices.Add(
+                    holeCandidateIndex);
+
+                continue;
+            }
+
+            if (!holeIndicesBySolidLoop.TryGetValue(
+                    ownerLoopIndex,
+                    out List<int> holeIndices))
+            {
+                holeIndices =
+                    new List<int>();
+
+                holeIndicesBySolidLoop.Add(
+                    ownerLoopIndex,
+                    holeIndices);
+            }
+
+            holeIndices.Add(
+                holeCandidateIndex);
+        }
+
+        float earEpsilon =
+            geometryEpsilon *
+            geometryEpsilon;
+
+        for (int standaloneIndex = 0;
+             standaloneIndex <
+             standaloneLoopIndices.Count;
+             standaloneIndex++)
+        {
+            int outerLoopIndex =
+                standaloneLoopIndices[
+                    standaloneIndex];
+
+            IReadOnlyList<int> holeIndices =
+                holeIndicesBySolidLoop.TryGetValue(
+                    outerLoopIndex,
+                    out List<int> assignedHoles)
+                    ? assignedHoles
+                    : null;
+
+            if (!TryCreateTriangulationPolygon(
+                    loops,
+                    outerLoopIndex,
+                    holeIndices,
+                    geometryEpsilon,
+                    out List<Vector3> polygonPositions,
+                    out List<Vector2> polygonPoints))
+            {
+                failureReason =
+                    "穴を含む切断境界を三角形分割用Polygonへ変換できませんでした。";
+
+                return false;
+            }
 
             if (!TryTriangulateEarClipping(
-                    loop.ProjectedPoints,
+                    polygonPoints,
                     earEpsilon,
                     out List<int> triangleIndices))
             {
@@ -1377,20 +1602,24 @@ public sealed class ChainsawMeshCutProcessor
             }
 
             for (int triangleIndex = 0;
-                 triangleIndex < triangleIndices.Count;
+                 triangleIndex <
+                 triangleIndices.Count;
                  triangleIndex += 3)
             {
                 Vector3 pointA =
-                    loop.Positions[
-                        triangleIndices[triangleIndex]];
+                    polygonPositions[
+                        triangleIndices[
+                            triangleIndex]];
 
                 Vector3 pointB =
-                    loop.Positions[
-                        triangleIndices[triangleIndex + 1]];
+                    polygonPositions[
+                        triangleIndices[
+                            triangleIndex + 1]];
 
                 Vector3 pointC =
-                    loop.Positions[
-                        triangleIndices[triangleIndex + 2]];
+                    polygonPositions[
+                        triangleIndices[
+                            triangleIndex + 2]];
 
                 AddCapTriangle(
                     firstBuilder,
@@ -1418,6 +1647,519 @@ public sealed class ChainsawMeshCutProcessor
 
         failureReason = null;
         return true;
+    }
+
+    private static int FindLargestAbsoluteAreaLoopIndex(
+        IReadOnlyList<PreparedBoundaryLoop> loops)
+    {
+        int largestLoopIndex = -1;
+        float largestArea = 0.0f;
+
+        for (int i = 0;
+             i < loops.Count;
+             i++)
+        {
+            float area =
+                Mathf.Abs(
+                    loops[i].SignedArea);
+
+            if (area <= largestArea)
+            {
+                continue;
+            }
+
+            largestArea =
+                area;
+
+            largestLoopIndex =
+                i;
+        }
+
+        return largestLoopIndex;
+    }
+
+    private static int FindSmallestContainingSolidLoop(
+        IReadOnlyList<PreparedBoundaryLoop> loops,
+        IReadOnlyList<int> solidLoopIndices,
+        int holeCandidateIndex)
+    {
+        Vector2 testPoint =
+            loops[holeCandidateIndex]
+                .ProjectedPoints[0];
+
+        int ownerLoopIndex = -1;
+        float ownerArea =
+            float.PositiveInfinity;
+
+        for (int i = 0;
+             i < solidLoopIndices.Count;
+             i++)
+        {
+            int solidLoopIndex =
+                solidLoopIndices[i];
+
+            PreparedBoundaryLoop solidLoop =
+                loops[solidLoopIndex];
+
+            if (!IsPointInsidePolygon(
+                    testPoint,
+                    solidLoop.ProjectedPoints))
+            {
+                continue;
+            }
+
+            float solidArea =
+                Mathf.Abs(
+                    solidLoop.SignedArea);
+
+            if (solidArea >= ownerArea)
+            {
+                continue;
+            }
+
+            ownerArea =
+                solidArea;
+
+            ownerLoopIndex =
+                solidLoopIndex;
+        }
+
+        return ownerLoopIndex;
+    }
+
+    private static bool TryCreateTriangulationPolygon(
+        IReadOnlyList<PreparedBoundaryLoop> loops,
+        int outerLoopIndex,
+        IReadOnlyList<int> holeIndices,
+        float geometryEpsilon,
+        out List<Vector3> polygonPositions,
+        out List<Vector2> polygonPoints)
+    {
+        PreparedBoundaryLoop outerLoop =
+            loops[outerLoopIndex];
+
+        polygonPositions =
+            new List<Vector3>(
+                outerLoop.Positions);
+
+        polygonPoints =
+            new List<Vector2>(
+                outerLoop.ProjectedPoints);
+
+        // Ear Clipping側は反時計回り外周を前提にする。
+        if (CalculateSignedArea(
+                polygonPoints) < 0.0f)
+        {
+            polygonPositions.Reverse();
+            polygonPoints.Reverse();
+        }
+
+        if (holeIndices == null ||
+            holeIndices.Count == 0)
+        {
+            return true;
+        }
+
+        var sortedHoleIndices =
+            new List<int>(
+                holeIndices);
+
+        SortHoleIndicesByRightmostPointDescending(
+            loops,
+            sortedHoleIndices);
+
+        for (int holeListIndex = 0;
+             holeListIndex <
+             sortedHoleIndices.Count;
+             holeListIndex++)
+        {
+            PreparedBoundaryLoop holeLoop =
+                loops[
+                    sortedHoleIndices[
+                        holeListIndex]];
+
+            var holePositions =
+                new List<Vector3>(
+                    holeLoop.Positions);
+
+            var holePoints =
+                new List<Vector2>(
+                    holeLoop.ProjectedPoints);
+
+            // 穴は外周と逆向きに辿る必要がある。
+            if (CalculateSignedArea(
+                    holePoints) > 0.0f)
+            {
+                holePositions.Reverse();
+                holePoints.Reverse();
+            }
+
+            if (!TryBridgeHoleIntoPolygon(
+                    polygonPositions,
+                    polygonPoints,
+                    holePositions,
+                    holePoints,
+                    geometryEpsilon))
+            {
+                polygonPositions = null;
+                polygonPoints = null;
+
+                return false;
+            }
+        }
+
+        return polygonPositions.Count >= 3 &&
+               polygonPoints.Count ==
+               polygonPositions.Count;
+    }
+
+    private static void SortHoleIndicesByRightmostPointDescending(
+        IReadOnlyList<PreparedBoundaryLoop> loops,
+        List<int> holeIndices)
+    {
+        for (int i = 1;
+             i < holeIndices.Count;
+             i++)
+        {
+            int value =
+                holeIndices[i];
+
+            float valueRightmostX =
+                GetRightmostPointX(
+                    loops[value]
+                        .ProjectedPoints);
+
+            int insertionIndex =
+                i - 1;
+
+            while (insertionIndex >= 0)
+            {
+                float comparedRightmostX =
+                    GetRightmostPointX(
+                        loops[
+                            holeIndices[
+                                insertionIndex]]
+                            .ProjectedPoints);
+
+                if (comparedRightmostX >=
+                    valueRightmostX)
+                {
+                    break;
+                }
+
+                holeIndices[
+                    insertionIndex + 1] =
+                    holeIndices[
+                        insertionIndex];
+
+                insertionIndex--;
+            }
+
+            holeIndices[
+                insertionIndex + 1] =
+                value;
+        }
+    }
+
+    private static float GetRightmostPointX(
+        IReadOnlyList<Vector2> points)
+    {
+        float rightmostX =
+            float.NegativeInfinity;
+
+        for (int i = 0;
+             i < points.Count;
+             i++)
+        {
+            rightmostX =
+                Mathf.Max(
+                    rightmostX,
+                    points[i].x);
+        }
+
+        return rightmostX;
+    }
+
+    /// <summary>
+    /// 穴の右端から外周方向へブリッジを作り、
+    /// 穴付きPolygonをEar Clipping可能な弱単純Polygonへ変換する。
+    /// </summary>
+    private static bool TryBridgeHoleIntoPolygon(
+        List<Vector3> polygonPositions,
+        List<Vector2> polygonPoints,
+        IReadOnlyList<Vector3> holePositions,
+        IReadOnlyList<Vector2> holePoints,
+        float geometryEpsilon)
+    {
+        if (polygonPositions == null ||
+            polygonPoints == null ||
+            holePositions == null ||
+            holePoints == null ||
+            polygonPositions.Count < 3 ||
+            holePositions.Count < 3 ||
+            polygonPositions.Count !=
+                polygonPoints.Count ||
+            holePositions.Count !=
+                holePoints.Count)
+        {
+            return false;
+        }
+
+        int holeBridgeIndex =
+            FindRightmostPointIndex(
+                holePoints);
+
+        Vector2 holeBridgePoint =
+            holePoints[
+                holeBridgeIndex];
+
+        float closestIntersectionX =
+            float.PositiveInfinity;
+
+        int bridgeEdgeStartIndex = -1;
+        int bridgeEdgeEndIndex = -1;
+        float bridgeEdgeInterpolation =
+            0.0f;
+
+        for (int edgeStartIndex = 0;
+             edgeStartIndex <
+             polygonPoints.Count;
+             edgeStartIndex++)
+        {
+            int edgeEndIndex =
+                (edgeStartIndex + 1) %
+                polygonPoints.Count;
+
+            Vector2 edgeStart =
+                polygonPoints[
+                    edgeStartIndex];
+
+            Vector2 edgeEnd =
+                polygonPoints[
+                    edgeEndIndex];
+
+            if ((edgeStart.y >
+                 holeBridgePoint.y) ==
+                (edgeEnd.y >
+                 holeBridgePoint.y))
+            {
+                continue;
+            }
+
+            float edgeDeltaY =
+                edgeEnd.y -
+                edgeStart.y;
+
+            if (Mathf.Abs(
+                    edgeDeltaY) <=
+                geometryEpsilon)
+            {
+                continue;
+            }
+
+            float interpolation =
+                (holeBridgePoint.y -
+                 edgeStart.y) /
+                edgeDeltaY;
+
+            float intersectionX =
+                Mathf.Lerp(
+                    edgeStart.x,
+                    edgeEnd.x,
+                    interpolation);
+
+            if (intersectionX <=
+                    holeBridgePoint.x +
+                    geometryEpsilon ||
+                intersectionX >=
+                    closestIntersectionX)
+            {
+                continue;
+            }
+
+            closestIntersectionX =
+                intersectionX;
+
+            bridgeEdgeStartIndex =
+                edgeStartIndex;
+
+            bridgeEdgeEndIndex =
+                edgeEndIndex;
+
+            bridgeEdgeInterpolation =
+                interpolation;
+        }
+
+        if (bridgeEdgeStartIndex < 0 ||
+            bridgeEdgeEndIndex < 0)
+        {
+            return false;
+        }
+
+        Vector2 bridgePoint2D =
+            new Vector2(
+                closestIntersectionX,
+                holeBridgePoint.y);
+
+        Vector3 bridgePoint3D =
+            Vector3.Lerp(
+                polygonPositions[
+                    bridgeEdgeStartIndex],
+                polygonPositions[
+                    bridgeEdgeEndIndex],
+                bridgeEdgeInterpolation);
+
+        int polygonBridgeIndex;
+
+        float sqrEpsilon =
+            geometryEpsilon *
+            geometryEpsilon;
+
+        if ((polygonPoints[
+                bridgeEdgeStartIndex] -
+             bridgePoint2D).sqrMagnitude <=
+            sqrEpsilon)
+        {
+            polygonBridgeIndex =
+                bridgeEdgeStartIndex;
+        }
+        else if ((polygonPoints[
+                     bridgeEdgeEndIndex] -
+                  bridgePoint2D).sqrMagnitude <=
+                 sqrEpsilon)
+        {
+            polygonBridgeIndex =
+                bridgeEdgeEndIndex;
+        }
+        else
+        {
+            int insertionIndex =
+                bridgeEdgeEndIndex == 0
+                    ? polygonPoints.Count
+                    : bridgeEdgeEndIndex;
+
+            polygonPositions.Insert(
+                insertionIndex,
+                bridgePoint3D);
+
+            polygonPoints.Insert(
+                insertionIndex,
+                bridgePoint2D);
+
+            polygonBridgeIndex =
+                insertionIndex;
+        }
+
+        var mergedPositions =
+            new List<Vector3>(
+                polygonPositions.Count +
+                holePositions.Count +
+                2);
+
+        var mergedPoints =
+            new List<Vector2>(
+                polygonPoints.Count +
+                holePoints.Count +
+                2);
+
+        for (int i = 0;
+             i <= polygonBridgeIndex;
+             i++)
+        {
+            mergedPositions.Add(
+                polygonPositions[i]);
+
+            mergedPoints.Add(
+                polygonPoints[i]);
+        }
+
+        for (int holeOffset = 0;
+             holeOffset <
+             holePositions.Count;
+             holeOffset++)
+        {
+            int sourceHoleIndex =
+                (holeBridgeIndex +
+                 holeOffset) %
+                holePositions.Count;
+
+            mergedPositions.Add(
+                holePositions[
+                    sourceHoleIndex]);
+
+            mergedPoints.Add(
+                holePoints[
+                    sourceHoleIndex]);
+        }
+
+        // ブリッジは穴側と外周側の頂点をそれぞれ2回通る。
+        // Ear Clipping時に非連続の同一点を許容することで、
+        // 穴を塗り潰さず1本の弱単純Polygonとして扱える。
+        mergedPositions.Add(
+            holePositions[
+                holeBridgeIndex]);
+
+        mergedPoints.Add(
+            holePoints[
+                holeBridgeIndex]);
+
+        mergedPositions.Add(
+            polygonPositions[
+                polygonBridgeIndex]);
+
+        mergedPoints.Add(
+            polygonPoints[
+                polygonBridgeIndex]);
+
+        for (int i = polygonBridgeIndex + 1;
+             i < polygonPositions.Count;
+             i++)
+        {
+            mergedPositions.Add(
+                polygonPositions[i]);
+
+            mergedPoints.Add(
+                polygonPoints[i]);
+        }
+
+        polygonPositions.Clear();
+        polygonPositions.AddRange(
+            mergedPositions);
+
+        polygonPoints.Clear();
+        polygonPoints.AddRange(
+            mergedPoints);
+
+        return true;
+    }
+
+    private static int FindRightmostPointIndex(
+        IReadOnlyList<Vector2> points)
+    {
+        int rightmostIndex = 0;
+
+        for (int i = 1;
+             i < points.Count;
+             i++)
+        {
+            if (points[i].x >
+                points[rightmostIndex].x)
+            {
+                rightmostIndex = i;
+                continue;
+            }
+
+            if (Mathf.Approximately(
+                    points[i].x,
+                    points[rightmostIndex].x) &&
+                points[i].y <
+                points[rightmostIndex].y)
+            {
+                rightmostIndex = i;
+            }
+        }
+
+        return rightmostIndex;
     }
 
     private static void CreatePlaneBasis(
@@ -1507,16 +2249,11 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
-        if (signedArea < 0.0f)
-        {
-            positions.Reverse();
-            projectedPoints.Reverse();
-        }
-
         preparedLoop =
             new PreparedBoundaryLoop(
                 positions,
-                projectedPoints);
+                projectedPoints,
+                signedArea);
 
         return true;
     }
@@ -1644,40 +2381,6 @@ public sealed class ChainsawMeshCutProcessor
         }
 
         return area * 0.5f;
-    }
-
-    private static bool ContainsNestedLoops(
-        IReadOnlyList<PreparedBoundaryLoop> loops)
-    {
-        for (int innerIndex = 0;
-             innerIndex < loops.Count;
-             innerIndex++)
-        {
-            Vector2 testPoint =
-                loops[innerIndex]
-                    .ProjectedPoints[0];
-
-            for (int outerIndex = 0;
-                 outerIndex < loops.Count;
-                 outerIndex++)
-            {
-                if (innerIndex ==
-                    outerIndex)
-                {
-                    continue;
-                }
-
-                if (IsPointInsidePolygon(
-                        testPoint,
-                        loops[outerIndex]
-                            .ProjectedPoints))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
     }
 
     private static bool IsPointInsidePolygon(
@@ -1808,8 +2511,31 @@ public sealed class ChainsawMeshCutProcessor
                         continue;
                     }
 
+                    Vector2 testPoint =
+                        polygon[testIndex];
+
+                    // 穴を外周へブリッジしたPolygonでは、
+                    // ブリッジ両端が非連続位置に重複して存在する。
+                    // 同一点を「Ear内部の別頂点」と判定すると
+                    // 正しいEarまで拒否して三角形分割できなくなる。
+                    if (AreProjectedPointsClose(
+                            testPoint,
+                            previous,
+                            areaEpsilon) ||
+                        AreProjectedPointsClose(
+                            testPoint,
+                            current,
+                            areaEpsilon) ||
+                        AreProjectedPointsClose(
+                            testPoint,
+                            next,
+                            areaEpsilon))
+                    {
+                        continue;
+                    }
+
                     if (IsPointInsideTriangle(
-                            polygon[testIndex],
+                            testPoint,
                             previous,
                             current,
                             next,
@@ -1855,6 +2581,27 @@ public sealed class ChainsawMeshCutProcessor
             }
         }
 
+        Vector2 finalFirst =
+            polygon[
+                remainingIndices[0]];
+
+        Vector2 finalSecond =
+            polygon[
+                remainingIndices[1]];
+
+        Vector2 finalThird =
+            polygon[
+                remainingIndices[2]];
+
+        if (Cross2D(
+                finalSecond - finalFirst,
+                finalThird - finalSecond) <=
+            areaEpsilon)
+        {
+            triangleIndices = null;
+            return false;
+        }
+
         triangleIndices.Add(
             remainingIndices[0]);
 
@@ -1865,6 +2612,15 @@ public sealed class ChainsawMeshCutProcessor
             remainingIndices[2]);
 
         return true;
+    }
+
+    private static bool AreProjectedPointsClose(
+        Vector2 first,
+        Vector2 second,
+        float sqrEpsilon)
+    {
+        return (first - second).sqrMagnitude <=
+               sqrEpsilon;
     }
 
     private static bool IsPointInsideTriangle(
@@ -2115,16 +2871,21 @@ public sealed class ChainsawMeshCutProcessor
     {
         public List<Vector3> Positions { get; }
         public List<Vector2> ProjectedPoints { get; }
+        public float SignedArea { get; }
 
         public PreparedBoundaryLoop(
             List<Vector3> positions,
-            List<Vector2> projectedPoints)
+            List<Vector2> projectedPoints,
+            float signedArea)
         {
             Positions =
                 positions;
 
             ProjectedPoints =
                 projectedPoints;
+
+            SignedArea =
+                signedArea;
         }
     }
 

@@ -16,7 +16,7 @@ MonoBehaviour:
   followPercent: 0.1
   floorOffset: {x: 3, y: 2}
   floorFollowPercent: 0.2
-  wallOffset: {x: 3, y: 3}
+  wallOffset: {x: 3, y: 1000}
   wallFollowPercent: 0.2
   ceilingOffset: {x: 3, y: -1}
   ceilingFollowPercent: 0.2

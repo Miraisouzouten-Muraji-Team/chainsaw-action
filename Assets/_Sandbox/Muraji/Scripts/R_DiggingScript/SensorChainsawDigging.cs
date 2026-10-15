@@ -810,13 +810,8 @@ public class SensorChainsawDigging : MonoBehaviour
                 diggingParameter.ceilingDashPower;
         }
 
-        // 空中の接触待ちから食い込みが成立した場合だけ、モーションを再開する。
-        if (isWaitingForContact)
-        {
-            playerAnimator.ResumeDiggingAnimation();
-        }
 
-        // 接触後は、既存の食い込み継続・解除処理へ移行する。
+        // 接触待ちを終了し、既存の食い込み継続処理へ移行する。
         isWaitingForContact = false;
 
         LogDiggingContact();

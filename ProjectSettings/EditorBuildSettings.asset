@@ -6,6 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/_Sandbox/Muraji/Scenes/putPlayer-Prototype-Stage.unity
+    guid: dd759ee4d8ef33b4fb8c495e8320c1ef
+  - enabled: 1
     path: Assets/_Sandbox/Honjo/Scenes/putPlayer-Prototype-Stage.unity
     guid: 2db757d421ce50241818df8662101582
   - enabled: 1

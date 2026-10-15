@@ -35,8 +35,15 @@ public class SensorChainsawContactDetector : MonoBehaviour
     [SerializeField] private BoxCollider lowerSensor;
 
     [Header("接触判定パラメータ")]
-    [Tooltip("地形と敵のレイヤー、法線のしきい値、Rayの長さを管理するScriptableObject")]
+    [Tooltip("法線のしきい値とRayの長さを使用します。食い込み対象はTagで判定します。Terrain Layersは既存Controllerの強衝突判定への公開値としてのみ維持します。")]
     [SerializeField] private ContactDetectorParameter contactDetectorParameter;
+
+    [Header("敵への食い込み判定")]
+    [Tooltip("食い込み対象の敵のTag名です。敵のColliderからEnemyAttackHitReceiverがある親までのいずれかに、このTagを設定してください。敵のLayerは検出条件に使用しません。")]
+    [SerializeField] private string enemyTag = "Enemy";
+
+    [Tooltip("床・壁・天井・遮蔽物として扱う地形のTag名です。Collider自身または親に設定してください。敵Receiverのある物体は地形から除外します。")]
+    [SerializeField] private string terrainTag = "Ground";
 
     [Header("壁専用の前方Ray")]
 
@@ -67,6 +74,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
     private bool configured;
     private float facing = 1f;
+    // 既存Controllerの強衝突判定との互換用。Detector内の対象選別には使用しない。
     public int TerrainLayerMask => contactDetectorParameter != null ? contactDetectorParameter.TerrainLayers.value : 0;
 
     // Receiverを変更せず、敵の有効状態と同じオブジェクトのHPから食い込み可能かを調べる。
@@ -266,7 +274,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
         if (!canReplaceFloor || playerController == null ||
             !playerController.TryGetGroundSupport(out SensorChainsawContact ground) ||
-            (TerrainLayerMask & (1 << ground.Collider.gameObject.layer)) == 0 ||
+            !IsTerrainTarget(ground.Collider) ||
             ground.Normal.y < ResolvedSurfaceNormalThreshold)
         {
             return;
@@ -309,9 +317,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 half,
                 overlapBuffer,
                 sensor.transform.rotation,
-                sensor == middleSensor
-                    ? contactDetectorParameter.EnemyLayers.value
-                    : contactDetectorParameter.TerrainLayers.value,
+                Physics.AllLayers,
                 QueryTriggerInteraction.Collide
             );
 
@@ -335,21 +341,13 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 continue;
             }
 
-            bool isEnemyLayer =
-                (contactDetectorParameter.EnemyLayers.value & (1 << target.gameObject.layer)) != 0;
-
             // 敵はMiddleだけで検出する。
             if (sensor == middleSensor)
             {
-                if (!isEnemyLayer)
-                {
-                    continue;
-                }
-
                 EnemyAttackHitReceiver enemy =
                     target.GetComponentInParent<EnemyAttackHitReceiver>();
 
-                if (!CanReceiveEnemyHit(enemy))
+                if (!CanReceiveEnemyHit(enemy) || !HasEnemyTag(target, enemy))
                 {
                     continue;
                 }
@@ -382,8 +380,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 continue;
             }
 
-            if (target.isTrigger ||
-                (contactDetectorParameter.TerrainLayers.value & (1 << target.gameObject.layer)) == 0)
+            if (target.isTrigger || !IsTerrainTarget(target))
             {
                 continue;
             }
@@ -417,6 +414,60 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 );
             }
         }
+    }
+
+    // 地形Tagを階層から確認し、敵自身が壁や遮蔽物として採用されることを防ぐ。
+    private bool IsTerrainTarget(Collider target)
+    {
+        if (target == null || string.IsNullOrWhiteSpace(terrainTag) ||
+            target.GetComponentInParent<EnemyAttackHitReceiver>() != null)
+        {
+            return false;
+        }
+
+        Transform current = target.transform;
+        while (current != null)
+        {
+            if (current.gameObject.tag == terrainTag)
+            {
+                return true;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
+    }
+
+    // Colliderから受信先までの階層で敵Tagを確認する。敵の子Colliderにも対応する。
+    private bool HasEnemyTag(Collider target, EnemyAttackHitReceiver enemy)
+    {
+        if (target == null || enemy == null || string.IsNullOrWhiteSpace(enemyTag))
+        {
+            return false;
+        }
+
+        Transform receiverTransform = enemy.transform;
+        Transform current = target.transform;
+
+        while (current != null)
+        {
+            // Tag文字列を比較し、未作成のTag名でも例外を発生させない。
+            if (current.gameObject.tag == enemyTag)
+            {
+                return true;
+            }
+
+            // 敵より外側の親に付いたTagを誤って採用しない。
+            if (current == receiverTransform)
+            {
+                break;
+            }
+
+            current = current.parent;
+        }
+
+        return false;
     }
 
     private void SampleSurface(
@@ -583,10 +634,10 @@ public class SensorChainsawContactDetector : MonoBehaviour
             origin,
             direction,
             distance,
-            contactDetectorParameter.TerrainLayers,
+            Physics.AllLayers,
             QueryTriggerInteraction.Ignore))
         {
-            if (hit.collider == null || IsOwner(hit.collider))
+            if (!IsTerrainTarget(hit.collider) || IsOwner(hit.collider))
             {
                 continue;
             }
@@ -678,10 +729,12 @@ public class SensorChainsawContactDetector : MonoBehaviour
             origin,
             delta / distance,
             distance - POINT_TOLERANCE,
-            contactDetectorParameter.TerrainLayers,
+            Physics.AllLayers,
             QueryTriggerInteraction.Ignore))
         {
-            if (hit.collider != target && !IsOwner(hit.collider))
+            if (hit.collider != target &&
+                IsTerrainTarget(hit.collider) &&
+                !IsOwner(hit.collider))
             {
                 return true;
             }

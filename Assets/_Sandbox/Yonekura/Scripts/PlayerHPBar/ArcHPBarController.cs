@@ -11,9 +11,8 @@ public class ArcHPBarController : MonoBehaviour
     [Header("アニメーション設定")]
     [SerializeField] private float damageFadeDuration = 1.8f;
 
-    [Header("テスト用HP")]
-    [SerializeField] private float testMaxHP = 100f;
-    [SerializeField] private float testCurrentHP = 100f;
+    [Header("HP管理")]
+    [SerializeField] private PlayerHealth playerHealth;
 
     // 現在HPの割合
     private float currentRatio = 1f;
@@ -30,10 +29,36 @@ public class ArcHPBarController : MonoBehaviour
     // アニメーションの経過時間
     private float damageElapsed = 0f;
 
+    private void OnHealthChanged(float currentHP, float maxHP)
+    {
+        SetHP(currentHP, maxHP);
+    }
+
+    private void OnDestroy()
+    {
+        if (playerHealth != null)
+        {
+            playerHealth.HealthChanged -= OnHealthChanged;
+        }
+    }
+
     private void Start()
     {
+        if (playerHealth == null)
+        {
+            Debug.LogError(
+                "PlayerHealthが設定されていません。",
+                this);
+            return;
+        }
+
+        // HP変更イベントを登録
+        playerHealth.HealthChanged += OnHealthChanged;
+
         // 初期HPをゲージに反映
-        SetHP(testCurrentHP, testMaxHP);
+        SetHP(
+            playerHealth.CurrentHealth,
+            playerHealth.MaxHealth);
     }
 
     private void Update()
@@ -82,9 +107,13 @@ public class ArcHPBarController : MonoBehaviour
         }
         else if (newHP < previousHP)
         {
-            // ダメージを受ける前のHP位置を保存
-            damageStartRatio = currentRatio;
-            damageEndRatio = currentRatio;
+            // 現在表示している赤ゲージの終点を維持する
+            damageStartRatio = Mathf.Max(
+                damageEndRatio,
+                currentRatio
+            );
+
+            damageEndRatio = damageStartRatio;
 
             // アニメーションを最初から開始
             damageElapsed = 0f;
@@ -122,20 +151,5 @@ public class ArcHPBarController : MonoBehaviour
     {
         if (damageBar != null)
             damageBar.SetRange(currentRatio, damageEndRatio);
-    }
-
-    // Inspectorのコンテキストメニューから動作をテスト
-    [ContextMenu("テスト：20ダメージ")]
-    private void TestDamage()
-    {
-        SetHP(testCurrentHP - 20f, testMaxHP);
-        testCurrentHP = Mathf.Max(0f, testCurrentHP - 20f);
-    }
-
-    [ContextMenu("テスト：HP全回復")]
-    private void TestHeal()
-    {
-        testCurrentHP = testMaxHP;
-        SetHP(testCurrentHP, testMaxHP);
     }
 }

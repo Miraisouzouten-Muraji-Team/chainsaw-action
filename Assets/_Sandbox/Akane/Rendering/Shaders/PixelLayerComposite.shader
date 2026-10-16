@@ -86,12 +86,12 @@ Shader "Custom/PixelLayerComposite"
                 {
                     return;
                 }
-            
+
                 bool candidateIsSky = IsSkyDepth(candidateDepth);
                 bool selectedIsSky = IsSkyDepth(selectedDepth);
-            
+
                 bool shouldSelect = false;
-            
+
                 if (!candidateIsSky)
                 {
                     // 有効なDepthを持つ不透明オブジェクト。
@@ -106,12 +106,12 @@ Shader "Custom/PixelLayerComposite"
                     // 同条件では後から来るNear側を優先する。
                     shouldSelect = true;
                 }
-            
+
                 if (!shouldSelect)
                 {
                     return;
                 }
-            
+
                 selectedColor = candidateColor;
                 selectedDepth = candidateDepth;
                 selectedPixel = true;
@@ -168,11 +168,9 @@ Shader "Custom/PixelLayerComposite"
                 // Capture RTはPremultiplied Alphaである前提。
                 // RGBに対してAlphaを二重に乗算しない。
                 half alpha = saturate(selectedColor.a);
-                
-                half3 finalColor =
-                    selectedColor.rgb +
-                    sceneColor.rgb * (1.0 - alpha);
-                
+
+                half3 finalColor = selectedColor.rgb + sceneColor.rgb * (1.0 - alpha);
+
                 return half4(finalColor, sceneColor.a);
             }
 

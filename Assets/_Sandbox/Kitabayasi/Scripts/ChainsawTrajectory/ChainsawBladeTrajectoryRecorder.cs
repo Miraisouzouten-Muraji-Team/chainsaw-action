@@ -2,9 +2,12 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 攻撃中のチェンソー刃のTip / Root位置を時系列で記録する。
+/// 旧Runtime軌跡方式で、攻撃中のチェンソー刃Tip / Root位置を時系列記録する。
 /// </summary>
 /// <remarks>
+/// 事前Bake方式への移行完了後は通常攻撃のMesh切断では使用しない。
+/// Player側に残っている旧呼び出しを安全に外せることを確認するまでの移行互換用として残す。
+///
 /// チェンソー側へアタッチして使用する軌跡記録コンポーネント。
 ///
 /// Inspector設定:

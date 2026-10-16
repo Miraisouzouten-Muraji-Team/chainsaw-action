@@ -129,6 +129,27 @@ public sealed class EnemyAttackHitReceiver :
     }
 
     /// <summary>
+    /// Player Tagから取得したPlayer本体Transformを返す。
+    /// </summary>
+    /// <remarks>
+    /// 通常攻撃のBake済み軌跡をWorld空間へ復元する際にも同じPlayer基準を使用する。
+    /// PlayerがAwake後に生成された場合は呼び出し時に再取得を試みる。
+    /// </remarks>
+    public bool TryGetPlayerTransform(
+        out Transform resolvedPlayerTransform)
+    {
+        if (playerTransform == null)
+        {
+            ResolvePlayerTransform();
+        }
+
+        resolvedPlayerTransform =
+            playerTransform;
+
+        return resolvedPlayerTransform != null;
+    }
+
+    /// <summary>
     /// Player本体の現在位置から、
     /// Enemyの左右どちら側から攻撃されたかを求める。
     /// </summary>

@@ -1,36 +1,41 @@
+using System;
 using UnityEngine;
 
 /// <summary>
 /// PlayerからEnemyへ渡す、1回の攻撃命中に対応する情報。
 /// </summary>
 /// <remarks>
-/// このクラスはGameObjectへアタッチして使用するコンポーネントではない。
-/// Player側で攻撃がEnemyへ命中した時点で生成し、
-/// 命中対象のIAttackHitReceiver.ReceiveAttackHitへ渡す。
+/// Player側は今回命中したAttackDataを渡すところまでを担当する。
+/// Mesh切断用軌跡の取得、Profile選択、切断方向計算、Mesh分割はEnemy側の責務とする。
 ///
-/// 基本的な使用手順:
-/// 1. 攻撃開始時にChainsawBladeTrajectoryRecorder.BeginRecording()を呼ぶ。
-/// 2. 攻撃中、武器のTransform更新タイミングに合わせてRecordSample()を継続的に呼ぶ。
-/// 3. Enemyへの命中時にTryCreateTrajectorySnapshot()で、その時点までの軌跡を取得する。
-/// 4. 今回使用した攻撃のScriptableObjectと軌跡からPlayerAttackHitDataを生成する。
-/// 5. 命中対象のIAttackHitReceiverへReceiveAttackHit()で渡す。
-/// 6. 攻撃自体が終了した時点でChainsawBladeTrajectoryRecorder.EndRecording()を呼ぶ。
-///
-/// 注意:
-/// ・命中しただけでは軌跡記録を終了しない。
-///   1回の攻撃中に複数のEnemyへ命中する可能性があるため、
-///   命中時はTryCreateTrajectorySnapshot()を使用する。
-/// ・AttackDataには「今回の命中だけの一時的な状態」を書き込まないこと。
-///   ScriptableObjectは参照として共有されるため、基本的には攻撃の固定データとして扱う。
+/// 旧Runtime軌跡方式から段階的に移行できるよう、ChainsawAttackTrajectoryを受け取る旧Constructorは
+/// 一時的な互換用として残している。新規コードではAttackDataだけを渡すConstructorを使用すること。
 /// </remarks>
-
 public sealed class PlayerAttackHitData : AttackHitData
 {
     /// <summary>
-    /// 今回のチェンソー攻撃で記録された軌跡データ。
+    /// 旧Runtime軌跡方式との移行互換用。
+    /// Enemyの新しい2分割処理では参照しない。
     /// </summary>
     public ChainsawAttackTrajectory ChainsawTrail { get; }
 
+    /// <summary>
+    /// 新しい事前Bake方式で使用する命中情報を生成する。
+    /// </summary>
+    public PlayerAttackHitData(
+        ScriptableObject attackData)
+        : base(attackData)
+    {
+        ChainsawTrail = null;
+    }
+
+    /// <summary>
+    /// 旧Player実装を即座に壊さないための移行用Constructor。
+    /// 渡された軌跡は保持するが、新しいEnemy側2分割処理では使用しない。
+    /// </summary>
+    [Obsolete(
+        "Runtime軌跡引数は廃止予定です。" +
+        "PlayerAttackHitData(attackData)を使用してください。")]
     public PlayerAttackHitData(
         ScriptableObject attackData,
         ChainsawAttackTrajectory chainsawTrail)

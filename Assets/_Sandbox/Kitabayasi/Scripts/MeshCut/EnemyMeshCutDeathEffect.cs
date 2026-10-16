@@ -1,12 +1,15 @@
+using System.Collections.Generic;
 using MeshFracture;
 using UnityEngine;
 using UnityEngine.Rendering;
 
 /// <summary>
-/// Enemy死亡時に、事前Bake済みのFragmentを生成して吹き飛ばすMeshCut演出を担当する。
+/// Enemy死亡時にFragmentを生成して吹き飛ばすMeshCut演出を担当する。
 /// </summary>
 /// <remarks>
-/// Unity Mesh FractureのVoronoi分割は初期化時に事前要求し、死亡フレームではCacheを参照する。
+/// MeshFilterは初期化時に事前分割してCacheを共有する。
+/// SkinnedMeshRendererは死亡時の現在姿勢をBakeしてから分割し、
+/// バインドポーズではなく死亡した瞬間の形状をFragmentへ反映する。
 /// 死亡判定、攻撃種別の判定、State遷移は担当しない。
 /// </remarks>
 public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
@@ -83,6 +86,7 @@ public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
     private GameObject activeBurstObject;
     private Material runtimeExteriorMaterial;
     private Material runtimeInteriorMaterial;
+    private Mesh[] runtimeGeneratedFragmentMeshes;
 
     /// <summary>
     /// この死亡演出を発動させる攻撃データ。
@@ -103,6 +107,7 @@ public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
         if (activeBurstObject == null)
         {
             ReleaseRuntimeMaterials();
+            ReleaseRuntimeFragmentMeshes();
         }
     }
 
@@ -130,32 +135,6 @@ public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
             return false;
         }
 
-        if (!hasRequestedPreBake)
-        {
-            RequestPreBake();
-        }
-
-        if (!FragmentCache.TryGet(
-                bakeKey,
-                out FragmentCache.CachedData cachedData))
-        {
-            LogFailure(
-                "Fragmentの事前Bakeが完了していないため、今回は既存死亡演出へフォールバックします。");
-
-            return false;
-        }
-
-        if (!TryBuildWorldFragments(
-                cachedData,
-                out FragmentResult[] fragments,
-                out Quaternion meshRotation,
-                out Vector3 meshCenterWorld,
-                out failureReason))
-        {
-            LogFailure(failureReason);
-            return false;
-        }
-
         Material exteriorSourceMaterial =
             sourceRenderer.sharedMaterial;
 
@@ -165,6 +144,63 @@ public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
                 "分割対象RendererにMaterialが設定されていません。");
 
             return false;
+        }
+
+        ReleaseRuntimeFragmentMeshes();
+
+        FragmentResult[] fragments;
+        Quaternion meshRotation;
+        Vector3 meshCenterWorld;
+        Mesh[] preBakedColliderMeshes;
+
+        if (targetSkinnedMeshRenderer != null)
+        {
+            if (!TryBuildSkinnedPoseFragments(
+                    out fragments,
+                    out meshRotation,
+                    out meshCenterWorld,
+                    out failureReason))
+            {
+                LogFailure(failureReason);
+                ReleaseRuntimeFragmentMeshes();
+                return false;
+            }
+
+            // SkinnedMeshは死亡時姿勢からRuntime生成しているため、
+            // bind pose由来の事前Collider Cacheは使用できない。
+            // FractureBurst側でFragment生成を分散しながらColliderを構築する。
+            preBakedColliderMeshes = null;
+        }
+        else
+        {
+            if (!hasRequestedPreBake)
+            {
+                RequestPreBake();
+            }
+
+            if (!FragmentCache.TryGet(
+                    bakeKey,
+                    out FragmentCache.CachedData cachedData))
+            {
+                LogFailure(
+                    "Fragmentの事前Bakeが完了していないため、今回は既存死亡演出へフォールバックします。");
+
+                return false;
+            }
+
+            if (!TryBuildWorldFragments(
+                    cachedData,
+                    out fragments,
+                    out meshRotation,
+                    out meshCenterWorld,
+                    out failureReason))
+            {
+                LogFailure(failureReason);
+                return false;
+            }
+
+            preBakedColliderMeshes =
+                cachedData.ColliderMeshes;
         }
 
         ReleaseRuntimeMaterials();
@@ -191,7 +227,7 @@ public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
 
         ConfigureBurst(
             fractureBurst,
-            cachedData);
+            preBakedColliderMeshes);
 
         try
         {
@@ -216,6 +252,7 @@ public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
         {
             Destroy(burstObject);
             ReleaseRuntimeMaterials();
+            ReleaseRuntimeFragmentMeshes();
 
             Debug.LogException(
                 exception,
@@ -224,8 +261,8 @@ public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
             return false;
         }
 
-        // Cache不足などでフォールバックする場合に元の見た目まで消さないよう、
         // Fragment生成要求に成功した後だけ元Rendererを隠す。
+        // 失敗時はStandardEnemyDeathStrategyが既存2分割へフォールバックできる。
         sourceRenderer.enabled = false;
 
         activeBurstObject =
@@ -246,11 +283,12 @@ public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
         }
 
         ReleaseRuntimeMaterials();
+        ReleaseRuntimeFragmentMeshes();
     }
 
     private void ConfigureBurst(
         FractureBurst fractureBurst,
-        FragmentCache.CachedData cachedData)
+        Mesh[] preBakedColliderMeshes)
     {
         fractureBurst.Lifetime =
             Mathf.Max(
@@ -289,7 +327,7 @@ public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
             enableTrails;
 
         fractureBurst.PreBakedColliderMeshes =
-            cachedData.ColliderMeshes;
+            preBakedColliderMeshes;
     }
 
     /// <summary>
@@ -302,6 +340,15 @@ public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
                 out string failureReason))
         {
             LogFailure(failureReason);
+            return;
+        }
+
+        // SkinnedMeshは死亡時の姿勢が確定するまで形状を固定できない。
+        // sharedMeshのbind poseを事前分割すると死亡姿勢と一致しないため、
+        // SkinnedMeshだけはTryBeginMeshCut内でRuntime Bakeする。
+        if (targetSkinnedMeshRenderer != null)
+        {
+            hasRequestedPreBake = false;
             return;
         }
 
@@ -417,6 +464,170 @@ public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
 
         failureReason = null;
         return true;
+    }
+
+    /// <summary>
+    /// SkinnedMeshRendererの死亡時姿勢を静的MeshへBakeし、
+    /// その姿勢を直接Voronoi分割する。
+    /// </summary>
+    /// <remarks>
+    /// FragmentはFractureBurst終了後に破棄するRuntime MeshとしてこのComponentが所有する。
+    /// useScale=trueでRenderer ScaleをBake側へ反映し、Fragment側ではPosition/Rotationだけを適用する。
+    /// </remarks>
+    private bool TryBuildSkinnedPoseFragments(
+        out FragmentResult[] fragments,
+        out Quaternion meshRotation,
+        out Vector3 meshCenterWorld,
+        out string failureReason)
+    {
+        fragments = null;
+        meshRotation = Quaternion.identity;
+        meshCenterWorld = Vector3.zero;
+
+        if (targetSkinnedMeshRenderer == null)
+        {
+            failureReason =
+                "SkinnedMeshRendererが設定されていません。";
+
+            return false;
+        }
+
+        var bakedMesh = new Mesh
+        {
+            name =
+                $"{targetSkinnedMeshRenderer.name}_MeshCutDeathBake"
+        };
+
+        try
+        {
+            // FractureBurstのFragmentは元Renderer階層の外へ生成されるため、
+            // 元TransformのScaleを継承しない。ここではScaleをBake Meshへ反映し、
+            // Runtime Fragmentに同じScaleを二重適用しない。
+            targetSkinnedMeshRenderer.BakeMesh(
+                bakedMesh,
+                true);
+
+            bakedMesh.RecalculateBounds();
+
+            if (bakedMesh.vertexCount == 0)
+            {
+                failureReason =
+                    "死亡時姿勢をBakeしたMeshに頂点がありません。";
+
+                DestroyRuntimeMesh(bakedMesh);
+                return false;
+            }
+
+            int safeFragmentCount =
+                Mathf.Max(
+                    MIN_FRAGMENT_COUNT,
+                    fragmentCount);
+
+            FragmentResult[] localFragments =
+                MeshFragmenter.Fragment(
+                    bakedMesh,
+                    safeFragmentCount,
+                    bakedMesh.bounds.center);
+
+            if (localFragments == null ||
+                localFragments.Length == 0)
+            {
+                failureReason =
+                    "死亡時姿勢のVoronoi分割結果が空です。";
+
+                DestroyRuntimeMesh(bakedMesh);
+                return false;
+            }
+
+            meshRotation =
+                sourceTransform.rotation;
+
+            meshCenterWorld =
+                sourceTransform.position +
+                meshRotation *
+                bakedMesh.bounds.center;
+
+            fragments =
+                new FragmentResult[
+                    localFragments.Length];
+
+            var ownedMeshes =
+                new HashSet<Mesh>();
+
+            bool bakedMeshIsFragment = false;
+
+            for (int i = 0;
+                 i < localFragments.Length;
+                 i++)
+            {
+                Mesh fragmentMesh =
+                    localFragments[i].Mesh;
+
+                if (fragmentMesh == null)
+                {
+                    failureReason =
+                        "死亡時姿勢の分割結果にnull Meshが含まれています。";
+
+                    foreach (Mesh ownedMesh in ownedMeshes)
+                    {
+                        DestroyRuntimeMesh(ownedMesh);
+                    }
+
+                    if (!bakedMeshIsFragment)
+                    {
+                        DestroyRuntimeMesh(bakedMesh);
+                    }
+
+                    fragments = null;
+                    return false;
+                }
+
+                if (fragmentMesh == bakedMesh)
+                {
+                    bakedMeshIsFragment = true;
+                }
+
+                ownedMeshes.Add(
+                    fragmentMesh);
+
+                fragments[i] =
+                    new FragmentResult
+                    {
+                        Mesh =
+                            fragmentMesh,
+
+                        Centroid =
+                            sourceTransform.position +
+                            meshRotation *
+                            localFragments[i].Centroid
+                    };
+            }
+
+            if (!bakedMeshIsFragment)
+            {
+                DestroyRuntimeMesh(
+                    bakedMesh);
+            }
+
+            runtimeGeneratedFragmentMeshes =
+                new Mesh[ownedMeshes.Count];
+
+            ownedMeshes.CopyTo(
+                runtimeGeneratedFragmentMeshes);
+
+            failureReason = null;
+            return true;
+        }
+        catch (System.Exception exception)
+        {
+            DestroyRuntimeMesh(
+                bakedMesh);
+
+            failureReason =
+                $"死亡時SkinnedMeshのBakeまたは分割中に例外が発生しました: {exception.Message}";
+
+            return false;
+        }
     }
 
     /// <summary>
@@ -620,6 +831,42 @@ public sealed class EnemyMeshCutDeathEffect : MonoBehaviour
                 runtimeInteriorMaterial);
 
             runtimeInteriorMaterial = null;
+        }
+    }
+
+    private void ReleaseRuntimeFragmentMeshes()
+    {
+        if (runtimeGeneratedFragmentMeshes == null)
+        {
+            return;
+        }
+
+        foreach (Mesh runtimeMesh in
+                 runtimeGeneratedFragmentMeshes)
+        {
+            DestroyRuntimeMesh(
+                runtimeMesh);
+        }
+
+        runtimeGeneratedFragmentMeshes =
+            null;
+    }
+
+    private static void DestroyRuntimeMesh(
+        Mesh mesh)
+    {
+        if (mesh == null)
+        {
+            return;
+        }
+
+        if (Application.isPlaying)
+        {
+            Destroy(mesh);
+        }
+        else
+        {
+            DestroyImmediate(mesh);
         }
     }
 

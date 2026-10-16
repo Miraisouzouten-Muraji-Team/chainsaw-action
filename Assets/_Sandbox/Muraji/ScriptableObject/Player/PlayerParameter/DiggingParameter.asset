@@ -14,8 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::DiggingParameter
   inputMode: 0
   bonusThreshold: 0.8
-  floorSpeedDivisor: 10
-  floorDashPower: 20
+  floorSpeedDivisor: 3
+  floorDashPower: 15
   floorEvadeTime: 0.5
   wallConsumeInterval: 0.1
   wallConsumeAmount: 1
@@ -23,8 +23,8 @@ MonoBehaviour:
   bonusWallJumpPower: 15
   wallEvadeTime: 0.25
   wallContactGraceTime: 0.1
-  ceilingSpeedDivisor: 7.5
-  ceilingDashPower: 7.5
+  ceilingSpeedDivisor: 5
+  ceilingDashPower: 15
   ceilingEvadeTime: 0.35
   enemyAttackInterval: 0.1
   enemyConsumeAmount: 1
@@ -32,5 +32,6 @@ MonoBehaviour:
   minDamageMultiplier: 0.9
   maxDamageMultiplier: 1.25
   bonusDamageMultiplier: 1.5
+  enemyPushPower: 2
   wallClimbInputWindow: 0.2
   floorTransitionWallGraceTime: 0.05

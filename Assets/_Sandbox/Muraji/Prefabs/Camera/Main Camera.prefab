@@ -72,7 +72,7 @@ Camera:
   far clip plane: 1000
   field of view: 60
   orthographic: 1
-  orthographic size: 4.5
+  orthographic size: 5
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -173,6 +173,12 @@ MonoBehaviour:
   - {fileID: 0}
   - {fileID: 0}
   - {fileID: 0}
+  useAreaPositionLimit: 1
+  debugSurface: 0
+  debugSelectedOffset: {x: 0, y: 0}
+  debugTargetBeforeLimit: {x: 0, y: 0, z: 0}
+  debugTargetAfterLimit: {x: 0, y: 0, z: 0}
+  debugAreaLimited: 0
 --- !u!114 &-1970471577715036284
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -198,5 +204,7 @@ MonoBehaviour:
   _nearLayerName: PixelNear
   _middleLayerName: PixelMiddle
   _farLayerName: PixelFar
+  _normalRendererIndex: 0
   _captureRendererIndex: 1
+  _pixelRendererIndex: 2
   _pixelRenderingEnabled: 0

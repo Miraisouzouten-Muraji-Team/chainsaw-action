@@ -35,21 +35,21 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
     [Header("切断Plane設定")]
 
-    [Tooltip("命中直前から代表刃方向・代表移動方向の算出に使用するサンプル数。")]
+    [Tooltip("Bake済み軌跡からCut Plane候補を作る際、各候補位置の代表刃方向・代表移動方向の算出に使用するサンプル数。")]
     [Min(2)]
     [SerializeField]
     private int cutDirectionSampleCount = 4;
 
-    [Tooltip("EnemyMeshCutterが付いているEnemy本体のローカル空間で、切断位置の有効範囲を定義する軸。")]
+    [Tooltip("EnemyMeshCutterが付いているEnemy本体のローカル空間で、最終的な切断境界を許可する範囲の軸。Yなら上下分割位置、Xなら左右分割位置の制御に使う。")]
     [SerializeField]
     private MeshCutRangeAxis cutRangeAxis = MeshCutRangeAxis.Y;
 
-    [Tooltip("Cut Range Axis方向のMesh Boundsに対する有効範囲の下限。0がBounds最小、1がBounds最大。")]
+    [Tooltip("Cut Range Axis方向のMesh Boundsに対して、最終的な切断境界を許可する範囲の下限。0がBounds最小、1がBounds最大。")]
     [Range(0.0f, 1.0f)]
     [SerializeField]
     private float cutRangeMinimumNormalized = 0.2f;
 
-    [Tooltip("Cut Range Axis方向のMesh Boundsに対する有効範囲の上限。0がBounds最小、1がBounds最大。")]
+    [Tooltip("Cut Range Axis方向のMesh Boundsに対して、最終的な切断境界を許可する範囲の上限。0がBounds最小、1がBounds最大。")]
     [Range(0.0f, 1.0f)]
     [SerializeField]
     private float cutRangeMaximumNormalized = 0.8f;
@@ -61,9 +61,17 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
     [Header("Scene表示")]
 
-    [Tooltip("選択中のEnemyに、設定済みの切断位置有効範囲を赤く表示する。")]
+    [Tooltip("選択中のEnemyに、最終的な切断境界を許可するCut Rangeを赤く表示する。")]
     [SerializeField]
     private bool showCutRangeGizmo = true;
+
+    [Header("診断ログ")]
+
+    [Tooltip(
+        "2分割死亡演出の入力軌跡、切断対象Mesh、Processor結果、生成片までを段階的にConsoleへ出力する。" +
+        "原因特定後は無効化してよい。")]
+    [SerializeField]
+    private bool enableDiagnosticLogs = true;
 
     private readonly ChainsawMeshCutProcessor cutProcessor =
         new ChainsawMeshCutProcessor();
@@ -87,12 +95,22 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     /// </returns>
     public bool TryCut(ChainsawAttackTrajectory trajectory)
     {
+        LogDiagnostic(
+            "Cutter-01 Request",
+            trajectory == null
+                ? "TryCutを受信しました。trajectory=null"
+                : $"TryCutを受信しました。{BuildTrajectorySummary(trajectory)}");
+
         if (hasCompletedCut)
         {
             Debug.LogWarning(
                 $"{nameof(EnemyMeshCutter)}: "
                 + "このEnemyは既にMesh分割済みです。",
                 this);
+
+            LogDiagnosticWarning(
+                "Cutter-01 Request",
+                "hasCompletedCut=trueのため再分割を中止しました。");
 
             return false;
         }
@@ -101,6 +119,10 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 trajectory,
                 out string failureReason))
         {
+            LogDiagnosticWarning(
+                "Cutter-01 Request",
+                $"入力・Inspector設定の検証で停止しました。{failureReason}");
+
             LogCutFailure(failureReason);
             return false;
         }
@@ -111,17 +133,31 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 out bool destroySourceMeshAfterCut,
                 out failureReason))
         {
+            LogDiagnosticWarning(
+                "Cutter-02 Source",
+                $"切断対象Meshの取得で停止しました。{failureReason}");
+
             LogCutFailure(failureReason);
             return false;
         }
 
         try
         {
+            LogDiagnostic(
+                "Cutter-02 Source",
+                $"切断対象を取得しました。{BuildMeshSummary(sourceMesh)} / " +
+                $"Renderer={sourceRenderer.name}, {BuildTransformSummary(sourceRenderer.transform)}, " +
+                $"CutRangeOwner={BuildTransformSummary(transform)}");
+
             if (!ValidateSourceMeshMaterialLayout(
                     sourceMesh,
                     sourceRenderer,
                     out failureReason))
             {
+                LogDiagnosticWarning(
+                    "Cutter-02 Source",
+                    $"Mesh / Material構成の検証で停止しました。{failureReason}");
+
                 LogCutFailure(failureReason);
                 return false;
             }
@@ -132,9 +168,24 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 out List<Vector3> localTipPositions,
                 out List<Vector3> localRootPositions);
 
+            LogDiagnostic(
+                "Cutter-03 LocalTrajectory",
+                BuildLocalTrajectorySummary(
+                    localTipPositions,
+                    localRootPositions));
+
             Matrix4x4 sourceToCutRangeSpace =
                 transform.worldToLocalMatrix
                 * sourceRenderer.transform.localToWorldMatrix;
+
+            LogDiagnostic(
+                "Cutter-04 Processor",
+                "ChainsawMeshCutProcessor.TryCutを開始します。" +
+                $" CutDirectionSampleCount={cutDirectionSampleCount}," +
+                $" CutRangeAxis={cutRangeAxis}," +
+                $" CutRange={cutRangeMinimumNormalized:F3}-{cutRangeMaximumNormalized:F3}," +
+                $" CutSurfaceUvScale={cutSurfaceUvScale:F4}," +
+                $" SourceToCutRangeDeterminant={sourceToCutRangeSpace.determinant:F6}");
 
             bool succeeded = cutProcessor.TryCut(
                 sourceMesh,
@@ -152,9 +203,20 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
             if (!succeeded)
             {
+                LogDiagnosticWarning(
+                    "Cutter-04 Processor",
+                    "ChainsawMeshCutProcessor内で停止しました。" +
+                    $" failureReason={failureReason}");
+
                 LogCutFailure(failureReason);
                 return false;
             }
+
+            LogDiagnostic(
+                "Cutter-04 Processor",
+                "Processorによる2Mesh生成に成功しました。" +
+                $" First={BuildMeshSummary(firstPieceMesh)} /" +
+                $" Second={BuildMeshSummary(secondPieceMesh)}");
 
             Material[] pieceMaterials =
                 BuildPieceMaterials(sourceRenderer);
@@ -177,9 +239,20 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 pieceMaterials,
                 sourceRenderer);
 
+            LogDiagnostic(
+                "Cutter-05 PieceObjects",
+                $"切断片GameObjectを生成しました。" +
+                $" First={firstPieceObject.name}, Second={secondPieceObject.name}," +
+                $" ParentRenderer={sourceRenderer.name}");
+
             sourceRenderer.enabled = false;
 
             hasCompletedCut = true;
+
+            LogDiagnostic(
+                "Cutter-06 Complete",
+                "元Rendererを無効化し、2分割処理を完了しました。" +
+                " このログまで出ている場合、以降の問題は切断片取得またはBurst/Shrink開始側です。");
 
             return true;
         }
@@ -616,6 +689,195 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             source.sortingOrder;
     }
 
+    private string BuildTrajectorySummary(
+        ChainsawAttackTrajectory trajectory)
+    {
+        if (trajectory == null ||
+            trajectory.SampleCount == 0)
+        {
+            return "Trajectoryにサンプルがありません。";
+        }
+
+        int lastIndex =
+            trajectory.SampleCount - 1;
+
+        int directionWindowStartIndex =
+            Mathf.Max(
+                0,
+                trajectory.SampleCount -
+                cutDirectionSampleCount);
+
+        ChainsawBladeTrajectorySample firstSample =
+            trajectory.Samples[0];
+
+        ChainsawBladeTrajectorySample directionStartSample =
+            trajectory.Samples[directionWindowStartIndex];
+
+        ChainsawBladeTrajectorySample lastSample =
+            trajectory.Samples[lastIndex];
+
+        return
+            $"Samples={trajectory.SampleCount}, " +
+            $"DirectionWindow={directionWindowStartIndex}-{lastIndex}, " +
+            $"FirstCenter={FormatVector3(GetSampleCenter(firstSample))}, " +
+            $"DirectionWindowStartCenter={FormatVector3(GetSampleCenter(directionStartSample))}, " +
+            $"LastCenter={FormatVector3(GetSampleCenter(lastSample))}, " +
+            $"LastTip={FormatVector3(lastSample.TipPosition)}, " +
+            $"LastRoot={FormatVector3(lastSample.RootPosition)}, " +
+            $"LastSampleTime={lastSample.SampleTime:F4}";
+    }
+
+    private string BuildLocalTrajectorySummary(
+        IReadOnlyList<Vector3> localTipPositions,
+        IReadOnlyList<Vector3> localRootPositions)
+    {
+        if (localTipPositions == null ||
+            localRootPositions == null ||
+            localTipPositions.Count == 0 ||
+            localRootPositions.Count == 0)
+        {
+            return "Renderer Local軌跡にサンプルがありません。";
+        }
+
+        int sampleCount =
+            Mathf.Min(
+                localTipPositions.Count,
+                localRootPositions.Count);
+
+        int lastIndex =
+            sampleCount - 1;
+
+        int directionWindowStartIndex =
+            Mathf.Max(
+                0,
+                sampleCount -
+                cutDirectionSampleCount);
+
+        Vector3 firstCenter =
+            GetBladeCenter(
+                localTipPositions[0],
+                localRootPositions[0]);
+
+        Vector3 directionWindowStartCenter =
+            GetBladeCenter(
+                localTipPositions[directionWindowStartIndex],
+                localRootPositions[directionWindowStartIndex]);
+
+        Vector3 lastCenter =
+            GetBladeCenter(
+                localTipPositions[lastIndex],
+                localRootPositions[lastIndex]);
+
+        return
+            $"Renderer Local軌跡: Samples={sampleCount}, " +
+            $"DirectionWindow={directionWindowStartIndex}-{lastIndex}, " +
+            $"FirstCenter={FormatVector3(firstCenter)}, " +
+            $"DirectionWindowStartCenter={FormatVector3(directionWindowStartCenter)}, " +
+            $"LastCenter={FormatVector3(lastCenter)}, " +
+            $"LastTip={FormatVector3(localTipPositions[lastIndex])}, " +
+            $"LastRoot={FormatVector3(localRootPositions[lastIndex])}";
+    }
+
+    private static Vector3 GetSampleCenter(
+        ChainsawBladeTrajectorySample sample)
+    {
+        return GetBladeCenter(
+            sample.TipPosition,
+            sample.RootPosition);
+    }
+
+    private static Vector3 GetBladeCenter(
+        Vector3 tipPosition,
+        Vector3 rootPosition)
+    {
+        return (tipPosition + rootPosition) * 0.5f;
+    }
+
+    private static string BuildMeshSummary(
+        Mesh mesh)
+    {
+        if (mesh == null)
+        {
+            return "Mesh=null";
+        }
+
+        long triangleCount = 0;
+
+        for (int subMeshIndex = 0;
+             subMeshIndex < mesh.subMeshCount;
+             subMeshIndex++)
+        {
+            if (mesh.GetTopology(subMeshIndex) !=
+                MeshTopology.Triangles)
+            {
+                continue;
+            }
+
+            triangleCount +=
+                mesh.GetIndexCount(subMeshIndex) / 3;
+        }
+
+        Bounds bounds =
+            mesh.bounds;
+
+        return
+            $"Mesh='{mesh.name}', Vertices={mesh.vertexCount}, " +
+            $"Triangles={triangleCount}, SubMeshes={mesh.subMeshCount}, " +
+            $"Readable={mesh.isReadable}, " +
+            $"BoundsCenter={FormatVector3(bounds.center)}, " +
+            $"BoundsSize={FormatVector3(bounds.size)}";
+    }
+
+    private static string BuildTransformSummary(
+        Transform targetTransform)
+    {
+        if (targetTransform == null)
+        {
+            return "Transform=null";
+        }
+
+        return
+            $"Transform='{targetTransform.name}', " +
+            $"WorldPosition={FormatVector3(targetTransform.position)}, " +
+            $"WorldRotationEuler={FormatVector3(targetTransform.rotation.eulerAngles)}, " +
+            $"LossyScale={FormatVector3(targetTransform.lossyScale)}";
+    }
+
+    private static string FormatVector3(
+        Vector3 value)
+    {
+        return
+            $"({value.x:F4}, {value.y:F4}, {value.z:F4})";
+    }
+
+    private void LogDiagnostic(
+        string stage,
+        string message)
+    {
+        if (!enableDiagnosticLogs)
+        {
+            return;
+        }
+
+        Debug.Log(
+            $"[MeshCutDiagnostic][{stage}] {message}",
+            this);
+    }
+
+    private void LogDiagnosticWarning(
+        string stage,
+        string message)
+    {
+        if (!enableDiagnosticLogs)
+        {
+            return;
+        }
+
+        Debug.LogWarning(
+            $"[MeshCutDiagnostic][{stage}] {message}",
+            this);
+    }
+
     /// <summary>
     /// Mesh切断失敗理由をConsoleへ出力する。
     /// </summary>
@@ -768,7 +1030,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     }
 
     /// <summary>
-    /// Sceneビューで切断位置有効範囲を表示するため、
+    /// Sceneビューで最終切断境界の許可範囲を表示するため、
     /// 切断対象Meshの現在形状をEnemyMeshCutterローカル空間のBoundsへ変換する。
     /// </summary>
     private bool TryGetPreviewBounds(
@@ -844,5 +1106,4 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             sourceToCutRangeSpace,
             out bounds);
     }
-
 }

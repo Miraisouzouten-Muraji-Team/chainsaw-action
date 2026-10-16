@@ -33,6 +33,34 @@ public sealed class ChainsawAttackTrajectoryProfile : ScriptableObject
     [SerializeField]
     private string trajectoryReferencePath = string.Empty;
 
+    [Tooltip("座標変換診断用のBake情報が現在のProfileに保存済みかを示す。既存Profileは再Bake後にtrueになる。")]
+    [SerializeField]
+    private bool hasCoordinateDiagnosticMetadata;
+
+    [Tooltip("Bake時にPlayer Rootとして指定したGameObject名。RuntimeのPlayer Tag取得結果との診断比較に使用する。")]
+    [SerializeField]
+    private string bakedPlayerRootName = string.Empty;
+
+    [Tooltip("Bake時にTrajectory Referenceとして指定したGameObject名。Runtimeの解決結果との診断比較に使用する。")]
+    [SerializeField]
+    private string bakedTrajectoryReferenceName = string.Empty;
+
+    [Tooltip("Player RootからChainsaw Tipまでの相対Hierarchy Path。Runtime座標復元の診断時に現在のTip位置を取得するために使用する。")]
+    [SerializeField]
+    private string chainsawTipPath = string.Empty;
+
+    [Tooltip("Player RootからChainsaw Rootまでの相対Hierarchy Path。Runtime座標復元の診断時に現在のRoot位置を取得するために使用する。")]
+    [SerializeField]
+    private string chainsawRootPath = string.Empty;
+
+    [Tooltip("Bake実行時のPlayer RootのLossy Scale。Runtime基準Transformとの診断比較に使用する。")]
+    [SerializeField]
+    private Vector3 bakedPlayerRootLossyScale = Vector3.one;
+
+    [Tooltip("Bake実行時のTrajectory ReferenceのLossy Scale。Runtime基準Transformとの診断比較に使用する。")]
+    [SerializeField]
+    private Vector3 bakedTrajectoryReferenceLossyScale = Vector3.one;
+
     [Header("Bake済み軌跡")]
     [SerializeField]
     private List<ChainsawBladeTrajectorySample> samples =
@@ -41,6 +69,13 @@ public sealed class ChainsawAttackTrajectoryProfile : ScriptableObject
     public AttackData AttackData => attackData;
     public AnimationClip SourceAnimationClip => sourceAnimationClip;
     public string TrajectoryReferencePath => trajectoryReferencePath;
+    public bool HasCoordinateDiagnosticMetadata => hasCoordinateDiagnosticMetadata;
+    public string BakedPlayerRootName => bakedPlayerRootName;
+    public string BakedTrajectoryReferenceName => bakedTrajectoryReferenceName;
+    public string ChainsawTipPath => chainsawTipPath;
+    public string ChainsawRootPath => chainsawRootPath;
+    public Vector3 BakedPlayerRootLossyScale => bakedPlayerRootLossyScale;
+    public Vector3 BakedTrajectoryReferenceLossyScale => bakedTrajectoryReferenceLossyScale;
     public IReadOnlyList<ChainsawBladeTrajectorySample> Samples => samples;
     public int SampleCount => samples?.Count ?? 0;
     public bool HasValidTrajectory => samples != null && samples.Count >= 2;
@@ -53,12 +88,25 @@ public sealed class ChainsawAttackTrajectoryProfile : ScriptableObject
     public void SetBakedData(
         AttackData sourceAttackData,
         AnimationClip sourceClip,
+        string sourcePlayerRootName,
+        string sourceTrajectoryReferenceName,
         string referencePath,
+        string tipPath,
+        string rootPath,
+        Vector3 sourcePlayerRootLossyScale,
+        Vector3 sourceTrajectoryReferenceLossyScale,
         IReadOnlyList<ChainsawBladeTrajectorySample> sourceSamples)
     {
         attackData = sourceAttackData;
         sourceAnimationClip = sourceClip;
+        hasCoordinateDiagnosticMetadata = true;
+        bakedPlayerRootName = sourcePlayerRootName ?? string.Empty;
+        bakedTrajectoryReferenceName = sourceTrajectoryReferenceName ?? string.Empty;
         trajectoryReferencePath = referencePath ?? string.Empty;
+        chainsawTipPath = tipPath ?? string.Empty;
+        chainsawRootPath = rootPath ?? string.Empty;
+        bakedPlayerRootLossyScale = sourcePlayerRootLossyScale;
+        bakedTrajectoryReferenceLossyScale = sourceTrajectoryReferenceLossyScale;
 
         samples.Clear();
 

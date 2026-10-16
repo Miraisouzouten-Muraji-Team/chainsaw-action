@@ -15,6 +15,13 @@ MonoBehaviour:
   attackData: {fileID: 11400000, guid: e540abe81fcc379418b2cdafb563b6e8, type: 2}
   sourceAnimationClip: {fileID: -203655887218126122, guid: 391887cd03462184ba120b1ab6b4ff6b, type: 3}
   trajectoryReferencePath: 
+  hasCoordinateDiagnosticMetadata: 1
+  bakedPlayerRootName: Player
+  bakedTrajectoryReferenceName: Player
+  chainsawTipPath: main character/SmartRigArmature/smartrig:Hips/smartrig:Spine/smartrig:Spine1/smartrig:Spine2/smartrig:RightShoulder/smartrig:RightArm/smartrig:RightForeArm/smartrig:RightHand/smartrig:RightHandRing1/chainsaw_v1.0/Tip
+  chainsawRootPath: main character/SmartRigArmature/smartrig:Hips/smartrig:Spine/smartrig:Spine1/smartrig:Spine2/smartrig:RightShoulder/smartrig:RightArm/smartrig:RightForeArm/smartrig:RightHand/smartrig:RightHandRing1/chainsaw_v1.0/Root
+  bakedPlayerRootLossyScale: {x: 1, y: 1, z: 1}
+  bakedTrajectoryReferenceLossyScale: {x: 1, y: 1, z: 1}
   samples:
   - tipPosition: {x: 1.5773554, y: 1.3430367, z: -0.6217675}
     rootPosition: {x: 1.2294946, y: 1.620357, z: -0.873425}

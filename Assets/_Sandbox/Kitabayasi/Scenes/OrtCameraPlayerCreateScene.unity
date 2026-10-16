@@ -406,7 +406,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3792763186821390665, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_TagString
-      value: Player
+      value: Untagged
       objectReference: {fileID: 0}
     - target: {fileID: 3848346086789356883, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: _group
@@ -693,6 +693,10 @@ PrefabInstance:
     m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: 563163852684737319, guid: 8b6c165a24a7021498124562437e381e, type: 3}
+      propertyPath: showPatrolDebugVisualization
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 563163852684737319, guid: 8b6c165a24a7021498124562437e381e, type: 3}
       propertyPath: managedReferences[2559746691593404481].chainsawAttackTrajectoryProfiles.Array.size
       value: 3
       objectReference: {fileID: 0}
@@ -782,11 +786,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3520317816894044316, guid: 8b6c165a24a7021498124562437e381e, type: 3}
       propertyPath: cutRangeMaximumNormalized
-      value: 1
+      value: 0.642
       objectReference: {fileID: 0}
     - target: {fileID: 3520317816894044316, guid: 8b6c165a24a7021498124562437e381e, type: 3}
       propertyPath: cutRangeMinimumNormalized
-      value: 0
+      value: 0.459
       objectReference: {fileID: 0}
     - target: {fileID: 3520317816894044316, guid: 8b6c165a24a7021498124562437e381e, type: 3}
       propertyPath: targetSkinnedMeshRenderer
@@ -2443,10 +2447,7 @@ MonoBehaviour:
   cameraShake: {fileID: 0}
   duration: 0.05
   hitStopSystem: {fileID: 630910035}
-  trajectoryRecorder: {fileID: 0}
-  bladeTrajectoryRecorder: {fileID: 1450766279}
   enableTrajectoryDebugLog: 1
-  sampleLogInterval: 10
 --- !u!1001 &1519021080
 PrefabInstance:
   m_ObjectHideFlags: 0

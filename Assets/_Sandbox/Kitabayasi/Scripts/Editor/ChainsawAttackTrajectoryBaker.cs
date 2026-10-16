@@ -23,6 +23,10 @@ public sealed class ChainsawAttackTrajectoryBaker : EditorWindow
     private const float DEFAULT_SAMPLE_RATE = 60.0f;
     private const float MINIMUM_SAMPLE_RATE = 1.0f;
     private const int MINIMUM_SAMPLE_COUNT = 2;
+    private const float COORDINATE_ROUND_TRIP_WARNING_THRESHOLD = 0.001f;
+    private const float REFERENCE_POSITION_CHANGE_WARNING_THRESHOLD = 0.001f;
+    private const float REFERENCE_ROTATION_CHANGE_WARNING_DEGREES = 0.1f;
+    private const float REFERENCE_SCALE_CHANGE_WARNING_THRESHOLD = 0.001f;
 
     private GameObject animationRoot;
     private Transform playerRootTransform;
@@ -36,6 +40,7 @@ public sealed class ChainsawAttackTrajectoryBaker : EditorWindow
     private float samplesPerSecond = DEFAULT_SAMPLE_RATE;
     private bool showTrajectory = true;
     private bool showBladeSegments = true;
+    private bool enableCoordinateValidationLog = true;
 
     [MenuItem("Tools/Chainsaw/Attack Trajectory Baker")]
     private static void OpenWindow()
@@ -77,6 +82,9 @@ public sealed class ChainsawAttackTrajectoryBaker : EditorWindow
 
         EditorGUILayout.Space();
         DrawVisualizationFields();
+
+        EditorGUILayout.Space();
+        DrawDiagnosticFields();
 
         EditorGUILayout.Space();
         DrawBakeButtons();
@@ -231,6 +239,20 @@ public sealed class ChainsawAttackTrajectoryBaker : EditorWindow
         }
     }
 
+    private void DrawDiagnosticFields()
+    {
+        EditorGUILayout.LabelField(
+            "座標変換診断",
+            EditorStyles.boldLabel);
+
+        enableCoordinateValidationLog =
+            EditorGUILayout.Toggle(
+                new GUIContent(
+                    "Bake時の座標検証ログ",
+                    "World→Local→Worldの往復誤差、Player Root / Trajectory Reference、先頭・中央・末尾サンプルをConsoleへ出力する。"),
+                enableCoordinateValidationLog);
+    }
+
     private void DrawBakeButtons()
     {
         using (
@@ -343,6 +365,22 @@ public sealed class ChainsawAttackTrajectoryBaker : EditorWindow
             return;
         }
 
+        if (!TryBuildRelativePath(
+                playerRootTransform,
+                tipTransform,
+                out string tipPath) ||
+            !TryBuildRelativePath(
+                playerRootTransform,
+                rootTransform,
+                out string rootPath))
+        {
+            EditorUtility.DisplayDialog(
+                "Chainsaw Trajectory Bake",
+                "Chainsaw Tip / RootのPlayer RootからのHierarchy Pathを取得できませんでした。",
+                "OK");
+            return;
+        }
+
         if (!TrySampleTrajectory(
                 out List<ChainsawBladeTrajectorySample> bakedSamples,
                 out string failureReason))
@@ -361,7 +399,13 @@ public sealed class ChainsawAttackTrajectoryBaker : EditorWindow
         profile.SetBakedData(
             attackData,
             animationClip,
+            playerRootTransform.name,
+            trajectoryReferenceTransform.name,
             referencePath,
+            tipPath,
+            rootPath,
+            playerRootTransform.lossyScale,
+            trajectoryReferenceTransform.lossyScale,
             bakedSamples);
 
         EditorUtility.SetDirty(
@@ -427,6 +471,21 @@ public sealed class ChainsawAttackTrajectoryBaker : EditorWindow
         Scene previewScene = default;
         bool previewSceneCreated = false;
         bool animationModeStarted = false;
+
+        float maximumTipRoundTripError = 0.0f;
+        float maximumRootRoundTripError = 0.0f;
+        float maximumReferencePositionChange = 0.0f;
+        float maximumReferenceRotationChange = 0.0f;
+        float maximumReferenceScaleChange = 0.0f;
+
+        Vector3 firstReferencePositionInPlayer = default;
+        Quaternion firstReferenceRotationInPlayer = default;
+        Vector3 firstReferenceLossyScale = default;
+        bool hasFirstReferencePose = false;
+
+        string firstSampleDiagnostic = null;
+        string middleSampleDiagnostic = null;
+        string lastSampleDiagnostic = null;
 
         try
         {
@@ -525,21 +584,140 @@ public sealed class ChainsawAttackTrajectoryBaker : EditorWindow
                     AnimationMode.EndSampling();
                 }
 
+                Vector3 tipWorldPosition =
+                    previewTip.position;
+
+                Vector3 rootWorldPosition =
+                    previewRoot.position;
+
                 Vector3 tipLocalPosition =
                     previewTrajectoryReference
                         .InverseTransformPoint(
-                            previewTip.position);
+                            tipWorldPosition);
 
                 Vector3 rootLocalPosition =
                     previewTrajectoryReference
                         .InverseTransformPoint(
-                            previewRoot.position);
+                            rootWorldPosition);
+
+                Vector3 tipRoundTripWorldPosition =
+                    previewTrajectoryReference
+                        .TransformPoint(
+                            tipLocalPosition);
+
+                Vector3 rootRoundTripWorldPosition =
+                    previewTrajectoryReference
+                        .TransformPoint(
+                            rootLocalPosition);
+
+                float tipRoundTripError =
+                    Vector3.Distance(
+                        tipWorldPosition,
+                        tipRoundTripWorldPosition);
+
+                float rootRoundTripError =
+                    Vector3.Distance(
+                        rootWorldPosition,
+                        rootRoundTripWorldPosition);
+
+                maximumTipRoundTripError =
+                    Mathf.Max(
+                        maximumTipRoundTripError,
+                        tipRoundTripError);
+
+                maximumRootRoundTripError =
+                    Mathf.Max(
+                        maximumRootRoundTripError,
+                        rootRoundTripError);
+
+                Vector3 referencePositionInPlayer =
+                    previewPlayerRoot.InverseTransformPoint(
+                        previewTrajectoryReference.position);
+
+                Quaternion referenceRotationInPlayer =
+                    Quaternion.Inverse(
+                        previewPlayerRoot.rotation) *
+                    previewTrajectoryReference.rotation;
+
+                Vector3 referenceLossyScale =
+                    previewTrajectoryReference.lossyScale;
+
+                if (!hasFirstReferencePose)
+                {
+                    firstReferencePositionInPlayer =
+                        referencePositionInPlayer;
+
+                    firstReferenceRotationInPlayer =
+                        referenceRotationInPlayer;
+
+                    firstReferenceLossyScale =
+                        referenceLossyScale;
+
+                    hasFirstReferencePose = true;
+                }
+                else
+                {
+                    maximumReferencePositionChange =
+                        Mathf.Max(
+                            maximumReferencePositionChange,
+                            Vector3.Distance(
+                                firstReferencePositionInPlayer,
+                                referencePositionInPlayer));
+
+                    maximumReferenceRotationChange =
+                        Mathf.Max(
+                            maximumReferenceRotationChange,
+                            Quaternion.Angle(
+                                firstReferenceRotationInPlayer,
+                                referenceRotationInPlayer));
+
+                    maximumReferenceScaleChange =
+                        Mathf.Max(
+                            maximumReferenceScaleChange,
+                            Vector3.Distance(
+                                firstReferenceLossyScale,
+                                referenceLossyScale));
+                }
 
                 bakedSamples.Add(
                     new ChainsawBladeTrajectorySample(
                         tipLocalPosition,
                         rootLocalPosition,
                         sampleTime));
+
+                if (enableCoordinateValidationLog)
+                {
+                    string sampleDiagnostic =
+                        BuildBakeSampleDiagnostic(
+                            i,
+                            sampleTime,
+                            tipWorldPosition,
+                            tipLocalPosition,
+                            tipRoundTripWorldPosition,
+                            tipRoundTripError,
+                            rootWorldPosition,
+                            rootLocalPosition,
+                            rootRoundTripWorldPosition,
+                            rootRoundTripError);
+
+                    if (i == 0)
+                    {
+                        firstSampleDiagnostic =
+                            sampleDiagnostic;
+                    }
+
+                    if (i == sampleCount / 2)
+                    {
+                        middleSampleDiagnostic =
+                            sampleDiagnostic;
+                    }
+
+                    if (i == sampleCount - 1)
+                    {
+                        lastSampleDiagnostic =
+                            sampleDiagnostic;
+                    }
+                }
             }
         }
         catch (System.Exception exception)
@@ -566,8 +744,112 @@ public sealed class ChainsawAttackTrajectoryBaker : EditorWindow
             }
         }
 
+        if (enableCoordinateValidationLog)
+        {
+            LogBakeCoordinateValidation(
+                trajectoryReferencePath,
+                maximumTipRoundTripError,
+                maximumRootRoundTripError,
+                maximumReferencePositionChange,
+                maximumReferenceRotationChange,
+                maximumReferenceScaleChange,
+                firstSampleDiagnostic,
+                middleSampleDiagnostic,
+                lastSampleDiagnostic);
+        }
+
         failureReason = null;
         return true;
+    }
+
+    private void LogBakeCoordinateValidation(
+        string referencePath,
+        float maximumTipRoundTripError,
+        float maximumRootRoundTripError,
+        float maximumReferencePositionChange,
+        float maximumReferenceRotationChange,
+        float maximumReferenceScaleChange,
+        string firstSampleDiagnostic,
+        string middleSampleDiagnostic,
+        string lastSampleDiagnostic)
+    {
+        string message =
+            "[TrajectoryCoordinateValidation][Bake]\n" +
+            $"PlayerRoot='{playerRootTransform.name}', " +
+            $"PlayerRootPosition={FormatVector3(playerRootTransform.position)}, " +
+            $"PlayerRootLossyScale={FormatVector3(playerRootTransform.lossyScale)}\n" +
+            $"TrajectoryReference='{trajectoryReferenceTransform.name}', " +
+            $"ReferencePath='{(string.IsNullOrEmpty(referencePath) ? "<Player Root>" : referencePath)}', " +
+            $"ReferencePosition={FormatVector3(trajectoryReferenceTransform.position)}, " +
+            $"ReferenceLossyScale={FormatVector3(trajectoryReferenceTransform.lossyScale)}\n" +
+            $"RoundTripMaxError: Tip={maximumTipRoundTripError:F6}, Root={maximumRootRoundTripError:F6}\n" +
+            $"ReferenceChangeDuringBake: Position={maximumReferencePositionChange:F6}, " +
+            $"Rotation={maximumReferenceRotationChange:F4}deg, " +
+            $"Scale={maximumReferenceScaleChange:F6}\n" +
+            $"First: {firstSampleDiagnostic}\n" +
+            $"Middle: {middleSampleDiagnostic}\n" +
+            $"Last: {lastSampleDiagnostic}";
+
+        Debug.Log(
+            message,
+            targetProfile);
+
+        if (maximumTipRoundTripError >
+                COORDINATE_ROUND_TRIP_WARNING_THRESHOLD ||
+            maximumRootRoundTripError >
+                COORDINATE_ROUND_TRIP_WARNING_THRESHOLD)
+        {
+            Debug.LogWarning(
+                "[TrajectoryCoordinateValidation][Bake] " +
+                "World→Local→Worldの往復誤差が大きいです。Transform階層や極端なScaleを確認してください。",
+                targetProfile);
+        }
+
+        if (maximumReferencePositionChange >
+                REFERENCE_POSITION_CHANGE_WARNING_THRESHOLD ||
+            maximumReferenceRotationChange >
+                REFERENCE_ROTATION_CHANGE_WARNING_DEGREES ||
+            maximumReferenceScaleChange >
+                REFERENCE_SCALE_CHANGE_WARNING_THRESHOLD)
+        {
+            Debug.LogWarning(
+                "[TrajectoryCoordinateValidation][Bake] " +
+                "Trajectory ReferenceがAnimationサンプリング中にPlayer Rootに対して変化しています。" +
+                "現在のRuntime復元は1つの現在姿勢のReference Transformから全サンプルを復元するため、" +
+                "軌跡基準には攻撃Animationで動かないTransformを使用してください。",
+                targetProfile);
+        }
+    }
+
+    private static string BuildBakeSampleDiagnostic(
+        int sampleIndex,
+        float sampleTime,
+        Vector3 tipWorldPosition,
+        Vector3 tipLocalPosition,
+        Vector3 tipRoundTripWorldPosition,
+        float tipRoundTripError,
+        Vector3 rootWorldPosition,
+        Vector3 rootLocalPosition,
+        Vector3 rootRoundTripWorldPosition,
+        float rootRoundTripError)
+    {
+        return
+            $"Index={sampleIndex}, Time={sampleTime:F4}, " +
+            $"TipWorld={FormatVector3(tipWorldPosition)}, " +
+            $"TipLocal={FormatVector3(tipLocalPosition)}, " +
+            $"TipRoundTripWorld={FormatVector3(tipRoundTripWorldPosition)}, " +
+            $"TipError={tipRoundTripError:F6}, " +
+            $"RootWorld={FormatVector3(rootWorldPosition)}, " +
+            $"RootLocal={FormatVector3(rootLocalPosition)}, " +
+            $"RootRoundTripWorld={FormatVector3(rootRoundTripWorldPosition)}, " +
+            $"RootError={rootRoundTripError:F6}";
+    }
+
+    private static string FormatVector3(
+        Vector3 value)
+    {
+        return
+            $"({value.x:F4}, {value.y:F4}, {value.z:F4})";
     }
 
     private static bool TryResolveRelativeTransform(

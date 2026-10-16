@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 198000012283690144}
   - component: {fileID: 199000010805106158}
   - component: {fileID: 3039706789300731140}
-  m_Layer: 0
+  m_Layer: 9
   m_Name: ElectricalSparks
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -4633,7 +4633,7 @@ GameObject:
   - component: {fileID: 33299857737045268}
   - component: {fileID: 23533922882842548}
   - component: {fileID: 64776613069519360}
-  m_Layer: 0
+  m_Layer: 9
   m_Name: Plane
   m_TagString: Untagged
   m_Icon: {fileID: 0}

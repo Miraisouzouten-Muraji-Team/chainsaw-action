@@ -1,4 +1,3 @@
-
 Shader "Custom/PixelLayerComposite"
 {
     Properties
@@ -73,7 +72,9 @@ Shader "Custom/PixelLayerComposite"
                 #endif
             }
 
-            // 有効な描画ピクセルの中から、最も手前のものを選択する。
+            // 有効な描画ピクセルから最も手前のものを選択する。
+            // 深度を持たない透明オブジェクトは、深度を持つ描画より奥として扱う。
+            // 深度を持たない候補同士はNear側を優先する。
             void SelectNearestPixel(
                 half4 candidateColor,
                 float candidateDepth,
@@ -81,17 +82,39 @@ Shader "Custom/PixelLayerComposite"
                 inout float selectedDepth,
                 inout bool selectedPixel)
             {
-                if (candidateColor.a <= 0.01 || IsSkyDepth(candidateDepth))
+                if (candidateColor.a <= 0.01)
                 {
                     return;
                 }
 
-                if (IsSkyDepth(selectedDepth) || IsCloserDepth(candidateDepth, selectedDepth))
+                bool candidateIsSky = IsSkyDepth(candidateDepth);
+                bool selectedIsSky = IsSkyDepth(selectedDepth);
+
+                bool shouldSelect = false;
+
+                if (!candidateIsSky)
                 {
-                    selectedColor = candidateColor;
-                    selectedDepth = candidateDepth;
-                    selectedPixel = true;
+                    // 有効なDepthを持つ不透明オブジェクト。
+                    shouldSelect =
+                        selectedIsSky ||
+                        IsCloserDepth(candidateDepth, selectedDepth);
                 }
+                else if (selectedIsSky)
+                {
+                    // Depthがない透明オブジェクト。
+                    // Far → Middle → Nearの順に処理するため、
+                    // 同条件では後から来るNear側を優先する。
+                    shouldSelect = true;
+                }
+
+                if (!shouldSelect)
+                {
+                    return;
+                }
+
+                selectedColor = candidateColor;
+                selectedDepth = candidateDepth;
+                selectedPixel = true;
             }
 
             half4 Frag(Varyings input) : SV_Target
@@ -142,7 +165,11 @@ Shader "Custom/PixelLayerComposite"
 
                 // 基本は不透明オブジェクト向け。
                 // エッジのAlphaを利用して元の背景と合成する。
-                half3 finalColor = lerp(sceneColor.rgb, selectedColor.rgb, saturate(selectedColor.a));
+                // Capture RTはPremultiplied Alphaである前提。
+                // RGBに対してAlphaを二重に乗算しない。
+                half alpha = saturate(selectedColor.a);
+
+                half3 finalColor = selectedColor.rgb + sceneColor.rgb * (1.0 - alpha);
 
                 return half4(finalColor, sceneColor.a);
             }

@@ -221,8 +221,7 @@ namespace Project.Rendering.Pixel
         {
             if (!captureCamera.TryGetComponent(out PixelCaptureViewMarker marker))
             {
-                marker = captureCamera.gameObject
-                    .AddComponent<PixelCaptureViewMarker>();
+                marker = captureCamera.gameObject.AddComponent<PixelCaptureViewMarker>();
             }
 
             marker.SetView(PixelCaptureView.Game);

@@ -7,7 +7,6 @@ using UnityEngine.Rendering;
 [DisallowMultipleComponent]
 public sealed class PlayerEvadeAfterimage : MonoBehaviour
 {
-    private static readonly int AFTERIMAGE_COLOR = Shader.PropertyToID("_AfterimageColor");
     private static readonly int BASE_COLOR = Shader.PropertyToID("_BaseColor");
     private static readonly int EMISSION_COLOR = Shader.PropertyToID("_EmissionColor");
 
@@ -18,7 +17,7 @@ public sealed class PlayerEvadeAfterimage : MonoBehaviour
     [SerializeField] private Transform modelRoot;
     [Tooltip("通常は空欄にします。身体や武器など描画対象を個別指定したい場合だけ登録します。指定があると見た目の親からの自動収集を使いません。")]
     [SerializeField] private Renderer[] sourceRenderers;
-    [Tooltip("URP/Lit、または同梱の残像シェーダーのマテリアルです。実行時は専用コピーを使い、元のマテリアルは変更しません。")]
+    [Tooltip("Universal Render Pipeline/Litのマテリアルを指定します。実行時は専用コピーを使い、元のマテリアルは変更しません。")]
     [SerializeField] private Material afterimageMaterial;
 
     [Header("発生と消え方")]
@@ -85,17 +84,16 @@ public sealed class PlayerEvadeAfterimage : MonoBehaviour
     private bool wasEvading;
     private bool initialized;
     private Material runtimeMaterial;
-    private bool usesUrpLit;
 
-    public static bool IsUrpLit(Material material)
+    private static bool IsUrpLit(Material material)
     {
         return material != null && material.shader != null &&
             material.shader.name == "Universal Render Pipeline/Lit";
     }
 
     // URPパッケージへのC#参照を追加せず、標準Litを透明な残像用に設定します。
-    // Editorの変換ボタンと、実行時の専用コピーの両方で使用します。
-    public static void ConfigureUrpLit(Material material)
+    // 実行時の専用コピーだけを変更します。
+    private static void ConfigureUrpLit(Material material)
     {
         if (!IsUrpLit(material)) return;
         SetFloatIfPresent(material, "_Surface", 1f);
@@ -152,12 +150,10 @@ public sealed class PlayerEvadeAfterimage : MonoBehaviour
     private void Awake()
     {
         if (chainsawDigging == null) chainsawDigging = GetComponentInParent<SensorChainsawDigging>();
-        usesUrpLit = IsUrpLit(afterimageMaterial);
-        if (chainsawDigging == null || afterimageMaterial == null ||
-            (!usesUrpLit && !afterimageMaterial.HasProperty(AFTERIMAGE_COLOR)) ||
-            afterimageMaterial.shader == null || !afterimageMaterial.shader.isSupported)
+        if (chainsawDigging == null || !IsUrpLit(afterimageMaterial) ||
+            !afterimageMaterial.shader.isSupported)
         {
-            Debug.LogError("回避残像：食い込み処理と、URP/Litまたは同梱シェーダーのマテリアルを設定してください。", this);
+            Debug.LogError("回避残像：食い込み処理と、Universal Render Pipeline/Litのマテリアルを設定してください。", this);
             enabled = false;
             return;
         }
@@ -176,7 +172,7 @@ public sealed class PlayerEvadeAfterimage : MonoBehaviour
             name = afterimageMaterial.name + " (Afterimage Runtime)",
             hideFlags = HideFlags.DontSave
         };
-        if (usesUrpLit) ConfigureUrpLit(runtimeMaterial);
+        ConfigureUrpLit(runtimeMaterial);
         orientationRoot = modelRoot != null ? modelRoot : sources[0].Renderer.transform;
         propertyBlock = new MaterialPropertyBlock();
         // プレイヤーの子にしないことで、過去の位置に残した残像が追従しないようにする。
@@ -352,13 +348,9 @@ public sealed class PlayerEvadeAfterimage : MonoBehaviour
     private void ApplyColor(GhostFrame frame, Color color)
     {
         propertyBlock.Clear();
-        propertyBlock.SetColor(AFTERIMAGE_COLOR, color);
-        if (usesUrpLit)
-        {
-            propertyBlock.SetColor(BASE_COLOR, new Color(0f, 0f, 0f, color.a));
-            // AlphaはBaseColorから適用されるため、Emissionへ二重に掛けない。
-            propertyBlock.SetColor(EMISSION_COLOR, new Color(color.r, color.g, color.b, 1f));
-        }
+        propertyBlock.SetColor(BASE_COLOR, new Color(0f, 0f, 0f, color.a));
+        // AlphaはBaseColorから適用されるため、Emissionへ二重に掛けない。
+        propertyBlock.SetColor(EMISSION_COLOR, new Color(color.r, color.g, color.b, 1f));
         foreach (GhostPart part in frame.Parts) part.Renderer.SetPropertyBlock(propertyBlock);
     }
 

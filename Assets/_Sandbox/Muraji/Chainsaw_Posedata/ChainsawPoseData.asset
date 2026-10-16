@@ -1,0 +1,423 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1d585910b0272564ba7ce195b0273601, type: 3}
+  m_Name: ChainsawPoseData
+  m_EditorClassIdentifier: Assembly-CSharp::ChainsawPoseData
+  Poses:
+  - DisplayName: "\u79FB\u52D5"
+    State: 1
+    AttackFilter: {fileID: 0}
+    LocalPosition: {x: -0.041, y: 0.989, z: 0.989}
+    LocalEulerAngles: {x: -1.046, y: 212.939, z: 121.748}
+    BlendSeconds: 0.1
+    PlayMotion: 1
+    EndLocalPosition: {x: 0.144, y: 212.939, z: -0.148}
+    EndLocalEulerAngles: {x: 182.633, y: 0, z: 0}
+    MotionSeconds: 1
+    ProgressCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  - DisplayName: "\u7A7A\u4E2D\u30FB\u4E0A\u6607"
+    State: 2
+    AttackFilter: {fileID: 0}
+    LocalPosition: {x: -0.695, y: 0.78, z: -0.5160197}
+    LocalEulerAngles: {x: -0, y: 0, z: 0}
+    BlendSeconds: 0.1
+    PlayMotion: 0
+    EndLocalPosition: {x: 0, y: 0, z: 0}
+    EndLocalEulerAngles: {x: 0, y: 0, z: 0}
+    MotionSeconds: 0.3
+    ProgressCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  - DisplayName: "\u7A7A\u4E2D\u30FB\u4E0B\u964D"
+    State: 3
+    AttackFilter: {fileID: 0}
+    LocalPosition: {x: -0.695, y: 0.78, z: -0.5160197}
+    LocalEulerAngles: {x: -0, y: 0, z: 0}
+    BlendSeconds: 0.1
+    PlayMotion: 0
+    EndLocalPosition: {x: 0, y: 0, z: 0}
+    EndLocalEulerAngles: {x: 0, y: 0, z: 0}
+    MotionSeconds: 0.3
+    ProgressCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  - DisplayName: "\u5730\u4E0A\u653B\u6483"
+    State: 4
+    AttackFilter: {fileID: 11400000, guid: 8607520c691a1314eb0173541cd3397a, type: 2}
+    LocalPosition: {x: 0.04971117, y: -0.1130539, z: 0.04990473}
+    LocalEulerAngles: {x: 11.845, y: 208.473, z: 65.647}
+    BlendSeconds: 0.1
+    PlayMotion: 1
+    EndLocalPosition: {x: 0.144, y: 212.939, z: -0.148}
+    EndLocalEulerAngles: {x: 0, y: 0, z: 0}
+    MotionSeconds: 0.3
+    ProgressCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  - DisplayName: "\u7A7A\u4E2D\u653B\u6483"
+    State: 5
+    AttackFilter: {fileID: 0}
+    LocalPosition: {x: -0.695, y: 0.78, z: -0.5160197}
+    LocalEulerAngles: {x: -0, y: 0, z: 0}
+    BlendSeconds: 0.1
+    PlayMotion: 0
+    EndLocalPosition: {x: 0, y: 0, z: 0}
+    EndLocalEulerAngles: {x: 0, y: 0, z: 0}
+    MotionSeconds: 0.3
+    ProgressCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  - DisplayName: "\u98DF\u3044\u8FBC\u307F\u8981\u6C42\u30FB\u63A5\u89E6\u5F85\u3061"
+    State: 6
+    AttackFilter: {fileID: 0}
+    LocalPosition: {x: -0.695, y: 0.78, z: -0.5160197}
+    LocalEulerAngles: {x: -0, y: 0, z: 0}
+    BlendSeconds: 0.1
+    PlayMotion: 0
+    EndLocalPosition: {x: 0, y: 0, z: 0}
+    EndLocalEulerAngles: {x: 0, y: 0, z: 0}
+    MotionSeconds: 0.3
+    ProgressCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  - DisplayName: "\u5E8A\u3078\u306E\u98DF\u3044\u8FBC\u307F"
+    State: 7
+    AttackFilter: {fileID: 0}
+    LocalPosition: {x: -0.695, y: 0.78, z: -0.5160197}
+    LocalEulerAngles: {x: -0, y: 0, z: 0}
+    BlendSeconds: 0.1
+    PlayMotion: 0
+    EndLocalPosition: {x: 0, y: 0, z: 0}
+    EndLocalEulerAngles: {x: 0, y: 0, z: 0}
+    MotionSeconds: 0.3
+    ProgressCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  - DisplayName: "\u58C1\u3078\u306E\u98DF\u3044\u8FBC\u307F"
+    State: 8
+    AttackFilter: {fileID: 0}
+    LocalPosition: {x: -0.695, y: 0.78, z: -0.5160197}
+    LocalEulerAngles: {x: -0, y: 0, z: 0}
+    BlendSeconds: 0.1
+    PlayMotion: 0
+    EndLocalPosition: {x: 0, y: 0, z: 0}
+    EndLocalEulerAngles: {x: 0, y: 0, z: 0}
+    MotionSeconds: 0.3
+    ProgressCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  - DisplayName: "\u5929\u4E95\u3078\u306E\u98DF\u3044\u8FBC\u307F"
+    State: 9
+    AttackFilter: {fileID: 0}
+    LocalPosition: {x: -0.695, y: 0.78, z: -0.5160197}
+    LocalEulerAngles: {x: -0, y: 0, z: 0}
+    BlendSeconds: 0.1
+    PlayMotion: 0
+    EndLocalPosition: {x: 0, y: 0, z: 0}
+    EndLocalEulerAngles: {x: 0, y: 0, z: 0}
+    MotionSeconds: 0.3
+    ProgressCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  - DisplayName: "\u6575\u3078\u306E\u98DF\u3044\u8FBC\u307F"
+    State: 10
+    AttackFilter: {fileID: 0}
+    LocalPosition: {x: -0.695, y: 0.78, z: -0.5160197}
+    LocalEulerAngles: {x: -0, y: 0, z: 0}
+    BlendSeconds: 0.1
+    PlayMotion: 0
+    EndLocalPosition: {x: 0, y: 0, z: 0}
+    EndLocalEulerAngles: {x: 0, y: 0, z: 0}
+    MotionSeconds: 0.3
+    ProgressCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  - DisplayName: "\u56DE\u907F"
+    State: 11
+    AttackFilter: {fileID: 0}
+    LocalPosition: {x: -0.695, y: 0.78, z: -0.5160197}
+    LocalEulerAngles: {x: -0, y: 0, z: 0}
+    BlendSeconds: 0.1
+    PlayMotion: 0
+    EndLocalPosition: {x: 0, y: 0, z: 0}
+    EndLocalEulerAngles: {x: 0, y: 0, z: 0}
+    MotionSeconds: 0.3
+    ProgressCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  - DisplayName: "\u98DF\u3044\u8FBC\u307F\u5F37\u885D\u7A81\u306E\u786C\u76F4"
+    State: 12
+    AttackFilter: {fileID: 0}
+    LocalPosition: {x: -0.695, y: 0.78, z: -0.5160197}
+    LocalEulerAngles: {x: -0, y: 0, z: 0}
+    BlendSeconds: 0.1
+    PlayMotion: 0
+    EndLocalPosition: {x: 0, y: 0, z: 0}
+    EndLocalEulerAngles: {x: 0, y: 0, z: 0}
+    MotionSeconds: 0.3
+    ProgressCurve:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4

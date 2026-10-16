@@ -456,6 +456,7 @@ GameObject:
   - component: {fileID: 4898117705153392083}
   - component: {fileID: 8602490176669791178}
   - component: {fileID: 4482065994242162528}
+  - component: {fileID: 8214567745011479227}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -735,6 +736,32 @@ MonoBehaviour:
           m_BoolArgument: 0
         m_CallState: 2
   playerHealth: {fileID: 2177246958733011521}
+--- !u!114 &8214567745011479227
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6270290766517622607}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f96a163df858394a854d8a955bd2af0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerEvadeAfterimage
+  chainsawDigging: {fileID: 6732003626081136930}
+  modelRoot: {fileID: 2576167837745099611}
+  sourceRenderers: []
+  afterimageMaterial: {fileID: 2100000, guid: f701307677dead24b8a448ab30eb11ed, type: 2}
+  spawnInterval: 0.04
+  lifetime: 0.3
+  maximumAfterimages: 10
+  minimumDistance: 0.05
+  minimumAngle: 10
+  freshColor: {r: 1, g: 0.45, b: 0, a: 0.65}
+  fadedColor: {r: 1, g: 1, b: 0, a: 0}
+  afterimageLayer: 0
+  isEvading: 0
+  visibleAfterimages: 0
 --- !u!1 &6415935171194727921
 GameObject:
   m_ObjectHideFlags: 0

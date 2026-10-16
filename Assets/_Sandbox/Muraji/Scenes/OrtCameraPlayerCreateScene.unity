@@ -396,6 +396,30 @@ PrefabInstance:
       propertyPath: m_Enabled
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 3461645834895154210, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: fadedColor.b
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3461645834895154210, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: fadedColor.g
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3461645834895154210, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: fadedColor.r
+      value: 0.7497406
+      objectReference: {fileID: 0}
+    - target: {fileID: 3461645834895154210, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: freshColor.b
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3461645834895154210, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: freshColor.g
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3461645834895154210, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: freshColor.r
+      value: 0.28981638
+      objectReference: {fileID: 0}
     - target: {fileID: 3669562692817934464, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_SkinnedMotionVectors
       value: 0

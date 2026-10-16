@@ -1,29 +1,13 @@
-/*using UnityEngine;
-using UnityEngine.UI;
-
-// 回転数をテキストで表示
-public class TachometerTextView : MonoBehaviour
-{
-    [SerializeField] private ChainsawAccelerator chainsawAccelerator;
-    [SerializeField] private Text TextAcceleration;
-    // Update is called once per frame
-    void Update()
-    {
-        // 現在の回転速度をテキストに表示
-        TextAcceleration.text = $"{chainsawAccelerator.CurrentSpeed:F0}RPM";
-    }
-}*/
-
 using TMPro;
 using UnityEngine;
 
 // 回転速度をテキストで表示する
 public class TachometerTextView : MonoBehaviour
 {
-    // 回転速度を表示するテキスト
+    [Header("メーター用テキスト")]
     [SerializeField] private TMP_Text speedText;
 
-    // 回転速度の情報を持つコンポーネント
+    [Header("回転速度の参照")]
     [SerializeField] private ChainsawAccelerator accelerator;
 
     private void Update()

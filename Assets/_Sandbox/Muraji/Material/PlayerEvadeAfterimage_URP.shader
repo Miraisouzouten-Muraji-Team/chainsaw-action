@@ -1,0 +1,57 @@
+Shader "Custom/Player Evade Afterimage URP 7872d219f6e05394d8958887fffc8bf1"
+{
+    Properties
+    {
+        _AfterimageColor ("残像の色（実行中はスクリプトから指定）", Color) = (1, 0.45, 0, 0.65)
+    }
+    SubShader
+    {
+        Tags { "Queue"="Transparent" "RenderType"="Transparent" "RenderPipeline"="UniversalPipeline" }
+        Blend SrcAlpha OneMinusSrcAlpha
+        ZWrite Off
+        ZTest LEqual
+        Cull Back
+
+        Pass
+        {
+            Tags { "LightMode"="SRPDefaultUnlit" }
+            HLSLPROGRAM
+            #pragma vertex Vert
+            #pragma fragment Frag
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            struct Attributes
+            {
+                float4 positionOS : POSITION;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+            };
+            struct Varyings
+            {
+                float4 positionCS : SV_POSITION;
+                UNITY_VERTEX_OUTPUT_STEREO
+            };
+
+            CBUFFER_START(UnityPerMaterial)
+                float4 _AfterimageColor;
+            CBUFFER_END
+
+            // 保存済みのMesh頂点をURPの描画用座標へ変換する。
+            Varyings Vert(Attributes input)
+            {
+                Varyings output;
+                UNITY_SETUP_INSTANCE_ID(input);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
+                output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
+                return output;
+            }
+
+            // 照明を使わず、指定した色と透明度で残像を描画する。
+            half4 Frag(Varyings input) : SV_Target
+            {
+                return _AfterimageColor;
+            }
+            ENDHLSL
+        }
+    }
+    Fallback Off
+}

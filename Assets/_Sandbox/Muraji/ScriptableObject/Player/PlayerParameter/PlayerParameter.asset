@@ -12,16 +12,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4bbb7c6225850224daa707f94737f45a, type: 3}
   m_Name: PlayerParameter
   m_EditorClassIdentifier: Assembly-CSharp::PlayerParameter
-  moveSpeed: 8
+  moveSpeed: 11
   acceleration: 20
   deceleration: 30
-  jumpForce: 25
-  airJumpForce: 25
+  jumpForce: 35
+  airJumpForce: 37.5
   coyoteTime: 0.1
-  gravityScale: 4
+  gravityScale: 8
   jumpStartGravityMultiplier: 0.7
   maxFallGravityMultiplier: 2
-  fallGravityIncreaseTime: 0.2
+  fallGravityIncreaseTime: 0.35
   maxFallSpeed: 20
   groundRayLayers:
     serializedVersion: 2
@@ -33,6 +33,7 @@ MonoBehaviour:
   groundRayContactTolerance: 0.1
   slopeGroundSnapDistance: 0.75
   slopeGroundStickSpeed: 1
+  slopeGroundProbeDistance: 0.2
   wallKnockbackSpeed: 8
   wallKnockbackDeceleration: 20
   wallKnockbackUpwardForce: 7
@@ -41,8 +42,8 @@ MonoBehaviour:
   impactShakeMagnitude: 0.1
   surfaceStickSpeed: 1
   wallClimbSpeed: 5
-  surfaceStickJumpForce: 25
-  surfaceStickJumpAngle: 53
+  surfaceStickJumpForce: 30
+  surfaceStickJumpAngle: 60
   surfaceStickJumpStunTime: 0.1
   surfaceStickJumpCameraShake: 0.1
   surfaceStickJumpNoOverrideTime: 0.1

@@ -67,7 +67,8 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
     public void Initialize(
         EnemyData enemyData,
         GameObject enemyObject,
-        Transform visualRoot)
+        Transform visualRoot,
+        Transform facingReference)
     {
         this.enemyData = enemyData as DroneEnemyData
             ?? throw new InvalidOperationException(

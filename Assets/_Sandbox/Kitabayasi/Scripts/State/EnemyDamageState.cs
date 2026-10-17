@@ -146,10 +146,12 @@ public sealed class EnemyDamageState : IEnemyState
 
     /// <summary>
     /// X/Yゲームプレイ平面上で、攻撃を受けた側とは反対へ身体が倒れるように
-    /// 見た目用Transformを親Transform基準のZ軸周りに回転させる。
-    /// VisualRoot自身がY軸反転していても、被弾方向による傾きが反転しないよう
-    /// 傾斜回転を元のローカル回転より先に合成する。
+    /// ゲームプレイ平面の法線であるワールドZ軸周りに見た目を傾ける。
     /// </summary>
+    /// <remarks>
+    /// 親Transformやモデル固有の初期向きに傾斜方向を依存させない。
+    /// 元姿勢はlocalRotationで保持し、復帰時は親Transformに対する相対姿勢を復元する。
+    /// </remarks>
     private void ApplyTilt()
     {
         if (tiltTarget == null ||
@@ -158,14 +160,20 @@ public sealed class EnemyDamageState : IEnemyState
             return;
         }
 
+        Quaternion baseWorldRotation =
+            tiltTarget.parent != null
+                ? tiltTarget.parent.rotation *
+                  originalLocalRotation
+                : originalLocalRotation;
+
         Quaternion tiltRotation =
             Quaternion.AngleAxis(
                 tiltAngle * hitSourceDirectionSign,
                 Vector3.forward);
 
-        tiltTarget.localRotation =
+        tiltTarget.rotation =
             tiltRotation *
-            originalLocalRotation;
+            baseWorldRotation;
     }
 
     /// <summary>

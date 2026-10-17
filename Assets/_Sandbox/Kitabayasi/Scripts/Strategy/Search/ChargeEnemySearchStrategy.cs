@@ -43,6 +43,7 @@ public sealed class ChargeEnemySearchStrategy :
     private GameObject enemyObject;
     private Transform enemyTransform;
     private Transform visualRoot;
+    private Transform facingReference;
     private Rigidbody enemyRigidbody;
     private Collider enemyCollider;
 
@@ -84,7 +85,8 @@ public sealed class ChargeEnemySearchStrategy :
     public void Initialize(
         EnemyData enemyData,
         GameObject enemyObject,
-        Transform visualRoot)
+        Transform visualRoot,
+        Transform facingReference)
     {
         this.enemyData = enemyData as ChargeEnemyData
             ?? throw new InvalidOperationException(
@@ -101,6 +103,12 @@ public sealed class ChargeEnemySearchStrategy :
             : throw new InvalidOperationException(
                 $"{nameof(ChargeEnemySearchStrategy)}を使用するEnemyには" +
                 "VisualRootの設定が必要です。");
+
+        this.facingReference = facingReference
+            ? facingReference
+            : throw new InvalidOperationException(
+                $"{nameof(ChargeEnemySearchStrategy)}を使用するEnemyには" +
+                "FacingReferenceの設定が必要です。");
 
         enemyRigidbody =
             enemyObject.GetComponent<Rigidbody>();
@@ -143,9 +151,7 @@ public sealed class ChargeEnemySearchStrategy :
         // ゲーム開始時の位置として固定する。
         patrolStartPosition = enemyRigidbody.position;
 
-        initialPatrolDirectionSign =
-            GetHorizontalDirectionSign(
-                visualRoot);
+        initialPatrolDirectionSign =GetHorizontalFacingSign();
 
         ResolvePlayerReferences();
     }
@@ -357,9 +363,7 @@ public sealed class ChargeEnemySearchStrategy :
         patrolStartPosition =
             enemyRigidbody.position;
 
-        initialPatrolDirectionSign =
-            GetHorizontalDirectionSign(
-                visualRoot);
+        initialPatrolDirectionSign =GetHorizontalFacingSign();
     }
 
     /// <summary>
@@ -454,8 +458,7 @@ public sealed class ChargeEnemySearchStrategy :
         }
 
         float visualDirectionSign =
-            GetHorizontalDirectionSign(
-                visualRoot);
+            GetHorizontalFacingSign();
 
         if (visualDirectionSign *
             currentMoveDirectionSign > 0f)
@@ -864,35 +867,24 @@ public sealed class ChargeEnemySearchStrategy :
     }
 
     /// <summary>
-    /// VisualRootが現在向いている方向から、
-    /// X方向の符号を取得する。
+    /// FacingReferenceが示す現在の正面からX方向の符号を取得する。
     /// </summary>
-    private static float GetHorizontalDirectionSign(
-        Transform targetTransform)
+    private float GetHorizontalFacingSign()
     {
-        float forwardX =
-            targetTransform.forward.x;
+        float facingX =
+            facingReference.forward.x;
 
-        if (Mathf.Abs(forwardX) >
+        if (Mathf.Abs(facingX) >
             DIRECTION_EPSILON)
         {
-            return Mathf.Sign(forwardX);
-        }
-
-        float rightX =
-            targetTransform.right.x;
-
-        if (Mathf.Abs(rightX) >
-            DIRECTION_EPSILON)
-        {
-            return Mathf.Sign(rightX);
+            return Mathf.Sign(facingX);
         }
 
         Debug.LogWarning(
             $"{nameof(ChargeEnemySearchStrategy)}: " +
-            "VisualRootの向きからX方向を判定できなかったため、" +
+            "FacingReference.forwardがX方向を向いていないため、" +
             "+X方向を使用します。",
-            targetTransform);
+            facingReference);
 
         return 1f;
     }

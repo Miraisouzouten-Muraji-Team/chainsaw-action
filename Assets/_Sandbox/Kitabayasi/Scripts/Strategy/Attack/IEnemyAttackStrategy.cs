@@ -19,10 +19,16 @@ public interface IEnemyAttackStrategy
     /// Rigidbody / Colliderを回転させず見た目だけを制御するためのTransform。
     /// 使用しないStrategyは参照を保持する必要はない。
     /// </param>
+    /// <param name="facingReference">
+    /// 見た目上の正面を示すTransform。
+    /// forwardがモデルの正面を向くようにPrefab側で設定する。
+    /// 使用しないStrategyは参照を保持する必要はない。
+    /// </param>
     void Initialize(
         EnemyData enemyData,
         GameObject enemyObject,
-        Transform visualRoot);
+        Transform visualRoot,
+        Transform facingReference);
 
     void BeginAttack(
         float initialAttackDirectionSign);

@@ -41,6 +41,7 @@ public sealed class ChargeEnemyAttackStrategy :
     private GameObject enemyObject;
     private Transform enemyTransform;
     private Transform visualRoot;
+    private Transform facingReference;
     private Rigidbody enemyRigidbody;
     private Collider enemyCollider;
 
@@ -70,7 +71,8 @@ public sealed class ChargeEnemyAttackStrategy :
     public void Initialize(
         EnemyData enemyData,
         GameObject enemyObject,
-        Transform visualRoot)
+        Transform visualRoot,
+        Transform facingReference)
     {
         this.enemyData = enemyData as ChargeEnemyData
             ?? throw new InvalidOperationException(
@@ -88,6 +90,12 @@ public sealed class ChargeEnemyAttackStrategy :
             : throw new InvalidOperationException(
                 $"{nameof(ChargeEnemyAttackStrategy)}を使用するEnemyには" +
                 "VisualRootの設定が必要です。");
+
+        this.facingReference = facingReference
+            ? facingReference
+            : throw new InvalidOperationException(
+                $"{nameof(ChargeEnemyAttackStrategy)}を使用するEnemyには" +
+                "FacingReferenceの設定が必要です。");
 
         enemyRigidbody =
             enemyObject.GetComponent<Rigidbody>();
@@ -578,27 +586,17 @@ public sealed class ChargeEnemyAttackStrategy :
 
     private float GetCurrentHorizontalFacingSign()
     {
-        float forwardX =
-            visualRoot.forward.x;
+        float facingX =
+            facingReference.forward.x;
 
-        if (Mathf.Abs(forwardX) >
+        if (Mathf.Abs(facingX) <=
             DIRECTION_EPSILON)
         {
-            return Mathf.Sign(
-                forwardX);
+            return 0f;
         }
 
-        float rightX =
-            visualRoot.right.x;
-
-        if (Mathf.Abs(rightX) >
-            DIRECTION_EPSILON)
-        {
-            return Mathf.Sign(
-                rightX);
-        }
-
-        return 0f;
+        return Mathf.Sign(
+            facingX);
     }
 
     /// <summary>

@@ -49,6 +49,7 @@ public sealed class DroneEnemySearchStrategy :
     private GameObject enemyObject;
     private Transform enemyTransform;
     private Transform visualRoot;
+    private Transform facingReference;
     private Rigidbody enemyRigidbody;
     private BoxCollider enemyBoxCollider;
 
@@ -87,7 +88,8 @@ public sealed class DroneEnemySearchStrategy :
     public void Initialize(
         EnemyData enemyData,
         GameObject enemyObject,
-        Transform visualRoot)
+        Transform visualRoot,
+        Transform facingReference)
     {
         this.enemyData =
             enemyData as DroneEnemyData
@@ -109,6 +111,13 @@ public sealed class DroneEnemySearchStrategy :
             : throw new InvalidOperationException(
                 $"{nameof(DroneEnemySearchStrategy)}を使用するEnemyには" +
                 "VisualRootが必要です。");
+
+        this.facingReference =
+            facingReference
+            ? facingReference
+            : throw new InvalidOperationException(
+                $"{nameof(DroneEnemySearchStrategy)}を使用するEnemyには" +
+                "FacingReferenceが必要です。");
 
         enemyRigidbody =
             enemyObject.GetComponent<Rigidbody>();
@@ -889,11 +898,22 @@ public sealed class DroneEnemySearchStrategy :
                 toTarget.y,
                 0f).normalized;
 
-        // VisualRoot.forwardを次の巡回地点へ向ける。
-        // worldUpを指定し、可能な範囲でモデルの上方向を維持する。
-        return Quaternion.LookRotation(
-            targetDirection,
-            Vector3.up);
+        // モデル固有の正面軸ではなくFacingReferenceを次の巡回地点へ向ける。
+        // FacingReferenceとVisualRootの現在の相対回転を維持することで、
+        // モデルごとの初期向きの違いをStrategyへ持ち込まない。
+        Quaternion targetFacingRotation =
+            Quaternion.LookRotation(
+                targetDirection,
+                Vector3.up);
+
+        Quaternion facingRelativeToVisual =
+            Quaternion.Inverse(
+                visualRoot.rotation) *
+            facingReference.rotation;
+
+        return targetFacingRotation *
+               Quaternion.Inverse(
+                   facingRelativeToVisual);
     }
 
     private void UpdateTurn()
@@ -1188,8 +1208,7 @@ public sealed class DroneEnemySearchStrategy :
                 targetDeltaX);
         }
 
-        return GetVisualHorizontalDirectionSign(
-            visualRoot);
+        return GetFacingHorizontalDirectionSign();
     }
 
     private Vector2 GetCurrentPlanarPosition()
@@ -1289,34 +1308,23 @@ public sealed class DroneEnemySearchStrategy :
         }
     }
 
-    private static float GetVisualHorizontalDirectionSign(
-        Transform targetTransform)
+    private float GetFacingHorizontalDirectionSign()
     {
-        float forwardX =
-            targetTransform.forward.x;
+        float facingX =
+            facingReference.forward.x;
 
-        if (Mathf.Abs(forwardX) >
+        if (Mathf.Abs(facingX) >
             DIRECTION_EPSILON)
         {
             return Mathf.Sign(
-                forwardX);
-        }
-
-        float rightX =
-            targetTransform.right.x;
-
-        if (Mathf.Abs(rightX) >
-            DIRECTION_EPSILON)
-        {
-            return Mathf.Sign(
-                rightX);
+                facingX);
         }
 
         Debug.LogWarning(
             $"{nameof(DroneEnemySearchStrategy)}: " +
-            "VisualRootの向きからX方向を判定できないため" +
+            "FacingReference.forwardがX方向を向いていないため" +
             "+X方向を使用します。",
-            targetTransform);
+            facingReference);
 
         return 1f;
     }

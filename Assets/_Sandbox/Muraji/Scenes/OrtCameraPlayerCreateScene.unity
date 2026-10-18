@@ -248,6 +248,11 @@ MonoBehaviour:
   effect1State: Base Layer.SlashEffect1
   effect2State: Base Layer.SlashEffect1
   effect3State: Base Layer.SlashEffect3
+--- !u!1 &161686046 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 1517345183352060374, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 169322074}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &169322074
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -332,10 +337,18 @@ PrefabInstance:
       propertyPath: m_Name
       value: InGameObjects
       objectReference: {fileID: 0}
+    - target: {fileID: 2245670082560285407, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 2262738845891927995, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: diggingAttackData
       value: 
       objectReference: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
+    - target: {fileID: 2262738845891927995, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: motionBoxColliderController
+      value: 
+      objectReference: {fileID: 818305211}
     - target: {fileID: 2292058601784843701, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.x
       value: -5.71224
@@ -513,6 +526,10 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6767748527981177828, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: groundCheckTransform
+      value: 
+      objectReference: {fileID: 437562576}
+    - target: {fileID: 6767748527981177828, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: directWallSpeedDivisor
       value: 20
       objectReference: {fileID: 0}
@@ -560,6 +577,10 @@ PrefabInstance:
       propertyPath: playerHealth
       value: 
       objectReference: {fileID: 437562572}
+    - target: {fileID: 8700256027829496238, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 8727278602754303466, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_AnchorMax.y
       value: 0
@@ -675,7 +696,10 @@ PrefabInstance:
     - {fileID: 5565908797997960837, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
     - {fileID: 5641995441097259229, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 1517345183352060374, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 818305211}
   m_SourcePrefab: {fileID: 100100000, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
 --- !u!1001 &208154827
 PrefabInstance:
@@ -801,6 +825,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 563163852684737319, guid: 8b6c165a24a7021498124562437e381e, type: 3}
+      propertyPath: facingReference
+      value: 
+      objectReference: {fileID: 504082208}
     - target: {fileID: 1408522875948655144, guid: 8b6c165a24a7021498124562437e381e, type: 3}
       propertyPath: m_Layer
       value: 6
@@ -879,7 +907,10 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
-    m_AddedGameObjects: []
+    m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: 3401371955779553497, guid: 8b6c165a24a7021498124562437e381e, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 504082208}
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 8b6c165a24a7021498124562437e381e, type: 3}
 --- !u!1001 &328668652
@@ -1089,6 +1120,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5f19d19e401e37149ac114aeb4614f78, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerHealth
+--- !u!65 &437562575 stripped
+BoxCollider:
+  m_CorrespondingSourceObject: {fileID: 5704232057980973483, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 169322074}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &437562576 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2876376612183138797, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 169322074}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &440873533
 GameObject:
   m_ObjectHideFlags: 0
@@ -1164,6 +1205,37 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 440873533}
   m_CullTransparentMesh: 1
+--- !u!1 &504082207
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 504082208}
+  m_Layer: 6
+  m_Name: Facing
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &504082208
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 504082207}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1420608922}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &521641776 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 6890133612777954232, guid: ddda4c46dbab8e345a5205f32a5617ca, type: 3}
@@ -1840,7 +1912,7 @@ MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 2262738845891927995, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
   m_PrefabInstance: {fileID: 169322074}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 161686046}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a98080f99fe6d7d478157f08d4acecd1, type: 3}
@@ -1851,12 +1923,38 @@ MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 6767748527981177828, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
   m_PrefabInstance: {fileID: 169322074}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
+  m_GameObject: {fileID: 161686046}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cea2bfeaf7c54a74590b3da1d613afbe, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SensorPlayerController
+--- !u!95 &818305207 stripped
+Animator:
+  m_CorrespondingSourceObject: {fileID: 7460033118597151051, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 169322074}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &818305211
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 161686046}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d00b1a16c2aea8249bdf0ecabc1e976e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MotionBoxColliderController
+  targetAnimator: {fileID: 818305207}
+  animatorLayer: 0
+  motionShapes:
+  - stateFullPath: Base Layer.Digging
+    colliders:
+    - targetCollider: {fileID: 437562575}
+      size: {x: 0.00662587, y: 0.017, z: 0.00703343}
+      center: {x: 0.00030876, y: 0.0037587, z: 0}
+  cancelRestoreDuration: 0.5
 --- !u!114 &930093647 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 7217592104680922282, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
@@ -2046,6 +2144,11 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1450766274}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!4 &1420608922 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3401371955779553497, guid: 8b6c165a24a7021498124562437e381e, type: 3}
+  m_PrefabInstance: {fileID: 316665848}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &1450766274 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 3f4bdf2943fceee45b69c2567c21394d, type: 3}
@@ -2168,10 +2271,6 @@ MonoBehaviour:
   cameraShake: {fileID: 0}
   duration: 0.05
   hitStopSystem: {fileID: 630910035}
-  trajectoryRecorder: {fileID: 0}
-  bladeTrajectoryRecorder: {fileID: 1450766279}
-  enableTrajectoryDebugLog: 1
-  sampleLogInterval: 10
 --- !u!1001 &1519021080
 PrefabInstance:
   m_ObjectHideFlags: 0

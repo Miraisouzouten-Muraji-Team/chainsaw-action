@@ -457,6 +457,7 @@ GameObject:
   - component: {fileID: 8602490176669791178}
   - component: {fileID: 4482065994242162528}
   - component: {fileID: 8214567745011479227}
+  - component: {fileID: 4428709918551875991}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -571,6 +572,7 @@ MonoBehaviour:
   detector: {fileID: 5176221053347166965}
   accelerator: {fileID: 5672076857265227413}
   playerAnimator: {fileID: 4898117705153392083}
+  motionBoxColliderController: {fileID: 0}
   chainsawAttack: {fileID: 6711951221994413545}
   diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
 --- !u!114 &5176221053347166965
@@ -762,6 +764,27 @@ MonoBehaviour:
   afterimageLayer: 0
   isEvading: 0
   visibleAfterimages: 0
+--- !u!114 &4428709918551875991
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6270290766517622607}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d00b1a16c2aea8249bdf0ecabc1e976e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MotionBoxColliderController
+  targetAnimator: {fileID: 2705926445851039698}
+  animatorLayer: 0
+  motionShapes:
+  - stateFullPath: Base Layer.Digging
+    colliders:
+    - targetCollider: {fileID: 0}
+      size: {x: 0.00662587, y: 0.017, z: 0.00703343}
+      center: {x: 0.00030876, y: 0.0037587, z: 0}
+  cancelRestoreDuration: 0.5
 --- !u!1 &6415935171194727921
 GameObject:
   m_ObjectHideFlags: 0
@@ -836,10 +859,6 @@ MonoBehaviour:
   cameraShake: {fileID: 5429733058400219989, guid: 222bfb40d9d8c07429223c6c89cc414f, type: 3}
   duration: 0.05
   hitStopSystem: {fileID: 5471175804612744787}
-  trajectoryRecorder: {fileID: 6943853005728417369}
-  bladeTrajectoryRecorder: {fileID: 2526683457047687724}
-  enableTrajectoryDebugLog: 1
-  sampleLogInterval: 10
 --- !u!114 &5471175804612744787
 MonoBehaviour:
   m_ObjectHideFlags: 0

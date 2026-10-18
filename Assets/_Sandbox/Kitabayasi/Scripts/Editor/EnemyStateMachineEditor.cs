@@ -36,8 +36,8 @@ public sealed class EnemyStateMachineEditor : Editor
     private const string SHOW_PATROL_DEBUG_PROPERTY_NAME =
         "showPatrolDebugVisualization";
 
-    private const string VISUAL_ROOT_PROPERTY_NAME =
-        "visualRoot";
+    private const string FACING_REFERENCE_PROPERTY_NAME =
+        "facingReference";
 
     private const string PATROL_OFFSET_PROPERTY_NAME =
         "patrolOffset";
@@ -64,7 +64,7 @@ public sealed class EnemyStateMachineEditor : Editor
     private SerializedProperty alertStrategyProperty;
     private SerializedProperty attackStrategyProperty;
     private SerializedProperty showPatrolDebugProperty;
-    private SerializedProperty visualRootProperty;
+    private SerializedProperty facingReferenceProperty;
 
     private void OnEnable()
     {
@@ -84,9 +84,9 @@ public sealed class EnemyStateMachineEditor : Editor
             serializedObject.FindProperty(
                 SHOW_PATROL_DEBUG_PROPERTY_NAME);
 
-        visualRootProperty =
+        facingReferenceProperty =
             serializedObject.FindProperty(
-                VISUAL_ROOT_PROPERTY_NAME);
+                FACING_REFERENCE_PROPERTY_NAME);
     }
 
     public override void OnInspectorGUI()
@@ -228,15 +228,15 @@ public sealed class EnemyStateMachineEditor : Editor
             return;
         }
 
-        SerializedProperty visualRootProperty =
+        SerializedProperty facingReferenceProperty =
             serializedStateMachine.FindProperty(
-                VISUAL_ROOT_PROPERTY_NAME);
+                FACING_REFERENCE_PROPERTY_NAME);
 
-        Transform visualRoot =
-            visualRootProperty?.objectReferenceValue
+        Transform facingReference =
+            facingReferenceProperty?.objectReferenceValue
             as Transform;
 
-        if (visualRoot == null)
+        if (facingReference == null)
         {
             return;
         }
@@ -247,7 +247,7 @@ public sealed class EnemyStateMachineEditor : Editor
         Vector3 patrolDirection =
             Vector3.right *
             GetInitialHorizontalDirectionSign(
-                visualRoot);
+                facingReference);
 
         Vector3 patrolEndPosition =
             patrolStartPosition +
@@ -285,11 +285,11 @@ public sealed class EnemyStateMachineEditor : Editor
             return;
         }
 
-        Transform visualRoot =
-            visualRootProperty?.objectReferenceValue
+        Transform facingReference =
+            facingReferenceProperty?.objectReferenceValue
             as Transform;
 
-        if (visualRoot == null)
+        if (facingReference == null)
         {
             return;
         }
@@ -299,7 +299,7 @@ public sealed class EnemyStateMachineEditor : Editor
 
         DrawPatrolOffsetEditor(
             stateMachine,
-            visualRoot,
+            facingReference,
             serializedObject,
             patrolOffsetProperty);
     }
@@ -311,7 +311,7 @@ public sealed class EnemyStateMachineEditor : Editor
     /// </summary>
     private static void DrawPatrolOffsetEditor(
         EnemyStateMachine stateMachine,
-        Transform visualRoot,
+        Transform facingReference,
         SerializedObject stateMachineSerializedObject,
         SerializedProperty patrolOffsetProperty)
     {
@@ -321,7 +321,7 @@ public sealed class EnemyStateMachineEditor : Editor
         Vector3 patrolDirection =
             Vector3.right *
             GetInitialHorizontalDirectionSign(
-                visualRoot);
+                facingReference);
 
         Vector3 endPosition =
             patrolStartPosition +
@@ -450,30 +450,20 @@ public sealed class EnemyStateMachineEditor : Editor
     }
 
     /// <summary>
-    /// VisualRootの初期向きからX方向の巡回方向を取得する。
+    /// FacingReferenceの初期正面からX方向の巡回方向を取得する。
     /// 実際のChargeEnemySearchStrategyと同じ判定規則を使用する。
     /// </summary>
     private static float GetInitialHorizontalDirectionSign(
-        Transform targetTransform)
+        Transform facingReference)
     {
-        float forwardX =
-            targetTransform.forward.x;
+        float facingX =
+            facingReference.forward.x;
 
-        if (Mathf.Abs(forwardX) >
+        if (Mathf.Abs(facingX) >
             DIRECTION_EPSILON)
         {
             return Mathf.Sign(
-                forwardX);
-        }
-
-        float rightX =
-            targetTransform.right.x;
-
-        if (Mathf.Abs(rightX) >
-            DIRECTION_EPSILON)
-        {
-            return Mathf.Sign(
-                rightX);
+                facingX);
         }
 
         return 1f;

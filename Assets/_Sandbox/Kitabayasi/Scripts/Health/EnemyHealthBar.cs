@@ -3,12 +3,12 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// EnemyHealthの状態をHPバーとして表示する。
+/// 指定されたEnemyHealthの状態を1本のHPバーとして表示する。
 /// </summary>
 /// <remarks>
-/// 自分が属するEnemyの親階層からEnemyHealthを取得し、
-/// 現在HP、直前のダメージ量、失われたHPの視覚表現を担当する。
-/// HPの保持・変更やダメージ計算は担当しない。
+/// 共通Canvas上で生成され、Bindで指定されたEnemyHealthを購読して
+/// 現在HPと直前のダメージ量を表示する。
+/// HPの保持・変更、対象Enemyの探索、画面上の追従位置管理は担当しない。
 /// </remarks>
 public class EnemyHealthBar : MonoBehaviour
 {
@@ -28,23 +28,11 @@ public class EnemyHealthBar : MonoBehaviour
 
     private EnemyHealth enemyHealth;
     private Coroutine damageDisplayCoroutine;
+    private bool isInitialized;
+    private bool isSubscribed;
 
     private void Awake()
     {
-        // HPバーをEnemyごとにPrefab化しても手動参照設定が不要になるよう、
-        // 自分自身から親階層を辿って、このHPバーが属するEnemyHealthを取得する。
-        enemyHealth = GetComponentInParent<EnemyHealth>();
-
-        if (enemyHealth == null)
-        {
-            Debug.LogError(
-                $"{nameof(EnemyHealthBar)}: 親階層に {nameof(EnemyHealth)} が見つかりません。",
-                this);
-
-            enabled = false;
-            return;
-        }
-
         if (currentHealthImage == null || damageHealthImage == null)
         {
             Debug.LogError(
@@ -52,71 +40,132 @@ public class EnemyHealthBar : MonoBehaviour
                 this);
 
             enabled = false;
+            return;
         }
+
+        isInitialized = true;
     }
 
     private void OnEnable()
     {
-        enemyHealth.HealthChanged += HandleHealthChanged;
+        if (!isInitialized || enemyHealth == null)
+        {
+            return;
+        }
 
+        SubscribeToHealth();
         SetHealthImmediately();
     }
 
     private void OnDisable()
     {
-        // HP変更通知を受け取らないよう、イベント購読を解除する。
-        if (enemyHealth != null)
-        {
-            enemyHealth.HealthChanged -= HandleHealthChanged;
-        }
-
-        // 無効化後にCoroutineの続きが実行されないよう停止する。
-        if (damageDisplayCoroutine != null)
-        {
-            StopCoroutine(damageDisplayCoroutine);
-            damageDisplayCoroutine = null;
-        }
+        UnsubscribeFromHealth();
+        StopDamageDisplayCoroutine();
     }
 
-    // EnemyHealthからHP変更通知を受け取ったときのHPバー更新処理。
-    private void HandleHealthChanged(int previousHealth, int currentHealth)
+    /// <summary>
+    /// このHPバーに表示するEnemyHealthを設定する。
+    /// </summary>
+    /// <remarks>
+    /// 共通Canvasから生成直後に呼び出す。
+    /// HPバーは対象EnemyのTransform階層からEnemyHealthを探索しない。
+    /// </remarks>
+    public void Bind(EnemyHealth targetHealth)
     {
-        float previousHealthRatio = CalculateHealthRatio(previousHealth);
-        float currentHealthRatio = CalculateHealthRatio(currentHealth);
+        if (targetHealth == null)
+        {
+            Debug.LogError(
+                $"{nameof(EnemyHealthBar)}: " +
+                $"{nameof(EnemyHealth)} が指定されていません。",
+                this);
+            return;
+        }
 
-        // 現在HPはダメージを受けた瞬間に減らす。
+        if (ReferenceEquals(enemyHealth, targetHealth))
+        {
+            if (isActiveAndEnabled && isInitialized)
+            {
+                SubscribeToHealth();
+                SetHealthImmediately();
+            }
+
+            return;
+        }
+
+        UnsubscribeFromHealth();
+        StopDamageDisplayCoroutine();
+
+        enemyHealth = targetHealth;
+
+        if (!isActiveAndEnabled || !isInitialized)
+        {
+            return;
+        }
+
+        SubscribeToHealth();
+        SetHealthImmediately();
+    }
+
+    private void SubscribeToHealth()
+    {
+        if (isSubscribed || enemyHealth == null)
+        {
+            return;
+        }
+
+        enemyHealth.HealthChanged += HandleHealthChanged;
+        isSubscribed = true;
+    }
+
+    private void UnsubscribeFromHealth()
+    {
+        if (!isSubscribed || enemyHealth == null)
+        {
+            return;
+        }
+
+        enemyHealth.HealthChanged -= HandleHealthChanged;
+        isSubscribed = false;
+    }
+
+    private void HandleHealthChanged(
+        int previousHealth,
+        int currentHealth)
+    {
+        float previousHealthRatio =
+            CalculateHealthRatio(previousHealth);
+
+        float currentHealthRatio =
+            CalculateHealthRatio(currentHealth);
+
         currentHealthImage.fillAmount = currentHealthRatio;
 
-        // 赤ゲージをダメージ前のHPまで残すことで、
-        // 緑ゲージとの差分を「今回失ったHP」として表示する。
+        // 赤ゲージをダメージ前のHPまで残し、
+        // 緑ゲージとの差分を今回失ったHPとして表示する。
         damageHealthImage.fillAmount = previousHealthRatio;
 
-        // 連続ダメージ時は古い表示終了処理を止め、
-        // 最新のダメージから表示時間を数え直す。
-        if (damageDisplayCoroutine != null)
-        {
-            StopCoroutine(damageDisplayCoroutine);
-        }
+        StopDamageDisplayCoroutine();
 
         damageDisplayCoroutine = StartCoroutine(
             HideDamageAfterDelay(currentHealthRatio));
     }
 
-    // ダメージ表示時間の経過後、赤ゲージを現在HPまで減らす。
-    private IEnumerator HideDamageAfterDelay(float currentHealthRatio)
+    private IEnumerator HideDamageAfterDelay(
+        float currentHealthRatio)
     {
         yield return new WaitForSeconds(damageDisplayDuration);
 
-        // 赤い部分を現在HPまで減らすことで、
-        // 背面にある灰色のバーを表示する。
         damageHealthImage.fillAmount = currentHealthRatio;
-
         damageDisplayCoroutine = null;
     }
 
-    // 現在のHPを待ち時間や演出なしでHPバーへ反映する。
     private void SetHealthImmediately()
     {
+        if (enemyHealth == null)
+        {
+            return;
+        }
+
         float currentHealthRatio =
             CalculateHealthRatio(enemyHealth.CurrentHealth);
 
@@ -124,10 +173,20 @@ public class EnemyHealthBar : MonoBehaviour
         damageHealthImage.fillAmount = currentHealthRatio;
     }
 
-    // HPをImage.fillAmountで使用できる0～1の割合へ変換する。
     private float CalculateHealthRatio(int health)
     {
         return Mathf.Clamp01(
             (float)health / enemyHealth.MaxHealth);
+    }
+
+    private void StopDamageDisplayCoroutine()
+    {
+        if (damageDisplayCoroutine == null)
+        {
+            return;
+        }
+
+        StopCoroutine(damageDisplayCoroutine);
+        damageDisplayCoroutine = null;
     }
 }

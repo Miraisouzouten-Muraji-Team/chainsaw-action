@@ -17,21 +17,6 @@ public class ChainsawAttack : MonoBehaviour
 
     [Tooltip("命中時に時間を停止するコンポーネントを指定してください。未設定なら自動取得します。")]
     [SerializeField] private HitStop_System hitStopSystem;
-    [SerializeField] private ChainsawTrajectoryRecorder trajectoryRecorder;
-
-    [Header("新軌跡記録（IAttackHitReceiver送信用）")]
-    [SerializeField]
-    private ChainsawBladeTrajectoryRecorder bladeTrajectoryRecorder;
-
-    [Tooltip("ONにすると、軌跡記録と命中送信の状況をConsoleへ出力する。")]
-    [SerializeField] private bool enableTrajectoryDebugLog = true;
-
-    [Tooltip("RecordSampleのログを何回ごとに出すか。1なら毎回。")]
-    [SerializeField, Min(1)]
-    private int sampleLogInterval = 10;
-
-    private int sampleCallCount;
-    private const string LOG_PREFIX = "[ChainsawTrail] ";
     private const float DEFAULT_SHAKE_DURATION = 0.15f;
 
     // 設定不足の警告を、食い込みの連続命中で繰り返さないための記録。
@@ -76,40 +61,6 @@ public class ChainsawAttack : MonoBehaviour
             hitStopSystem =
                 FindAnyObjectByType<HitStop_System>();
         }
-
-        if (trajectoryRecorder == null)
-        {
-            trajectoryRecorder =
-                GetComponent<ChainsawTrajectoryRecorder>();
-        }
-
-        if (bladeTrajectoryRecorder == null)
-        {
-            bladeTrajectoryRecorder =
-                GetComponent<ChainsawBladeTrajectoryRecorder>();
-        }
-    }
-
-    private void FixedUpdate()
-    {
-        if (bladeTrajectoryRecorder == null ||
-            !bladeTrajectoryRecorder.IsRecording)
-        {
-            return;
-        }
-
-        bladeTrajectoryRecorder.RecordSample();
-        sampleCallCount++;
-
-        if (enableTrajectoryDebugLog &&
-            sampleCallCount % sampleLogInterval == 0)
-        {
-            Debug.Log(
-                LOG_PREFIX +
-                $"記録中: サンプル数={bladeTrajectoryRecorder.RecordedSampleCount}",
-                this
-            );
-        }
     }
 
     public void BeginAttack(AttackData data)
@@ -131,9 +82,6 @@ public class ChainsawAttack : MonoBehaviour
         attackShakeMagnitude = Mathf.Max(0f, data.cameraShack);
 
         attackPrepared = true;
-
-        trajectoryRecorder?.BeginRecording();
-        BeginBladeRecording("攻撃開始", data);
     }
 
     public void EnableHitBox()
@@ -169,12 +117,6 @@ public class ChainsawAttack : MonoBehaviour
         attackShakeMagnitude = 0f;
 
         hitEnemies.Clear();
-
-        if (!diggingActive)
-        {
-            trajectoryRecorder?.EndRecording();
-            EndBladeRecording("攻撃終了");
-        }
     }
 
     public void BeginDigging()
@@ -182,9 +124,6 @@ public class ChainsawAttack : MonoBehaviour
         EndAttack();
 
         diggingActive = true;
-
-        trajectoryRecorder?.BeginRecording();
-        BeginBladeRecording("食い込み開始", null);
     }
 
     public void EndDigging()
@@ -195,9 +134,6 @@ public class ChainsawAttack : MonoBehaviour
         }
 
         diggingActive = false;
-
-        trajectoryRecorder?.EndRecording();
-        EndBladeRecording("食い込み終了");
     }
 
     /// <summary>
@@ -227,15 +163,6 @@ public class ChainsawAttack : MonoBehaviour
 
         if (receiver == null)
         {
-            if (enableTrajectoryDebugLog)
-            {
-                Debug.LogWarning(
-                    LOG_PREFIX +
-                    $"食い込み対象自身または親にEnemyAttackHitReceiverがありません: " +
-                    $"対象={enemy.name}",
-                    enemy);
-            }
-
             return false;
         }
 
@@ -252,28 +179,6 @@ public class ChainsawAttack : MonoBehaviour
             Mathf.Max(0f, data.cameraShack));
 
         return true;
-    }
-
-    private ChainsawHitInfo CreateHit(
-        AttackData data,
-        float multiplier,
-        Vector3 point,
-        bool digging)
-    {
-        var trajectory =
-            trajectoryRecorder != null
-                ? trajectoryRecorder.Snapshot()
-                : System.Array.AsReadOnly(
-                    new ChainsawTrajectorySample[0]
-                );
-
-        return new ChainsawHitInfo(
-            data,
-            multiplier,
-            point,
-            digging,
-            trajectory
-        );
     }
 
     private void OnTriggerEnter(Collider other)
@@ -401,56 +306,8 @@ public class ChainsawAttack : MonoBehaviour
         Destroy(particle, lifetime);
     }
 
-    private void BeginBladeRecording(
-        string label,
-        ScriptableObject attackData)
-    {
-        if (bladeTrajectoryRecorder == null)
-        {
-            return;
-        }
-
-        sampleCallCount = 0;
-
-        bool started =
-            bladeTrajectoryRecorder.BeginRecording();
-
-        if (enableTrajectoryDebugLog)
-        {
-            Debug.Log(
-                LOG_PREFIX +
-                $"{label}: 記録開始={(started ? "成功" : "失敗")}, " +
-                $"攻撃データ={(attackData != null ? attackData.name : "なし")}",
-                this
-            );
-        }
-    }
-
-    private void EndBladeRecording(string label)
-    {
-        if (bladeTrajectoryRecorder == null ||
-            !bladeTrajectoryRecorder.IsRecording)
-        {
-            return;
-        }
-
-        ChainsawAttackTrajectory finalTrajectory =
-            bladeTrajectoryRecorder.EndRecording();
-
-        if (enableTrajectoryDebugLog)
-        {
-            Debug.Log(
-                LOG_PREFIX +
-                (finalTrajectory != null
-                    ? $"{label}: 最終サンプル数={finalTrajectory.SampleCount}"
-                    : $"{label}: 軌跡サンプルなし"),
-                this
-            );
-        }
-    }
-
     /// <summary>
-    /// 生存中の敵へ、攻撃データと軌跡をIAttackHitReceiver経由で送信する。
+    /// 生存中の敵へ、攻撃データをIAttackHitReceiver経由で送信する。
     /// </summary>
     /// <returns>
     /// 命中情報を送信した場合はtrue。実際のHP変更は受信側が担当する。
@@ -474,59 +331,11 @@ public class ChainsawAttack : MonoBehaviour
             return false;
         }
 
-        if (bladeTrajectoryRecorder == null)
-        {
-            if (enableTrajectoryDebugLog)
-            {
-                Debug.LogWarning(
-                    LOG_PREFIX +
-                    "Blade Trajectory Recorderが未設定のため送信できません。",
-                    this);
-            }
-
-            return false;
-        }
-
-        if (!bladeTrajectoryRecorder.TryCreateTrajectorySnapshot(
-                out ChainsawAttackTrajectory trajectory))
-        {
-            // 攻撃開始直後など、まだ物理更新で記録されていない場合は、
-            // 記録中であることを確認して命中時点のサンプルを追加する。
-            if (bladeTrajectoryRecorder.IsRecording)
-            {
-                bladeTrajectoryRecorder.RecordSample();
-            }
-
-            if (!bladeTrajectoryRecorder.TryCreateTrajectorySnapshot(
-                    out trajectory))
-            {
-                if (enableTrajectoryDebugLog)
-                {
-                    Debug.LogWarning(
-                        LOG_PREFIX +
-                        $"軌跡を取得できないため送信できません: 対象={target.name}",
-                        target);
-                }
-
-                return false;
-            }
-        }
-
         // 敵の受信実装を、既存の共通インターフェース経由で呼び出す。
         IAttackHitReceiver receiver = target;
 
         receiver.ReceiveAttackHit(
-            new PlayerAttackHitData(attackData, trajectory));
-
-        if (enableTrajectoryDebugLog)
-        {
-            Debug.Log(
-                LOG_PREFIX +
-                $"命中情報を送信: 対象={target.name}, " +
-                $"攻撃データ={attackData.name}, " +
-                $"軌跡サンプル数={trajectory.SampleCount}",
-                target);
-        }
+            new PlayerAttackHitData(attackData));
 
         return true;
     }

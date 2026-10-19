@@ -529,7 +529,6 @@ MonoBehaviour:
   playerParameter: {fileID: 11400000, guid: 95f83e18d5c42904aa49a97890997239, type: 2}
   chainsawDigging: {fileID: 6732003626081136930}
   chainsawAccelerator: {fileID: 5672076857265227413}
-  directWallSpeedDivisor: 100
   groundCheckTransform: {fileID: 7341091790671466356}
   isGroundedByRay: 0
   visualRoot: {fileID: 2576167837745099611}
@@ -784,6 +783,16 @@ MonoBehaviour:
     - targetCollider: {fileID: 946808743384932146}
       size: {x: 0.00662587, y: 0.017, z: 0.00703343}
       center: {x: 0.00030876, y: 0.0037587, z: 0}
+  - stateFullPath: Base Layer.Slash1
+    colliders:
+    - targetCollider: {fileID: 946808743384932146}
+      size: {x: 0.00662587, y: 0.01829907, z: 0.00703343}
+      center: {x: 0.00030876, y: 0.00349543, z: 0}
+  - stateFullPath: Base Layer.Slash2
+    colliders:
+    - targetCollider: {fileID: 946808743384932146}
+      size: {x: 0.00662587, y: 0.01829907, z: 0.00703343}
+      center: {x: 0.00030876, y: 0.00349543, z: 0}
   cancelRestoreDuration: 0.5
 --- !u!1 &6415935171194727921
 GameObject:

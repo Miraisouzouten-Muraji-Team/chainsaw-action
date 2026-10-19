@@ -263,7 +263,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 140633332249559882, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: slash1State
-      value: Base Layer.Slash0
+      value: Base Layer.Slash1
       objectReference: {fileID: 0}
     - target: {fileID: 140633332249559882, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: slashTrailEffect
@@ -709,6 +709,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 480292550696096733, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+      propertyPath: facingReference
+      value: 
+      objectReference: {fileID: 999289554}
     - target: {fileID: 1070078389178965008, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_Layer
       value: 6
@@ -783,7 +787,10 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
-    m_AddedGameObjects: []
+    m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: 3569061598298437783, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 999289554}
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
 --- !u!1 &312158538
@@ -975,6 +982,37 @@ Transform:
   m_CorrespondingSourceObject: {fileID: -5480977901411583989, guid: ddda4c46dbab8e345a5205f32a5617ca, type: 3}
   m_PrefabInstance: {fileID: 667443120}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &429490059
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 429490060}
+  m_Layer: 6
+  m_Name: Facing
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &429490060
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 429490059}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1091413517}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &432582688
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1205,6 +1243,11 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 440873533}
   m_CullTransparentMesh: 1
+--- !u!4 &486046259 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3569061598298437783, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+  m_PrefabInstance: {fileID: 208154827}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &504082207
 GameObject:
   m_ObjectHideFlags: 0
@@ -1966,6 +2009,37 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2ed266a1afa97164fbcfc5171763e7d1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlashTrailEffect
+--- !u!1 &999289553
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 999289554}
+  m_Layer: 6
+  m_Name: Facing
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &999289554
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 999289553}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 486046259}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1058200676
 GameObject:
   m_ObjectHideFlags: 0
@@ -2108,6 +2182,11 @@ Rigidbody:
   m_Interpolate: 0
   m_Constraints: 126
   m_CollisionDetection: 0
+--- !u!4 &1091413517 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 154366647660802942, guid: 6d4f233d85e96ec458a6134ad2180c37, type: 3}
+  m_PrefabInstance: {fileID: 1961571801}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1170191137 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 3f4bdf2943fceee45b69c2567c21394d, type: 3}
@@ -2578,6 +2657,10 @@ PrefabInstance:
       propertyPath: m_Layer
       value: 6
       objectReference: {fileID: 0}
+    - target: {fileID: 2910823792327834281, guid: 6d4f233d85e96ec458a6134ad2180c37, type: 3}
+      propertyPath: facingReference
+      value: 
+      objectReference: {fileID: 429490060}
     - target: {fileID: 4272369794776160093, guid: 6d4f233d85e96ec458a6134ad2180c37, type: 3}
       propertyPath: m_Layer
       value: 6
@@ -2652,7 +2735,10 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
-    m_AddedGameObjects: []
+    m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: 154366647660802942, guid: 6d4f233d85e96ec458a6134ad2180c37, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 429490060}
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 6d4f233d85e96ec458a6134ad2180c37, type: 3}
 --- !u!1001 &8746738879052740611

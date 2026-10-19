@@ -14,6 +14,13 @@ public class PlayerParameter : ScriptableObject
     [Tooltip("減速度")]
     [SerializeField]
     public float deceleration = 10f;
+
+    [Header("移動スティックの遊び")]
+    [Tooltip("横方向の移動入力を無視する範囲です。0.2なら左右とも入力の大きさが0.2以下では移動・向き変更しません。範囲を超えた入力は0～1へつなぎ直します。0なら遊びを追加しません。")]
+    [SerializeField, Range(0f, 0.95f)]
+    public float moveDeadZone = 0.2f;
+
+    [Header("ジャンプ・重力")]
     [Tooltip("ジャンプ力")]
     [SerializeField]
     public float jumpForce = 10f;
@@ -90,6 +97,9 @@ public class PlayerParameter : ScriptableObject
     [Tooltip("壁に食い込んでいるときの上昇速度")]
     [SerializeField, Min(0f)]
     public float wallClimbSpeed = 5f;
+    [Tooltip("壁へ直接食い込んだとき、回転速度をこの値で割って壁登りの基本速度へ加えます。小さいほど加速が大きくなります。床から壁へ移るときの速度引き継ぎには使用しません。")]
+    [SerializeField, Min(0.01f)]
+    public float directWallSpeedDivisor = 100f;
     [Tooltip("食い込み壁ジャンプ力")]
     [SerializeField, Min(0f)]
     public float surfaceStickJumpForce = 10f;

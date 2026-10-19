@@ -13,10 +13,6 @@ public class SensorPlayerController : MonoBehaviour
     [SerializeField] private SensorChainsawDigging chainsawDigging;
     [SerializeField] private ChainsawAccelerator chainsawAccelerator;
 
-    [Header("壁への直接食い込み速度")]
-    [Tooltip("回転速度をこの値で割って、壁登りの基本速度に加えます。小さいほど回転速度による加速が大きくなります。床から壁への速度引き継ぎには使用しません。")]
-    [SerializeField, Min(0.01f)] private float directWallSpeedDivisor = 100f;
-
     public bool CanTakeDamage =>
         chainsawDigging == null || !chainsawDigging.IsEvading;
 
@@ -296,6 +292,7 @@ public class SensorPlayerController : MonoBehaviour
         }
     }
 
+    // 入力・攻撃を更新する。食い込み中は移動入力による向き変更を止め、接触判定の方向を維持する。
     void Update()
     {
         if (IsImpactStunned || wallJumpStunRemaining > 0f)
@@ -315,12 +312,15 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        float moveInput = GetMoveInputWithDeadZone();
+
         if (chainsawDigging.Surface != ChainsawSurface.Floor &&
+            chainsawDigging.Surface != ChainsawSurface.Wall &&
             chainsawDigging.Surface != ChainsawSurface.Ceiling &&
             chainsawDigging.Surface != ChainsawSurface.Enemy &&
-            input.MoveInput != 0f)
+            moveInput != 0f)
         {
-            facingDirection = Mathf.Sign(input.MoveInput);
+            facingDirection = Mathf.Sign(moveInput);
             ApplyFacingRotation();
         }
 
@@ -647,7 +647,28 @@ public class SensorPlayerController : MonoBehaviour
             : 0f;
 
         return Mathf.Max(0f, playerParameter.wallClimbSpeed)
-            + rotationSpeed / Mathf.Max(0.01f, directWallSpeedDivisor);
+            + rotationSpeed / Mathf.Max(0.01f, playerParameter.directWallSpeedDivisor);
+    }
+
+    // PlayerParameterの遊び設定で横入力の中心付近を無効化し、残りを0～1へ補正する。
+    private float GetMoveInputWithDeadZone()
+    {
+        if (input == null || playerParameter == null)
+        {
+            return 0f;
+        }
+
+        float moveInput = Mathf.Clamp(input.MoveInput, -1f, 1f);
+        float inputMagnitude = Mathf.Abs(moveInput);
+        float deadZone = Mathf.Clamp(playerParameter.moveDeadZone, 0f, 0.95f);
+
+        if (inputMagnitude <= deadZone)
+        {
+            return 0f;
+        }
+
+        return Mathf.Sign(moveInput) *
+            ((inputMagnitude - deadZone) / (1f - deadZone));
     }
 
     // 設定アセットの移動速度と加減速を使い、現在速度を更新する。
@@ -669,7 +690,7 @@ public class SensorPlayerController : MonoBehaviour
 
         float moveInput = isAutoMoving
             ? facingDirection
-            : Mathf.Clamp(input.MoveInput, -1f, 1f);
+            : GetMoveInputWithDeadZone();
 
         float speedBonus = chainsawDigging.MoveSpeedBonus;
         float targetSpeed = moveInput * (playerParameter.moveSpeed + speedBonus);
@@ -852,7 +873,7 @@ public class SensorPlayerController : MonoBehaviour
         if (Mathf.Abs(requestedSpeed) <= 0.01f)
         {
             float direction = chainsawDigging.IsDigging
-                ? facingDirection : input.MoveInput;
+                ? facingDirection : GetMoveInputWithDeadZone();
             requestedSpeed = direction * playerParameter.moveSpeed;
         }
 

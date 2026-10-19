@@ -72,12 +72,13 @@ MonoBehaviour:
     probeVolumeBlendStatesCS: {fileID: 0}
   m_RendererFeatures:
   - {fileID: -1172159134056201380}
+  - {fileID: 8369403937786145325}
   - {fileID: -5791863826025335512}
   - {fileID: 7551552043721812693}
   - {fileID: 7218563272067358311}
   - {fileID: 4080925466021557763}
   - {fileID: 5258720680466886612}
-  m_RendererFeatureMap: 5cc3595a7aa7bbef2835536e892a9fafd5eae9ec9280cc68679e41e40c7d2d6403760ff5165ca238d4af3ad498bafa48
+  m_RendererFeatureMap: 5cc3595a7aa7bbef2daa7fd5891826742835536e892a9fafd5eae9ec9280cc68679e41e40c7d2d6403760ff5165ca238d4af3ad498bafa48
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -186,3 +187,19 @@ MonoBehaviour:
   passIndex: 0
   bindDepthStencilAttachment: 0
   m_Version: 1
+--- !u!114 &8369403937786145325
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4765c3e4616efde48b6404eb53aef4be, type: 3}
+  m_Name: PixelOpaqueCompositeRendererFeature
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelOpaqueCompositeRendererFeature
+  m_Active: 1
+  _compositeShader: {fileID: 4800000, guid: 327b5843c85b97d45a291a5595b6fc98, type: 3}
+  _gameCompositeMaterial: {fileID: 2100000, guid: 829d71493aac12f46af0c5361e92fca5, type: 2}
+  _sceneCompositeMaterial: {fileID: 2100000, guid: 4aa34f71a53ba11489906ada66f28fb9, type: 2}

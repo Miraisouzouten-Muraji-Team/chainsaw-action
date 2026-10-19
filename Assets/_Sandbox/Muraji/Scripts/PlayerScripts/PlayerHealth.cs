@@ -5,7 +5,7 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public sealed class PlayerHealth : MonoBehaviour
 {
-    [Tooltip("プレイヤーの最大HPを設定するアセットです。")]
+    [Tooltip("最大HPと、自動回復の待ち時間・回復量・回復間隔を設定するアセットです。")]
     [SerializeField] private PlayerHealthData healthData;
 
     [Tooltip("実行中の現在HPです。自動更新される確認用の値です。")]
@@ -21,6 +21,7 @@ public sealed class PlayerHealth : MonoBehaviour
     private Collider[] bodyColliders;
     private float maxHealth;
     private bool initialized;
+    private double nextRecoveryTime;
 
     public float CurrentHealth => currentHealth;
     public float MaxHealth => maxHealth;
@@ -76,6 +77,43 @@ public sealed class PlayerHealth : MonoBehaviour
         maxHealth = healthData.MaxHealth;
         currentHealth = maxHealth;
         initialized = true;
+        ResetRecoveryTimer();
+    }
+
+    // 被ダメージ後の待ち時間を過ぎたら、指定間隔で最大HPまで回復し変更を通知する。
+    private void FixedUpdate()
+    {
+        if (!initialized || IsDead || healthData == null ||
+            currentHealth >= maxHealth || healthData.RecoveryAmount <= 0f)
+        {
+            return;
+        }
+
+        double currentTime = Time.timeAsDouble;
+        if (currentTime < nextRecoveryTime)
+        {
+            return;
+        }
+
+        // 無効化中などに過ぎた回復回数を、一度にまとめて適用しない。
+        // 通知先でダメージやリスポーンが発生しても、そこで設定する待ち時間を優先する。
+        nextRecoveryTime = currentTime + healthData.RecoveryInterval;
+        float recoveredHealth = Mathf.Min(
+            maxHealth, currentHealth + healthData.RecoveryAmount);
+
+        if (recoveredHealth <= currentHealth)
+        {
+            return;
+        }
+
+        currentHealth = recoveredHealth;
+        HealthChanged?.Invoke(currentHealth, maxHealth);
+    }
+
+    // 次の回復を最後の被ダメージからの待ち時間後へ予約する。経過状態はSOへ保存しない。
+    private void ResetRecoveryTimer()
+    {
+        nextRecoveryTime = Time.timeAsDouble + healthData.RecoveryDelay;
     }
     // 有効なプレイヤーを床の照会対象へ登録する。HPはリセットしない。
     private void OnEnable()
@@ -166,6 +204,8 @@ public sealed class PlayerHealth : MonoBehaviour
             float.IsNaN(amount) || float.IsInfinity(amount)) return;
 
         currentHealth = Mathf.Max(0f, currentHealth - amount);
+        // 敵の攻撃とダメージ床のどちらでも、受けた時点で回復待ち時間を数え直す。
+        ResetRecoveryTimer();
         bool died = IsDead;
         HealthChanged?.Invoke(currentHealth, maxHealth);
         if (died) Died?.Invoke();
@@ -178,6 +218,7 @@ public sealed class PlayerHealth : MonoBehaviour
 
         exposures.Clear();
         currentHealth = maxHealth;
+        ResetRecoveryTimer();
         HealthChanged?.Invoke(currentHealth, maxHealth);
     }
 }

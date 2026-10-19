@@ -18,6 +18,9 @@ public class SensorChainsawDigging : MonoBehaviour
     [Tooltip("アニメーション制御")]
     [SerializeField] private PlayerAnimator playerAnimator;
 
+    [Tooltip("モーションごとのBoxCollider変更を管理するコンポーネントです。未設定なら同じGameObjectから取得します。食い込みをキャンセルした瞬間に元の形へ戻します。")]
+    [SerializeField] private MotionBoxColliderController motionBoxColliderController;
+
     [Tooltip("攻撃処理")]
     [SerializeField] private ChainsawAttack chainsawAttack;
 
@@ -119,6 +122,12 @@ public class SensorChainsawDigging : MonoBehaviour
     // 必要な参照を自動取得し、設定アセットが未登録なら処理を止める。
     private void Awake()
     {
+        // 必須設定の検証より先に、任意のCollider管理を取得する。
+        if (motionBoxColliderController == null)
+        {
+            motionBoxColliderController = GetComponent<MotionBoxColliderController>();
+        }
+
         if (diggingParameter == null)
         {
             Debug.LogError("Digging Parameterを設定してください。", this);
@@ -248,6 +257,12 @@ public class SensorChainsawDigging : MonoBehaviour
         float facingDirection,
         bool waitForContact)
     {
+        // キャンセル直後に同じ食い込みモーションを再開する場合も、形の変更を許可する。
+        if (motionBoxColliderController != null)
+        {
+            motionBoxColliderController.AllowMotionShapes();
+        }
+
         bool hasContact = detector.TryGetContact(
             null,
             out SensorChainsawContact initialContact,
@@ -880,6 +895,17 @@ public class SensorChainsawDigging : MonoBehaviour
     public void Cancel(
         bool immediate)
     {
+        // 状態を消す前に、食い込みや構えのキャンセルかを確認する。
+        // 食い込んでいない状態のCancelで、通常攻撃などのCollider設定を解除しない。
+        bool cancellingDigging = IsRequested || IsDigging || isWaitingForContact ||
+            (playerAnimator != null && playerAnimator.IsDiggingAnimationActive);
+
+        if (cancellingDigging && motionBoxColliderController != null)
+        {
+            // アニメーション終了や次のFixedUpdateを待たず、この場で元の形へ戻す。
+            motionBoxColliderController.RestoreCancelledMotion();
+        }
+
         // 攻撃・ジャンプ・無効化でも、接触待ちを残さない。
         isWaitingForContact = false;
         IsRequested = false;

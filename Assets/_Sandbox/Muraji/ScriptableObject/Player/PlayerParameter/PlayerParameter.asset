@@ -15,6 +15,7 @@ MonoBehaviour:
   moveSpeed: 11
   acceleration: 20
   deceleration: 30
+  moveDeadZone: 0.2
   jumpForce: 35
   airJumpForce: 37.5
   coyoteTime: 0.1
@@ -42,6 +43,7 @@ MonoBehaviour:
   impactShakeMagnitude: 0.1
   surfaceStickSpeed: 1
   wallClimbSpeed: 5
+  directWallSpeedDivisor: 100
   surfaceStickJumpForce: 30
   surfaceStickJumpAngle: 60
   surfaceStickJumpStunTime: 0.1

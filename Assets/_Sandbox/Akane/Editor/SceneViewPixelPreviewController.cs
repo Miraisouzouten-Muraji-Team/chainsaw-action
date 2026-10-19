@@ -216,8 +216,7 @@ namespace Project.Rendering.Pixel.Editor
                 _gameController.PixelRenderingEnabled &&
                 !EditorApplication.isPlayingOrWillChangePlaymode)
             {
-                _gameCamera.GetUniversalAdditionalCameraData()
-                    .SetRenderer(_gameController.PixelRendererIndex);
+                _gameCamera.GetUniversalAdditionalCameraData().SetRenderer(_gameController.PixelRendererIndex);
 
                 RepaintGameViews();
             }
@@ -228,9 +227,7 @@ namespace Project.Rendering.Pixel.Editor
         /// </summary>
         public void UpdatePreview()
         {
-            if (_rendering ||
-                EditorApplication.isCompiling ||
-                EditorApplication.isUpdating)
+            if (_rendering || EditorApplication.isCompiling || EditorApplication.isUpdating)
             {
                 return;
             }
@@ -239,12 +236,9 @@ namespace Project.Rendering.Pixel.Editor
 
             try
             {
-                PixelLayerRenderController controller =
-                    UnityEngine.Object
-                        .FindFirstObjectByType<PixelLayerRenderController>();
+                PixelLayerRenderController controller = UnityEngine.Object.FindFirstObjectByType<PixelLayerRenderController>();
 
-                bool pixelEnabled =
-                    controller == null || controller.PixelRenderingEnabled;
+                bool pixelEnabled = controller == null || controller.PixelRenderingEnabled;
 
                 if (!EditorApplication.isPlayingOrWillChangePlaymode)
                 {
@@ -266,6 +260,16 @@ namespace Project.Rendering.Pixel.Editor
             }
             finally
             {
+                // Sceneビュー用の振り分けをゲームCamera基準へ戻す。
+                PixelLayerRenderController controller = UnityEngine.Object.FindFirstObjectByType<PixelLayerRenderController>();
+
+                PixelRenderLayerManager manager = UnityEngine.Object.FindFirstObjectByType<PixelRenderLayerManager>();
+
+                if (controller != null && manager != null && controller.MainCamera != null)
+                {
+                    manager.RefreshForCamera(controller.MainCamera);
+                }
+
                 _rendering = false;
             }
         }

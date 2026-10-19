@@ -14,10 +14,6 @@ namespace Project.Rendering.Pixel
     public sealed class PixelDepthCaptureRendererFeature
         : ScriptableRendererFeature
     {
-        private const string NEAR_LAYER_NAME = "PixelNear";
-        private const string MIDDLE_LAYER_NAME = "PixelMiddle";
-        private const string FAR_LAYER_NAME = "PixelFar";
-
         private const string NEAR_DEPTH_NAME = "_PixelNearDepthTex";
         private const string MIDDLE_DEPTH_NAME = "_PixelMiddleDepthTex";
         private const string FAR_DEPTH_NAME = "_PixelFarDepthTex";
@@ -80,34 +76,18 @@ namespace Project.Rendering.Pixel
         }
 
         /// <summary>
-        /// Capture Cameraの描画レイヤーから
-        /// Near / Middle / Farを識別する。
+        /// Capture Cameraに設定された番号を取得する。
         /// </summary>
         private static int GetCaptureIndex(Camera camera)
         {
-            int nearLayer = LayerMask.NameToLayer(NEAR_LAYER_NAME);
-            int middleLayer = LayerMask.NameToLayer(MIDDLE_LAYER_NAME);
-            int farLayer = LayerMask.NameToLayer(FAR_LAYER_NAME);
-
-            if (nearLayer >= 0 &&
-                camera.cullingMask == (1 << nearLayer))
+            if (camera == null || !camera.TryGetComponent(out PixelCaptureViewMarker marker))
             {
-                return 0;
+                return -1;
             }
 
-            if (middleLayer >= 0 &&
-                camera.cullingMask == (1 << middleLayer))
-            {
-                return 1;
-            }
-
-            if (farLayer >= 0 &&
-                camera.cullingMask == (1 << farLayer))
-            {
-                return 2;
-            }
-
-            return -1;
+            return marker.CaptureIndex is >= 0 and <= 2
+                ? marker.CaptureIndex
+                : -1;
         }
 
         private static string GetDepthPropertyName(int index)

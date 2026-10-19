@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ContactDetectorParameter
   terrainLayers:
     serializedVersion: 2
-    m_Bits: 3584
+    m_Bits: 1
   enemyLayers:
     serializedVersion: 2
     m_Bits: 64

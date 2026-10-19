@@ -126,13 +126,13 @@ MonoBehaviour:
   m_RequiresOpaqueTextureOption: 2
   m_CameraType: 0
   m_Cameras: []
-  m_RendererIndex: -1
+  m_RendererIndex: 2
   m_VolumeLayerMask:
     serializedVersion: 2
     m_Bits: 1
   m_VolumeTrigger: {fileID: 0}
   m_VolumeFrameworkUpdateModeOption: 2
-  m_RenderPostProcessing: 0
+  m_RenderPostProcessing: 1
   m_Antialiasing: 0
   m_AntialiasingQuality: 2
   m_StopNaN: 0
@@ -201,9 +201,6 @@ MonoBehaviour:
   _nearResolution: {x: 640, y: 360}
   _middleResolution: {x: 320, y: 180}
   _farResolution: {x: 160, y: 90}
-  _nearLayerName: PixelNear
-  _middleLayerName: PixelMiddle
-  _farLayerName: PixelFar
   _normalRendererIndex: 0
   _captureRendererIndex: 1
   _pixelRendererIndex: 2

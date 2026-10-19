@@ -130,7 +130,7 @@ GameObject:
   - component: {fileID: 22875953}
   - component: {fileID: 22875955}
   - component: {fileID: 22875954}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_hibana_orange
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -175,7 +175,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 18e02a3d573a0ac439bc8ea541615832, type: 2}
@@ -5183,7 +5183,7 @@ GameObject:
   - component: {fileID: 28192985}
   - component: {fileID: 28192987}
   - component: {fileID: 28192986}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_DameFloor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -5231,7 +5231,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 0}
@@ -10022,7 +10022,7 @@ GameObject:
   - component: {fileID: 36335526}
   - component: {fileID: 36335528}
   - component: {fileID: 36335527}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_hibana_orange
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -10067,7 +10067,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 18e02a3d573a0ac439bc8ea541615832, type: 2}
@@ -15148,7 +15148,7 @@ GameObject:
   - component: {fileID: 44806318}
   - component: {fileID: 44806320}
   - component: {fileID: 44806319}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_main
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -15193,7 +15193,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 831a98a6451d25248970a8289d4f2daf, type: 2}
@@ -20397,8 +20397,14 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: 4687296828369897747, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 622990553}
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1485883757}
   m_SourcePrefab: {fileID: 100100000, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
 --- !u!1 &71183219
 GameObject:
@@ -20757,7 +20763,7 @@ GameObject:
   - component: {fileID: 89401003}
   - component: {fileID: 89401005}
   - component: {fileID: 89401004}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -20802,7 +20808,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 7bb85ac428159974db56fd5bf17efca1, type: 2}
@@ -25833,7 +25839,7 @@ GameObject:
   - component: {fileID: 131937958}
   - component: {fileID: 131937960}
   - component: {fileID: 131937959}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_main
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -25878,7 +25884,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 831a98a6451d25248970a8289d4f2daf, type: 2}
@@ -31323,7 +31329,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_RenderingLayerMask
-      value: 33554433
+      value: 16777217
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -31387,15 +31393,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6230566751698017173, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8182672592220025003, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9172836237540562170, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -32849,7 +32855,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_RenderingLayerMask
-      value: 67108865
+      value: 16777217
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -32913,15 +32919,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6230566751698017173, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8182672592220025003, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9172836237540562170, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -32973,7 +32979,7 @@ GameObject:
   - component: {fileID: 274352795}
   - component: {fileID: 274352797}
   - component: {fileID: 274352796}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_main
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -33018,7 +33024,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 831a98a6451d25248970a8289d4f2daf, type: 2}
@@ -38316,7 +38322,7 @@ GameObject:
   - component: {fileID: 302543077}
   - component: {fileID: 302543079}
   - component: {fileID: 302543078}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_hibana_orange
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -38361,7 +38367,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 18e02a3d573a0ac439bc8ea541615832, type: 2}
@@ -43781,7 +43787,7 @@ GameObject:
   - component: {fileID: 367321804}
   - component: {fileID: 367321806}
   - component: {fileID: 367321805}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_DameFloor (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -43829,7 +43835,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 0}
@@ -48620,7 +48626,7 @@ GameObject:
   - component: {fileID: 383714205}
   - component: {fileID: 383714207}
   - component: {fileID: 383714206}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_DameFloor (5)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -48668,7 +48674,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 0}
@@ -54025,6 +54031,111 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_RenderingLayers: 1
   m_ShadowRenderingLayers: 1
+--- !u!1001 &430990842
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1163088451257509492, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: worldCamera
+      value: 
+      objectReference: {fileID: 1638604908}
+    - target: {fileID: 1163088451257509492, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: healthBarPrefab
+      value: 
+      objectReference: {fileID: 7227650965549280453, guid: 8f55787f0e2d25445ba168082a1274d1, type: 3}
+    - target: {fileID: 1832081933272890451, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_Name
+      value: EnemyHealthBarCanvas
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_Pivot.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_Pivot.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_AnchorMax.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_AnchorMin.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_SizeDelta.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8941464151196733857, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 0964a9a212074d74aa98af02c411ab63, type: 3}
 --- !u!1 &443765838
 GameObject:
   m_ObjectHideFlags: 0
@@ -54654,7 +54765,7 @@ GameObject:
   - component: {fileID: 482438089}
   - component: {fileID: 482438091}
   - component: {fileID: 482438090}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -54699,7 +54810,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 7bb85ac428159974db56fd5bf17efca1, type: 2}
@@ -59800,7 +59911,7 @@ GameObject:
   - component: {fileID: 503748828}
   - component: {fileID: 503748830}
   - component: {fileID: 503748829}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -59845,7 +59956,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 7bb85ac428159974db56fd5bf17efca1, type: 2}
@@ -65367,7 +65478,7 @@ GameObject:
   - component: {fileID: 568678414}
   - component: {fileID: 568678416}
   - component: {fileID: 568678415}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -65412,7 +65523,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 7bb85ac428159974db56fd5bf17efca1, type: 2}
@@ -70389,7 +70500,7 @@ GameObject:
   - component: {fileID: 573578313}
   - component: {fileID: 573578315}
   - component: {fileID: 573578314}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_DameFloor (2)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -70437,7 +70548,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 0}
@@ -75329,7 +75440,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_RenderingLayerMask
-      value: 67108865
+      value: 16777217
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -75393,15 +75504,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6230566751698017173, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8182672592220025003, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9172836237540562170, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -75530,6 +75641,37 @@ Transform:
   - {fileID: 1170715226}
   - {fileID: 285015730}
   m_Father: {fileID: 137843886}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &622990552
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 622990553}
+  m_Layer: 0
+  m_Name: EnemyHealth
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &622990553
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 622990552}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -1, z: -0, w: 0}
+  m_LocalPosition: {x: -1.880621, y: -4.5, z: -77.54713}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1485883746}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &638769402 stripped
 GameObject:
@@ -75834,7 +75976,7 @@ GameObject:
   - component: {fileID: 666873101}
   - component: {fileID: 666873103}
   - component: {fileID: 666873102}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_hibana_orange
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -75879,7 +76021,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 18e02a3d573a0ac439bc8ea541615832, type: 2}
@@ -81307,7 +81449,7 @@ GameObject:
   - component: {fileID: 733450113}
   - component: {fileID: 733450115}
   - component: {fileID: 733450114}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -81352,7 +81494,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 7bb85ac428159974db56fd5bf17efca1, type: 2}
@@ -86700,7 +86842,7 @@ GameObject:
   - component: {fileID: 798636970}
   - component: {fileID: 798636972}
   - component: {fileID: 798636971}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_DameFloor (8)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -86748,7 +86890,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 0}
@@ -91539,7 +91681,7 @@ GameObject:
   - component: {fileID: 815845987}
   - component: {fileID: 815845989}
   - component: {fileID: 815845988}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_main
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -91584,7 +91726,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 831a98a6451d25248970a8289d4f2daf, type: 2}
@@ -96895,7 +97037,7 @@ GameObject:
   - component: {fileID: 836292927}
   - component: {fileID: 836292929}
   - component: {fileID: 836292928}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_DameFloor (3)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -96943,7 +97085,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 0}
@@ -101734,7 +101876,7 @@ GameObject:
   - component: {fileID: 837215649}
   - component: {fileID: 837215651}
   - component: {fileID: 837215650}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_hibana_orange
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -101779,7 +101921,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 18e02a3d573a0ac439bc8ea541615832, type: 2}
@@ -107339,7 +107481,7 @@ GameObject:
   - component: {fileID: 871263957}
   - component: {fileID: 871263959}
   - component: {fileID: 871263958}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -107384,7 +107526,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 7bb85ac428159974db56fd5bf17efca1, type: 2}
@@ -112721,7 +112863,7 @@ GameObject:
   - component: {fileID: 913009809}
   - component: {fileID: 913009811}
   - component: {fileID: 913009810}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_DameFloor (6)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -112769,7 +112911,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 0}
@@ -117672,7 +117814,7 @@ GameObject:
   - component: {fileID: 921565748}
   - component: {fileID: 921565750}
   - component: {fileID: 921565749}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_hibana_orange
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -117717,7 +117859,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 18e02a3d573a0ac439bc8ea541615832, type: 2}
@@ -122910,7 +123052,7 @@ GameObject:
   - component: {fileID: 932473390}
   - component: {fileID: 932473392}
   - component: {fileID: 932473391}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -122955,7 +123097,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 7bb85ac428159974db56fd5bf17efca1, type: 2}
@@ -129270,7 +129412,7 @@ GameObject:
   - component: {fileID: 1032286342}
   - component: {fileID: 1032286344}
   - component: {fileID: 1032286343}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_main
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -129315,7 +129457,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 831a98a6451d25248970a8289d4f2daf, type: 2}
@@ -134493,6 +134635,11 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1047170513}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &1053773720 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+  m_PrefabInstance: {fileID: 52731649}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1054461539
 GameObject:
   m_ObjectHideFlags: 0
@@ -134633,7 +134780,7 @@ GameObject:
   - component: {fileID: 1070486964}
   - component: {fileID: 1070486966}
   - component: {fileID: 1070486965}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_main
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -134678,7 +134825,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 831a98a6451d25248970a8289d4f2daf, type: 2}
@@ -139776,7 +139923,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_RenderingLayerMask
-      value: 33554433
+      value: 16777217
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -139832,15 +139979,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6230566751698017173, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8182672592220025003, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9172836237540562170, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -140347,7 +140494,7 @@ GameObject:
   - component: {fileID: 1150440486}
   - component: {fileID: 1150440488}
   - component: {fileID: 1150440487}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_hibana_orange
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -140392,7 +140539,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 18e02a3d573a0ac439bc8ea541615832, type: 2}
@@ -145999,7 +146146,7 @@ GameObject:
   - component: {fileID: 1203852513}
   - component: {fileID: 1203852515}
   - component: {fileID: 1203852514}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -146044,7 +146191,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 7bb85ac428159974db56fd5bf17efca1, type: 2}
@@ -151116,7 +151263,7 @@ GameObject:
   - component: {fileID: 1209836231}
   - component: {fileID: 1209836233}
   - component: {fileID: 1209836232}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -151161,7 +151308,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 7bb85ac428159974db56fd5bf17efca1, type: 2}
@@ -156570,7 +156717,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_RenderingLayerMask
-      value: 67108865
+      value: 16777217
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -156626,15 +156773,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6230566751698017173, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8182672592220025003, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9172836237540562170, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -157115,7 +157262,7 @@ GameObject:
   - component: {fileID: 1278635702}
   - component: {fileID: 1278635704}
   - component: {fileID: 1278635703}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_main
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -157160,7 +157307,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 831a98a6451d25248970a8289d4f2daf, type: 2}
@@ -162640,7 +162787,7 @@ GameObject:
   - component: {fileID: 1330965750}
   - component: {fileID: 1330965752}
   - component: {fileID: 1330965751}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_DameFloor (9)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -162688,7 +162835,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 0}
@@ -167608,7 +167755,7 @@ GameObject:
   - component: {fileID: 1364434749}
   - component: {fileID: 1364434751}
   - component: {fileID: 1364434750}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_hibana_orange
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -167653,7 +167800,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 18e02a3d573a0ac439bc8ea541615832, type: 2}
@@ -173020,7 +173167,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_RenderingLayerMask
-      value: 33554433
+      value: 16777217
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -173084,15 +173231,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6230566751698017173, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8182672592220025003, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9172836237540562170, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -173110,7 +173257,7 @@ GameObject:
   - component: {fileID: 1403891739}
   - component: {fileID: 1403891741}
   - component: {fileID: 1403891740}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_hibana_orange
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -173155,7 +173302,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 18e02a3d573a0ac439bc8ea541615832, type: 2}
@@ -178214,7 +178361,7 @@ GameObject:
   - component: {fileID: 1413084982}
   - component: {fileID: 1413084984}
   - component: {fileID: 1413084983}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_main
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -178259,7 +178406,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 831a98a6451d25248970a8289d4f2daf, type: 2}
@@ -183358,7 +183505,7 @@ GameObject:
   - component: {fileID: 1414474358}
   - component: {fileID: 1414474360}
   - component: {fileID: 1414474359}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_main
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -183403,7 +183550,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 831a98a6451d25248970a8289d4f2daf, type: 2}
@@ -188794,7 +188941,7 @@ GameObject:
   - component: {fileID: 1427531510}
   - component: {fileID: 1427531512}
   - component: {fileID: 1427531511}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -188839,7 +188986,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 7bb85ac428159974db56fd5bf17efca1, type: 2}
@@ -194016,7 +194163,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1446851099}
-  m_Layer: 9
+  - component: {fileID: 1446851100}
+  m_Layer: 0
   m_Name: DamageFloors
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -194060,6 +194208,19 @@ Transform:
   - {fileID: 1330965750}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1446851100
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1446851098}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1167590c12a273043a926dcdb5492ac6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelRenderOverride
+  _group: 1
 --- !u!1001 &1449238346
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -194082,7 +194243,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_RenderingLayerMask
-      value: 67108865
+      value: 16777217
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -194146,15 +194307,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6230566751698017173, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8182672592220025003, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9172836237540562170, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -194363,7 +194524,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_RenderingLayerMask
-      value: 33554433
+      value: 16777217
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -194427,15 +194588,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6230566751698017173, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8182672592220025003, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9172836237540562170, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -194491,6 +194652,19 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 4687296828369897747, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
   m_PrefabInstance: {fileID: 52731649}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1485883757
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1053773720}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 88b7a8ba1d13e7241a009eb030111471, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyHealthBarTarget
+  healthBarAnchor: {fileID: 622990553}
 --- !u!1 &1487383721
 GameObject:
   m_ObjectHideFlags: 0
@@ -195379,7 +195553,7 @@ GameObject:
   - component: {fileID: 1580759056}
   - component: {fileID: 1580759058}
   - component: {fileID: 1580759057}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_hibana_orange
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -195424,7 +195598,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 18e02a3d573a0ac439bc8ea541615832, type: 2}
@@ -200644,7 +200818,7 @@ GameObject:
   - component: {fileID: 1614786498}
   - component: {fileID: 1614786500}
   - component: {fileID: 1614786499}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_DameFloor (7)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -200692,7 +200866,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 0}
@@ -207204,7 +207378,7 @@ GameObject:
   - component: {fileID: 1756808573}
   - component: {fileID: 1756808575}
   - component: {fileID: 1756808574}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_DameFloor (10)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -207252,7 +207426,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 0}
@@ -212054,7 +212228,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_RenderingLayerMask
-      value: 67108865
+      value: 16777217
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -212118,15 +212292,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6230566751698017173, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8182672592220025003, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9172836237540562170, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -212234,7 +212408,7 @@ GameObject:
   - component: {fileID: 1784182021}
   - component: {fileID: 1784182023}
   - component: {fileID: 1784182022}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_main
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -212279,7 +212453,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 831a98a6451d25248970a8289d4f2daf, type: 2}
@@ -217817,7 +217991,7 @@ GameObject:
   - component: {fileID: 1826207874}
   - component: {fileID: 1826207876}
   - component: {fileID: 1826207875}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_hibana_orange
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -217862,7 +218036,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 18e02a3d573a0ac439bc8ea541615832, type: 2}
@@ -222842,7 +223016,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_RenderingLayerMask
-      value: 33554433
+      value: 16777217
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -222906,15 +223080,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6230566751698017173, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8182672592220025003, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9172836237540562170, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -223067,7 +223241,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_RenderingLayerMask
-      value: 67108865
+      value: 16777217
       objectReference: {fileID: 0}
     - target: {fileID: 3877135639102675694, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -223131,15 +223305,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6230566751698017173, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8182672592220025003, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 9172836237540562170, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
       propertyPath: m_Layer
-      value: 9
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -223235,7 +223409,7 @@ GameObject:
   - component: {fileID: 1892072726}
   - component: {fileID: 1892072728}
   - component: {fileID: 1892072727}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -223280,7 +223454,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 7bb85ac428159974db56fd5bf17efca1, type: 2}
@@ -228595,7 +228769,7 @@ GameObject:
   - component: {fileID: 1919703088}
   - component: {fileID: 1919703090}
   - component: {fileID: 1919703089}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_DameFloor (4)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -228643,7 +228817,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 0}
@@ -234549,7 +234723,7 @@ GameObject:
   - component: {fileID: 2076562468}
   - component: {fileID: 2076562470}
   - component: {fileID: 2076562469}
-  m_Layer: 9
+  m_Layer: 0
   m_Name: ps_thunder_main
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -234594,7 +234768,7 @@ ParticleSystemRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 4211081215
+  m_RenderingLayerMask: 4194303999
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 831a98a6451d25248970a8289d4f2daf, type: 2}
@@ -240608,3 +240782,4 @@ SceneRoots:
   - {fileID: 1638604907}
   - {fileID: 95078785}
   - {fileID: 216000364}
+  - {fileID: 430990842}

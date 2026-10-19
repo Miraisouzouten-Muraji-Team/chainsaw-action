@@ -1,4 +1,3 @@
-
 using UnityEngine;
 
 namespace Project.Rendering.Pixel
@@ -37,6 +36,14 @@ namespace Project.Rendering.Pixel
         }
 
         private void OnEnable()
+        {
+            NotifyManager();
+        }
+
+        /// <summary>
+        /// Overrideの無効化を描画先へ反映する。
+        /// </summary>
+        private void OnDisable()
         {
             NotifyManager();
         }

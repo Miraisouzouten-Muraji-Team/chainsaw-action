@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -22,6 +23,10 @@ namespace Project.Rendering.Pixel
 
         private readonly HashSet<Renderer> _renderers = new();
         private readonly List<Renderer> _removedRenderers = new();
+
+        // Play中に変更したRendererの元のRendering Layerを保存する。
+        private readonly Dictionary<Renderer, uint> _originalMasks = new();
+
         private float _nextDiscoveryTime;
 
         private void OnEnable()
@@ -32,10 +37,10 @@ namespace Project.Rendering.Pixel
 
         private void LateUpdate()
         {
-            // Edit Modeの更新はEditorのCapture処理から行う。
+            // Edit Modeの更新はEditor Capture側で行う。
             if (!Application.isPlaying || _targetCamera == null) return;
 
-            // Overrideが付いていない動的生成物も定期的に収集する。
+            // Overrideがない動的生成物も一定間隔で収集する。
             if (Time.unscaledTime >= _nextDiscoveryTime)
             {
                 DiscoverRenderers();
@@ -46,22 +51,33 @@ namespace Project.Rendering.Pixel
         }
 
         /// <summary>
-        /// 自身と子の3D Rendererを登録する。
+        /// 自身と子のRendererを登録する。
+        /// Play中は登録直後に描画先を反映する。
         /// </summary>
         public void RegisterHierarchy(Transform root)
         {
             if (root == null) return;
 
             Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+
             foreach (Renderer renderer in renderers)
             {
-                if (IsSupported(renderer)) _renderers.Add(renderer);
+                if (!IsSupported(renderer)) continue;
+
+                _renderers.Add(renderer);
+
+                // EditorではCapture時以外にRendering Layerを変更しない。
+                if (Application.isPlaying &&
+                    isActiveAndEnabled &&
+                    _targetCamera != null)
+                {
+                    RefreshRenderer(renderer, _targetCamera.transform.position);
+                }
             }
         }
 
         /// <summary>
-        /// シーン内のRendererを収集する。
-        /// 非アクティブなオブジェクトも対象にする。
+        /// シーン内の対応Rendererを収集する。
         /// </summary>
         [ContextMenu("Refresh Pixel Renderers")]
         public void DiscoverRenderers()
@@ -72,12 +88,15 @@ namespace Project.Rendering.Pixel
 
             foreach (Renderer renderer in renderers)
             {
-                if (IsSupported(renderer)) _renderers.Add(renderer);
+                if (IsSupported(renderer))
+                {
+                    _renderers.Add(renderer);
+                }
             }
         }
 
         /// <summary>
-        /// EditorプレビューなどでRendererの収集と更新をまとめて行う。
+        /// Editor Capture用にRendererの収集と振り分けを行う。
         /// </summary>
         public void DiscoverAndRefresh(Camera camera)
         {
@@ -86,7 +105,7 @@ namespace Project.Rendering.Pixel
         }
 
         /// <summary>
-        /// 指定したCameraを基準に描画グループを更新する。
+        /// 指定Cameraの位置を基準に全登録Rendererを更新する。
         /// </summary>
         public void RefreshForCamera(Camera camera)
         {
@@ -103,28 +122,43 @@ namespace Project.Rendering.Pixel
                     continue;
                 }
 
-                // Canvas配下はPixel描画の振り分け対象から除外する。
-                if (renderer.GetComponentInParent<Canvas>(true) != null)
-                {
-                    renderer.renderingLayerMask &= ~PixelRenderingLayerMask.ALL;
-                    continue;
-                }
-
-                PixelRenderOverride renderOverride = FindOverride(renderer.transform);
-                PixelRenderGroup group = ResolveGroup(renderer, renderOverride, cameraPosition);
-                ApplyRenderingLayer(renderer, group);
+                RefreshRenderer(renderer, cameraPosition);
             }
 
-            // 削除されたRendererへの参照を取り除く。
+            // 破棄されたRendererの参照を解放する。
             foreach (Renderer renderer in _removedRenderers)
             {
                 _renderers.Remove(renderer);
+                _originalMasks.Remove(renderer);
             }
         }
 
         /// <summary>
-        /// 子から親へ検索し、最も近い有効なOverrideを取得する。
-        /// Autoも子側で指定された場合は親の設定を上書きする。
+        /// 単一Rendererの描画先を決定して適用する。
+        /// </summary>
+        private void RefreshRenderer(Renderer renderer, Vector3 cameraPosition)
+        {
+            if (renderer == null) return;
+
+            // Canvas配下のRendererはPixel振り分け対象外にする。
+            if (renderer.GetComponentInParent<Canvas>(true) != null)
+            {
+                if (Application.isPlaying)
+                {
+                    RestoreOriginalPixelBits(renderer);
+                }
+
+                return;
+            }
+
+            PixelRenderOverride renderOverride = FindOverride(renderer.transform);
+            PixelRenderGroup group = ResolveGroup(renderer, renderOverride, cameraPosition);
+            ApplyRenderingLayer(renderer, group);
+        }
+
+        /// <summary>
+        /// 最も近い有効なOverrideを取得する。
+        /// 子のAuto指定も親の指定より優先する。
         /// </summary>
         private static PixelRenderOverride FindOverride(Transform target)
         {
@@ -132,7 +166,8 @@ namespace Project.Rendering.Pixel
 
             while (current != null)
             {
-                if (current.TryGetComponent(out PixelRenderOverride renderOverride) && renderOverride.isActiveAndEnabled)
+                if (current.TryGetComponent(out PixelRenderOverride renderOverride) &&
+                    renderOverride.isActiveAndEnabled)
                 {
                     return renderOverride;
                 }
@@ -144,16 +179,18 @@ namespace Project.Rendering.Pixel
         }
 
         /// <summary>
-        /// 手動指定を優先し、Autoの場合は距離によって判定する。
+        /// 手動指定を優先し、Autoの場合は距離で判定する。
         /// </summary>
-        private PixelRenderGroup ResolveGroup(Renderer renderer, PixelRenderOverride renderOverride, Vector3 cameraPosition)
+        private PixelRenderGroup ResolveGroup(
+            Renderer renderer,
+            PixelRenderOverride renderOverride,
+            Vector3 cameraPosition)
         {
             if (renderOverride != null && renderOverride.Group != PixelRenderGroup.Auto)
             {
                 return renderOverride.Group;
             }
 
-            // RendererのBoundsからカメラに最も近い座標を求める。
             Vector3 closestPoint = renderer.bounds.ClosestPoint(cameraPosition);
             float distance = Vector3.Distance(cameraPosition, closestPoint);
 
@@ -163,21 +200,53 @@ namespace Project.Rendering.Pixel
         }
 
         /// <summary>
-        /// Pixel描画用ビットだけを書き換える。
-        /// 他のRendering Layerは維持する。
+        /// Pixel専用ビットのみを更新する。
+        /// Play中は変更前のビットを保存する。
         /// </summary>
-        private static void ApplyRenderingLayer(Renderer renderer, PixelRenderGroup group)
+        private void ApplyRenderingLayer(Renderer renderer, PixelRenderGroup group)
         {
             uint currentMask = renderer.renderingLayerMask;
             uint groupMask = PixelRenderingLayerMask.GetMask(group);
             uint updatedMask = (currentMask & ~PixelRenderingLayerMask.ALL) | groupMask;
 
-            if (currentMask != updatedMask)
+            if (currentMask == updatedMask) return;
+
+            if (Application.isPlaying && !_originalMasks.ContainsKey(renderer))
             {
-                renderer.renderingLayerMask = updatedMask;
+                _originalMasks.Add(renderer, currentMask);
             }
+
+            renderer.renderingLayerMask = updatedMask;
         }
 
+        /// <summary>
+        /// Managerが変更したPixel専用ビットを元に戻す。
+        /// 他のRendering Layerの変更は維持する。
+        /// </summary>
+        private void RestoreOriginalPixelBits(Renderer renderer)
+        {
+            if (renderer == null ||
+                !_originalMasks.TryGetValue(renderer, out uint originalMask))
+            {
+                return;
+            }
+
+            uint currentMask = renderer.renderingLayerMask;
+            uint restoredMask =
+                (currentMask & ~PixelRenderingLayerMask.ALL) |
+                (originalMask & PixelRenderingLayerMask.ALL);
+
+            if (currentMask != restoredMask)
+            {
+                renderer.renderingLayerMask = restoredMask;
+            }
+
+            _originalMasks.Remove(renderer);
+        }
+
+        /// <summary>
+        /// Pixel描画対象として扱うRendererを判定する。
+        /// </summary>
         private static bool IsSupported(Renderer renderer)
         {
             return renderer is MeshRenderer ||
@@ -196,13 +265,28 @@ namespace Project.Rendering.Pixel
 
         private void OnDisable()
         {
-            // 管理終了時にPixel専用ビットを解除する。
-            foreach (Renderer renderer in _renderers)
+            // Edit ModeではPrefabやシーンの設定を書き換えない。
+            if (Application.isPlaying)
             {
-                if (renderer == null) continue;
-                renderer.renderingLayerMask &= ~PixelRenderingLayerMask.ALL;
+                foreach (KeyValuePair<Renderer, uint> entry in _originalMasks)
+                {
+                    Renderer renderer = entry.Key;
+                    if (renderer == null) continue;
+
+                    uint currentMask = renderer.renderingLayerMask;
+                    uint restoredMask =
+                        (currentMask & ~PixelRenderingLayerMask.ALL) |
+                        (entry.Value & PixelRenderingLayerMask.ALL);
+
+                    if (currentMask != restoredMask)
+                    {
+                        renderer.renderingLayerMask = restoredMask;
+                    }
+                }
             }
 
+            _originalMasks.Clear();
+            _removedRenderers.Clear();
             _renderers.Clear();
         }
     }

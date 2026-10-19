@@ -260,16 +260,6 @@ namespace Project.Rendering.Pixel.Editor
             }
             finally
             {
-                // Sceneビュー用の振り分けをゲームCamera基準へ戻す。
-                PixelLayerRenderController controller = UnityEngine.Object.FindFirstObjectByType<PixelLayerRenderController>();
-
-                PixelRenderLayerManager manager = UnityEngine.Object.FindFirstObjectByType<PixelRenderLayerManager>();
-
-                if (controller != null && manager != null && controller.MainCamera != null)
-                {
-                    manager.RefreshForCamera(controller.MainCamera);
-                }
-
                 _rendering = false;
             }
         }

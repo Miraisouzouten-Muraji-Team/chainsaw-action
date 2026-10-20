@@ -203,3 +203,5 @@ MonoBehaviour:
   _compositeShader: {fileID: 4800000, guid: 327b5843c85b97d45a291a5595b6fc98, type: 3}
   _gameCompositeMaterial: {fileID: 2100000, guid: 829d71493aac12f46af0c5361e92fca5, type: 2}
   _sceneCompositeMaterial: {fileID: 2100000, guid: 4aa34f71a53ba11489906ada66f28fb9, type: 2}
+  _gameFogMaterial: {fileID: 2100000, guid: f5fae617f0634ee4d8f7e660620b1a32, type: 2}
+  _sceneFogMaterial: {fileID: 2100000, guid: fb861e3ff9c8f724f99d4916ce5d764d, type: 2}

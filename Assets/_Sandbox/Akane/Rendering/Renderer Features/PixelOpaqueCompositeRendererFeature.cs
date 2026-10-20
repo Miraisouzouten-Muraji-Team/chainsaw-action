@@ -36,6 +36,11 @@ namespace Project.Rendering.Pixel
         [SerializeField] private Material _gameCompositeMaterial;
         [SerializeField] private Material _sceneCompositeMaterial;
 
+        // 統合Depthを使用するGame / Scene用のFog Material。
+        [Header("Fog Materials")]
+        [SerializeField] private Material _gameFogMaterial;
+        [SerializeField] private Material _sceneFogMaterial;
+
         // Game / Scene別の統合用Material。
         private readonly Material[] _materials = new Material[VIEW_COUNT];
 
@@ -206,6 +211,16 @@ namespace Project.Rendering.Pixel
 
                 // メイン画面の解像度で統合RTを確保する。
                 _owner.EnsureOutputTextures(viewIndex, cameraData.cameraTargetDescriptor);
+                // 現在のCameraに対応するFog Materialを取得する。
+                Material fogMaterial = viewIndex == (int)PixelCaptureView.Scene
+                    ? _owner._sceneFogMaterial
+                    : _owner._gameFogMaterial;
+
+                // Fog Materialへ統合Depthの実体を直接渡す。
+                if (fogMaterial != null)
+                {
+                    fogMaterial.SetTexture(COMPOSITE_DEPTH_NAME, _owner._depthTextures[viewIndex].rt);
+                }
 
                 // 外部RTをRender Graphへ登録する。
                 TextureHandle depthOutput = renderGraph.ImportTexture(_owner._depthTextures[viewIndex]);

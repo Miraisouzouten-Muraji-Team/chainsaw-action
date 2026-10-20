@@ -9,7 +9,7 @@ using UnityEngine;
 /// ・やられState開始時にダメージ点滅を開始する。
 /// ・やられ中、攻撃を受けた側とは反対方向へ見た目用Transformを傾ける。
 /// ・指定時間の経過を管理する。
-/// ・やられ終了後にSearch Stateへの遷移を要求する。
+/// ・やられ終了後に次のStateを決めるための遷移判定を要求する。
 ///
 /// 担当しない責務:
 /// ・HPの保持やダメージ計算。
@@ -26,7 +26,7 @@ public sealed class EnemyDamageState : IEnemyState
     private readonly Transform tiltTarget;
     private readonly float tiltDuration;
     private readonly float tiltAngle;
-    private readonly Action requestSearchState;
+    private readonly Action requestDamageRecovery;
 
     private float elapsedTime;
     private float hitSourceDirectionSign = 1f;
@@ -34,14 +34,14 @@ public sealed class EnemyDamageState : IEnemyState
     private Quaternion originalLocalRotation;
 
     private bool hasCapturedOriginalRotation;
-    private bool hasRequestedSearchState;
+    private bool hasRequestedDamageRecovery;
 
     public EnemyDamageState(
         EnemyDamageFlash enemyDamageFlash,
         Transform tiltTarget,
         float tiltDuration,
         float tiltAngle,
-        Action requestSearchState)
+        Action requestDamageRecovery)
     {
         this.enemyDamageFlash = enemyDamageFlash
             ?? throw new ArgumentNullException(
@@ -54,15 +54,15 @@ public sealed class EnemyDamageState : IEnemyState
 
         this.tiltAngle = Mathf.Abs(tiltAngle);
 
-        this.requestSearchState = requestSearchState
+        this.requestDamageRecovery = requestDamageRecovery
             ?? throw new ArgumentNullException(
-                nameof(requestSearchState));
+                nameof(requestDamageRecovery));
     }
 
     public void Enter()
     {
         elapsedTime = 0f;
-        hasRequestedSearchState = false;
+        hasRequestedDamageRecovery = false;
 
         CaptureOriginalRotation();
         ApplyTilt();
@@ -72,7 +72,7 @@ public sealed class EnemyDamageState : IEnemyState
 
     public void Update()
     {
-        if (hasRequestedSearchState)
+        if (hasRequestedDamageRecovery)
         {
             return;
         }
@@ -84,9 +84,9 @@ public sealed class EnemyDamageState : IEnemyState
             return;
         }
 
-        hasRequestedSearchState = true;
+        hasRequestedDamageRecovery = true;
 
-        requestSearchState.Invoke();
+        requestDamageRecovery.Invoke();
     }
 
     public void Exit()
@@ -94,7 +94,7 @@ public sealed class EnemyDamageState : IEnemyState
         RestoreOriginalRotation();
 
         elapsedTime = 0f;
-        hasRequestedSearchState = false;
+        hasRequestedDamageRecovery = false;
     }
 
     /// <summary>
@@ -121,7 +121,7 @@ public sealed class EnemyDamageState : IEnemyState
     public void Restart()
     {
         elapsedTime = 0f;
-        hasRequestedSearchState = false;
+        hasRequestedDamageRecovery = false;
 
         ApplyTilt();
 

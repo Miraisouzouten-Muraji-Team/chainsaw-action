@@ -301,7 +301,7 @@ public class EnemyStateMachine : MonoBehaviour
                 visualRoot,
                 enemyData.HitTiltDuration,
                 enemyData.HitTiltAngle,
-                RequestSearchState);
+                RequestDamageRecovery);
 
         if (deathStrategy == null)
         {
@@ -412,10 +412,11 @@ public class EnemyStateMachine : MonoBehaviour
     }
 
     /// <summary>
-    /// Damage State終了後、必要なら巡回基準を現在Poseへ更新して
-    /// Search Stateへ戻す。
+    /// Damage State終了後、その場で通常と同じ条件の索敵を1回行い、
+    /// Playerを検知した場合はAlertを挟まずAttack Stateへ遷移する。
+    /// 未検知の場合は通常のSearch Stateへ戻す。
     /// </summary>
-    private void RequestSearchState()
+    private void RequestDamageRecovery()
     {
         if (!isActiveAndEnabled ||
             enemyHealth.IsDead ||
@@ -428,22 +429,29 @@ public class EnemyStateMachine : MonoBehaviour
 
         // Searchを持たないEnemyでは、
         // Damage Stateのみ終了してStateなしへ戻す。
-        if (searchState == null)
+        if (searchState == null ||
+            searchStrategy == null)
         {
             ExitCurrentState();
             return;
         }
 
-        // Damageの見た目傾斜を先に解除してから、
-        // 現在位置・現在向きを新しい巡回基準として取り込む。
-        ExitCurrentState();
-
-        if (searchStrategy is
-            IEnemyPatrolOriginUpdater patrolOriginUpdater)
+        // Damage直後は「すでにPlayerから攻撃を受けている」ため、
+        // 再発見のAlert演出だけを省略する。
+        // Attack Strategy固有の攻撃予備動作は通常どおり実行する。
+        if (searchStrategy.TryDetectPlayer(
+                out float detectedPlayerDirectionSign))
         {
-            patrolOriginUpdater.UpdatePatrolOriginFromCurrentPose();
+            attackState.SetInitialAttackDirection(
+                detectedPlayerDirectionSign);
+
+            ChangeState(attackState);
+            return;
         }
 
+        // 未検知なら通常Searchへ戻す。
+        // Search Strategy側で初期配置位置への帰還を開始し、
+        // 帰還中も通常の索敵を継続する。
         ChangeState(searchState);
     }
 

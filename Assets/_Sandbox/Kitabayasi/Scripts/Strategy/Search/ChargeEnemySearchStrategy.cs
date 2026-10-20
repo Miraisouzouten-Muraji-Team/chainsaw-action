@@ -4,19 +4,20 @@ using UnityEngine;
 using UnityEngine.Serialization;
 
 /// 責務:
-/// ・ゲーム開始時、またはDamage復帰時に更新された位置を基準に巡回する。
+/// ・ゲーム開始時の配置位置を固定した巡回開始位置として保持し、Search復帰時はそこへ戻ってから巡回する。
+/// ・帰還を安全に続行できない場合は、そのSearch中の巡回を停止してPlayer索敵へ戻る。
 /// ・巡回基準時点のFacing方向を正方向とする符号付きPatrolOffsetで巡回端を決定し、往復する。
 /// ・巡回端または平坦面の終端で停止し、VisualRootだけを指定時間かけて180度反転する。
 /// ・巡回中に進行方向を塞ぐ壁面へ衝突した場合は反転する。
 /// ・巡回前に平坦面を判定し、穴・段差・坂へ進入しない。
 /// ・XY平面上でプレイヤーとの距離を判定する。
 /// ・EnemyとPlayerのX位置まで水平Rayを飛ばし、区間内の障害物を判定する。
-/// ・索敵中にPlayerへ接触した際の攻撃情報を送信する。
+/// ・初期位置への帰還中も索敵を継続し、Player発見時は通常のAlert遷移へ通知する。
+/// ・帰還中を含む索敵中にPlayerへ接触した際の攻撃情報を送信する。
 
 [Serializable]
 public sealed class ChargeEnemySearchStrategy :
     IEnemySearchStrategy,
-    IEnemyPatrolOriginUpdater,
     IEnemyDebugRayProvider
 {
     private const string PLAYER_TAG = "Player";
@@ -65,6 +66,8 @@ public sealed class ChargeEnemySearchStrategy :
     private bool isMovingToPatrolEnd;
     private bool isTurning;
     private bool isSearchActive;
+    private bool isReturningToPatrolStart;
+    private bool isReturnBlocked;
 
     private float turnElapsedTime;
 
@@ -151,7 +154,8 @@ public sealed class ChargeEnemySearchStrategy :
         // ゲーム開始時の位置として固定する。
         patrolStartPosition = enemyRigidbody.position;
 
-        initialPatrolDirectionSign =GetHorizontalFacingSign();
+        initialPatrolDirectionSign =
+            GetHorizontalFacingSign();
 
         ResolvePlayerReferences();
     }
@@ -164,9 +168,20 @@ public sealed class ChargeEnemySearchStrategy :
         isSearchActive = true;
         isTurning = false;
         isMovingToPatrolEnd = true;
+        isReturnBlocked = false;
+
+        float deltaToPatrolStart =
+            patrolStartPosition.x -
+            enemyRigidbody.position.x;
+
+        isReturningToPatrolStart =
+            Mathf.Abs(deltaToPatrolStart) >
+            ARRIVAL_TOLERANCE;
 
         currentMoveDirectionSign =
-            GetPatrolEndDirectionSign();
+            isReturningToPatrolStart
+                ? Mathf.Sign(deltaToPatrolStart)
+                : GetPatrolEndDirectionSign();
 
         AlignVisualWithCurrentMoveDirection();
 
@@ -185,34 +200,30 @@ public sealed class ChargeEnemySearchStrategy :
             return false;
         }
 
-        if (CanDetectPlayer())
+        // 帰還はSearch中の移動方法の1つとして扱い、
+        // 帰還中でも通常と同じ条件でPlayerを索敵し続ける。
+        if (TryDetectPlayer(
+                out detectedPlayerDirectionSign))
         {
-            Vector3 searchOrigin =
-                GetSearchOrigin();
-
-            float deltaX =
-                playerTransform.position.x -
-                searchOrigin.x;
-
-            if (Mathf.Abs(deltaX) >
-                DIRECTION_EPSILON)
-            {
-                detectedPlayerDirectionSign =
-                    Mathf.Sign(deltaX);
-            }
-            else
-            {
-                detectedPlayerDirectionSign =
-                    currentMoveDirectionSign;
-            }
-
             StopHorizontalMovement();
 
             // State遷移要求後にSearchStateが一時的に残っても、
-            // 巡回処理や接触攻撃を継続しないよう停止する。
+            // 帰還・巡回・接触攻撃を継続しないよう停止する。
             isSearchActive = false;
 
             return true;
+        }
+
+        if (isReturningToPatrolStart)
+        {
+            UpdateReturnToPatrolStart();
+            return false;
+        }
+
+        if (isReturnBlocked)
+        {
+            StopHorizontalMovement();
+            return false;
         }
 
         UpdatePatrol();
@@ -220,11 +231,49 @@ public sealed class ChargeEnemySearchStrategy :
         return false;
     }
 
+    public bool TryDetectPlayer(
+        out float detectedPlayerDirectionSign)
+    {
+        detectedPlayerDirectionSign = 0f;
+
+        if (!CanDetectPlayer())
+        {
+            return false;
+        }
+
+        Vector3 searchOrigin =
+            GetSearchOrigin();
+
+        float deltaX =
+            playerTransform.position.x -
+            searchOrigin.x;
+
+        if (Mathf.Abs(deltaX) >
+            DIRECTION_EPSILON)
+        {
+            detectedPlayerDirectionSign =
+                Mathf.Sign(deltaX);
+        }
+        else if (Mathf.Abs(currentMoveDirectionSign) >
+                 DIRECTION_EPSILON)
+        {
+            detectedPlayerDirectionSign =
+                currentMoveDirectionSign;
+        }
+        else
+        {
+            detectedPlayerDirectionSign =
+                GetHorizontalFacingSign();
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// SearchState中のCollisionを処理する。
     /// Player接触時は攻撃情報を送り、
     /// 進行方向を塞ぐ壁との接触時は巡回方向を反転する。
-    /// /// <summary>
+    /// </summary>
     public void HandleCollisionEnter(
         Collision collision)
     {
@@ -234,12 +283,13 @@ public sealed class ChargeEnemySearchStrategy :
             return;
         }
 
-        ResolvePlayerReferences();
-
         Collider collidedCollider =
             collision.collider;
 
-        // Playerとの接触は壁判定とは別に処理する。
+        ResolvePlayerReferences();
+
+        // 帰還中もSearch中であることに変わりはないため、
+        // Player接触時は通常巡回中と同じ接触ダメージを与える。
         if (playerTransform != null &&
             IsPlayerCollider(collidedCollider))
         {
@@ -265,6 +315,33 @@ public sealed class ChargeEnemySearchStrategy :
             playerAttackHitReceiver.ReceiveAttackHit(
                 attackHitData);
 
+            return;
+        }
+
+        if (isReturningToPatrolStart)
+        {
+            // ChargeEnemyは経路探索を行わないため、帰還方向を壁に塞がれた場合は
+            // 壁へ押し続けず、そのSearch中の帰還を停止する。
+            if (!isReturnBlocked &&
+                IsWallBlockingCurrentMoveDirection(
+                    collision))
+            {
+                AbortReturnToPatrolStart();
+
+                Debug.LogWarning(
+                    $"{nameof(ChargeEnemySearchStrategy)}: " +
+                    "初期巡回位置への帰還経路を壁に塞がれたため、" +
+                    "このSearch中の帰還と巡回を中断し、Player索敵を継続します。",
+                    enemyObject);
+            }
+
+            return;
+        }
+
+        // 帰還に失敗したSearch中は通常巡回を再開しない。
+        // Playerとの接触処理だけは上で継続する。
+        if (isReturnBlocked)
+        {
             return;
         }
 
@@ -328,6 +405,8 @@ public sealed class ChargeEnemySearchStrategy :
 
         isSearchActive = false;
         isTurning = false;
+        isReturningToPatrolStart = false;
+        isReturnBlocked = false;
 
         StopHorizontalMovement();
     }
@@ -355,15 +434,123 @@ public sealed class ChargeEnemySearchStrategy :
     }
 
     /// <summary>
-    /// Damage終了後の現在位置と見た目の向きを、
-    /// 次回Searchの巡回基準として保存する。
+    /// Unity配置時に保存した巡回開始X位置へ直接戻る。
     /// </summary>
-    public void UpdatePatrolOriginFromCurrentPose()
+    /// <remarks>
+    /// ChargeEnemyは地上移動Enemyのため、Yは重力・接地へ任せてXだけを戻す。
+    /// Droneのような迂回経路探索は担当しない。
+    /// </remarks>
+    private void UpdateReturnToPatrolStart()
     {
-        patrolStartPosition =
-            enemyRigidbody.position;
+        if (isReturnBlocked)
+        {
+            // 通常はAbortReturnToPatrolStartでisReturningToPatrolStartも解除される。
+            // 状態不整合が起きた場合でも索敵不能へ固定されないよう、ここでも帰還を終了する。
+            isReturningToPatrolStart = false;
+            StopHorizontalMovement();
+            return;
+        }
 
-        initialPatrolDirectionSign =GetHorizontalFacingSign();
+        float deltaX =
+            patrolStartPosition.x -
+            enemyRigidbody.position.x;
+
+        if (Mathf.Abs(deltaX) <=
+            ARRIVAL_TOLERANCE)
+        {
+            CompleteReturnToPatrolStart();
+            return;
+        }
+
+        float moveSpeed =
+            enemyData.PatrolMoveSpeed;
+
+        if (moveSpeed <=
+            DIRECTION_EPSILON)
+        {
+            AbortReturnToPatrolStart();
+
+            Debug.LogWarning(
+                $"{nameof(ChargeEnemySearchStrategy)}: " +
+                "PatrolMoveSpeedが0以下のため初期巡回位置へ帰還できません。" +
+                "このSearch中の帰還と巡回を中断し、Player索敵を継続します。",
+                enemyObject);
+
+            return;
+        }
+
+        float fixedDeltaTime =
+            Time.fixedDeltaTime;
+
+        if (fixedDeltaTime <=
+            DIRECTION_EPSILON)
+        {
+            StopHorizontalMovement();
+            return;
+        }
+
+        currentMoveDirectionSign =
+            Mathf.Sign(deltaX);
+
+        float expectedMovementDistance =
+            moveSpeed * fixedDeltaTime;
+
+        if (!groundChecker.CanMoveInDirection(
+                currentMoveDirectionSign,
+                expectedMovementDistance))
+        {
+            AbortReturnToPatrolStart();
+
+            Debug.LogWarning(
+                $"{nameof(ChargeEnemySearchStrategy)}: " +
+                "初期巡回位置への帰還方向に安全な地面がないため、" +
+                "このSearch中の帰還と巡回を中断し、Player索敵を継続します。",
+                enemyObject);
+
+            return;
+        }
+
+        float targetVelocityX =
+            Mathf.Abs(deltaX) <=
+            expectedMovementDistance
+                ? deltaX / fixedDeltaTime
+                : currentMoveDirectionSign * moveSpeed;
+
+        SetHorizontalVelocity(
+            targetVelocityX);
+    }
+
+    /// <summary>
+    /// 初期巡回位置への安全な帰還を続行できない場合に、
+    /// 帰還処理を終了してPlayer索敵へ戻す。
+    /// </summary>
+    /// <remarks>
+    /// 帰還できていない位置から固定巡回範囲をそのまま再開すると、
+    /// 本来の巡回区間外から巡回地点へ向かう可能性がある。
+    /// そのため、このSearch中は通常巡回も停止し、次のSearch開始時に帰還を再試行する。
+    /// </remarks>
+    private void AbortReturnToPatrolStart()
+    {
+        StopHorizontalMovement();
+
+        isReturningToPatrolStart = false;
+        isReturnBlocked = true;
+        isTurning = false;
+    }
+
+    private void CompleteReturnToPatrolStart()
+    {
+        StopHorizontalMovement();
+
+        isReturningToPatrolStart = false;
+        isReturnBlocked = false;
+        isMovingToPatrolEnd = true;
+        isTurning = false;
+
+        currentMoveDirectionSign =
+            GetPatrolEndDirectionSign();
+
+        AlignVisualWithCurrentMoveDirection();
     }
 
     /// <summary>

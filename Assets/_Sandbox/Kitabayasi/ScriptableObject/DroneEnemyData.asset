@@ -25,15 +25,28 @@ MonoBehaviour:
   patrolMoveSpeed: 5
   patrolTurnDuration: 0.5
   patrolContactDamagePercent: 50
+  navigationMoveSpeed: 15
+  pathSafetyMargin: 0.05
+  pathSearchPadding: 5
+  maximumExpandedPathNodes: 4096
+  waypointArrivalTolerance: 0.1
+  attackRepathInterval: 0.25
+  attackRepathDistance: 0.75
+  navigationStallMinimumMoveSpeed: 0.1
+  navigationStallDetectionDuration: 0.5
+  navigationObstacleMask:
+    serializedVersion: 2
+    m_Bits: 512
   attackMoveSpeed: 15
   homingStrength: 50
   maximumTurnSpeed: 180
+  attackStallMinimumMoveSpeed: 0.1
+  attackStallDetectionDuration: 0.25
   attackContactDamagePercent: 100
   initialPreparationDuration: 0.75
-  preparationShakeAmount: 0.1
-  preparationShakeFrequency: 12
   homingEndThreshold: 0.25
   brakingDeceleration: 60
   brakePauseDuration: 0.15
   retreatSpeed: 5
+  retreatEaseDuration: 0.1
   retreatDistance: 1.5

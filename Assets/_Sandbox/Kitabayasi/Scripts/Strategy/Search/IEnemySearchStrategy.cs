@@ -6,7 +6,7 @@ using UnityEngine;
 /// <remarks>
 /// 責務:
 /// ・Enemyごとに異なる索敵処理のライフサイクルを定義する。
-/// ・プレイヤーを発見したかどうかと、発見時の攻撃方向をEnemySearchStateへ返す。
+/// ・プレイヤーを発見したかどうかと、発見時の攻撃方向を呼び出し側へ返す。
 /// ・索敵中に発生したCollisionを受け取る。
 ///
 /// 担当しない責務:
@@ -42,6 +42,23 @@ public interface IEnemySearchStrategy
     /// プレイヤーを発見した場合はtrue。
     /// </returns>
     bool UpdateSearch(
+        out float detectedPlayerDirectionSign);
+
+
+    /// <summary>
+    /// 現在位置から通常Searchと同じ条件でPlayerを1回だけ検知する。
+    /// </summary>
+    /// <remarks>
+    /// Damage終了後の反撃判定など、Search Stateへ入らずに
+    /// 既存の索敵条件だけを再利用するために使用する。
+    /// 移動開始・停止やSearchの有効状態は変更しない。
+    /// </remarks>
+    /// <param name="detectedPlayerDirectionSign">
+    /// プレイヤーを発見した瞬間の左右方向。
+    /// -1が-X方向、1が+X方向。
+    /// </param>
+    /// <returns>プレイヤーを発見した場合はtrue。</returns>
+    bool TryDetectPlayer(
         out float detectedPlayerDirectionSign);
 
 

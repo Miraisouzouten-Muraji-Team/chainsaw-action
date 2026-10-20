@@ -2,7 +2,7 @@
 # EditMode CI
 # ============================================================
 #
-# prototype向けPull Requestで、
+# デフォルトブランチ向けPull Requestで、
 # Unityプロジェクトのコンパイルと
 # EditMode Testを確認するWorkflow。
 #
@@ -26,12 +26,11 @@ name: EditMode CI
 on:
 
   # ----------------------------------------------------------
-  # prototype向けPull Requestで実行
+  # ブランチ名は固定せず、Job内でデフォルトブランチか判定。
   # ----------------------------------------------------------
 
   pull_request:
-    branches:
-      - prototype
+    types: [opened, reopened, synchronize, ready_for_review, edited]
 
 
   # ----------------------------------------------------------
@@ -77,7 +76,14 @@ jobs:
 
   test-editmode:
 
-    name: Run EditMode Tests
+    # PRのマージ先、または手動実行のブランチがデフォルトなら実行。
+    if: >-
+      (github.event_name == 'pull_request' &&
+        github.event.pull_request.base.ref == github.event.repository.default_branch)
+      || (github.event_name == 'workflow_dispatch' &&
+        github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+
+    name: Compile and EditMode Tests
 
     runs-on: ubuntu-latest
 
@@ -96,12 +102,88 @@ jobs:
 
         with:
 
-          # EditModeのコンパイル確認では、
-          # FBX / WAVなどLFS実体は基本不要。
-          #
-          # そのため取得せず、
-          # ディスク使用量とDownload時間を抑える。
+          # 素材の全件取得を避ける。追加・更新された素材だけ
+          # 後続Stepで取得する。
           lfs: false
+
+          # PRの仮マージCommitと直前の親Commitを比較するため2世代取得。
+          fetch-depth: 2
+
+
+      # ======================================================
+      # PRで追加・更新されたGit LFS素材のみ取得
+      # ======================================================
+      #
+      # 特定のファイル名や拡張子に依存せず、Git差分と
+      # .gitattributesのfilter=lfsを使って取得対象を決める。
+      #
+      # ・PR実行時: デフォルトブランチとPRの仮マージ結果の差分
+      # ・手動実行時: デフォルトブランチの直近1コミットの追加・更新分
+      #
+      # 注意:
+      # 既存の未変更LFS素材はポインタのまま残る。
+      # Unityがその素材を再読み込みするとエラーになる可能性がある。
+      # ======================================================
+
+      - name: Pull added or updated LFS assets
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            # GitHubのPR用仮マージCommitの第1親はマージ先。
+            base="$(git rev-parse 'HEAD^1')"
+          elif git rev-parse 'HEAD^' >/dev/null 2>&1; then
+            base="$(git rev-parse 'HEAD^')"
+          else
+            base="$(git hash-object -t tree /dev/null)"
+          fi
+
+          # NUL区切りで空白などを含むファイル名にも対応。
+          git diff --diff-filter=ACMRT --name-only -z "$base" HEAD > "$RUNNER_TEMP/changed-files.bin"
+
+          python3 <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          raw = (Path(os.environ["RUNNER_TEMP"]) / "changed-files.bin").read_bytes()
+          changed_files = [os.fsdecode(path) for path in raw.split(b"\0") if path]
+
+          lfs_paths = []
+          for path in changed_files:
+              result = subprocess.run(
+                  ["git", "check-attr", "-z", "filter", "--", path],
+                  check=True,
+                  stdout=subprocess.PIPE,
+              ).stdout.split(b"\0")
+              if len(result) >= 3 and result[2] == b"lfs":
+                  lfs_paths.append(path)
+
+          if not lfs_paths:
+              print("追加・更新されたGit LFS素材はありません。")
+          else:
+              print(f"取得するGit LFS素材: {len(lfs_paths)}件")
+              for path in lfs_paths:
+                  print(f"  {path}")
+
+              # Git LFSはカンマ区切りで複数の取得パスを指定できる。
+              # カンマを含む特殊なパスはこの指定方式では非対応。
+              if any("," in path for path in lfs_paths):
+                  raise SystemExit("Git LFSパスにカンマが含まれます。取得方法の調整が必要です。")
+
+              subprocess.run(
+                  [
+                      "git", "lfs", "pull",
+                      "--include=" + ",".join(lfs_paths),
+                      "--exclude=",
+                      "origin",
+                  ],
+                  check=True,
+              )
+          PY
 
 
       # ======================================================
@@ -263,6 +345,49 @@ jobs:
 
 
       # ======================================================
+      # ゲーム側EditModeテストのAssemblyを収集
+      # ======================================================
+      #
+      # 埋め込みURPのTestsまで実行すると、パッケージ内部の
+      # 移行テスト等がゲーム用CIを落とすことがある。
+      # Assets以下のTestAssembliesが有効なasmdefだけを選ぶ。
+      #
+      # 該当するasmdefがない場合はテスト0件で実行する。
+      # Unityの起動・C#コンパイル検査は行われるが、
+      # ゲーム独自のテストはまだ検証されない。
+      # ======================================================
+
+      - name: Find project EditMode test assemblies
+        id: project_tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          test_assemblies = []
+          for path in sorted(Path("Assets").rglob("*.asmdef")):
+              definition = json.loads(path.read_text(encoding="utf-8-sig"))
+              if "TestAssemblies" in definition.get("optionalUnityReferences", []):
+                  name = definition.get("name")
+                  if name:
+                      test_assemblies.append(name)
+
+          if test_assemblies:
+              selected = ";".join(sorted(set(test_assemblies)))
+              print(f"EditMode test assemblies: {selected}")
+          else:
+              # 存在しないAssemblyで絞り、URP内部テストの実行を避ける。
+              selected = "__NoProjectEditModeTests__"
+              print("::notice::ゲーム用EditModeテストAssemblyは未登録です。Unityのコンパイル確認のみ行います。")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"assembly_names={selected}", file=output)
+          PY
+
+      # ======================================================
       # EditMode Test
       # ======================================================
       #
@@ -281,7 +406,7 @@ jobs:
       # などもこの段階で検出できる。
       # ======================================================
 
-      - name: Run EditMode tests
+      - name: Compile project and run EditMode tests
         id: tests
         uses: game-ci/unity-test-runner@v4
 
@@ -296,6 +421,11 @@ jobs:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
 
           testMode: editmode
+
+          # プロジェクト側のテストAssemblyのみ実行する。
+          # package内URP公式テストはゲーム用CIの対象外。
+          customParameters: >-
+            -assemblyNames "${{ steps.project_tests.outputs.assembly_names }}"
 
 
       # ======================================================

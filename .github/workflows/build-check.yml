@@ -10,7 +10,8 @@
 # ・GitHub Actions画面から手動実行
 # ・毎日 03:00 JST に自動実行
 #
-# とする。
+# GitHubのデフォルトブランチの内容をビルドする。
+# 定期実行のWorkflow定義はデフォルトブランチ上に必要。
 # ============================================================
 
 name: Unity Build Check
@@ -56,7 +57,7 @@ permissions:
 # ============================================================
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-default-branch
   cancel-in-progress: true
 
 
@@ -82,6 +83,12 @@ jobs:
         uses: actions/checkout@v4
 
         with:
+
+          # scheduleは既定ブランチで実行される。
+          # workflow_dispatch時も必ず現在の既定ブランチを取得。
+          # schedule時にrepository情報が含まれない場合は
+          # github.ref_name（=デフォルトブランチ）を使う。
+          ref: ${{ github.event.repository.default_branch || github.ref_name }}
 
           # FBX / WAVなどGit LFS管理のファイルも取得
           lfs: true

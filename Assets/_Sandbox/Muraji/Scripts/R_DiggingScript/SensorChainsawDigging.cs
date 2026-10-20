@@ -18,9 +18,6 @@ public class SensorChainsawDigging : MonoBehaviour
     [Tooltip("アニメーション制御")]
     [SerializeField] private PlayerAnimator playerAnimator;
 
-    [Tooltip("モーションごとのBoxCollider変更を管理するコンポーネントです。未設定なら同じGameObjectから取得します。食い込みをキャンセルした瞬間に元の形へ戻します。")]
-    [SerializeField] private MotionBoxColliderController motionBoxColliderController;
-
     [Tooltip("攻撃処理")]
     [SerializeField] private ChainsawAttack chainsawAttack;
 
@@ -101,6 +98,8 @@ public class SensorChainsawDigging : MonoBehaviour
     private float pendingBounceDirection;
     // 空中で食い込みを入力し、最初の接触を待っている状態。
     private bool isWaitingForContact;
+    // 空中入力後、接触が見つからない間に経過した時間。
+    private float airContactWaitElapsed;
 
     // Floor → Wallの切り替え直後に一時的に保持するWall候補。
     private Collider pendingWallCollider;
@@ -122,12 +121,6 @@ public class SensorChainsawDigging : MonoBehaviour
     // 必要な参照を自動取得し、設定アセットが未登録なら処理を止める。
     private void Awake()
     {
-        // 必須設定の検証より先に、任意のCollider管理を取得する。
-        if (motionBoxColliderController == null)
-        {
-            motionBoxColliderController = GetComponent<MotionBoxColliderController>();
-        }
-
         if (diggingParameter == null)
         {
             Debug.LogError("Digging Parameterを設定してください。", this);
@@ -257,12 +250,6 @@ public class SensorChainsawDigging : MonoBehaviour
         float facingDirection,
         bool waitForContact)
     {
-        // キャンセル直後に同じ食い込みモーションを再開する場合も、形の変更を許可する。
-        if (motionBoxColliderController != null)
-        {
-            motionBoxColliderController.AllowMotionShapes();
-        }
-
         bool hasContact = detector.TryGetContact(
             null,
             out SensorChainsawContact initialContact,
@@ -290,6 +277,7 @@ public class SensorChainsawDigging : MonoBehaviour
                 // 未接触でも要求を保持し、FixedUpdateから接触を探し続ける。
                 IsRequested = true;
                 isWaitingForContact = true;
+                airContactWaitElapsed = 0f;
 
                 // 既存の停止処理を使い、モーションを保持する。
                 playerAnimator.HoldDiggingAnimationImmediately();
@@ -317,6 +305,7 @@ public class SensorChainsawDigging : MonoBehaviour
         contact = initialContact;
         IsRequested = true;
         isWaitingForContact = false;
+        airContactWaitElapsed = 0f;
         wallContactLostTime = 0f;
     }    // PlayerControllerのFixedUpdateから呼び、接触状態の更新と消費処理を行う。
     public void Tick(
@@ -399,10 +388,21 @@ public class SensorChainsawDigging : MonoBehaviour
             {
                 // 空中入力後の最初の接触待ちでは、要求とモーションを維持する。
                 // 接触後に対象を見失った場合は、従来どおり解除する。
-                if (!isWaitingForContact)
+                if (isWaitingForContact)
                 {
-                    Cancel(false);
+                    airContactWaitElapsed += deltaTime;
+
+                    // 設定時間内に接触できなければ、構えを解除してIdleへ戻す。
+                    if (airContactWaitElapsed >=
+                        diggingParameter.airContactWaitDuration)
+                    {
+                        Cancel(true);
+                    }
+
+                    return;
                 }
+
+                Cancel(false);
 
                 return;
             }
@@ -833,6 +833,7 @@ public class SensorChainsawDigging : MonoBehaviour
 
         // 接触後は、既存の食い込み継続・解除処理へ移行する。
         isWaitingForContact = false;
+        airContactWaitElapsed = 0f;
 
         LogDiggingContact();
 
@@ -895,19 +896,9 @@ public class SensorChainsawDigging : MonoBehaviour
     public void Cancel(
         bool immediate)
     {
-        // 状態を消す前に、食い込みや構えのキャンセルかを確認する。
-        // 食い込んでいない状態のCancelで、通常攻撃などのCollider設定を解除しない。
-        bool cancellingDigging = IsRequested || IsDigging || isWaitingForContact ||
-            (playerAnimator != null && playerAnimator.IsDiggingAnimationActive);
-
-        if (cancellingDigging && motionBoxColliderController != null)
-        {
-            // アニメーション終了や次のFixedUpdateを待たず、この場で元の形へ戻す。
-            motionBoxColliderController.RestoreCancelledMotion();
-        }
-
         // 攻撃・ジャンプ・無効化でも、接触待ちを残さない。
         isWaitingForContact = false;
+        airContactWaitElapsed = 0f;
         IsRequested = false;
         Surface =
             ChainsawSurface.None;

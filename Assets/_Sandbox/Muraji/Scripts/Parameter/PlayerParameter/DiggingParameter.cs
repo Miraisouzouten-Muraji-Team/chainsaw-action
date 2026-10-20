@@ -95,6 +95,11 @@ public class DiggingParameter : ScriptableObject
     [Min(0f)]
     public float enemyPushPower = 2f;
 
+    [Header("空中入力の接触待ち")]
+    [Tooltip("空中で食い込み入力後、最初の接触を待つ最大時間（秒）")]
+    [Min(0f)]
+    public float airContactWaitDuration = 1f;
+
     [Header("床から壁への切り替え")]
     [Tooltip("壁を検出する直前に押していれば、壁登りになる猶予時間（秒）")]
     [Min(0f)]

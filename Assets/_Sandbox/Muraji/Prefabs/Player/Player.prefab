@@ -549,7 +549,7 @@ MonoBehaviour:
   enableDiggingImpact: 1
   impactTerrainLayers:
     serializedVersion: 2
-    m_Bits: 0
+    m_Bits: 1
   impactCameraShake: {fileID: 0}
   logDiggingImpact: 1
   enableCornerCorrection: 1
@@ -863,6 +863,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawAttack
   hitBox: {fileID: 4953133777003125481}
+  slashKnockbackPriorityDuration: 0.15
   hitParticle: {fileID: 6176228616533195752, guid: 8b653b8ed8f598c42baa0eca3fd64bea, type: 3}
   cameraShake: {fileID: 5429733058400219989, guid: 222bfb40d9d8c07429223c6c89cc414f, type: 3}
   duration: 0.05

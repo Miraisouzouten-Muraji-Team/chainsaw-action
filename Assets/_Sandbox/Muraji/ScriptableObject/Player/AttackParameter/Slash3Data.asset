@@ -12,8 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 50c86e8e8e4e07a4a81877cbc1e3f5ef, type: 3}
   m_Name: Slash3Data
   m_EditorClassIdentifier: Assembly-CSharp::AttackData
-  damage: 10
-  attackVector: 0
+  damage: 5
+  attackVector: {x: 0, y: 30}
   attackMoveRange: 3
   attackMoveDuration: 0.15
   cameraShack: 0.5

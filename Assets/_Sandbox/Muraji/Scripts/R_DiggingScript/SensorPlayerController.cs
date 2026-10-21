@@ -75,6 +75,18 @@ public class SensorPlayerController : MonoBehaviour
 
     private float knockbackVelocity;
 
+    [Header("敵への接触による押し出し防止")]
+    [Tooltip("プレイヤー本体の移動先に敵の物理Colliderがある場合、その手前で横移動を制限します。敵側の移動や力の設定は変更しません。")]
+    [SerializeField] private bool preventPushingEnemies = true;
+
+    [Tooltip("敵本体との間に残す小さな隙間です。大きくすると接触による攻撃判定が届かなくなるため、まずは0.002を使用してください。")]
+    [SerializeField, Min(0f)] private float enemyStopDistance = 0.002f;
+
+    [Tooltip("直近の物理更新で、敵への横移動を制限したかを表示します。")]
+    [SerializeField] private bool debugEnemyMovementBlocked;
+
+    private const float ENEMY_BLOCK_NORMAL_X = 0.5f;
+
     private bool knockbackHopPending;
 
     // ほぼ水平な床では、従来の通常移動を維持する。
@@ -351,6 +363,7 @@ public class SensorPlayerController : MonoBehaviour
     private void FixedUpdate()
     {
         float deltaTime = Time.fixedDeltaTime;
+        debugEnemyMovementBlocked = false;
 
         if (playerRigidbody == null || playerRigidbody.isKinematic)
         {
@@ -632,6 +645,9 @@ public class SensorPlayerController : MonoBehaviour
         debugVelocityBeforeWall = velocity;
         debugWallBlocked = ApplyWallMovementBlock(ref velocity);
         debugVelocityAfterWall = velocity;
+        // 物理シミュレーション前に制限し、こちらの移動速度を敵へ押し付けない。
+        // 敵食い込み中の位置追従は、既存の専用処理を維持する。
+        debugEnemyMovementBlocked = ApplyEnemyMovementBlock(ref velocity, deltaTime);
         playerRigidbody.linearVelocity = velocity;
 
         playerAnimator.SetSpeed(
@@ -1098,6 +1114,7 @@ public class SensorPlayerController : MonoBehaviour
             TryBeginDiggingImpact(collision);
 
         UpdateWallContact(collision);
+        StopMovementIntoEnemyContact(collision);
     }
 
     void OnCollisionStay(Collision collision)
@@ -1116,6 +1133,7 @@ public class SensorPlayerController : MonoBehaviour
             TryBeginDiggingImpact(collision);
 
         UpdateWallContact(collision);
+        StopMovementIntoEnemyContact(collision);
     }
 
     // 接触が終了した地形を、接地と壁停止の両方から解除する。
@@ -1238,6 +1256,121 @@ public class SensorPlayerController : MonoBehaviour
             pendingCornerCorrection = Vector3.zero;
     }
 
+    // 本体の移動先にある敵を調べ、1物理ステップで敵へ入り込まない横速度へ制限する。
+    private bool ApplyEnemyMovementBlock(ref Vector3 velocity, float deltaTime)
+    {
+        if (!preventPushingEnemies || playerRigidbody == null || deltaTime <= 0f ||
+            Mathf.Abs(velocity.x) <= 0.0001f ||
+            chainsawDigging.Surface == ChainsawSurface.Enemy)
+        {
+            return false;
+        }
+
+        float direction = Mathf.Sign(velocity.x);
+        float movementDistance = Mathf.Abs(velocity.x) * deltaTime;
+        float stopDistance = Mathf.Max(0f, enemyStopDistance);
+        float allowedDistance = movementDistance;
+
+        // Triggerは攻撃・食い込みの検出用なので、物理的な進路を塞ぐ対象にしない。
+        // 複数の結果から敵だけを選び、床や壁は既存の処理へ任せる。
+        RaycastHit[] hits = playerRigidbody.SweepTestAll(
+            Vector3.right * direction,
+            movementDistance + stopDistance,
+            QueryTriggerInteraction.Ignore);
+
+        foreach (RaycastHit hit in hits)
+        {
+            if (!IsEnemyBodyCollider(hit.collider) ||
+                hit.normal.x * direction >= -ENEMY_BLOCK_NORMAL_X)
+            {
+                continue;
+            }
+
+            allowedDistance = Mathf.Min(
+                allowedDistance, Mathf.Max(0f, hit.distance - stopDistance));
+        }
+
+        if (allowedDistance >= movementDistance)
+        {
+            return false;
+        }
+
+        velocity.x = direction * allowedDistance / deltaTime;
+        StopEnemyApproachMovement(direction);
+        return true;
+    }
+
+    // 既存の敵受信コンポーネントを基準に、敵の本体Colliderだけを識別する。
+    private bool IsEnemyBodyCollider(Collider target)
+    {
+        return target != null && !target.isTrigger &&
+            target.attachedRigidbody != playerRigidbody &&
+            target.GetComponentInParent<EnemyAttackHitReceiver>() != null;
+    }
+
+    // 接触が既に発生した場合も、敵へ向かう横移動だけを直ちに解除する。
+    private void StopMovementIntoEnemyContact(Collision collision)
+    {
+        if (!preventPushingEnemies || !IsEnemyBodyCollider(collision.collider) ||
+            playerRigidbody == null ||
+            chainsawDigging.Surface == ChainsawSurface.Enemy)
+        {
+            return;
+        }
+
+        Vector3 velocity = playerRigidbody.linearVelocity;
+        bool blocked = false;
+
+        for (int i = 0; i < collision.contactCount; i++)
+        {
+            float normalX = collision.GetContact(i).normal.x;
+            if (Mathf.Abs(normalX) <= ENEMY_BLOCK_NORMAL_X)
+            {
+                continue;
+            }
+
+            float direction = -Mathf.Sign(normalX);
+            if (velocity.x * direction > 0f)
+            {
+                velocity.x = 0f;
+                blocked = true;
+            }
+
+            if (currentSpeed * direction > 0f)
+            {
+                blocked = true;
+            }
+
+            StopEnemyApproachMovement(direction);
+        }
+
+        if (blocked)
+        {
+            playerRigidbody.linearVelocity = velocity;
+            playerAnimator.SetSpeed(0f);
+        }
+    }
+
+    // 敵へ向かう通常移動・押し戻し・攻撃の踏み込みを解除し、攻撃自体は継続する。
+    private void StopEnemyApproachMovement(float direction)
+    {
+        if (currentSpeed * direction > 0f)
+        {
+            currentSpeed = 0f;
+        }
+
+        if (knockbackVelocity * direction > 0f)
+        {
+            knockbackVelocity = 0f;
+        }
+
+        if (attackMoveTimeRemaining > 0f && attackMoveDirection * direction > 0f)
+        {
+            ClearAttackMovement();
+        }
+    }
+
+    // 地形の接触記録を更新し、壁へ向かう移動をその場で停止する。
     private void UpdateWallContact(Collision collision)
     {
         if (playerMidCollider == null)
@@ -1966,6 +2099,7 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
+        debugEnemyMovementBlocked = false;
         if (groundProbe != null) groundProbe.Clear();
         debugGroundCollider = null;
         debugGroundSource = "未接地";

@@ -9,7 +9,7 @@ public class AttackData : ScriptableObject
     public int damage;
 
     [Tooltip("攻撃ベクトル")]
-    public float attackVector;
+    public Vector2 attackVector;
 
     [Tooltip("踏み込み移動量")]
     [Min(0f)]

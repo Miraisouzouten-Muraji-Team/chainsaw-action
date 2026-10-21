@@ -17,7 +17,6 @@ using UnityEngine;
 [Serializable]
 public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
 {
-    private const string PLAYER_TAG = "Player";
     private const string PLAYER_TARGET_COLLIDER_NAME = "Mid_Collider";
     private const float DIRECTION_EPSILON = 0.001f;
     private const float SPEED_EPSILON = 0.01f;
@@ -31,10 +30,8 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
     private BoxCollider enemyBoxCollider;
     private DroneEnemyPlanarMotor planarMotor;
 
-    private Transform playerTransform;
+    private EnemyPlayerReference playerReference;
     private BoxCollider playerTargetCollider;
-    private MonoBehaviour playerReceiverComponent;
-    private IAttackHitReceiver playerAttackHitReceiver;
 
     private List<Vector3> navigationPath;
 
@@ -121,6 +118,9 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
                 $"有効な{nameof(BoxCollider)}が必要です。");
         }
 
+        playerReference =
+            new EnemyPlayerReference();
+
         planarMotor =
             new DroneEnemyPlanarMotor(
                 enemyRigidbody,
@@ -132,7 +132,8 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
             new List<Vector3>();
 
         RefreshNavigationQueryGeometry();
-        ResolvePlayerTransform();
+        playerReference.TryGetPlayerTransform(
+            out _);
     }
 
     public void BeginAttack(float initialAttackDirectionSign)
@@ -1254,12 +1255,9 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
             return;
         }
 
-        ResolvePlayerTransform();
-
-        if (IsPlayerCollider(
+        if (playerReference.IsPlayerCollider(
                 collision.collider))
         {
-            ResolvePlayerAttackHitReceiver();
             SendPlayerDamageOncePerPass();
 
             // Playerへ命中した場合もロック地点まで進み続けず、
@@ -1331,35 +1329,13 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
             new Vector3(
                 planarMoveDirection.x,
                 planarMoveDirection.y,
-                0f).normalized;
+                0f);
 
-        int contactCount =
-            collision.contactCount;
-
-        for (int i = 0;
-             i < contactCount;
-             i++)
-        {
-            ContactPoint contact =
-                collision.GetContact(i);
-
-            float blockingDot =
-                Vector3.Dot(
-                    contact.normal,
-                    moveDirection);
-
-            if (blockingDot >
-                -BLOCKING_NORMAL_THRESHOLD)
-            {
-                continue;
-            }
-
-            blockingContact = contact;
-            return true;
-        }
-
-        blockingContact = default;
-        return false;
+        return EnemyBlockingContactEvaluator.TryGetBlockingContact(
+            collision,
+            moveDirection,
+            BLOCKING_NORMAL_THRESHOLD,
+            out blockingContact);
     }
 
     /// <summary>
@@ -1381,9 +1357,10 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
 
         hasDamagedPlayerThisPass = true;
 
-        if (playerReceiverComponent != null &&
-            playerReceiverComponent.isActiveAndEnabled &&
-            playerAttackHitReceiver != null)
+        if (playerReference.TryGetAttackHitReceiver(
+                requireActiveAndEnabled: true,
+                out IAttackHitReceiver playerAttackHitReceiver,
+                out _))
         {
             float damage =
                 enemyData.AttackPower *
@@ -1462,7 +1439,7 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
     {
         // 現在のNavigationObstacleMaskにはPlayer Colliderも含まれ得るため、
         // 実移動の侵入防止ではPlayerを障害物として扱わない。
-        return !IsPlayerCollider(
+        return !playerReference.IsPlayerCollider(
             targetCollider);
     }
 
@@ -1491,51 +1468,6 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
                 targetLayerMask) != 0;
     }
 
-    private bool IsPlayerCollider(
-        Collider targetCollider)
-    {
-        if (targetCollider == null ||
-            playerTransform == null)
-        {
-            return false;
-        }
-
-        Transform targetTransform =
-            targetCollider.transform;
-
-        return
-            targetTransform == playerTransform ||
-            targetTransform.IsChildOf(
-                playerTransform);
-    }
-
-    private void ResolvePlayerTransform()
-    {
-        if (playerTransform != null)
-        {
-            return;
-        }
-
-        GameObject playerObject =
-            GameObject.FindGameObjectWithTag(
-                PLAYER_TAG);
-
-        if (playerObject == null)
-        {
-            playerTargetCollider = null;
-            playerReceiverComponent = null;
-            playerAttackHitReceiver = null;
-            return;
-        }
-
-        playerTransform =
-            playerObject.transform;
-
-        playerTargetCollider = null;
-        playerReceiverComponent = null;
-        playerAttackHitReceiver = null;
-    }
-
     /// <summary>
     /// Enemyの経路探索・攻撃位置ロック・突進中追尾に使用するPlayer側の基準位置を取得する。
     /// Player RootはCollider所属判定とDamage Receiver探索に必要なため保持し、
@@ -1544,10 +1476,10 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
     private bool TryGetCurrentPlayerTargetPosition(
         out Vector3 targetWorldPosition)
     {
-        ResolvePlayerTransform();
-
-        if (playerTransform == null)
+        if (!playerReference.TryGetPlayerTransform(
+                out Transform playerTransform))
         {
+            playerTargetCollider = null;
             targetWorldPosition = default;
 
             if (!hasWarnedMissingPlayer)
@@ -1602,49 +1534,6 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
         targetWorldPosition =
             playerTargetCollider.bounds.center;
         return true;
-    }
-
-    private void ResolvePlayerAttackHitReceiver()
-    {
-        ResolvePlayerTransform();
-
-        if (playerTransform == null)
-        {
-            playerReceiverComponent = null;
-            playerAttackHitReceiver = null;
-            return;
-        }
-
-        if (playerReceiverComponent != null &&
-            playerReceiverComponent.isActiveAndEnabled &&
-            playerAttackHitReceiver != null)
-        {
-            return;
-        }
-
-        playerReceiverComponent = null;
-        playerAttackHitReceiver = null;
-
-        MonoBehaviour[] behaviours =
-            playerTransform.GetComponentsInChildren<MonoBehaviour>(
-                true);
-
-        foreach (MonoBehaviour behaviour in behaviours)
-        {
-            if (behaviour is not IAttackHitReceiver receiver ||
-                !behaviour.isActiveAndEnabled)
-            {
-                continue;
-            }
-
-            playerReceiverComponent =
-                behaviour;
-
-            playerAttackHitReceiver =
-                receiver;
-
-            return;
-        }
     }
 
     private void ResetRuntimeState()

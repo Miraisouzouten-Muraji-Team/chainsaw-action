@@ -21,10 +21,8 @@ public sealed class DroneEnemySearchStrategy :
     IEnemySearchStrategy,
     IEnemyDebugRayProvider
 {
-    private const string PLAYER_TAG = "Player";
     private const string PLAYER_TARGET_COLLIDER_NAME = "Mid_Collider";
 
-    private const int RAYCAST_HIT_BUFFER_SIZE = 32;
     private const int BOX_CAST_HIT_BUFFER_SIZE = 32;
     private const int OVERLAP_BUFFER_SIZE = 32;
     private const int PATROL_CORRECTION_ITERATIONS = 12;
@@ -53,17 +51,13 @@ public sealed class DroneEnemySearchStrategy :
     private BoxCollider enemyBoxCollider;
     private DroneEnemyPlanarMotor planarMotor;
 
-    private Transform playerTransform;
+    private EnemyPlayerReference playerReference;
+    private EnemyPlayerDetectionSensor playerDetectionSensor;
     private BoxCollider playerTargetCollider;
-    private IAttackHitReceiver playerAttackHitReceiver;
 
-    private RaycastHit[] raycastHitBuffer;
     private RaycastHit[] boxCastHitBuffer;
     private Collider[] overlapBuffer;
     private List<Vector3> returnPath;
-
-    private EnemyDebugRay obstacleCheckDebugRay;
-    private bool hasObstacleCheckDebugRay;
 
     private Vector2 patrolPointAOffset;
     private Vector2 patrolPointBOffset;
@@ -164,6 +158,14 @@ public sealed class DroneEnemySearchStrategy :
                 $"{nameof(BoxCollider)}を有効にしてください。");
         }
 
+        playerReference =
+            new EnemyPlayerReference();
+
+        playerDetectionSensor =
+            new EnemyPlayerDetectionSensor(
+                enemyTransform,
+                playerReference);
+
         planarMotor =
             new DroneEnemyPlanarMotor(
                 enemyRigidbody,
@@ -180,9 +182,6 @@ public sealed class DroneEnemySearchStrategy :
 
         CacheConfiguredPatrolOffsets();
 
-        raycastHitBuffer =
-            new RaycastHit[RAYCAST_HIT_BUFFER_SIZE];
-
         boxCastHitBuffer =
             new RaycastHit[BOX_CAST_HIT_BUFFER_SIZE];
 
@@ -193,12 +192,13 @@ public sealed class DroneEnemySearchStrategy :
             new List<Vector3>();
 
         CacheBoxQueryGeometry();
-        ResolvePlayerReferences();
+        playerReference.TryGetPlayerTransform(
+            out _);
     }
 
     public void BeginSearch()
     {
-        hasObstacleCheckDebugRay = false;
+        playerDetectionSensor.ClearDebugRay();
         hasPhysicsQueryBufferOverflow = false;
 
         isSearchActive = true;
@@ -213,7 +213,8 @@ public sealed class DroneEnemySearchStrategy :
 
         returnPath.Clear();
 
-        ResolvePlayerReferences();
+        playerReference.TryGetPlayerTransform(
+            out _);
         CacheBoxQueryGeometry();
 
         // 帰還完了後の巡回順は固定原点→A→B→A...で開始する。
@@ -300,15 +301,16 @@ public sealed class DroneEnemySearchStrategy :
             return;
         }
 
-        ResolvePlayerReferences();
-
-        if (playerTransform == null ||
-            !IsPlayerCollider(collision.collider))
+        if (!playerReference.IsPlayerCollider(
+                collision.collider))
         {
             return;
         }
 
-        if (playerAttackHitReceiver == null)
+        if (!playerReference.TryGetAttackHitReceiver(
+                requireActiveAndEnabled: false,
+                out IAttackHitReceiver playerAttackHitReceiver,
+                out _))
         {
             Debug.LogWarning(
                 $"{nameof(DroneEnemySearchStrategy)}: " +
@@ -333,7 +335,7 @@ public sealed class DroneEnemySearchStrategy :
 
     public void EndSearch()
     {
-        hasObstacleCheckDebugRay = false;
+        playerDetectionSensor.ClearDebugRay();
 
         isSearchActive = false;
         isTurning = false;
@@ -357,10 +359,11 @@ public sealed class DroneEnemySearchStrategy :
                 nameof(debugRays));
         }
 
-        if (hasObstacleCheckDebugRay)
+        if (playerDetectionSensor.TryGetDebugRay(
+                out EnemyDebugRay detectionDebugRay))
         {
             debugRays.Add(
-                obstacleCheckDebugRay);
+                detectionDebugRay);
         }
     }
 
@@ -817,7 +820,7 @@ public sealed class DroneEnemySearchStrategy :
         return
             IsEnemyOwnedCollider(
                 targetCollider) ||
-            IsPlayerCollider(
+            playerReference.IsPlayerCollider(
                 targetCollider);
     }
 
@@ -827,7 +830,7 @@ public sealed class DroneEnemySearchStrategy :
         // 現在のNavigationObstacleMaskにはPlayer Colliderも含まれ得るため、
         // 実移動の侵入防止ではPlayerだけを除外する。
         // Enemy自身のColliderはDroneEnemyPlanarMotor側で除外する。
-        return !IsPlayerCollider(
+        return !playerReference.IsPlayerCollider(
             targetCollider);
     }
 
@@ -1375,47 +1378,24 @@ public sealed class DroneEnemySearchStrategy :
     private bool CanDetectPlayer(
         out Vector3 detectedPlayerPosition)
     {
-        hasObstacleCheckDebugRay = false;
         detectedPlayerPosition = default;
 
         if (!TryGetCurrentPlayerTargetPosition(
                 out Vector3 playerPosition))
         {
-            return false;
-        }
-
-        float detectionRadius =
-            enemyData.DetectionRadius;
-
-        if (detectionRadius <=
-            DIRECTION_EPSILON)
-        {
+            playerDetectionSensor.ClearDebugRay();
             return false;
         }
 
         Vector3 detectionCenter =
             GetCurrentDetectionCenter();
 
-        float deltaX =
-            playerPosition.x -
-            detectionCenter.x;
-
-        float deltaY =
-            playerPosition.y -
-            detectionCenter.y;
-
-        float squaredDistance =
-            deltaX * deltaX +
-            deltaY * deltaY;
-
-        if (squaredDistance >
-            detectionRadius * detectionRadius)
-        {
-            return false;
-        }
-
-        if (!HasDirectLineOfSightToPlayer(
-                playerPosition))
+        if (!playerDetectionSensor.CanDetectPlayer(
+                detectionCenter,
+                playerPosition,
+                enemyData.DetectionRadius,
+                playerPosition,
+                playerColliderEndsLineOfSight: true))
         {
             return false;
         }
@@ -1439,10 +1419,10 @@ public sealed class DroneEnemySearchStrategy :
     private bool TryGetCurrentPlayerTargetPosition(
         out Vector3 targetWorldPosition)
     {
-        ResolvePlayerReferences();
-
-        if (playerTransform == null)
+        if (!playerReference.TryGetPlayerTransform(
+                out Transform playerTransform))
         {
+            playerTargetCollider = null;
             targetWorldPosition = default;
             return false;
         }
@@ -1472,114 +1452,6 @@ public sealed class DroneEnemySearchStrategy :
             playerTargetCollider.bounds.center;
 
         return true;
-    }
-
-    private bool HasDirectLineOfSightToPlayer(
-        Vector3 playerPosition)
-    {
-        Vector3 rayOrigin =
-            enemyBoxCollider.bounds.center;
-
-        Vector3 rayVector =
-            playerPosition -
-            rayOrigin;
-
-        float rayDistance =
-            rayVector.magnitude;
-
-        if (rayDistance <=
-            DIRECTION_EPSILON)
-        {
-            return true;
-        }
-
-        Vector3 rayDirection =
-            rayVector /
-            rayDistance;
-
-        int hitCount =
-            Physics.RaycastNonAlloc(
-                rayOrigin,
-                rayDirection,
-                raycastHitBuffer,
-                rayDistance,
-                Physics.DefaultRaycastLayers,
-                QueryTriggerInteraction.Ignore);
-
-        // バッファが満杯の場合、RaycastNonAllocでは最近傍Hitが
-        // 結果に含まれる保証がないため、誤検知を避けて失敗扱いにする。
-        if (hitCount >=
-            raycastHitBuffer.Length)
-        {
-            obstacleCheckDebugRay =
-                new EnemyDebugRay(
-                    rayOrigin,
-                    rayDirection,
-                    rayDistance,
-                    EnemyDebugRayKind.LineOfSight,
-                    EnemyDebugRayResult.Blocked);
-
-            hasObstacleCheckDebugRay = true;
-
-            return false;
-        }
-
-        Collider firstValidHitCollider =
-            null;
-
-        float firstValidHitDistance =
-            float.PositiveInfinity;
-
-        // RaycastNonAllocの結果順序は保証されないため、
-        // Enemy自身を除いたHitのうち最短距離を明示的に選ぶ。
-        for (int i = 0;
-             i < hitCount;
-             i++)
-        {
-            RaycastHit hit =
-                raycastHitBuffer[i];
-
-            Collider hitCollider =
-                hit.collider;
-
-            if (hitCollider == null ||
-                IsEnemyOwnedCollider(
-                    hitCollider) ||
-                hit.distance >=
-                firstValidHitDistance)
-            {
-                continue;
-            }
-
-            firstValidHitCollider =
-                hitCollider;
-
-            firstValidHitDistance =
-                hit.distance;
-        }
-
-        // Playerの代表位置まで遮蔽物がなければLOS成立とする。
-        // Mid_ColliderがTriggerやIgnore Raycast対象でも、
-        // Player自身へのRaycast Hitを成立条件にしない。
-        bool hasDetectedPlayer =
-            firstValidHitCollider == null ||
-            IsPlayerCollider(
-                firstValidHitCollider);
-
-        obstacleCheckDebugRay =
-            new EnemyDebugRay(
-                rayOrigin,
-                rayDirection,
-                rayDistance,
-                EnemyDebugRayKind.LineOfSight,
-                hasDetectedPlayer
-                    ? EnemyDebugRayResult.Success
-                    : EnemyDebugRayResult.Blocked);
-
-        hasObstacleCheckDebugRay =
-            true;
-
-        return hasDetectedPlayer;
     }
 
     private float GetDetectedPlayerDirectionSign(
@@ -1638,75 +1510,6 @@ public sealed class DroneEnemySearchStrategy :
             targetTransform == enemyTransform ||
             targetTransform.IsChildOf(
                 enemyTransform);
-    }
-
-    private bool IsPlayerCollider(
-        Collider targetCollider)
-    {
-        if (targetCollider == null ||
-            playerTransform == null)
-        {
-            return false;
-        }
-
-        Transform targetTransform =
-            targetCollider.transform;
-
-        return
-            targetTransform == playerTransform ||
-            targetTransform.IsChildOf(
-                playerTransform);
-    }
-
-    private void ResolvePlayerReferences()
-    {
-        if (playerTransform == null)
-        {
-            GameObject playerObject =
-                GameObject.FindGameObjectWithTag(
-                    PLAYER_TAG);
-
-            if (playerObject == null)
-            {
-                return;
-            }
-
-            playerTransform =
-                playerObject.transform;
-
-            playerTargetCollider = null;
-        }
-
-        if (playerAttackHitReceiver == null)
-        {
-            ResolvePlayerAttackHitReceiver(
-                playerTransform.gameObject);
-        }
-    }
-
-    private void ResolvePlayerAttackHitReceiver(
-        GameObject playerObject)
-    {
-        MonoBehaviour[] behaviours =
-            playerObject.GetComponentsInChildren<MonoBehaviour>(
-                true);
-
-        playerAttackHitReceiver =
-            null;
-
-        for (int i = 0;
-             i < behaviours.Length;
-             i++)
-        {
-            if (behaviours[i] is
-                IAttackHitReceiver receiver)
-            {
-                playerAttackHitReceiver =
-                    receiver;
-
-                return;
-            }
-        }
     }
 
     private float GetFacingHorizontalDirectionSign()

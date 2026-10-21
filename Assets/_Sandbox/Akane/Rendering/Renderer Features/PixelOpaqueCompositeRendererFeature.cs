@@ -41,6 +41,11 @@ namespace Project.Rendering.Pixel
         [SerializeField] private Material _gameFogMaterial;
         [SerializeField] private Material _sceneFogMaterial;
 
+        // 統合Depth・Normalを使用するOutline Material。
+        [Header("Outline Materials")]
+        [SerializeField] private Material _gameOutlineMaterial;
+        [SerializeField] private Material _sceneOutlineMaterial;
+
         // Game / Scene別の統合用Material。
         private readonly Material[] _materials = new Material[VIEW_COUNT];
 
@@ -211,6 +216,21 @@ namespace Project.Rendering.Pixel
 
                 // メイン画面の解像度で統合RTを確保する。
                 _owner.EnsureOutputTextures(viewIndex, cameraData.cameraTargetDescriptor);
+
+                // 現在のCameraに対応するOutline Materialを取得する。
+                Material outlineMaterial = viewIndex == (int)PixelCaptureView.Scene
+                    ? _owner._sceneOutlineMaterial
+                    : _owner._gameOutlineMaterial;
+
+                if (outlineMaterial != null)
+                {
+                    // 統合DepthをOutline Materialへ渡す。
+                    outlineMaterial.SetTexture(COMPOSITE_DEPTH_NAME, _owner._depthTextures[viewIndex].rt);
+
+                    // 統合NormalをOutline Materialへ渡す。
+                    outlineMaterial.SetTexture(COMPOSITE_NORMAL_NAME, _owner._normalTextures[viewIndex].rt);
+                }
+
                 // 現在のCameraに対応するFog Materialを取得する。
                 Material fogMaterial = viewIndex == (int)PixelCaptureView.Scene
                     ? _owner._sceneFogMaterial

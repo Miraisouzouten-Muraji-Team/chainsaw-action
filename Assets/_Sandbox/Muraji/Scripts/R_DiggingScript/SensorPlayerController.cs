@@ -1448,7 +1448,7 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
-        float angle = facingDirection < 0f ? 180f : 0f;
+        float angle = facingDirection < 0f ? 90f : 0f;
 
         visualRoot.localRotation =
             rightFacingRotation *

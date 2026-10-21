@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
@@ -14,7 +14,7 @@ using UnityEngine;
 /// ・選択されたStrategyをEnemyStateMachineのSerializeReferenceへ設定する。
 /// ・Play中の現在StateをInspectorへ読み取り専用で表示する。
 /// ・ChargeEnemySearchStrategy使用時の巡回範囲と符号付きオフセットの編集を行う。
-/// ・DroneEnemySearchStrategy選択時にPatrolPointA/Bを生成・再利用して参照を設定する。
+/// ・OldDroneEnemySearchStrategy選択時にPatrolPointA/Bを生成・再利用して参照を設定する。
 ///
 /// 担当しない責務:
 /// ・Strategyの実行。
@@ -36,35 +36,33 @@ public sealed class EnemyStateMachineEditor : Editor
     private const string SHOW_PATROL_DEBUG_PROPERTY_NAME =
         "showPatrolDebugVisualization";
 
-    private const string FACING_REFERENCE_PROPERTY_NAME =
-        "facingReference";
 
     private const string PATROL_OFFSET_PROPERTY_NAME =
         "patrolOffset";
 
-    private const string DRONE_PATROL_POINT_A_NAME =
+    private const string OLD_DRONE_PATROL_POINT_A_NAME =
         "PatrolPointA";
 
-    private const string DRONE_PATROL_POINT_B_NAME =
+    private const string OLD_DRONE_PATROL_POINT_B_NAME =
         "PatrolPointB";
 
-    private const string DRONE_PATROL_POINT_A_PROPERTY_NAME =
+    private const string OLD_DRONE_PATROL_POINT_A_PROPERTY_NAME =
         "patrolPointA";
 
-    private const string DRONE_PATROL_POINT_B_PROPERTY_NAME =
+    private const string OLD_DRONE_PATROL_POINT_B_PROPERTY_NAME =
         "patrolPointB";
 
-    private const float DRONE_DEFAULT_PATROL_OFFSET_MINIMUM =
+    private const float OLD_DRONE_DEFAULT_PATROL_OFFSET_MINIMUM =
         0.5f;
 
-    private const float DIRECTION_EPSILON =
+    private const float OLD_DRONE_DETECTION_RADIUS_EPSILON =
         0.001f;
+
 
     private SerializedProperty searchStrategyProperty;
     private SerializedProperty alertStrategyProperty;
     private SerializedProperty attackStrategyProperty;
     private SerializedProperty showPatrolDebugProperty;
-    private SerializedProperty facingReferenceProperty;
 
     private void OnEnable()
     {
@@ -84,9 +82,6 @@ public sealed class EnemyStateMachineEditor : Editor
             serializedObject.FindProperty(
                 SHOW_PATROL_DEBUG_PROPERTY_NAME);
 
-        facingReferenceProperty =
-            serializedObject.FindProperty(
-                FACING_REFERENCE_PROPERTY_NAME);
     }
 
     public override void OnInspectorGUI()
@@ -228,30 +223,12 @@ public sealed class EnemyStateMachineEditor : Editor
             return;
         }
 
-        SerializedProperty facingReferenceProperty =
-            serializedStateMachine.FindProperty(
-                FACING_REFERENCE_PROPERTY_NAME);
-
-        Transform facingReference =
-            facingReferenceProperty?.objectReferenceValue
-            as Transform;
-
-        if (facingReference == null)
-        {
-            return;
-        }
-
         Vector3 patrolStartPosition =
             stateMachine.transform.position;
 
-        Vector3 patrolDirection =
-            Vector3.right *
-            GetInitialHorizontalDirectionSign(
-                facingReference);
-
         Vector3 patrolEndPosition =
             patrolStartPosition +
-            patrolDirection *
+            Vector3.right *
             chargeEnemySearchStrategy.PatrolOffset;
 
         DrawPatrolRange(
@@ -285,21 +262,11 @@ public sealed class EnemyStateMachineEditor : Editor
             return;
         }
 
-        Transform facingReference =
-            facingReferenceProperty?.objectReferenceValue
-            as Transform;
-
-        if (facingReference == null)
-        {
-            return;
-        }
-
         EnemyStateMachine stateMachine =
             (EnemyStateMachine)target;
 
         DrawPatrolOffsetEditor(
             stateMachine,
-            facingReference,
             serializedObject,
             patrolOffsetProperty);
     }
@@ -311,7 +278,6 @@ public sealed class EnemyStateMachineEditor : Editor
     /// </summary>
     private static void DrawPatrolOffsetEditor(
         EnemyStateMachine stateMachine,
-        Transform facingReference,
         SerializedObject stateMachineSerializedObject,
         SerializedProperty patrolOffsetProperty)
     {
@@ -319,9 +285,7 @@ public sealed class EnemyStateMachineEditor : Editor
             stateMachine.transform.position;
 
         Vector3 patrolDirection =
-            Vector3.right *
-            GetInitialHorizontalDirectionSign(
-                facingReference);
+            Vector3.right;
 
         Vector3 endPosition =
             patrolStartPosition +
@@ -447,26 +411,6 @@ public sealed class EnemyStateMachineEditor : Editor
             stateMachine);
 
         SceneView.RepaintAll();
-    }
-
-    /// <summary>
-    /// FacingReferenceの初期正面からX方向の巡回方向を取得する。
-    /// 実際のChargeEnemySearchStrategyと同じ判定規則を使用する。
-    /// </summary>
-    private static float GetInitialHorizontalDirectionSign(
-        Transform facingReference)
-    {
-        float facingX =
-            facingReference.forward.x;
-
-        if (Mathf.Abs(facingX) >
-            DIRECTION_EPSILON)
-        {
-            return Mathf.Sign(
-                facingX);
-        }
-
-        return 1f;
     }
 
     /// <summary>
@@ -654,9 +598,9 @@ public sealed class EnemyStateMachineEditor : Editor
         if (propertyPath ==
                 SEARCH_STRATEGY_PROPERTY_NAME &&
             strategyType ==
-                typeof(DroneEnemySearchStrategy))
+                typeof(OldDroneEnemySearchStrategy))
         {
-            EnsureDronePatrolPoints(
+            EnsureOldDronePatrolPoints(
                 stateMachine);
         }
 
@@ -668,46 +612,46 @@ public sealed class EnemyStateMachineEditor : Editor
     }
 
     /// <summary>
-    /// Drone SearchのAuthoring用PointをEnemy直下へ用意し、
+    /// 旧型Drone SearchのAuthoring用PointをEnemy直下へ用意し、
     /// SerializeReference内のStrategyへ参照を設定する。
     /// 既存Pointは再利用し、Strategyを選び直しても増殖させない。
     /// </summary>
-    private void EnsureDronePatrolPoints(
+    private void EnsureOldDronePatrolPoints(
         EnemyStateMachine stateMachine)
     {
         int undoGroup =
             Undo.GetCurrentGroup();
 
         Undo.SetCurrentGroupName(
-            "Configure Drone Patrol Points");
+            "Configure Old Drone Patrol Points");
 
         Transform enemyTransform =
             stateMachine.transform;
 
         float initialOffset =
-            GetDroneInitialPatrolOffset(
+            GetOldDroneInitialPatrolOffset(
                 stateMachine);
 
         Transform pointA =
-            FindOrCreateDronePatrolPoint(
+            FindOrCreateOldDronePatrolPoint(
                 enemyTransform,
-                DRONE_PATROL_POINT_A_NAME,
+                OLD_DRONE_PATROL_POINT_A_NAME,
                 -initialOffset);
 
         Transform pointB =
-            FindOrCreateDronePatrolPoint(
+            FindOrCreateOldDronePatrolPoint(
                 enemyTransform,
-                DRONE_PATROL_POINT_B_NAME,
+                OLD_DRONE_PATROL_POINT_B_NAME,
                 initialOffset);
 
         serializedObject.Update();
 
-        SerializedProperty droneStrategyProperty =
+        SerializedProperty oldDroneStrategyProperty =
             serializedObject.FindProperty(
                 SEARCH_STRATEGY_PROPERTY_NAME);
 
-        if (droneStrategyProperty?.managedReferenceValue
-            is not DroneEnemySearchStrategy)
+        if (oldDroneStrategyProperty?.managedReferenceValue
+            is not OldDroneEnemySearchStrategy)
         {
             Undo.CollapseUndoOperations(
                 undoGroup);
@@ -716,19 +660,19 @@ public sealed class EnemyStateMachineEditor : Editor
         }
 
         SerializedProperty pointAProperty =
-            droneStrategyProperty.FindPropertyRelative(
-                DRONE_PATROL_POINT_A_PROPERTY_NAME);
+            oldDroneStrategyProperty.FindPropertyRelative(
+                OLD_DRONE_PATROL_POINT_A_PROPERTY_NAME);
 
         SerializedProperty pointBProperty =
-            droneStrategyProperty.FindPropertyRelative(
-                DRONE_PATROL_POINT_B_PROPERTY_NAME);
+            oldDroneStrategyProperty.FindPropertyRelative(
+                OLD_DRONE_PATROL_POINT_B_PROPERTY_NAME);
 
         if (pointAProperty == null ||
             pointBProperty == null)
         {
             Debug.LogError(
                 $"{nameof(EnemyStateMachineEditor)}: " +
-                $"{nameof(DroneEnemySearchStrategy)}の" +
+                $"{nameof(OldDroneEnemySearchStrategy)}の" +
                 "PatrolPoint参照を取得できません。",
                 stateMachine);
 
@@ -740,7 +684,7 @@ public sealed class EnemyStateMachineEditor : Editor
 
         Undo.RecordObject(
             stateMachine,
-            "Assign Drone Patrol Points");
+            "Assign Old Drone Patrol Points");
 
         pointAProperty.objectReferenceValue =
             pointA;
@@ -762,7 +706,7 @@ public sealed class EnemyStateMachineEditor : Editor
         SceneView.RepaintAll();
     }
 
-    private static Transform FindOrCreateDronePatrolPoint(
+    private static Transform FindOrCreateOldDronePatrolPoint(
         Transform enemyTransform,
         string pointName,
         float xOffset)
@@ -807,7 +751,7 @@ public sealed class EnemyStateMachineEditor : Editor
         return pointObject.transform;
     }
 
-    private static float GetDroneInitialPatrolOffset(
+    private static float GetOldDroneInitialPatrolOffset(
         EnemyStateMachine stateMachine)
     {
         EnemyDataReference dataReference =
@@ -818,8 +762,8 @@ public sealed class EnemyStateMachineEditor : Editor
             ?? 0f;
 
         return detectionRadius >
-            DIRECTION_EPSILON
+            OLD_DRONE_DETECTION_RADIUS_EPSILON
             ? detectionRadius * 0.5f
-            : DRONE_DEFAULT_PATROL_OFFSET_MINIMUM;
+            : OLD_DRONE_DEFAULT_PATROL_OFFSET_MINIMUM;
     }
 }

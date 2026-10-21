@@ -41,17 +41,12 @@ public class EnemyStateMachine : MonoBehaviour
     [Tooltip(
         "Enemyの見た目だけを回転・傾斜させるTransform。" +
         "RigidbodyやColliderを持つEnemy本体ではなく、" +
-        "VisualRoot等の子Transformを設定する。")]
+        "VisualRoot等の子Transformを設定する。" +
+        "Prefab側ではこのTransformのローカル+Zがモデル正面になるよう調整する。")]
     [FormerlySerializedAs("damageTiltTarget")]
     [SerializeField]
     private Transform visualRoot;
 
-    [Tooltip(
-        "Enemyの見た目上の正面を示すTransform。" +
-        "このTransformのforward（ローカル+Z）がモデルの正面を向くように設定する。" +
-        "VisualRoot自身のforward/rightからモデル正面を推測しないための基準。")]
-    [SerializeField]
-    private Transform facingReference;
 
     [Header("死亡")]
     [Tooltip("このEnemyがDeath Stateで使用するStrategy。")]
@@ -285,15 +280,6 @@ public class EnemyStateMachine : MonoBehaviour
                 this);
         }
 
-        if (facingReference != null &&
-            visualRoot != null &&
-            facingReference != visualRoot &&
-            !facingReference.IsChildOf(visualRoot))
-        {
-            throw new InvalidOperationException(
-                $"{nameof(EnemyStateMachine)}のFacing Referenceは" +
-                "Visual Root自身、またはVisual Root配下のTransformを設定してください。");
-        }
 
         damageState =
             new EnemyDamageState(
@@ -344,8 +330,7 @@ public class EnemyStateMachine : MonoBehaviour
         searchStrategy.Initialize(
             enemyData,
             gameObject,
-            visualRoot,
-            facingReference);
+            visualRoot);
 
         alertStrategy.Initialize(
             enemyData,
@@ -354,8 +339,7 @@ public class EnemyStateMachine : MonoBehaviour
         attackStrategy.Initialize(
             enemyData,
             gameObject,
-            visualRoot,
-            facingReference);
+            visualRoot);
 
         searchState =
             new EnemySearchState(

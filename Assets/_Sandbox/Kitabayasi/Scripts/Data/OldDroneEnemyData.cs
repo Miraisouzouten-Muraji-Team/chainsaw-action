@@ -1,17 +1,19 @@
 // 責務:
-// ・ドローンエネミー固有の調整値を保持する。
-// ・Searchで使用する巡回設定と、Attackで使用するホーミング・ブレーキ・後退設定を保持する。
+// ・旧型ドローン固有の調整値を保持する。
+// ・旧型ドローンのSearchで使用する巡回設定と、Attackで使用するホーミング・ブレーキ・後退設定を保持する。
 //
 // 担当しない責務:
 // ・巡回地点A/Bなど、Enemy個体ごとの配置情報。
 // ・現在位置、現在State、ロック位置、現在の攻撃方向などの実行時状態。
 
 using UnityEngine;
+using UnityEngine.Scripting.APIUpdating;
 
 [CreateAssetMenu(
-    fileName = "DroneEnemyData",
-    menuName = "Enemy/Drone Enemy Data")]
-public sealed class DroneEnemyData : EnemyData
+    fileName = "OldDroneEnemyData",
+    menuName = "Enemy/Old Drone Enemy Data")]
+[MovedFrom(false, sourceClassName: "DroneEnemyData")]
+public sealed class OldDroneEnemyData : EnemyData
 {
     [Header("索敵")]
     [Tooltip("巡回時の移動速度。")]

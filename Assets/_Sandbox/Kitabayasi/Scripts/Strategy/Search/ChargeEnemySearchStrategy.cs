@@ -6,7 +6,7 @@ using UnityEngine.Serialization;
 /// 責務:
 /// ・ゲーム開始時の配置位置を固定した巡回開始位置として保持し、Search復帰時はそこへ戻ってから巡回する。
 /// ・帰還を安全に続行できない場合は、そのSearch中の巡回を停止してPlayer索敵へ戻る。
-/// ・巡回基準時点のFacing方向を正方向とする符号付きPatrolOffsetで巡回端を決定し、往復する。
+/// ・符号付きPatrolOffsetをワールドX方向の巡回端として使用し、往復する。
 /// ・巡回端または平坦面の終端で停止し、VisualRootだけを指定時間かけて180度反転する。
 /// ・巡回中に進行方向を塞ぐ壁面へ衝突した場合は反転する。
 /// ・巡回前に平坦面を判定し、穴・段差・坂へ進入しない。
@@ -30,7 +30,7 @@ public sealed class ChargeEnemySearchStrategy :
     [Min(0f)]
     private float detectionRadius;
 
-    [Tooltip("このChargeEnemyの巡回開始地点から折り返し地点までの符号付きオフセット。正数は巡回基準時点のFacing方向、負数はその反対方向。ChargeEnemyDataのPatrolDistanceは使用しない。")]
+    [Tooltip("このChargeEnemyの巡回開始地点から折り返し地点までのワールドX方向の符号付きオフセット。正数は+X、負数は-X。ChargeEnemyDataのPatrolDistanceは使用しない。")]
     [FormerlySerializedAs("patrolDistance")]
     [SerializeField]
     private float patrolOffset;
@@ -40,7 +40,6 @@ public sealed class ChargeEnemySearchStrategy :
     private GameObject enemyObject;
     private Transform enemyTransform;
     private Transform visualRoot;
-    private Transform facingReference;
     private Rigidbody enemyRigidbody;
     private Collider enemyCollider;
 
@@ -51,7 +50,6 @@ public sealed class ChargeEnemySearchStrategy :
 
     private Vector3 patrolStartPosition;
 
-    private float initialPatrolDirectionSign;
     private float currentMoveDirectionSign;
 
     private bool isMovingToPatrolEnd;
@@ -79,8 +77,7 @@ public sealed class ChargeEnemySearchStrategy :
     public void Initialize(
         EnemyData enemyData,
         GameObject enemyObject,
-        Transform visualRoot,
-        Transform facingReference)
+        Transform visualRoot)
     {
         this.enemyData = enemyData as ChargeEnemyData
             ?? throw new InvalidOperationException(
@@ -98,11 +95,6 @@ public sealed class ChargeEnemySearchStrategy :
                 $"{nameof(ChargeEnemySearchStrategy)}を使用するEnemyには" +
                 "VisualRootの設定が必要です。");
 
-        this.facingReference = facingReference
-            ? facingReference
-            : throw new InvalidOperationException(
-                $"{nameof(ChargeEnemySearchStrategy)}を使用するEnemyには" +
-                "FacingReferenceの設定が必要です。");
 
         enemyRigidbody =
             enemyObject.GetComponent<Rigidbody>();
@@ -150,8 +142,6 @@ public sealed class ChargeEnemySearchStrategy :
         // ゲーム開始時の位置として固定する。
         patrolStartPosition = enemyRigidbody.position;
 
-        initialPatrolDirectionSign =
-            GetHorizontalFacingSign();
 
         playerReference.TryGetPlayerTransform(
             out _);
@@ -266,8 +256,13 @@ public sealed class ChargeEnemySearchStrategy :
         }
         else
         {
+            float patrolDirectionSign =
+                GetPatrolEndDirectionSign();
+
             detectedPlayerDirectionSign =
-                GetHorizontalFacingSign();
+                Mathf.Abs(patrolDirectionSign) > DIRECTION_EPSILON
+                    ? patrolDirectionSign
+                    : 1f;
         }
 
         return true;
@@ -605,12 +600,11 @@ public sealed class ChargeEnemySearchStrategy :
         }
 
         return patrolStartPosition.x +
-               initialPatrolDirectionSign *
                patrolOffset;
     }
 
     /// <summary>
-    /// 巡回基準時点のFacing方向とPatrolOffsetの符号から、
+    /// ワールドX方向の符号付きPatrolOffsetから、
     /// 巡回端へ向かうX方向の符号を取得する。
     /// </summary>
     private float GetPatrolEndDirectionSign()
@@ -621,36 +615,31 @@ public sealed class ChargeEnemySearchStrategy :
             return 0f;
         }
 
-        return initialPatrolDirectionSign *
-               Mathf.Sign(patrolOffset);
+        return Mathf.Sign(patrolOffset);
     }
 
     /// <summary>
-    /// Search開始時の見た目方向を、実際の初回巡回方向へ合わせる。
-    /// 負のPatrolOffsetでも移動方向とFacingが逆転しないようにする。
+    /// VisualRootのローカル+Zを、現在要求している左右移動方向へ合わせる。
     /// </summary>
     private void AlignVisualWithCurrentMoveDirection()
     {
-        if (Mathf.Abs(currentMoveDirectionSign) <=
+        AlignVisualWithHorizontalDirection(
+            currentMoveDirectionSign);
+    }
+
+    private void AlignVisualWithHorizontalDirection(
+        float directionSign)
+    {
+        if (Mathf.Abs(directionSign) <=
             DIRECTION_EPSILON)
         {
             return;
         }
 
-        float visualDirectionSign =
-            GetHorizontalFacingSign();
-
-        if (visualDirectionSign *
-            currentMoveDirectionSign > 0f)
-        {
-            return;
-        }
-
         visualRoot.rotation =
-            Quaternion.AngleAxis(
-                180f,
-                Vector3.up) *
-            visualRoot.rotation;
+            Quaternion.LookRotation(
+                Vector3.right * Mathf.Sign(directionSign),
+                Vector3.up);
     }
 
     /// <summary>
@@ -768,6 +757,9 @@ public sealed class ChargeEnemySearchStrategy :
     private void SetHorizontalVelocity(
         float targetVelocityX)
     {
+        AlignVisualWithHorizontalDirection(
+            targetVelocityX);
+
         float currentVelocityX =
             enemyRigidbody.linearVelocity.x;
 
@@ -856,28 +848,5 @@ public sealed class ChargeEnemySearchStrategy :
     private Vector3 GetSearchOrigin()
     {
         return enemyCollider.bounds.center;
-    }
-
-    /// <summary>
-    /// FacingReferenceが示す現在の正面からX方向の符号を取得する。
-    /// </summary>
-    private float GetHorizontalFacingSign()
-    {
-        float facingX =
-            facingReference.forward.x;
-
-        if (Mathf.Abs(facingX) >
-            DIRECTION_EPSILON)
-        {
-            return Mathf.Sign(facingX);
-        }
-
-        Debug.LogWarning(
-            $"{nameof(ChargeEnemySearchStrategy)}: " +
-            "FacingReference.forwardがX方向を向いていないため、" +
-            "+X方向を使用します。",
-            facingReference);
-
-        return 1f;
     }
 }

@@ -39,7 +39,6 @@ public sealed class ChargeEnemyAttackStrategy :
     private GameObject enemyObject;
     private Transform enemyTransform;
     private Transform visualRoot;
-    private Transform facingReference;
     private Rigidbody enemyRigidbody;
     private Collider enemyCollider;
 
@@ -67,8 +66,7 @@ public sealed class ChargeEnemyAttackStrategy :
     public void Initialize(
         EnemyData enemyData,
         GameObject enemyObject,
-        Transform visualRoot,
-        Transform facingReference)
+        Transform visualRoot)
     {
         this.enemyData = enemyData as ChargeEnemyData
             ?? throw new InvalidOperationException(
@@ -87,11 +85,6 @@ public sealed class ChargeEnemyAttackStrategy :
                 $"{nameof(ChargeEnemyAttackStrategy)}を使用するEnemyには" +
                 "VisualRootの設定が必要です。");
 
-        this.facingReference = facingReference
-            ? facingReference
-            : throw new InvalidOperationException(
-                $"{nameof(ChargeEnemyAttackStrategy)}を使用するEnemyには" +
-                "FacingReferenceの設定が必要です。");
 
         enemyRigidbody =
             enemyObject.GetComponent<Rigidbody>();
@@ -319,10 +312,6 @@ public sealed class ChargeEnemyAttackStrategy :
             AttackPhase.Preparation;
 
         StopHorizontalMovement();
-
-        // 後退中も次に突進する方向を向いておくことで、
-        // 「その方向へ勢いをつけるために下がる」という攻撃意図を維持する。
-        FaceAttackDirection();
 
         enemyRigidbody.WakeUp();
     }
@@ -565,37 +554,23 @@ public sealed class ChargeEnemyAttackStrategy :
 
     private void FaceAttackDirection()
     {
-        float currentFacingSign =
-            GetCurrentHorizontalFacingSign();
+        AlignVisualWithHorizontalDirection(
+            attackDirectionSign);
+    }
 
-        if (Mathf.Abs(currentFacingSign) <=
-            DIRECTION_EPSILON ||
-            Mathf.Sign(currentFacingSign) ==
-            attackDirectionSign)
+    private void AlignVisualWithHorizontalDirection(
+        float directionSign)
+    {
+        if (Mathf.Abs(directionSign) <=
+            DIRECTION_EPSILON)
         {
             return;
         }
 
         visualRoot.rotation =
-            Quaternion.AngleAxis(
-                180f,
-                Vector3.up) *
-            visualRoot.rotation;
-    }
-
-    private float GetCurrentHorizontalFacingSign()
-    {
-        float facingX =
-            facingReference.forward.x;
-
-        if (Mathf.Abs(facingX) <=
-            DIRECTION_EPSILON)
-        {
-            return 0f;
-        }
-
-        return Mathf.Sign(
-            facingX);
+            Quaternion.LookRotation(
+                Vector3.right * Mathf.Sign(directionSign),
+                Vector3.up);
     }
 
     /// <summary>
@@ -705,6 +680,9 @@ public sealed class ChargeEnemyAttackStrategy :
     private void SetHorizontalVelocity(
         float targetVelocityX)
     {
+        AlignVisualWithHorizontalDirection(
+            targetVelocityX);
+
         float currentVelocityX =
             enemyRigidbody.linearVelocity.x;
 

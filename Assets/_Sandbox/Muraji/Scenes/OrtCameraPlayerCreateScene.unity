@@ -1293,6 +1293,18 @@ PrefabInstance:
       propertyPath: m_Layer
       value: 6
       objectReference: {fileID: 0}
+    - target: {fileID: 8720051152875504496, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+      propertyPath: m_Mass
+      value: 0.0000001
+      objectReference: {fileID: 0}
+    - target: {fileID: 8720051152875504496, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+      propertyPath: m_IsKinematic
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8720051152875504496, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+      propertyPath: m_AngularDamping
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 8740993970440122240, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_Layer
       value: 6

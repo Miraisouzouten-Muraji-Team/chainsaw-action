@@ -174,6 +174,9 @@ public class SensorPlayerController : MonoBehaviour
     private bool wallAscentImpactArmed;
     private bool floorTravelImpactArmed;
     private float floorTravelImpactDirection;
+    // 天井の端で食い込みが解除されても、同じ方向への移動中は壁衝突を判定する。
+    private bool ceilingTravelImpactArmed;
+    private float ceilingTravelImpactDirection;
     private bool impactSettingsChecked;
 
     private float impactStunRemaining;
@@ -619,6 +622,7 @@ public class SensorPlayerController : MonoBehaviour
         velocity.z = 0f;
         // 床の食い込みから続く移動を記録する。
         UpdateFloorTravelImpact(velocity);
+        UpdateCeilingTravelImpact(velocity);
         // 物理衝突によって速度が0になる前の移動速度。
         lastDiggingPhysicsVelocity = velocity;
         lastDiggingPhysicsSurface = chainsawDigging.Surface;
@@ -1721,6 +1725,35 @@ public class SensorPlayerController : MonoBehaviour
         }
     }
 
+    // 天井食い込みによる横移動を記録し、解除直後の壁衝突にも引き継ぐ。
+    private void UpdateCeilingTravelImpact(Vector3 velocity)
+    {
+        ChainsawSurface surface = chainsawDigging.Surface;
+
+        if (surface == ChainsawSurface.Ceiling)
+        {
+            ceilingTravelImpactArmed = Mathf.Abs(velocity.x) > 0.01f;
+            ceilingTravelImpactDirection = ceilingTravelImpactArmed
+                ? Mathf.Sign(velocity.x)
+                : 0f;
+            return;
+        }
+
+        // 床の場合と同様に、別の面への食い込み・停止・反転で記録を解除する。
+        if (surface != ChainsawSurface.None ||
+            velocity.x * ceilingTravelImpactDirection <= 0.01f)
+        {
+            ResetCeilingTravelImpact();
+        }
+    }
+
+    // 天井食い込みから引き継いだ移動方向と、壁衝突の判定予約を解除する。
+    private void ResetCeilingTravelImpact()
+    {
+        ceilingTravelImpactArmed = false;
+        ceilingTravelImpactDirection = 0f;
+    }
+
     private void ResetFloorTravelImpact()
     {
         floorTravelImpactArmed = false;
@@ -1806,7 +1839,12 @@ public class SensorPlayerController : MonoBehaviour
             floorTravelImpactArmed ||
             lastDiggingPhysicsSurface == ChainsawSurface.Floor;
 
-        if (!wasClimbing && !wasSliding)
+        // 天井を横移動して壁へ衝突した場合も、床と同じ壁衝突処理を使用する。
+        bool wasCeilingSliding =
+            ceilingTravelImpactArmed ||
+            lastDiggingPhysicsSurface == ChainsawSurface.Ceiling;
+
+        if (!wasClimbing && !wasSliding && !wasCeilingSliding)
         {
             return;
         }
@@ -1860,7 +1898,7 @@ public class SensorPlayerController : MonoBehaviour
                     1f);
 
             bool hitsWall =
-                wasSliding &&
+                (wasSliding || wasCeilingSliding) &&
                 !isWalkableSlope &&
                 Mathf.Abs(normal.y) < playerParameter.impactSurfaceNormalThreshold;
 
@@ -1895,6 +1933,7 @@ public class SensorPlayerController : MonoBehaviour
         // 硬直終了後に衝突前のジャンプ猶予を持ち越さない。
         lastGroundedTime = float.NegativeInfinity;
         ResetFloorTravelImpact();
+        ResetCeilingTravelImpact();
         wallAscentImpactArmed = false;
 
         if (logDiggingImpact)
@@ -1910,7 +1949,7 @@ public class SensorPlayerController : MonoBehaviour
         impactStunRemaining =
             Mathf.Max(0.01f, playerParameter.diggingImpactStunDuration);
 
-        // 床→壁の場合は、硬直終了後に既存ののけぞりを行う。
+        // 床または天井から壁へ衝突した場合は、硬直終了後に既存ののけぞりを行う。
         impactBounceDirection = bounceDirection;
 
         chainsawDigging.Cancel(true);
@@ -2114,6 +2153,7 @@ public class SensorPlayerController : MonoBehaviour
             playerMidCollider.ClearContacts();
         }
         ResetFloorTravelImpact();
+        ResetCeilingTravelImpact();
         wallAscentImpactArmed = false;
         pendingCornerCorrection = Vector3.zero;
         ceilingCornerJumpPending = false;

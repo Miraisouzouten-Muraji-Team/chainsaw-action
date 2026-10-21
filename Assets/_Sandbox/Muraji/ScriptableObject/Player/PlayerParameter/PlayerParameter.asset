@@ -43,7 +43,7 @@ MonoBehaviour:
   impactShakeMagnitude: 0.1
   surfaceStickSpeed: 1
   wallClimbSpeed: 5
-  directWallSpeedDivisor: 100
+  directWallSpeedDivisor: 5
   surfaceStickJumpForce: 30
   surfaceStickJumpAngle: 60
   surfaceStickJumpStunTime: 0.1

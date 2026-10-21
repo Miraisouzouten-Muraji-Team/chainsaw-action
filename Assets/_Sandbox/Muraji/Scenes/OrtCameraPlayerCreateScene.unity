@@ -498,6 +498,10 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 2247183306067112816, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: cameraShake
+      value: 
+      objectReference: {fileID: 1714035206}
+    - target: {fileID: 2247183306067112816, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: slashKnockbackPriorityDuration
       value: 10
       objectReference: {fileID: 0}
@@ -655,7 +659,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3848346086789356883, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: _group
-      value: 2
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3934945086523608928, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Layer
@@ -2812,7 +2816,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1167590c12a273043a926dcdb5492ac6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelRenderOverride
-  _group: 0
+  _group: 2
 --- !u!4 &1420608922 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 3401371955779553497, guid: 8b6c165a24a7021498124562437e381e, type: 3}
@@ -3033,6 +3037,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 65d5302ad90bf1644b5195aa383e95dc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerCamera
+--- !u!114 &1714035206 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 2791087658966089985, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 169322074}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f194eeeb4cd914d4497cdc968e22ec9e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CameraShake
 --- !u!1 &1724646706
 GameObject:
   m_ObjectHideFlags: 0

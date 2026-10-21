@@ -139,11 +139,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b00045f12942b46c698459096c89274e, type: 3}
   m_Name: OutlineDepthNormal
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.FullScreenPassRendererFeature
-  m_Active: 0
-  injectionPoint: 450
+  m_Active: 1
+  injectionPoint: 550
   fetchColorBuffer: 1
   requirements: 7
-  passMaterial: {fileID: 2100000, guid: cc24803f25cb93543818e95ee7993d0c, type: 2}
+  passMaterial: {fileID: 2100000, guid: 9b99766502193b04ca2a7cffab981456, type: 2}
   passIndex: 0
   bindDepthStencilAttachment: 0
   m_Version: 1
@@ -205,3 +205,5 @@ MonoBehaviour:
   _sceneCompositeMaterial: {fileID: 2100000, guid: 4aa34f71a53ba11489906ada66f28fb9, type: 2}
   _gameFogMaterial: {fileID: 2100000, guid: f5fae617f0634ee4d8f7e660620b1a32, type: 2}
   _sceneFogMaterial: {fileID: 2100000, guid: fb861e3ff9c8f724f99d4916ce5d764d, type: 2}
+  _gameOutlineMaterial: {fileID: 2100000, guid: e6ceea92ace7d624ba1836a538347054, type: 2}
+  _sceneOutlineMaterial: {fileID: 2100000, guid: 9b99766502193b04ca2a7cffab981456, type: 2}

@@ -122,7 +122,7 @@ Material:
     - _ClearCoatSmoothness: 0
     - _Cull: 2
     - _Cutoff: 0.5
-    - _Density: 0.025
+    - _Density: 0.01
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
@@ -144,7 +144,7 @@ Material:
     - _QueueOffset: 0
     - _ReceiveShadows: 1
     - _SampleCount: 32
-    - _ScatteringIntensity: 2
+    - _ScatteringIntensity: 1
     - _SceneNormalPreviewEnabled: 0
     - _SkyFogStrength: 0.4
     - _SkyMaxDistance: 30

@@ -242,11 +242,15 @@ namespace Project.Rendering.Pixel
                     fogMaterial.SetTexture(COMPOSITE_DEPTH_NAME, _owner._depthTextures[viewIndex].rt);
                 }
 
-                // 外部RTをRender Graphへ登録する。
+                // 統合DepthとNormalをRender Graphへ登録する。
                 TextureHandle depthOutput = renderGraph.ImportTexture(_owner._depthTextures[viewIndex]);
                 TextureHandle normalOutput = renderGraph.ImportTexture(_owner._normalTextures[viewIndex]);
                 TextureHandle[] inputs = new TextureHandle[INPUT_COUNT];
 
+                // 同じCameraの後続Passが参照できるようにTextureHandleを共有する。
+                PixelOpaqueFrameData opaqueFrameData = frameData.GetOrCreate<PixelOpaqueFrameData>();
+                opaqueFrameData.Depth = depthOutput;
+                opaqueFrameData.Normal = normalOutput;
 
                 for (int i = 0; i < INPUT_COUNT; i++)
                 {

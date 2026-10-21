@@ -1,5 +1,6 @@
 using R3;
 using R3.Triggers;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -10,7 +11,7 @@ public class MenuButtonEffect : MonoBehaviour
     private Vector3 originalScale;
 
     // ボタンの文字
-    private Text text;
+    private TextMeshProUGUI text;
 
     // 拡大倍率や、透明度の設定
     [SerializeField] private float selectedScale = 1.1f;
@@ -31,7 +32,7 @@ public class MenuButtonEffect : MonoBehaviour
         originalScale = transform.localScale;
 
         // 子オブジェクトのTextを自動取得
-        text = GetComponentInChildren<Text>();
+        text = GetComponentInChildren<TextMeshProUGUI>();
 
         targetScale = originalScale;
         targetTextAlpha = normalTextAlpha;

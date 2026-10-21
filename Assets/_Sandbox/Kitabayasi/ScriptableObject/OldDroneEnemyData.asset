@@ -10,8 +10,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cf69c5f2a86e46e40a097e7a08d2e39d, type: 3}
-  m_Name: DroneEnemyData
-  m_EditorClassIdentifier: Assembly-CSharp::DroneEnemyData
+  m_Name: OldDroneEnemyData
+  m_EditorClassIdentifier: Assembly-CSharp::OldDroneEnemyData
   maxHealth: 20
   attackPower: 10
   detectionRadius: 2
@@ -25,7 +25,7 @@ MonoBehaviour:
   patrolMoveSpeed: 5
   patrolTurnDuration: 0.5
   patrolContactDamagePercent: 50
-  navigationMoveSpeed: 15
+  navigationMoveSpeed: 5
   pathSafetyMargin: 0.05
   pathSearchPadding: 5
   maximumExpandedPathNodes: 4096

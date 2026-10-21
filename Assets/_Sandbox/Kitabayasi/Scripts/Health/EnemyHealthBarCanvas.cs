@@ -7,7 +7,7 @@ using UnityEngine;
 /// <remarks>
 /// Scene内で有効なインスタンスは1つだけを前提とする。
 /// EnemyHealthBarTargetから登録されたEnemyについてHPバーを生成し、
-/// 対象のAnchorのワールド位置をScreen Space - Overlay Canvas上へ投影する。
+/// Targetから取得した最終表示ワールド位置をScreen Space - Overlay Canvas上へ投影する。
 /// HP値そのものの管理や、1本のゲージ描画は担当しない。
 /// </remarks>
 [DisallowMultipleComponent]
@@ -235,9 +235,8 @@ public class EnemyHealthBarCanvas : MonoBehaviour
         }
 
         EnemyHealth enemyHealth = target.EnemyHealth;
-        Transform anchor = target.HealthBarAnchor;
 
-        if (enemyHealth == null || anchor == null || enemyHealth.IsDead)
+        if (enemyHealth == null || enemyHealth.IsDead)
         {
             return;
         }
@@ -279,16 +278,15 @@ public class EnemyHealthBarCanvas : MonoBehaviour
         EnemyHealthBar healthBar)
     {
         EnemyHealth enemyHealth = target.EnemyHealth;
-        Transform anchor = target.HealthBarAnchor;
 
-        if (enemyHealth == null || anchor == null || enemyHealth.IsDead)
+        if (enemyHealth == null || enemyHealth.IsDead)
         {
             SetHealthBarVisible(healthBar, false);
             return;
         }
 
         Vector3 screenPosition =
-            worldCamera.WorldToScreenPoint(anchor.position);
+            worldCamera.WorldToScreenPoint(target.HealthBarWorldPosition);
 
         // Camera背面の座標は画面座標へ投影すると反転して見えるため表示しない。
         if (screenPosition.z <= 0f)
@@ -312,7 +310,7 @@ public class EnemyHealthBarCanvas : MonoBehaviour
         RectTransform healthBarRectTransform =
             (RectTransform)healthBar.transform;
 
-        // 対象Enemyから引き継ぐのはAnchorの位置だけ。
+        // 対象Enemyから引き継ぐのはTargetが確定したワールド表示位置だけ。
         // Enemyの回転・Scaleは共通Canvas上のHPバーへ反映しない。
         healthBarRectTransform.position = canvasWorldPosition;
     }

@@ -1,9 +1,9 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Scripting.APIUpdating;
 
 /// <summary>
-/// ドローンエネミーのAttack State中に、必要ならA*でPlayerへ直接突進できる地点まで移動し、
+/// 旧型ドローンエネミーのAttack State中に、必要ならA*でPlayerへ直接突進できる地点まで移動し、
 /// 初回突進前の待機、ホーミング突進、急ブレーキ、停止、後退を繰り返す攻撃Strategy。
 /// 突進中に障害物へ阻まれた場合や進行不能が続いた場合は、
 /// 現在の突進を失敗として回復シーケンスへ移行する。
@@ -15,28 +15,25 @@ using UnityEngine;
 /// State遷移とPlayerのHP変更は担当しない。
 /// </remarks>
 [Serializable]
-public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
+[MovedFrom(false, sourceClassName: "DroneEnemyAttackStrategy")]
+public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
 {
-    private const string PLAYER_TAG = "Player";
     private const string PLAYER_TARGET_COLLIDER_NAME = "Mid_Collider";
     private const float DIRECTION_EPSILON = 0.001f;
     private const float SPEED_EPSILON = 0.01f;
     private const float BLOCKING_NORMAL_THRESHOLD = 0.5f;
     private const float FULL_CIRCLE_DEGREES = 360f;
-    private const float PATH_RETRY_INTERVAL = 0.5f;
 
-    private DroneEnemyData enemyData;
+    private OldDroneEnemyData enemyData;
     private GameObject enemyObject;
+    private Transform visualRoot;
     private Rigidbody enemyRigidbody;
     private BoxCollider enemyBoxCollider;
     private DroneEnemyPlanarMotor planarMotor;
+    private DroneEnemyPathNavigator pathNavigator;
 
-    private Transform playerTransform;
+    private EnemyPlayerReference playerReference;
     private BoxCollider playerTargetCollider;
-    private MonoBehaviour playerReceiverComponent;
-    private IAttackHitReceiver playerAttackHitReceiver;
-
-    private List<Vector3> navigationPath;
 
     // 内部フェーズ用の新しいenumを増やさず、現在フェーズの更新処理を保持する。
     private Action updateCurrentPhase;
@@ -49,14 +46,6 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
     private Vector2 lastHomingPosition;
     private Vector2 retreatStartPosition;
     private Vector2 retreatDirection;
-    private Vector2 lastNavigationPosition;
-    private Vector2 lastNavigationTargetPosition;
-
-    private Vector3 navigationBoxCenterOffsetFromRigidbody;
-    private Vector3 bodyBoxHalfExtents;
-    private Vector3 navigationBoxHalfExtents;
-    private Quaternion navigationBoxOrientation = Quaternion.identity;
-
     private float initialAttackDirectionSign = 1f;
     private float baseAttackAngle;
     private float currentAttackAngle;
@@ -68,9 +57,6 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
     private float retreatElapsedTime;
     private float expectedRetreatDuration;
     private float effectiveRetreatEaseDuration;
-    private float navigationStallElapsedTime;
-    private float nextNavigationPathSearchTime;
-
     private bool isAttackActive;
     private bool isHomingActive;
     private bool isRetreatActive;
@@ -80,34 +66,42 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
     private bool hasWarnedMissingPlayerTargetCollider;
     private bool navigationCompletesWithInitialPreparation;
 
-    private int navigationPathIndex;
-
     public void Initialize(
         EnemyData enemyData,
         GameObject enemyObject,
-        Transform visualRoot,
-        Transform facingReference)
+        Transform visualRoot)
     {
-        this.enemyData = enemyData as DroneEnemyData
+        this.enemyData =
+            enemyData as OldDroneEnemyData
             ?? throw new InvalidOperationException(
-                $"{nameof(DroneEnemyAttackStrategy)}には{nameof(DroneEnemyData)}が必要です。");
+                $"{nameof(OldDroneEnemyAttackStrategy)}には" +
+                $"{nameof(OldDroneEnemyData)}が必要です。");
 
         this.enemyObject = enemyObject
             ? enemyObject
             : throw new ArgumentNullException(nameof(enemyObject));
 
-        enemyRigidbody = enemyObject.GetComponent<Rigidbody>();
+        this.visualRoot = visualRoot
+            ? visualRoot
+            : throw new InvalidOperationException(
+                $"{nameof(OldDroneEnemyAttackStrategy)}を使用するEnemyには" +
+                "VisualRootが必要です。");
+
+        enemyRigidbody =
+            enemyObject.GetComponent<Rigidbody>();
 
         if (enemyRigidbody == null)
         {
             throw new InvalidOperationException(
-                $"{nameof(DroneEnemyAttackStrategy)}を使用するEnemyには{nameof(Rigidbody)}が必要です。");
+                $"{nameof(OldDroneEnemyAttackStrategy)}を使用するEnemyには" +
+                $"{nameof(Rigidbody)}が必要です。");
         }
 
         if (enemyRigidbody.isKinematic)
         {
             throw new InvalidOperationException(
-                $"{nameof(DroneEnemyAttackStrategy)}は非KinematicのRigidbodyを使用する前提です。");
+                $"{nameof(OldDroneEnemyAttackStrategy)}は" +
+                "非KinematicのRigidbodyを使用する前提です。");
         }
 
         enemyBoxCollider =
@@ -117,9 +111,12 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
             !enemyBoxCollider.enabled)
         {
             throw new InvalidOperationException(
-                $"{nameof(DroneEnemyAttackStrategy)}を使用するEnemy本体には" +
+                $"{nameof(OldDroneEnemyAttackStrategy)}を使用するEnemy本体には" +
                 $"有効な{nameof(BoxCollider)}が必要です。");
         }
+
+        playerReference =
+            new EnemyPlayerReference();
 
         planarMotor =
             new DroneEnemyPlanarMotor(
@@ -128,11 +125,22 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
                 this.enemyData.NavigationObstacleMask,
                 IsBlockingMovementCollider);
 
-        navigationPath =
-            new List<Vector3>();
+        pathNavigator =
+            new DroneEnemyPathNavigator(
+                enemyRigidbody,
+                enemyBoxCollider,
+                planarMotor,
+                this.enemyData.NavigationObstacleMask,
+                this.enemyData.PathSafetyMargin,
+                this.enemyData.PathSearchPadding,
+                this.enemyData.MaximumExpandedPathNodes,
+                this.enemyData.WaypointArrivalTolerance,
+                this.enemyData.NavigationMoveSpeed,
+                this.enemyData.NavigationStallMinimumMoveSpeed,
+                this.enemyData.NavigationStallDetectionDuration);
 
-        RefreshNavigationQueryGeometry();
-        ResolvePlayerTransform();
+        playerReference.TryGetPlayerTransform(
+            out _);
     }
 
     public void BeginAttack(float initialAttackDirectionSign)
@@ -142,8 +150,6 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
         isAttackActive = true;
         this.initialAttackDirectionSign =
             NormalizeDirectionSign(initialAttackDirectionSign);
-
-        RefreshNavigationQueryGeometry();
 
         if (!TryBeginPlayerApproach(
                 useInitialPreparation: true))
@@ -202,18 +208,8 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
             return false;
         }
 
-        Vector3 currentBodyPosition =
-            enemyRigidbody.position;
-
-        RefreshNavigationQueryGeometry();
-
-        if (PlanarAStarPathfinder.IsDirectTraversalAvailable(
-                currentBodyPosition,
-                playerTarget,
-                navigationBoxCenterOffsetFromRigidbody,
-                navigationBoxHalfExtents,
-                navigationBoxOrientation,
-                enemyData.NavigationObstacleMask))
+        if (pathNavigator.IsDirectTraversalAvailable(
+                playerTarget))
         {
             if (!TryLockCurrentPlayerPosition())
             {
@@ -247,23 +243,17 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
         StopPlanarMovement();
 
         isHomingActive = false;
-        navigationPath.Clear();
-        navigationPathIndex = 0;
-        navigationStallElapsedTime = 0f;
-        lastNavigationPosition =
-            GetCurrentPlanarPosition();
 
         SetPhase(
             UpdateNavigationToPlayer);
 
-        if (!TryRefreshNavigationPath(
-                playerTarget))
-        {
-            StopPlanarMovement();
-            return;
-        }
+        bool hasPath =
+            pathNavigator.TryBeginPathToDirectTraversalTarget(
+                playerTarget,
+                enemyData.AttackRepathInterval);
 
-        if (navigationPath.Count == 0)
+        if (hasPath &&
+            !pathNavigator.HasPath)
         {
             CompleteNavigationToAttack();
         }
@@ -278,331 +268,28 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
             return;
         }
 
-        Vector3 currentBodyPosition =
-            enemyRigidbody.position;
-
-        RefreshNavigationQueryGeometry();
-
-        if (PlanarAStarPathfinder.IsDirectTraversalAvailable(
-                currentBodyPosition,
+        bool canBeginDirectAttack =
+            pathNavigator.UpdatePathToDirectTraversalTarget(
                 playerTarget,
-                navigationBoxCenterOffsetFromRigidbody,
-                navigationBoxHalfExtents,
-                navigationBoxOrientation,
-                enemyData.NavigationObstacleMask))
-        {
-            CompleteNavigationToAttack();
-            return;
-        }
+                enemyData.AttackRepathDistance,
+                enemyData.AttackRepathInterval);
 
-        Vector2 currentPlayerPosition =
-            new Vector2(
-                playerTarget.x,
-                playerTarget.y);
+        AlignVisualWithPlanarDirection(
+            pathNavigator.RequestedMoveDirection);
 
-        bool playerMovedEnoughForRepath =
-            Vector2.Distance(
-                currentPlayerPosition,
-                lastNavigationTargetPosition) >=
-            enemyData.AttackRepathDistance;
-
-        if (playerMovedEnoughForRepath &&
-            Time.time >=
-            nextNavigationPathSearchTime)
-        {
-            if (TryRefreshNavigationPath(
-                    playerTarget) &&
-                navigationPath.Count == 0)
-            {
-                CompleteNavigationToAttack();
-            }
-
-            return;
-        }
-
-        if (navigationPathIndex >=
-            navigationPath.Count)
-        {
-            TryRetryNavigationPath(
-                playerTarget);
-            return;
-        }
-
-        AdvanceReachedNavigationWaypoints();
-
-        if (navigationPathIndex >=
-            navigationPath.Count)
-        {
-            TryRetryNavigationPath(
-                playerTarget);
-            return;
-        }
-
-        Vector3 waypoint =
-            navigationPath[navigationPathIndex];
-
-        if (!IsNavigationPathSegmentAvailable(
-                currentBodyPosition,
-                waypoint))
-        {
-            InvalidateNavigationPath();
-            TryRetryNavigationPath(
-                playerTarget);
-            return;
-        }
-
-        if (HasNavigationStalled())
-        {
-            InvalidateNavigationPath();
-            TryRetryNavigationPath(
-                playerTarget);
-            return;
-        }
-
-        MoveTowardNavigationWaypoint(
-            waypoint);
-    }
-
-    /// <summary>
-    /// 通常Clearance内では従来の通行判定を使い、
-    /// StartだけSafety Marginへ接触している場合は最初のClear Waypointまで実Box相当で脱出する。
-    /// </summary>
-    private bool IsNavigationPathSegmentAvailable(
-        Vector3 currentBodyPosition,
-        Vector3 waypoint)
-    {
-        if (!PlanarAStarPathfinder.IsPositionClear(
-                waypoint,
-                navigationBoxCenterOffsetFromRigidbody,
-                navigationBoxHalfExtents,
-                navigationBoxOrientation,
-                enemyData.NavigationObstacleMask))
-        {
-            return false;
-        }
-
-        bool isCurrentPositionNavigationClear =
-            PlanarAStarPathfinder.IsPositionClear(
-                currentBodyPosition,
-                navigationBoxCenterOffsetFromRigidbody,
-                navigationBoxHalfExtents,
-                navigationBoxOrientation,
-                enemyData.NavigationObstacleMask);
-
-        if (isCurrentPositionNavigationClear)
-        {
-            return PlanarAStarPathfinder.IsTraversalClear(
-                currentBodyPosition,
-                waypoint,
-                navigationBoxCenterOffsetFromRigidbody,
-                navigationBoxHalfExtents,
-                navigationBoxOrientation,
-                enemyData.NavigationObstacleMask);
-        }
-
-        return PlanarAStarPathfinder.IsStartEscapeTraversalAvailable(
-            currentBodyPosition,
-            waypoint,
-            navigationBoxCenterOffsetFromRigidbody,
-            bodyBoxHalfExtents,
-            navigationBoxHalfExtents,
-            navigationBoxOrientation,
-            enemyData.NavigationObstacleMask);
-    }
-
-    private bool TryRefreshNavigationPath(
-        Vector3 playerTarget)
-    {
-        RefreshNavigationQueryGeometry();
-
-        bool hasPath =
-            PlanarAStarPathfinder.TryFindPathToDirectTraversal(
-                enemyRigidbody.position,
-                playerTarget,
-                navigationBoxCenterOffsetFromRigidbody,
-                navigationBoxHalfExtents,
-                bodyBoxHalfExtents,
-                navigationBoxOrientation,
-                enemyData.PathSearchPadding,
-                enemyData.MaximumExpandedPathNodes,
-                enemyData.NavigationObstacleMask,
-                navigationPath);
-
-        navigationPathIndex = 0;
-        navigationStallElapsedTime = 0f;
-        lastNavigationPosition =
-            GetCurrentPlanarPosition();
-
-        lastNavigationTargetPosition =
-            new Vector2(
-                playerTarget.x,
-                playerTarget.y);
-
-        nextNavigationPathSearchTime =
-            Time.time +
-            (hasPath
-                ? enemyData.AttackRepathInterval
-                : PATH_RETRY_INTERVAL);
-
-        return hasPath;
-    }
-
-    private void TryRetryNavigationPath(
-        Vector3 playerTarget)
-    {
-        StopPlanarMovement();
-
-        if (Time.time <
-            nextNavigationPathSearchTime)
+        if (!canBeginDirectAttack)
         {
             return;
         }
 
-        if (TryRefreshNavigationPath(
-                playerTarget) &&
-            navigationPath.Count == 0)
-        {
-            CompleteNavigationToAttack();
-        }
-    }
-
-    private void InvalidateNavigationPath()
-    {
-        navigationPath.Clear();
-        navigationPathIndex = 0;
-        navigationStallElapsedTime = 0f;
-
-        nextNavigationPathSearchTime =
-            Mathf.Max(
-                nextNavigationPathSearchTime,
-                Time.time);
-
-        StopPlanarMovement();
-    }
-
-    private void AdvanceReachedNavigationWaypoints()
-    {
-        while (navigationPathIndex <
-               navigationPath.Count)
-        {
-            Vector3 waypoint =
-                navigationPath[navigationPathIndex];
-
-            Vector2 toWaypoint =
-                new Vector2(
-                    waypoint.x,
-                    waypoint.y) -
-                GetCurrentPlanarPosition();
-
-            if (toWaypoint.magnitude >
-                enemyData.WaypointArrivalTolerance)
-            {
-                break;
-            }
-
-            navigationPathIndex++;
-            navigationStallElapsedTime = 0f;
-            lastNavigationPosition =
-                GetCurrentPlanarPosition();
-        }
-    }
-
-    private void MoveTowardNavigationWaypoint(
-        Vector3 waypoint)
-    {
-        float moveSpeed =
-            enemyData.NavigationMoveSpeed;
-
-        float fixedDeltaTime =
-            Time.fixedDeltaTime;
-
-        if (moveSpeed <=
-                DIRECTION_EPSILON ||
-            fixedDeltaTime <=
-                DIRECTION_EPSILON)
-        {
-            StopPlanarMovement();
-            return;
-        }
-
-        Vector2 toWaypoint =
-            new Vector2(
-                waypoint.x,
-                waypoint.y) -
-            GetCurrentPlanarPosition();
-
-        float remainingDistance =
-            toWaypoint.magnitude;
-
-        float expectedMovementDistance =
-            moveSpeed * fixedDeltaTime;
-
-        Vector2 targetVelocity =
-            remainingDistance <=
-            expectedMovementDistance
-                ? toWaypoint / fixedDeltaTime
-                : toWaypoint.normalized * moveSpeed;
-
-        SetPlanarVelocity(
-            targetVelocity);
-    }
-
-    private bool HasNavigationStalled()
-    {
-        float detectionDuration =
-            enemyData.NavigationStallDetectionDuration;
-
-        float minimumMoveSpeed =
-            enemyData.NavigationStallMinimumMoveSpeed;
-
-        Vector2 currentPosition =
-            GetCurrentPlanarPosition();
-
-        if (detectionDuration <=
-                DIRECTION_EPSILON ||
-            minimumMoveSpeed <=
-                DIRECTION_EPSILON)
-        {
-            lastNavigationPosition =
-                currentPosition;
-
-            navigationStallElapsedTime = 0f;
-            return false;
-        }
-
-        float movedDistance =
-            Vector2.Distance(
-                currentPosition,
-                lastNavigationPosition);
-
-        lastNavigationPosition =
-            currentPosition;
-
-        float minimumMoveDistance =
-            minimumMoveSpeed *
-            Time.fixedDeltaTime;
-
-        if (movedDistance >
-            minimumMoveDistance)
-        {
-            navigationStallElapsedTime = 0f;
-            return false;
-        }
-
-        navigationStallElapsedTime +=
-            Time.fixedDeltaTime;
-
-        return navigationStallElapsedTime >=
-               detectionDuration;
+        CompleteNavigationToAttack();
     }
 
     private void CompleteNavigationToAttack()
     {
         StopPlanarMovement();
 
-        navigationPath.Clear();
-        navigationPathIndex = 0;
-        navigationStallElapsedTime = 0f;
+        pathNavigator.Reset();
 
         if (!TryLockCurrentPlayerPosition())
         {
@@ -641,45 +328,6 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
                 enemyRigidbody.position.z);
 
         return true;
-    }
-
-    private void RefreshNavigationQueryGeometry()
-    {
-        Transform boxTransform =
-            enemyBoxCollider.transform;
-
-        Vector3 worldBoxCenter =
-            boxTransform.TransformPoint(
-                enemyBoxCollider.center);
-
-        navigationBoxCenterOffsetFromRigidbody =
-            worldBoxCenter -
-            enemyRigidbody.position;
-
-        Vector3 halfSize =
-            enemyBoxCollider.size * 0.5f;
-
-        Vector3 lossyScale =
-            boxTransform.lossyScale;
-
-        bodyBoxHalfExtents =
-            new Vector3(
-                Mathf.Abs(
-                    halfSize.x * lossyScale.x),
-                Mathf.Abs(
-                    halfSize.y * lossyScale.y),
-                Mathf.Abs(
-                    halfSize.z * lossyScale.z));
-
-        float safetyMargin =
-            enemyData.PathSafetyMargin;
-
-        navigationBoxHalfExtents =
-            bodyBoxHalfExtents +
-            Vector3.one * safetyMargin;
-
-        navigationBoxOrientation =
-            boxTransform.rotation;
     }
 
     private void BeginInitialPreparation()
@@ -833,7 +481,7 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
             currentAttackDirection;
 
         bool canApplyFullAttackMovement =
-            planarMotor.TrySetPlanarVelocity(
+            TrySetPlanarVelocity(
                 currentAttackDirection *
                 enemyData.AttackMoveSpeed);
 
@@ -1137,7 +785,7 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
             CalculateCurrentRetreatSpeed();
 
         bool canApplyFullRetreatMovement =
-            planarMotor.TrySetPlanarVelocity(
+            TrySetPlanarVelocity(
                 retreatDirection *
                 currentRetreatSpeed);
 
@@ -1254,12 +902,9 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
             return;
         }
 
-        ResolvePlayerTransform();
-
-        if (IsPlayerCollider(
+        if (playerReference.IsPlayerCollider(
                 collision.collider))
         {
-            ResolvePlayerAttackHitReceiver();
             SendPlayerDamageOncePerPass();
 
             // Playerへ命中した場合もロック地点まで進み続けず、
@@ -1331,35 +976,13 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
             new Vector3(
                 planarMoveDirection.x,
                 planarMoveDirection.y,
-                0f).normalized;
+                0f);
 
-        int contactCount =
-            collision.contactCount;
-
-        for (int i = 0;
-             i < contactCount;
-             i++)
-        {
-            ContactPoint contact =
-                collision.GetContact(i);
-
-            float blockingDot =
-                Vector3.Dot(
-                    contact.normal,
-                    moveDirection);
-
-            if (blockingDot >
-                -BLOCKING_NORMAL_THRESHOLD)
-            {
-                continue;
-            }
-
-            blockingContact = contact;
-            return true;
-        }
-
-        blockingContact = default;
-        return false;
+        return EnemyBlockingContactEvaluator.TryGetBlockingContact(
+            collision,
+            moveDirection,
+            BLOCKING_NORMAL_THRESHOLD,
+            out blockingContact);
     }
 
     /// <summary>
@@ -1381,9 +1004,10 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
 
         hasDamagedPlayerThisPass = true;
 
-        if (playerReceiverComponent != null &&
-            playerReceiverComponent.isActiveAndEnabled &&
-            playerAttackHitReceiver != null)
+        if (playerReference.TryGetAttackHitReceiver(
+                requireActiveAndEnabled: true,
+                out IAttackHitReceiver playerAttackHitReceiver,
+                out _))
         {
             float damage =
                 enemyData.AttackPower *
@@ -1401,7 +1025,7 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
         if (!hasWarnedMissingPlayerReceiver)
         {
             Debug.LogWarning(
-                $"{nameof(DroneEnemyAttackStrategy)}: " +
+                $"{nameof(OldDroneEnemyAttackStrategy)}: " +
                 "Playerに有効なIAttackHitReceiverの実装がありません。",
                 enemyObject);
 
@@ -1428,8 +1052,39 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
     private void SetPlanarVelocity(
         Vector2 targetVelocity)
     {
-        planarMotor.TrySetPlanarVelocity(
+        TrySetPlanarVelocity(
             targetVelocity);
+    }
+
+    private bool TrySetPlanarVelocity(
+        Vector2 targetVelocity)
+    {
+        AlignVisualWithPlanarDirection(
+            targetVelocity);
+
+        return planarMotor.TrySetPlanarVelocity(
+            targetVelocity);
+    }
+
+    private void AlignVisualWithPlanarDirection(
+        Vector2 planarDirection)
+    {
+        if (planarDirection.sqrMagnitude <=
+            DIRECTION_EPSILON * DIRECTION_EPSILON)
+        {
+            return;
+        }
+
+        Vector3 worldDirection =
+            new Vector3(
+                planarDirection.x,
+                planarDirection.y,
+                0f).normalized;
+
+        visualRoot.rotation =
+            Quaternion.LookRotation(
+                worldDirection,
+                Vector3.up);
     }
 
     private void StopPlanarMovement()
@@ -1462,7 +1117,7 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
     {
         // 現在のNavigationObstacleMaskにはPlayer Colliderも含まれ得るため、
         // 実移動の侵入防止ではPlayerを障害物として扱わない。
-        return !IsPlayerCollider(
+        return !playerReference.IsPlayerCollider(
             targetCollider);
     }
 
@@ -1491,51 +1146,6 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
                 targetLayerMask) != 0;
     }
 
-    private bool IsPlayerCollider(
-        Collider targetCollider)
-    {
-        if (targetCollider == null ||
-            playerTransform == null)
-        {
-            return false;
-        }
-
-        Transform targetTransform =
-            targetCollider.transform;
-
-        return
-            targetTransform == playerTransform ||
-            targetTransform.IsChildOf(
-                playerTransform);
-    }
-
-    private void ResolvePlayerTransform()
-    {
-        if (playerTransform != null)
-        {
-            return;
-        }
-
-        GameObject playerObject =
-            GameObject.FindGameObjectWithTag(
-                PLAYER_TAG);
-
-        if (playerObject == null)
-        {
-            playerTargetCollider = null;
-            playerReceiverComponent = null;
-            playerAttackHitReceiver = null;
-            return;
-        }
-
-        playerTransform =
-            playerObject.transform;
-
-        playerTargetCollider = null;
-        playerReceiverComponent = null;
-        playerAttackHitReceiver = null;
-    }
-
     /// <summary>
     /// Enemyの経路探索・攻撃位置ロック・突進中追尾に使用するPlayer側の基準位置を取得する。
     /// Player RootはCollider所属判定とDamage Receiver探索に必要なため保持し、
@@ -1544,16 +1154,16 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
     private bool TryGetCurrentPlayerTargetPosition(
         out Vector3 targetWorldPosition)
     {
-        ResolvePlayerTransform();
-
-        if (playerTransform == null)
+        if (!playerReference.TryGetPlayerTransform(
+                out Transform playerTransform))
         {
+            playerTargetCollider = null;
             targetWorldPosition = default;
 
             if (!hasWarnedMissingPlayer)
             {
                 Debug.LogWarning(
-                    $"{nameof(DroneEnemyAttackStrategy)}: " +
+                    $"{nameof(OldDroneEnemyAttackStrategy)}: " +
                     "Playerを取得できないため、攻撃Targetを取得できません。",
                     enemyObject);
 
@@ -1587,7 +1197,7 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
             if (!hasWarnedMissingPlayerTargetCollider)
             {
                 Debug.LogWarning(
-                    $"{nameof(DroneEnemyAttackStrategy)}: " +
+                    $"{nameof(OldDroneEnemyAttackStrategy)}: " +
                     $"Player Root直下の{PLAYER_TARGET_COLLIDER_NAME}に" +
                     $"有効な{nameof(BoxCollider)}がないため、攻撃位置へ移動できません。",
                     enemyObject);
@@ -1604,49 +1214,6 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
         return true;
     }
 
-    private void ResolvePlayerAttackHitReceiver()
-    {
-        ResolvePlayerTransform();
-
-        if (playerTransform == null)
-        {
-            playerReceiverComponent = null;
-            playerAttackHitReceiver = null;
-            return;
-        }
-
-        if (playerReceiverComponent != null &&
-            playerReceiverComponent.isActiveAndEnabled &&
-            playerAttackHitReceiver != null)
-        {
-            return;
-        }
-
-        playerReceiverComponent = null;
-        playerAttackHitReceiver = null;
-
-        MonoBehaviour[] behaviours =
-            playerTransform.GetComponentsInChildren<MonoBehaviour>(
-                true);
-
-        foreach (MonoBehaviour behaviour in behaviours)
-        {
-            if (behaviour is not IAttackHitReceiver receiver ||
-                !behaviour.isActiveAndEnabled)
-            {
-                continue;
-            }
-
-            playerReceiverComponent =
-                behaviour;
-
-            playerAttackHitReceiver =
-                receiver;
-
-            return;
-        }
-    }
-
     private void ResetRuntimeState()
     {
         updateCurrentPhase = null;
@@ -1661,13 +1228,7 @@ public sealed class DroneEnemyAttackStrategy : IEnemyAttackStrategy
         lastHomingPosition = Vector2.zero;
         retreatStartPosition = Vector2.zero;
         retreatDirection = Vector2.zero;
-        lastNavigationPosition = Vector2.zero;
-        lastNavigationTargetPosition = Vector2.zero;
-
-        navigationPath?.Clear();
-        navigationPathIndex = 0;
-        navigationStallElapsedTime = 0f;
-        nextNavigationPathSearchTime = 0f;
+        pathNavigator?.Reset();
         navigationCompletesWithInitialPreparation = false;
 
         baseAttackAngle = 0f;

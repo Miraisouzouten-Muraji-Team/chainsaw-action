@@ -7,7 +7,7 @@ using UnityEngine;
 /// <remarks>
 /// 索敵判定そのものは担当しない。
 /// ChargeEnemyは個体のSearch Strategyに設定された索敵半径とCollider中心を使用し、
-/// DroneEnemyはEnemyDataの索敵半径と実処理と同じSearchCenterを表示する。
+/// 旧型DroneはEnemyDataの索敵半径と実処理と同じSearchCenterを表示する。
 /// </remarks>
 public static class EnemySearchGizmoDrawer
 {
@@ -113,12 +113,12 @@ public static class EnemySearchGizmoDrawer
         out Vector3 searchRangeCenter)
     {
         if (searchStrategy is
-                DroneEnemySearchStrategy droneSearchStrategy)
+                OldDroneEnemySearchStrategy oldDroneSearchStrategy)
         {
             // Play中はStrategyがSearch開始時に固定した値を使い、
             // Droneが巡回してもGizmo中心だけ追従する不一致を防ぐ。
             if (EditorApplication.isPlaying &&
-                droneSearchStrategy.TryGetSearchCenter(
+                oldDroneSearchStrategy.TryGetSearchCenter(
                     out searchRangeCenter))
             {
                 return true;

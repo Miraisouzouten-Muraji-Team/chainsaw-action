@@ -12,7 +12,6 @@ using UnityEngine;
 [Serializable]
 public sealed class StandardEnemyAlertStrategy : IEnemyAlertStrategy
 {
-    private const string PLAYER_TAG = "Player";
     private const string BASE_COLOR_PROPERTY = "_BaseColor";
     private const string COLOR_PROPERTY = "_Color";
 
@@ -35,9 +34,7 @@ public sealed class StandardEnemyAlertStrategy : IEnemyAlertStrategy
     private bool isAlertActive;
     private float elapsedTime;
 
-    private Transform playerTransform;
-    private MonoBehaviour playerReceiverComponent;
-    private IAttackHitReceiver playerAttackHitReceiver;
+    private EnemyPlayerReference playerReference;
     private bool hasWarnedMissingReceiver;
 
     // 複数Collider、Stay通知、Alert中の再接触でも受信先ごとに一度だけ送信する。
@@ -69,6 +66,9 @@ public sealed class StandardEnemyAlertStrategy : IEnemyAlertStrategy
             throw new InvalidOperationException(
                 $"{nameof(StandardEnemyAlertStrategy)}の対象Rendererに、このEnemyの部位を設定してください。");
         }
+
+        playerReference =
+            new EnemyPlayerReference();
 
         ValidateMaterial();
         originalProperties = new MaterialPropertyBlock();
@@ -106,25 +106,19 @@ public sealed class StandardEnemyAlertStrategy : IEnemyAlertStrategy
 
     public void HandleCollision(Collision collision)
     {
-        if (!isAlertActive || collision == null)
+        if (!isAlertActive ||
+            collision == null ||
+            collision.collider == null ||
+            !playerReference.IsPlayerCollider(
+                collision.collider))
         {
             return;
         }
 
-        ResolvePlayerReferences();
-        if (playerTransform == null || collision.collider == null)
-        {
-            return;
-        }
-
-        Transform collidedTransform = collision.collider.transform;
-        if (collidedTransform != playerTransform &&
-            !collidedTransform.IsChildOf(playerTransform))
-        {
-            return;
-        }
-
-        if (playerReceiverComponent == null)
+        if (!playerReference.TryGetAttackHitReceiver(
+                requireActiveAndEnabled: true,
+                out IAttackHitReceiver playerAttackHitReceiver,
+                out _))
         {
             if (!hasWarnedMissingReceiver)
             {
@@ -137,8 +131,8 @@ public sealed class StandardEnemyAlertStrategy : IEnemyAlertStrategy
             return;
         }
 
-        if (!playerReceiverComponent.isActiveAndEnabled ||
-            !damagedReceivers.Add(playerAttackHitReceiver))
+        if (!damagedReceivers.Add(
+                playerAttackHitReceiver))
         {
             return;
         }
@@ -157,9 +151,7 @@ public sealed class StandardEnemyAlertStrategy : IEnemyAlertStrategy
         RestoreAlertColor();
         elapsedTime = 0f;
         damagedReceivers.Clear();
-        playerTransform = null;
-        playerReceiverComponent = null;
-        playerAttackHitReceiver = null;
+        playerReference?.Clear();
         hasWarnedMissingReceiver = false;
     }
 
@@ -251,39 +243,4 @@ public sealed class StandardEnemyAlertStrategy : IEnemyAlertStrategy
         hasAppliedColor = false;
     }
 
-    private void ResolvePlayerReferences()
-    {
-        if (playerTransform == null)
-        {
-            GameObject playerObject = GameObject.FindGameObjectWithTag(PLAYER_TAG);
-            if (playerObject == null)
-            {
-                return;
-            }
-
-            playerTransform = playerObject.transform;
-            playerReceiverComponent = null;
-            playerAttackHitReceiver = null;
-        }
-
-        if (playerReceiverComponent != null &&
-            playerReceiverComponent.isActiveAndEnabled)
-        {
-            return;
-        }
-
-        playerReceiverComponent = null;
-        playerAttackHitReceiver = null;
-        foreach (MonoBehaviour behaviour in
-                 playerTransform.GetComponentsInChildren<MonoBehaviour>())
-        {
-            if (behaviour is IAttackHitReceiver receiver &&
-                behaviour.isActiveAndEnabled)
-            {
-                playerReceiverComponent = behaviour;
-                playerAttackHitReceiver = receiver;
-                return;
-            }
-        }
-    }
 }

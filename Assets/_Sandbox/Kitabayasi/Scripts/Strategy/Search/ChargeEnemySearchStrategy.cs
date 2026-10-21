@@ -6,7 +6,7 @@ using UnityEngine.Serialization;
 /// 責務:
 /// ・ゲーム開始時の配置位置を固定した巡回開始位置として保持し、Search復帰時はそこへ戻ってから巡回する。
 /// ・帰還を安全に続行できない場合は、そのSearch中の巡回を停止してPlayer索敵へ戻る。
-/// ・巡回基準時点のFacing方向を正方向とする符号付きPatrolOffsetで巡回端を決定し、往復する。
+/// ・符号付きPatrolOffsetをワールドX方向の巡回端として使用し、往復する。
 /// ・巡回端または平坦面の終端で停止し、VisualRootだけを指定時間かけて180度反転する。
 /// ・巡回中に進行方向を塞ぐ壁面へ衝突した場合は反転する。
 /// ・巡回前に平坦面を判定し、穴・段差・坂へ進入しない。
@@ -20,10 +20,6 @@ public sealed class ChargeEnemySearchStrategy :
     IEnemySearchStrategy,
     IEnemyDebugRayProvider
 {
-    private const string PLAYER_TAG = "Player";
-
-    private const int RAYCAST_HIT_BUFFER_SIZE = 16;
-
     private const float ARRIVAL_TOLERANCE = 0.05f;
     private const float DIRECTION_EPSILON = 0.001f;
     private const float WALL_NORMAL_X_THRESHOLD = 0.7f;
@@ -34,7 +30,7 @@ public sealed class ChargeEnemySearchStrategy :
     [Min(0f)]
     private float detectionRadius;
 
-    [Tooltip("このChargeEnemyの巡回開始地点から折り返し地点までの符号付きオフセット。正数は巡回基準時点のFacing方向、負数はその反対方向。ChargeEnemyDataのPatrolDistanceは使用しない。")]
+    [Tooltip("このChargeEnemyの巡回開始地点から折り返し地点までのワールドX方向の符号付きオフセット。正数は+X、負数は-X。ChargeEnemyDataのPatrolDistanceは使用しない。")]
     [FormerlySerializedAs("patrolDistance")]
     [SerializeField]
     private float patrolOffset;
@@ -44,23 +40,16 @@ public sealed class ChargeEnemySearchStrategy :
     private GameObject enemyObject;
     private Transform enemyTransform;
     private Transform visualRoot;
-    private Transform facingReference;
     private Rigidbody enemyRigidbody;
     private Collider enemyCollider;
 
     private ChargeEnemyGroundChecker groundChecker;
 
-    private Transform playerTransform;
-    private IAttackHitReceiver playerAttackHitReceiver;
-
-    private RaycastHit[] raycastHitBuffer;
-
-    private EnemyDebugRay obstacleCheckDebugRay;
-    private bool hasObstacleCheckDebugRay;
+    private EnemyPlayerReference playerReference;
+    private EnemyPlayerDetectionSensor playerDetectionSensor;
 
     private Vector3 patrolStartPosition;
 
-    private float initialPatrolDirectionSign;
     private float currentMoveDirectionSign;
 
     private bool isMovingToPatrolEnd;
@@ -88,8 +77,7 @@ public sealed class ChargeEnemySearchStrategy :
     public void Initialize(
         EnemyData enemyData,
         GameObject enemyObject,
-        Transform visualRoot,
-        Transform facingReference)
+        Transform visualRoot)
     {
         this.enemyData = enemyData as ChargeEnemyData
             ?? throw new InvalidOperationException(
@@ -107,11 +95,6 @@ public sealed class ChargeEnemySearchStrategy :
                 $"{nameof(ChargeEnemySearchStrategy)}を使用するEnemyには" +
                 "VisualRootの設定が必要です。");
 
-        this.facingReference = facingReference
-            ? facingReference
-            : throw new InvalidOperationException(
-                $"{nameof(ChargeEnemySearchStrategy)}を使用するEnemyには" +
-                "FacingReferenceの設定が必要です。");
 
         enemyRigidbody =
             enemyObject.GetComponent<Rigidbody>();
@@ -140,6 +123,14 @@ public sealed class ChargeEnemySearchStrategy :
                 $"{nameof(Collider)}が必要です。");
         }
 
+        playerReference =
+            new EnemyPlayerReference();
+
+        playerDetectionSensor =
+            new EnemyPlayerDetectionSensor(
+                enemyTransform,
+                playerReference);
+
         groundChecker =
             new ChargeEnemyGroundChecker(
                 this.enemyData,
@@ -147,22 +138,18 @@ public sealed class ChargeEnemySearchStrategy :
                 enemyRigidbody,
                 enemyCollider);
 
-        raycastHitBuffer =
-            new RaycastHit[RAYCAST_HIT_BUFFER_SIZE];
-
         // 巡回開始位置はSearchStateへ入るたびではなく、
         // ゲーム開始時の位置として固定する。
         patrolStartPosition = enemyRigidbody.position;
 
-        initialPatrolDirectionSign =
-            GetHorizontalFacingSign();
 
-        ResolvePlayerReferences();
+        playerReference.TryGetPlayerTransform(
+            out _);
     }
 
     public void BeginSearch()
     {
-        hasObstacleCheckDebugRay = false;
+        playerDetectionSensor.ClearDebugRay();
         groundChecker?.ClearDebugRays();
 
         isSearchActive = true;
@@ -187,7 +174,8 @@ public sealed class ChargeEnemySearchStrategy :
 
         turnElapsedTime = 0f;
 
-        ResolvePlayerReferences();
+        playerReference.TryGetPlayerTransform(
+            out _);
     }
 
     public bool UpdateSearch(
@@ -241,6 +229,12 @@ public sealed class ChargeEnemySearchStrategy :
             return false;
         }
 
+        if (!playerReference.TryGetPlayerTransform(
+                out Transform playerTransform))
+        {
+            return false;
+        }
+
         Vector3 searchOrigin =
             GetSearchOrigin();
 
@@ -262,8 +256,13 @@ public sealed class ChargeEnemySearchStrategy :
         }
         else
         {
+            float patrolDirectionSign =
+                GetPatrolEndDirectionSign();
+
             detectedPlayerDirectionSign =
-                GetHorizontalFacingSign();
+                Mathf.Abs(patrolDirectionSign) > DIRECTION_EPSILON
+                    ? patrolDirectionSign
+                    : 1f;
         }
 
         return true;
@@ -286,14 +285,15 @@ public sealed class ChargeEnemySearchStrategy :
         Collider collidedCollider =
             collision.collider;
 
-        ResolvePlayerReferences();
-
         // 帰還中もSearch中であることに変わりはないため、
         // Player接触時は通常巡回中と同じ接触ダメージを与える。
-        if (playerTransform != null &&
-            IsPlayerCollider(collidedCollider))
+        if (playerReference.IsPlayerCollider(
+                collidedCollider))
         {
-            if (playerAttackHitReceiver == null)
+            if (!playerReference.TryGetAttackHitReceiver(
+                    requireActiveAndEnabled: false,
+                    out IAttackHitReceiver playerAttackHitReceiver,
+                    out _))
             {
                 Debug.LogWarning(
                     $"{nameof(ChargeEnemySearchStrategy)}: " +
@@ -371,28 +371,15 @@ public sealed class ChargeEnemySearchStrategy :
             return false;
         }
 
-        int contactCount =
-            collision.contactCount;
+        Vector3 moveDirection =
+            Vector3.right *
+            currentMoveDirectionSign;
 
-        for (int i = 0;
-             i < contactCount;
-             i++)
-        {
-            ContactPoint contact =
-                collision.GetContact(i);
-
-            float normalAgainstMoveDirection =
-                contact.normal.x *
-                currentMoveDirectionSign;
-
-            if (normalAgainstMoveDirection <=
-                -WALL_NORMAL_X_THRESHOLD)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return EnemyBlockingContactEvaluator.TryGetBlockingContact(
+            collision,
+            moveDirection,
+            WALL_NORMAL_X_THRESHOLD,
+            out _);
     }
 
     /// <summary>
@@ -400,7 +387,7 @@ public sealed class ChargeEnemySearchStrategy :
     /// </summary>
     public void EndSearch()
     {
-        hasObstacleCheckDebugRay = false;
+        playerDetectionSensor.ClearDebugRay();
         groundChecker?.ClearDebugRays();
 
         isSearchActive = false;
@@ -423,10 +410,11 @@ public sealed class ChargeEnemySearchStrategy :
                 nameof(debugRays));
         }
 
-        if (hasObstacleCheckDebugRay)
+        if (playerDetectionSensor.TryGetDebugRay(
+                out EnemyDebugRay detectionDebugRay))
         {
             debugRays.Add(
-                obstacleCheckDebugRay);
+                detectionDebugRay);
         }
 
         groundChecker?.CollectDebugRays(
@@ -612,12 +600,11 @@ public sealed class ChargeEnemySearchStrategy :
         }
 
         return patrolStartPosition.x +
-               initialPatrolDirectionSign *
                patrolOffset;
     }
 
     /// <summary>
-    /// 巡回基準時点のFacing方向とPatrolOffsetの符号から、
+    /// ワールドX方向の符号付きPatrolOffsetから、
     /// 巡回端へ向かうX方向の符号を取得する。
     /// </summary>
     private float GetPatrolEndDirectionSign()
@@ -628,36 +615,31 @@ public sealed class ChargeEnemySearchStrategy :
             return 0f;
         }
 
-        return initialPatrolDirectionSign *
-               Mathf.Sign(patrolOffset);
+        return Mathf.Sign(patrolOffset);
     }
 
     /// <summary>
-    /// Search開始時の見た目方向を、実際の初回巡回方向へ合わせる。
-    /// 負のPatrolOffsetでも移動方向とFacingが逆転しないようにする。
+    /// VisualRootのローカル+Zを、現在要求している左右移動方向へ合わせる。
     /// </summary>
     private void AlignVisualWithCurrentMoveDirection()
     {
-        if (Mathf.Abs(currentMoveDirectionSign) <=
+        AlignVisualWithHorizontalDirection(
+            currentMoveDirectionSign);
+    }
+
+    private void AlignVisualWithHorizontalDirection(
+        float directionSign)
+    {
+        if (Mathf.Abs(directionSign) <=
             DIRECTION_EPSILON)
         {
             return;
         }
 
-        float visualDirectionSign =
-            GetHorizontalFacingSign();
-
-        if (visualDirectionSign *
-            currentMoveDirectionSign > 0f)
-        {
-            return;
-        }
-
         visualRoot.rotation =
-            Quaternion.AngleAxis(
-                180f,
-                Vector3.up) *
-            visualRoot.rotation;
+            Quaternion.LookRotation(
+                Vector3.right * Mathf.Sign(directionSign),
+                Vector3.up);
     }
 
     /// <summary>
@@ -775,6 +757,9 @@ public sealed class ChargeEnemySearchStrategy :
     private void SetHorizontalVelocity(
         float targetVelocityX)
     {
+        AlignVisualWithHorizontalDirection(
+            targetVelocityX);
+
         float currentVelocityX =
             enemyRigidbody.linearVelocity.x;
 
@@ -830,14 +815,10 @@ public sealed class ChargeEnemySearchStrategy :
     /// </summary>
     private bool CanDetectPlayer()
     {
-        // このFixedUpdateで障害物判定Rayを投げなかった場合に、
-        // 前回のRayを現在のRayとして表示し続けない。
-        hasObstacleCheckDebugRay = false;
-
-        ResolvePlayerReferences();
-
-        if (playerTransform == null)
+        if (!playerReference.TryGetPlayerTransform(
+                out Transform playerTransform))
         {
+            playerDetectionSensor.ClearDebugRay();
             return false;
         }
 
@@ -847,112 +828,18 @@ public sealed class ChargeEnemySearchStrategy :
         Vector3 playerPosition =
             playerTransform.position;
 
-        float deltaX =
-            playerPosition.x -
-            searchOrigin.x;
+        Vector3 lineOfSightEndPosition =
+            new Vector3(
+                playerPosition.x,
+                searchOrigin.y,
+                searchOrigin.z);
 
-        float deltaY =
-            playerPosition.y -
-            searchOrigin.y;
-
-        float squaredDistance =
-            deltaX * deltaX +
-            deltaY * deltaY;
-
-        if (squaredDistance >
-            detectionRadius *
-            detectionRadius)
-        {
-            return false;
-        }
-
-        return HasNoBlockingObstacleToPlayer(
-            playerPosition.x);
-    }
-
-    /// <summary>
-    /// EnemyのCollider中央からPlayerのX位置まで水平Rayを飛ばし、
-    /// その区間にPlayer以外の障害物Colliderが存在しないか判定する。
-    /// </summary>
-    private bool HasNoBlockingObstacleToPlayer(
-        float playerPositionX)
-    {
-        Vector3 rayOrigin =
-            GetSearchOrigin();
-
-        float deltaX =
-            playerPositionX -
-            rayOrigin.x;
-
-        float rayDistance =
-            Mathf.Abs(deltaX);
-
-        if (rayDistance <=
-            DIRECTION_EPSILON)
-        {
-            return true;
-        }
-
-        Vector3 rayDirection =
-            deltaX > 0f
-                ? Vector3.right
-                : Vector3.left;
-
-        int hitCount =
-            Physics.RaycastNonAlloc(
-                rayOrigin,
-                rayDirection,
-                raycastHitBuffer,
-                rayDistance,
-                Physics.DefaultRaycastLayers,
-                QueryTriggerInteraction.Ignore);
-
-        bool hasBlockingObstacle = false;
-
-        for (int i = 0;
-             i < hitCount;
-             i++)
-        {
-            Collider hitCollider =
-                raycastHitBuffer[i].collider;
-
-            if (hitCollider == null)
-            {
-                continue;
-            }
-
-            // Enemy自身とPlayerのColliderは遮蔽物として扱わない。
-            // PlayerそのものへRayを当てることは索敵成立の条件にしない。
-            if (IsEnemyOwnedCollider(
-                    hitCollider) ||
-                IsPlayerCollider(
-                    hitCollider))
-            {
-                continue;
-            }
-
-            hasBlockingObstacle = true;
-            break;
-        }
-
-        bool hasNoBlockingObstacle =
-            !hasBlockingObstacle;
-
-        // Physicsへ渡した始点・方向・距離と判定結果をそのまま保持する。
-        // Gizmo側では現在位置からRayを再計算しない。
-        obstacleCheckDebugRay =
-            new EnemyDebugRay(
-                rayOrigin,
-                rayDirection,
-                rayDistance,
-                EnemyDebugRayKind.LineOfSight,
-                hasNoBlockingObstacle
-                    ? EnemyDebugRayResult.Success
-                    : EnemyDebugRayResult.Blocked);
-
-        hasObstacleCheckDebugRay = true;
-
-        return hasNoBlockingObstacle;
+        return playerDetectionSensor.CanDetectPlayer(
+            searchOrigin,
+            playerPosition,
+            detectionRadius,
+            lineOfSightEndPosition,
+            playerColliderEndsLineOfSight: false);
     }
 
     /// <summary>
@@ -961,118 +848,5 @@ public sealed class ChargeEnemySearchStrategy :
     private Vector3 GetSearchOrigin()
     {
         return enemyCollider.bounds.center;
-    }
-
-    /// <summary>
-    /// 指定ColliderがこのEnemy自身のものか判定する。
-    /// </summary>
-    private bool IsEnemyOwnedCollider(
-        Collider targetCollider)
-    {
-        Transform targetTransform =
-            targetCollider.transform;
-
-        return
-            targetTransform == enemyTransform ||
-            targetTransform.IsChildOf(
-                enemyTransform);
-    }
-
-    /// <summary>
-    /// 指定ColliderがPlayerのものか判定する。
-    /// </summary>
-    private bool IsPlayerCollider(
-        Collider targetCollider)
-    {
-        if (targetCollider == null ||
-            playerTransform == null)
-        {
-            return false;
-        }
-
-        Transform targetTransform =
-            targetCollider.transform;
-
-        return
-            targetTransform == playerTransform ||
-            targetTransform.IsChildOf(
-                playerTransform);
-    }
-
-    /// <summary>
-    /// Player TagからPlayerの参照を取得する。
-    /// 一度取得した後は再検索しない。
-    /// </summary>
-    private void ResolvePlayerReferences()
-    {
-        if (playerTransform != null)
-        {
-            return;
-        }
-
-        GameObject playerObject =
-            GameObject.FindGameObjectWithTag(
-                PLAYER_TAG);
-
-        if (playerObject == null)
-        {
-            return;
-        }
-
-        playerTransform =
-            playerObject.transform;
-
-        ResolvePlayerAttackHitReceiver(
-            playerObject);
-    }
-
-    /// <summary>
-    /// Player階層からIAttackHitReceiverの実装を取得する。
-    /// </summary>
-    private void ResolvePlayerAttackHitReceiver(
-        GameObject playerObject)
-    {
-        MonoBehaviour[] behaviours =
-            playerObject.GetComponentsInChildren<MonoBehaviour>(
-                true);
-
-        playerAttackHitReceiver = null;
-
-        for (int i = 0;
-             i < behaviours.Length;
-             i++)
-        {
-            if (behaviours[i] is
-                IAttackHitReceiver receiver)
-            {
-                playerAttackHitReceiver =
-                    receiver;
-
-                return;
-            }
-        }
-    }
-
-    /// <summary>
-    /// FacingReferenceが示す現在の正面からX方向の符号を取得する。
-    /// </summary>
-    private float GetHorizontalFacingSign()
-    {
-        float facingX =
-            facingReference.forward.x;
-
-        if (Mathf.Abs(facingX) >
-            DIRECTION_EPSILON)
-        {
-            return Mathf.Sign(facingX);
-        }
-
-        Debug.LogWarning(
-            $"{nameof(ChargeEnemySearchStrategy)}: " +
-            "FacingReference.forwardがX方向を向いていないため、" +
-            "+X方向を使用します。",
-            facingReference);
-
-        return 1f;
     }
 }

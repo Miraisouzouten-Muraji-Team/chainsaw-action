@@ -25,8 +25,6 @@ public sealed class ChargeEnemyAttackStrategy :
     IEnemyAttackStrategy,
     IEnemyDebugRayProvider
 {
-    private const string PLAYER_TAG = "Player";
-
     private const float DIRECTION_EPSILON = 0.001f;
     private const float BLOCKING_NORMAL_THRESHOLD = 0.5f;
 
@@ -41,13 +39,10 @@ public sealed class ChargeEnemyAttackStrategy :
     private GameObject enemyObject;
     private Transform enemyTransform;
     private Transform visualRoot;
-    private Transform facingReference;
     private Rigidbody enemyRigidbody;
     private Collider enemyCollider;
 
-    private Transform playerTransform;
-    private MonoBehaviour playerReceiverComponent;
-    private IAttackHitReceiver playerAttackHitReceiver;
+    private EnemyPlayerReference playerReference;
 
     private ChargeEnemyGroundChecker groundChecker;
 
@@ -71,8 +66,7 @@ public sealed class ChargeEnemyAttackStrategy :
     public void Initialize(
         EnemyData enemyData,
         GameObject enemyObject,
-        Transform visualRoot,
-        Transform facingReference)
+        Transform visualRoot)
     {
         this.enemyData = enemyData as ChargeEnemyData
             ?? throw new InvalidOperationException(
@@ -91,11 +85,6 @@ public sealed class ChargeEnemyAttackStrategy :
                 $"{nameof(ChargeEnemyAttackStrategy)}を使用するEnemyには" +
                 "VisualRootの設定が必要です。");
 
-        this.facingReference = facingReference
-            ? facingReference
-            : throw new InvalidOperationException(
-                $"{nameof(ChargeEnemyAttackStrategy)}を使用するEnemyには" +
-                "FacingReferenceの設定が必要です。");
 
         enemyRigidbody =
             enemyObject.GetComponent<Rigidbody>();
@@ -124,6 +113,9 @@ public sealed class ChargeEnemyAttackStrategy :
                 $"{nameof(Collider)}が必要です。");
         }
 
+        playerReference =
+            new EnemyPlayerReference();
+
         groundChecker =
             new ChargeEnemyGroundChecker(
                 this.enemyData,
@@ -131,7 +123,8 @@ public sealed class ChargeEnemyAttackStrategy :
                 enemyRigidbody,
                 enemyCollider);
 
-        ResolvePlayerReferences();
+        playerReference.TryGetPlayerTransform(
+            out _);
     }
 
     public void BeginAttack(
@@ -142,7 +135,8 @@ public sealed class ChargeEnemyAttackStrategy :
         isAttackActive = true;
         hasWarnedMissingPlayerReceiver = false;
 
-        ResolvePlayerReferences();
+        playerReference.TryGetPlayerTransform(
+            out _);
 
         BeginCharge(
             NormalizeDirectionSign(
@@ -211,9 +205,7 @@ public sealed class ChargeEnemyAttackStrategy :
             return;
         }
 
-        ResolvePlayerReferences();
-
-        if (IsPlayerCollider(
+        if (playerReference.IsPlayerCollider(
                 collision.collider))
         {
             HandlePlayerCollision(
@@ -320,10 +312,6 @@ public sealed class ChargeEnemyAttackStrategy :
             AttackPhase.Preparation;
 
         StopHorizontalMovement();
-
-        // 後退中も次に突進する方向を向いておくことで、
-        // 「その方向へ勢いをつけるために下がる」という攻撃意図を維持する。
-        FaceAttackDirection();
 
         enemyRigidbody.WakeUp();
     }
@@ -508,9 +496,10 @@ public sealed class ChargeEnemyAttackStrategy :
         {
             hasDamagedPlayerThisCycle = true;
 
-            if (playerReceiverComponent != null &&
-                playerReceiverComponent.isActiveAndEnabled &&
-                playerAttackHitReceiver != null)
+            if (playerReference.TryGetAttackHitReceiver(
+                    requireActiveAndEnabled: true,
+                    out IAttackHitReceiver playerAttackHitReceiver,
+                    out _))
             {
                 float damage =
                     enemyData.AttackPower *
@@ -544,9 +533,8 @@ public sealed class ChargeEnemyAttackStrategy :
 
     private float GetCurrentPlayerDirectionSign()
     {
-        ResolvePlayerReferences();
-
-        if (playerTransform == null)
+        if (!playerReference.TryGetPlayerTransform(
+                out Transform playerTransform))
         {
             return attackDirectionSign;
         }
@@ -566,37 +554,23 @@ public sealed class ChargeEnemyAttackStrategy :
 
     private void FaceAttackDirection()
     {
-        float currentFacingSign =
-            GetCurrentHorizontalFacingSign();
+        AlignVisualWithHorizontalDirection(
+            attackDirectionSign);
+    }
 
-        if (Mathf.Abs(currentFacingSign) <=
-            DIRECTION_EPSILON ||
-            Mathf.Sign(currentFacingSign) ==
-            attackDirectionSign)
+    private void AlignVisualWithHorizontalDirection(
+        float directionSign)
+    {
+        if (Mathf.Abs(directionSign) <=
+            DIRECTION_EPSILON)
         {
             return;
         }
 
         visualRoot.rotation =
-            Quaternion.AngleAxis(
-                180f,
-                Vector3.up) *
-            visualRoot.rotation;
-    }
-
-    private float GetCurrentHorizontalFacingSign()
-    {
-        float facingX =
-            facingReference.forward.x;
-
-        if (Mathf.Abs(facingX) <=
-            DIRECTION_EPSILON)
-        {
-            return 0f;
-        }
-
-        return Mathf.Sign(
-            facingX);
+            Quaternion.LookRotation(
+                Vector3.right * Mathf.Sign(directionSign),
+                Vector3.up);
     }
 
     /// <summary>
@@ -671,33 +645,11 @@ public sealed class ChargeEnemyAttackStrategy :
             NormalizeDirectionSign(
                 moveDirectionSign);
 
-        int contactCount =
-            collision.contactCount;
-
-        for (int i = 0;
-             i < contactCount;
-             i++)
-        {
-            ContactPoint contact =
-                collision.GetContact(i);
-
-            float blockingDot =
-                Vector3.Dot(
-                    contact.normal,
-                    moveDirection);
-
-            if (blockingDot >
-                -BLOCKING_NORMAL_THRESHOLD)
-            {
-                continue;
-            }
-
-            blockingContact = contact;
-            return true;
-        }
-
-        blockingContact = default;
-        return false;
+        return EnemyBlockingContactEvaluator.TryGetBlockingContact(
+            collision,
+            moveDirection,
+            BLOCKING_NORMAL_THRESHOLD,
+            out blockingContact);
     }
 
     private void SpawnCollisionEffect(
@@ -728,6 +680,9 @@ public sealed class ChargeEnemyAttackStrategy :
     private void SetHorizontalVelocity(
         float targetVelocityX)
     {
+        AlignVisualWithHorizontalDirection(
+            targetVelocityX);
+
         float currentVelocityX =
             enemyRigidbody.linearVelocity.x;
 
@@ -771,79 +726,6 @@ public sealed class ChargeEnemyAttackStrategy :
                 0f,
                 0f),
             ForceMode.VelocityChange);
-    }
-
-    private bool IsPlayerCollider(
-        Collider targetCollider)
-    {
-        if (targetCollider == null ||
-            playerTransform == null)
-        {
-            return false;
-        }
-
-        Transform targetTransform =
-            targetCollider.transform;
-
-        return
-            targetTransform == playerTransform ||
-            targetTransform.IsChildOf(
-                playerTransform);
-    }
-
-    private void ResolvePlayerReferences()
-    {
-        if (playerTransform == null)
-        {
-            GameObject playerObject =
-                GameObject.FindGameObjectWithTag(
-                    PLAYER_TAG);
-
-            if (playerObject == null)
-            {
-                playerReceiverComponent = null;
-                playerAttackHitReceiver = null;
-                return;
-            }
-
-            playerTransform =
-                playerObject.transform;
-
-            playerReceiverComponent = null;
-            playerAttackHitReceiver = null;
-        }
-
-        if (playerReceiverComponent != null &&
-            playerReceiverComponent.isActiveAndEnabled &&
-            playerAttackHitReceiver != null)
-        {
-            return;
-        }
-
-        playerReceiverComponent = null;
-        playerAttackHitReceiver = null;
-
-        MonoBehaviour[] behaviours =
-            playerTransform.GetComponentsInChildren<MonoBehaviour>(
-                true);
-
-        for (int i = 0;
-             i < behaviours.Length;
-             i++)
-        {
-            MonoBehaviour behaviour =
-                behaviours[i];
-
-            if (behaviour is not IAttackHitReceiver receiver ||
-                !behaviour.isActiveAndEnabled)
-            {
-                continue;
-            }
-
-            playerReceiverComponent = behaviour;
-            playerAttackHitReceiver = receiver;
-            return;
-        }
     }
 
     private static float NormalizeDirectionSign(

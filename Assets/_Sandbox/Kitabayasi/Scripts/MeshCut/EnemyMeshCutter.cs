@@ -3,14 +3,14 @@ using UnityEngine;
 
 /// <summary>
 /// Enemy死亡時に切断対象Meshを取得し、
-/// チェンソー軌跡を使って2つの静的Meshへ分割して表示する。
+/// チェンソー軌跡を使って2つの物理切断片へ分割して表示する。
 /// </summary>
 /// <remarks>
 /// SkinnedMeshRendererの場合は死亡時の現在姿勢をBakeしてから切断する。
 /// MeshFilter + MeshRendererの場合はMeshFilterのMeshを切断する。
 ///
 /// HP計算、死亡判定、攻撃受信、チェンソー軌跡記録、
-/// Triangle分割アルゴリズム、切断後の物理演出は担当しない。
+/// Triangle分割アルゴリズム、切断片への飛散速度・方向付与は担当しない。
 /// </remarks>
 public sealed class EnemyMeshCutter : MonoBehaviour
 {
@@ -83,6 +83,13 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     private GameObject secondPieceObject;
 
     private bool hasCompletedCut;
+
+#if UNITY_EDITOR
+    // Scene Viewは再描画のたびにOnDrawGizmosSelectedを呼ぶため、
+    // 同じ診断内容を毎回Consoleへ流さないよう段階ごとの最終メッセージを保持する。
+    private readonly Dictionary<string, string> lastGizmoDiagnosticMessages =
+        new Dictionary<string, string>();
+#endif
 
     /// <summary>
     /// 確定済みチェンソー軌跡を使ってEnemy Meshの切断を試みる。
@@ -445,14 +452,29 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                     $"{targetSkinnedMeshRenderer.name}_DeathBake"
             };
 
-            // BakeMeshの頂点はSkinnedMeshRenderer Transform基準。
-            // 生成片も同Rendererの子へlocal identityで配置するため、
-            // ScaleをMesh側へ焼き込まず、元Transform側で一度だけ適用する。
+            LogDiagnostic(
+                "Scale-01 BeforeBake",
+                BuildSkinnedMeshScaleDiagnostic(
+                    targetSkinnedMeshRenderer));
+
+            // Processorへ渡すチェンソー軌跡はRenderer Local空間なので、
+            // Bake Meshも同じスケール感の座標へ揃える必要がある。
+            // Unity 6ではuseScale=falseにするとRendererのTransform Scaleに合わせた
+            // Meshが得られるため、軌跡と切断Meshの座標系を一致させる。
+            // 切断片生成時はRenderer自身のScaleを再適用しない配置にして二重Scaleを防ぐ。
             targetSkinnedMeshRenderer.BakeMesh(
                 bakedMesh,
                 false);
 
             bakedMesh.RecalculateBounds();
+
+            LogDiagnostic(
+                "Scale-02 AfterBake",
+                $"BakeMesh(false)直後。{BuildMeshSummary(bakedMesh)} / " +
+                $"RendererLocalScale={FormatVector3(targetSkinnedMeshRenderer.transform.localScale)}, " +
+                $"RendererLossyScale={FormatVector3(targetSkinnedMeshRenderer.transform.lossyScale)}, " +
+                $"RendererWorldBoundsCenter={FormatVector3(targetSkinnedMeshRenderer.bounds.center)}, " +
+                $"RendererWorldBoundsSize={FormatVector3(targetSkinnedMeshRenderer.bounds.size)}");
 
             sourceMesh = bakedMesh;
             sourceRenderer = targetSkinnedMeshRenderer;
@@ -609,7 +631,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     }
 
     /// <summary>
-    /// 切断後Meshを表示するGameObjectを生成する。
+    /// 切断後Meshを表示し、ステージと物理衝突できるGameObjectを生成する。
     /// </summary>
     private GameObject CreatePieceObject(
         string suffix,
@@ -627,18 +649,56 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         Transform pieceTransform =
             pieceObject.transform;
 
-        pieceTransform.SetParent(
-            sourceRenderer.transform,
-            false);
+        if (sourceRenderer is SkinnedMeshRenderer)
+        {
+            Transform sourceTransform =
+                sourceRenderer.transform;
 
-        pieceTransform.localPosition =
-            Vector3.zero;
+            Transform sourceParent =
+                sourceTransform.parent;
 
-        pieceTransform.localRotation =
-            Quaternion.identity;
+            // BakeMesh(false)はRendererのScaleに合わせた頂点を生成するため、
+            // 元Rendererの子にするとRenderer Scaleがもう一度適用されて巨大化する。
+            // 同じ親へ配置し、元Rendererの位置・回転だけを引き継ぐ。
+            pieceTransform.SetParent(
+                sourceParent,
+                false);
 
-        pieceTransform.localScale =
-            Vector3.one;
+            if (sourceParent != null)
+            {
+                pieceTransform.localPosition =
+                    sourceTransform.localPosition;
+
+                pieceTransform.localRotation =
+                    sourceTransform.localRotation;
+            }
+            else
+            {
+                pieceTransform.SetPositionAndRotation(
+                    sourceTransform.position,
+                    sourceTransform.rotation);
+            }
+
+            pieceTransform.localScale =
+                Vector3.one;
+        }
+        else
+        {
+            // MeshFilter経路ではMeshへRenderer ScaleをBakeしていないため、
+            // 従来どおり元Rendererの子として同じTransformを継承する。
+            pieceTransform.SetParent(
+                sourceRenderer.transform,
+                false);
+
+            pieceTransform.localPosition =
+                Vector3.zero;
+
+            pieceTransform.localRotation =
+                Quaternion.identity;
+
+            pieceTransform.localScale =
+                Vector3.one;
+        }
 
         MeshFilter meshFilter =
             pieceObject.AddComponent<MeshFilter>();
@@ -655,6 +715,50 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
         meshRenderer.sharedMaterials =
             materials;
+
+        Bounds meshBounds =
+            mesh.bounds;
+
+        BoxCollider pieceCollider =
+            pieceObject.AddComponent<BoxCollider>();
+
+        // Mesh.boundsはMesh自身のローカル空間なので、
+        // 同じGameObject上のBoxColliderへそのまま対応付けられる。
+        pieceCollider.center =
+            meshBounds.center;
+
+        pieceCollider.size =
+            meshBounds.size;
+
+        pieceCollider.isTrigger =
+            false;
+
+        Rigidbody pieceRigidbody =
+            pieceObject.AddComponent<Rigidbody>();
+
+        // 分割片の移動はTransformで上書きせず、
+        // 重力とCollider接触を含めてUnity Physicsへ任せる。
+        pieceRigidbody.useGravity =
+            true;
+
+        pieceRigidbody.isKinematic =
+            false;
+
+        LogDiagnostic(
+            "Scale-03 PieceCreated",
+            $"Piece='{pieceObject.name}', " +
+            $"MeshBoundsCenter={FormatVector3(mesh.bounds.center)}, " +
+            $"MeshBoundsSize={FormatVector3(mesh.bounds.size)}, " +
+            $"LocalScale={FormatVector3(pieceTransform.localScale)}, " +
+            $"LossyScale={FormatVector3(pieceTransform.lossyScale)}, " +
+            $"Parent='{(pieceTransform.parent != null ? pieceTransform.parent.name : "null")}', " +
+            $"ParentLossyScale={FormatVector3(pieceTransform.parent != null ? pieceTransform.parent.lossyScale : Vector3.one)}, " +
+            $"SourceRendererLocalScale={FormatVector3(sourceRenderer.transform.localScale)}, " +
+            $"SourceRendererLossyScale={FormatVector3(sourceRenderer.transform.lossyScale)}, " +
+            $"PieceWorldBoundsCenter={FormatVector3(meshRenderer.bounds.center)}, " +
+            $"PieceWorldBoundsSize={FormatVector3(meshRenderer.bounds.size)}, " +
+            $"SourceWorldBoundsCenter={FormatVector3(sourceRenderer.bounds.center)}, " +
+            $"SourceWorldBoundsSize={FormatVector3(sourceRenderer.bounds.size)}");
 
         return pieceObject;
     }
@@ -828,6 +932,46 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             $"BoundsSize={FormatVector3(bounds.size)}";
     }
 
+    private static string BuildSkinnedMeshScaleDiagnostic(
+        SkinnedMeshRenderer renderer)
+    {
+        if (renderer == null)
+        {
+            return "SkinnedMeshRenderer=null";
+        }
+
+        Transform rendererTransform =
+            renderer.transform;
+
+        Transform parentTransform =
+            rendererTransform.parent;
+
+        Mesh sharedMesh =
+            renderer.sharedMesh;
+
+        string sharedMeshSummary =
+            sharedMesh != null
+                ? BuildMeshSummary(sharedMesh)
+                : "SharedMesh=null";
+
+        string parentSummary =
+            parentTransform != null
+                ? $"Parent='{parentTransform.name}', " +
+                  $"ParentLocalScale={FormatVector3(parentTransform.localScale)}, " +
+                  $"ParentLossyScale={FormatVector3(parentTransform.lossyScale)}"
+                : "Parent=null";
+
+        return
+            $"Renderer='{renderer.name}', " +
+            $"RendererLocalScale={FormatVector3(rendererTransform.localScale)}, " +
+            $"RendererLossyScale={FormatVector3(rendererTransform.lossyScale)}, " +
+            $"RendererWorldBoundsCenter={FormatVector3(renderer.bounds.center)}, " +
+            $"RendererWorldBoundsSize={FormatVector3(renderer.bounds.size)}, " +
+            $"RendererLocalBoundsCenter={FormatVector3(renderer.localBounds.center)}, " +
+            $"RendererLocalBoundsSize={FormatVector3(renderer.localBounds.size)}, " +
+            $"{parentSummary}, {sharedMeshSummary}";
+    }
+
     private static string BuildTransformSummary(
         Transform targetTransform)
     {
@@ -967,16 +1111,47 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
     private void OnDrawGizmosSelected()
     {
+#if UNITY_EDITOR
+        LogGizmoDiagnostic(
+            "Gizmo-01 Enter",
+            $"OnDrawGizmosSelectedへ到達しました。" +
+            $" ShowCutRangeGizmo={showCutRangeGizmo}," +
+            $" Enabled={enabled}, ActiveInHierarchy={gameObject.activeInHierarchy}," +
+            $" Owner={BuildTransformSummary(transform)}");
+#endif
+
         if (!showCutRangeGizmo)
         {
+#if UNITY_EDITOR
+            LogGizmoDiagnosticWarning(
+                "Gizmo-01 Enter",
+                "Show Cut Range Gizmo=falseのため描画を中止しました。");
+#endif
             return;
         }
 
         if (!TryGetPreviewBounds(
-                out Bounds sourceBounds))
+                out Bounds sourceBounds,
+                out string previewFailureReason))
         {
+#if UNITY_EDITOR
+            LogGizmoDiagnosticWarning(
+                "Gizmo-02 PreviewBounds",
+                "切断対象MeshのPreview Bounds取得で停止しました。 " +
+                previewFailureReason);
+#endif
             return;
         }
+
+#if UNITY_EDITOR
+        LogGizmoDiagnostic(
+            "Gizmo-02 PreviewBounds",
+            "Preview Bounds取得に成功しました。 " +
+            $"Center={FormatVector3(sourceBounds.center)}, " +
+            $"Size={FormatVector3(sourceBounds.size)}, " +
+            $"Min={FormatVector3(sourceBounds.min)}, " +
+            $"Max={FormatVector3(sourceBounds.max)}");
+#endif
 
         if (!ChainsawMeshCutProcessor.TryCalculateCutRangeBounds(
                 sourceBounds,
@@ -985,8 +1160,29 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 cutRangeMaximumNormalized,
                 out Bounds cutRangeBounds))
         {
+#if UNITY_EDITOR
+            LogGizmoDiagnosticWarning(
+                "Gizmo-03 CutRangeBounds",
+                BuildCutRangeBoundsFailureReason(
+                    sourceBounds));
+#endif
             return;
         }
+
+#if UNITY_EDITOR
+        Vector3 cutRangeWorldCenter =
+            transform.TransformPoint(
+                cutRangeBounds.center);
+
+        LogGizmoDiagnostic(
+            "Gizmo-03 CutRangeBounds",
+            "Cut Range Bounds計算に成功しました。 " +
+            $"Axis={cutRangeAxis}, " +
+            $"Normalized={cutRangeMinimumNormalized:F4}-{cutRangeMaximumNormalized:F4}, " +
+            $"LocalCenter={FormatVector3(cutRangeBounds.center)}, " +
+            $"LocalSize={FormatVector3(cutRangeBounds.size)}, " +
+            $"WorldCenter={FormatVector3(cutRangeWorldCenter)}");
+#endif
 
         Matrix4x4 previousMatrix =
             Gizmos.matrix;
@@ -1027,6 +1223,15 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
         Gizmos.color =
             previousColor;
+
+#if UNITY_EDITOR
+        LogGizmoDiagnostic(
+            "Gizmo-04 Draw",
+            "Gizmos.DrawCube / DrawWireCubeまで到達しました。 " +
+            "このログが出ているのにScene Viewで見えない場合は、" +
+            "コード内の早期returnではなくScene View側のGizmos表示、" +
+            "描画位置・サイズ、または表示状態を確認してください。");
+#endif
     }
 
     /// <summary>
@@ -1034,20 +1239,53 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     /// 切断対象Meshの現在形状をEnemyMeshCutterローカル空間のBoundsへ変換する。
     /// </summary>
     private bool TryGetPreviewBounds(
-        out Bounds sourceBounds)
+        out Bounds sourceBounds,
+        out string failureReason)
     {
-        if (targetMeshFilter != null &&
-            targetMeshFilter.sharedMesh != null)
+        if (targetMeshFilter != null)
         {
+            if (targetMeshFilter.sharedMesh == null)
+            {
+                sourceBounds = default;
+                failureReason =
+                    "Target Mesh Filterは設定されていますがsharedMesh=nullです。";
+                return false;
+            }
+
+#if UNITY_EDITOR
+            LogGizmoDiagnostic(
+                "Gizmo-02A Source",
+                "MeshFilter経路を使用します。 " +
+                $"{BuildMeshSummary(targetMeshFilter.sharedMesh)} / " +
+                $"{BuildTransformSummary(targetMeshFilter.transform)}");
+#endif
+
             return TryCalculateBoundsInCutRangeSpace(
                 targetMeshFilter.sharedMesh,
                 targetMeshFilter.transform,
-                out sourceBounds);
+                out sourceBounds,
+                out failureReason);
         }
 
-        if (targetSkinnedMeshRenderer != null &&
-            targetSkinnedMeshRenderer.sharedMesh != null)
+        if (targetSkinnedMeshRenderer != null)
         {
+            if (targetSkinnedMeshRenderer.sharedMesh == null)
+            {
+                sourceBounds = default;
+                failureReason =
+                    "Target Skinned Mesh Rendererは設定されていますがsharedMesh=nullです。";
+                return false;
+            }
+
+#if UNITY_EDITOR
+            LogGizmoDiagnostic(
+                "Gizmo-02A Source",
+                "SkinnedMeshRenderer経路を使用します。 " +
+                $"Renderer='{targetSkinnedMeshRenderer.name}', " +
+                $"SharedMesh={BuildMeshSummary(targetSkinnedMeshRenderer.sharedMesh)} / " +
+                $"{BuildTransformSummary(targetSkinnedMeshRenderer.transform)}");
+#endif
+
             var previewMesh = new Mesh
             {
                 name =
@@ -1055,26 +1293,57 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 hideFlags = HideFlags.HideAndDontSave
             };
 
-            // BakeMeshの頂点はSkinnedMeshRenderer Transform基準。
-            // そのままBoundsを使うとFBX側のローカル軸がCut Range Axisへ混ざるため、
-            // EnemyMeshCutterローカル空間へ変換してからBoundsを求める。
-            targetSkinnedMeshRenderer.BakeMesh(
-                previewMesh,
-                false);
-
-            bool succeeded =
-                TryCalculateBoundsInCutRangeSpace(
+            try
+            {
+                // Runtime切断と同じScale補償条件でBakeする。
+                // 切断片生成時とPreviewで座標系を一致させたうえで、
+                // EnemyMeshCutterローカル空間へ変換してBoundsを求める。
+                targetSkinnedMeshRenderer.BakeMesh(
                     previewMesh,
-                    targetSkinnedMeshRenderer.transform,
-                    out sourceBounds);
+                    true);
 
-            DestroyRuntimeMesh(
-                previewMesh);
+                previewMesh.RecalculateBounds();
 
-            return succeeded;
+#if UNITY_EDITOR
+                LogGizmoDiagnostic(
+                    "Gizmo-02B BakeMesh",
+                    "BakeMesh(true)に成功しました。 " +
+                    BuildMeshSummary(previewMesh));
+#endif
+
+                bool succeeded =
+                    TryCalculateBoundsInCutRangeSpace(
+                        previewMesh,
+                        targetSkinnedMeshRenderer.transform,
+                        out sourceBounds,
+                        out failureReason);
+
+                return succeeded;
+            }
+            catch (System.Exception exception)
+            {
+                sourceBounds = default;
+                failureReason =
+                    "SkinnedMeshRenderer.BakeMeshまたはPreview Bounds計算中に例外が発生しました。 " +
+                    $"{exception.GetType().Name}: {exception.Message}";
+
+#if UNITY_EDITOR
+                LogGizmoDiagnosticWarning(
+                    "Gizmo-02B BakeMesh",
+                    failureReason + "\n" + exception.StackTrace);
+#endif
+                return false;
+            }
+            finally
+            {
+                DestroyRuntimeMesh(
+                    previewMesh);
+            }
         }
 
         sourceBounds = default;
+        failureReason =
+            "Target Mesh Filter / Target Skinned Mesh Rendererのどちらも設定されていません。";
         return false;
     }
 
@@ -1085,15 +1354,37 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     private bool TryCalculateBoundsInCutRangeSpace(
         Mesh mesh,
         Transform sourceTransform,
-        out Bounds bounds)
+        out Bounds bounds,
+        out string failureReason)
     {
         bounds = default;
 
-        if (mesh == null ||
-            sourceTransform == null ||
-            !mesh.isReadable ||
-            mesh.vertexCount == 0)
+        if (mesh == null)
         {
+            failureReason =
+                "Bounds計算対象Meshがnullです。";
+            return false;
+        }
+
+        if (sourceTransform == null)
+        {
+            failureReason =
+                "Bounds計算対象のsourceTransformがnullです。";
+            return false;
+        }
+
+        if (!mesh.isReadable)
+        {
+            failureReason =
+                $"Mesh '{mesh.name}' が読み取り不可です。 " +
+                "頂点配列を取得できないためPreview Boundsを計算できません。";
+            return false;
+        }
+
+        if (mesh.vertexCount == 0)
+        {
+            failureReason =
+                $"Mesh '{mesh.name}' のvertexCount=0です。";
             return false;
         }
 
@@ -1101,9 +1392,186 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             transform.worldToLocalMatrix
             * sourceTransform.localToWorldMatrix;
 
-        return ChainsawMeshCutProcessor.TryCalculateMeshBoundsInSpace(
-            mesh,
-            sourceToCutRangeSpace,
-            out bounds);
+#if UNITY_EDITOR
+        LogGizmoDiagnostic(
+            "Gizmo-02C CoordinateSpace",
+            "Mesh頂点をEnemyMeshCutterローカル空間へ変換します。 " +
+            $"Mesh='{mesh.name}', Vertices={mesh.vertexCount}, " +
+            $"MatrixDeterminant={sourceToCutRangeSpace.determinant:F8}, " +
+            $"Source={BuildTransformSummary(sourceTransform)}, " +
+            $"Target={BuildTransformSummary(transform)}");
+#endif
+
+        if (!ChainsawMeshCutProcessor.TryCalculateMeshBoundsInSpace(
+                mesh,
+                sourceToCutRangeSpace,
+                out bounds))
+        {
+            failureReason =
+                "ChainsawMeshCutProcessor.TryCalculateMeshBoundsInSpace=falseでした。 " +
+                "Meshには頂点が存在するため、変換後頂点にNaN / Infinityが含まれる可能性があります。 " +
+                $"Mesh={BuildMeshSummary(mesh)}, " +
+                $"MatrixDeterminant={sourceToCutRangeSpace.determinant:F8}";
+            return false;
+        }
+
+        if (!IsFinite(bounds.center) ||
+            !IsFinite(bounds.size))
+        {
+            failureReason =
+                "計算後BoundsにNaN / Infinityが含まれています。 " +
+                $"Center={FormatVector3(bounds.center)}, Size={FormatVector3(bounds.size)}";
+            return false;
+        }
+
+        failureReason = null;
+        return true;
     }
+
+    private string BuildCutRangeBoundsFailureReason(
+        Bounds sourceBounds)
+    {
+        if (cutRangeMinimumNormalized < 0.0f ||
+            cutRangeMinimumNormalized > 1.0f ||
+            cutRangeMaximumNormalized < 0.0f ||
+            cutRangeMaximumNormalized > 1.0f)
+        {
+            return
+                "Cut Range正規化値が0～1の範囲外です。 " +
+                $"Minimum={cutRangeMinimumNormalized:F4}, " +
+                $"Maximum={cutRangeMaximumNormalized:F4}";
+        }
+
+        if (cutRangeMinimumNormalized >=
+            cutRangeMaximumNormalized)
+        {
+            return
+                "Cut Range Minimum >= Maximumのため計算できません。 " +
+                $"Minimum={cutRangeMinimumNormalized:F4}, " +
+                $"Maximum={cutRangeMaximumNormalized:F4}";
+        }
+
+        float axisMinimum =
+            GetAxisValueForDiagnostic(
+                sourceBounds.min,
+                cutRangeAxis);
+
+        float axisMaximum =
+            GetAxisValueForDiagnostic(
+                sourceBounds.max,
+                cutRangeAxis);
+
+        if (axisMaximum <= axisMinimum)
+        {
+            return
+                "Source BoundsのCut Range軸方向に有効な幅がありません。 " +
+                $"Axis={cutRangeAxis}, " +
+                $"AxisMinimum={axisMinimum:F6}, " +
+                $"AxisMaximum={axisMaximum:F6}, " +
+                $"BoundsCenter={FormatVector3(sourceBounds.center)}, " +
+                $"BoundsSize={FormatVector3(sourceBounds.size)}";
+        }
+
+        return
+            "TryCalculateCutRangeBounds=falseでしたが、入力値の事前診断では原因を特定できませんでした。 " +
+            $"Axis={cutRangeAxis}, " +
+            $"Minimum={cutRangeMinimumNormalized:F4}, " +
+            $"Maximum={cutRangeMaximumNormalized:F4}, " +
+            $"BoundsCenter={FormatVector3(sourceBounds.center)}, " +
+            $"BoundsSize={FormatVector3(sourceBounds.size)}";
+    }
+
+    private static float GetAxisValueForDiagnostic(
+        Vector3 value,
+        MeshCutRangeAxis axis)
+    {
+        switch (axis)
+        {
+            case MeshCutRangeAxis.X:
+                return value.x;
+
+            case MeshCutRangeAxis.Y:
+                return value.y;
+
+            case MeshCutRangeAxis.Z:
+                return value.z;
+
+            default:
+                return value.y;
+        }
+    }
+
+    private static bool IsFinite(
+        Vector3 value)
+    {
+        return !float.IsNaN(value.x) &&
+               !float.IsInfinity(value.x) &&
+               !float.IsNaN(value.y) &&
+               !float.IsInfinity(value.y) &&
+               !float.IsNaN(value.z) &&
+               !float.IsInfinity(value.z);
+    }
+
+#if UNITY_EDITOR
+    private void LogGizmoDiagnostic(
+        string stage,
+        string message)
+    {
+        LogGizmoDiagnosticInternal(
+            stage,
+            message,
+            false);
+    }
+
+    private void LogGizmoDiagnosticWarning(
+        string stage,
+        string message)
+    {
+        LogGizmoDiagnosticInternal(
+            stage,
+            message,
+            true);
+    }
+
+    private void LogGizmoDiagnosticInternal(
+        string stage,
+        string message,
+        bool isWarning)
+    {
+        if (!enableDiagnosticLogs)
+        {
+            return;
+        }
+
+        string signature =
+            $"{isWarning}:{message}";
+
+        if (lastGizmoDiagnosticMessages.TryGetValue(
+                stage,
+                out string previousSignature) &&
+            previousSignature == signature)
+        {
+            return;
+        }
+
+        lastGizmoDiagnosticMessages[stage] =
+            signature;
+
+        string formattedMessage =
+            $"[MeshCutDiagnostic][{stage}] {message}";
+
+        if (isWarning)
+        {
+            Debug.LogWarning(
+                formattedMessage,
+                this);
+            return;
+        }
+
+        Debug.Log(
+            formattedMessage,
+            this);
+    }
+#endif
+
 }

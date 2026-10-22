@@ -7,7 +7,7 @@ using UnityEngine.Serialization;
 /// <remarks>
 /// 最大HP、攻撃力、標準の索敵半径、共通の攻撃予告、被ダメージ演出、死亡演出など、
 /// Enemyの種類に関係なく共通して必要な設定値を保持する。
-/// ChargeEnemySearchStrategyは索敵半径を個体側で保持するため、DetectionRadiusを使用しない。
+/// ChargeEnemySearchStrategyとOldDroneEnemySearchStrategyは索敵半径を個体側で保持するため、DetectionRadiusを使用しない。
 ///
 /// Enemy固有の設定が不要な場合は、この型を直接使用できる。
 /// 固有設定が必要なEnemyDataの基底クラスとしても使用する。
@@ -31,7 +31,7 @@ public class EnemyData : ScriptableObject
     private int attackPower = 10;
 
     [Header("索敵")]
-    [Tooltip("プレイヤーの標準検知半径。ChargeEnemySearchStrategyは個体側のDetection Radiusを使用するため、この値を使用しません。")]
+    [Tooltip("プレイヤーの標準検知半径。ChargeEnemySearchStrategyとOldDroneEnemySearchStrategyは個体側のDetection Radiusを使用するため、この値を使用しません。")]
     [SerializeField]
     [Min(0f)]
     private float detectionRadius = 2f;
@@ -53,10 +53,20 @@ public class EnemyData : ScriptableObject
     [Min(0f)]
     private float damageFlashDuration = 0.1f;
 
-    [Tooltip("被ダメージ時の傾き継続時間。")]
+    [Tooltip("被ダメージStateの最低継続時間。")]
     [SerializeField]
     [Min(0f)]
     private float hitTiltDuration = 0.5f;
+
+    [Tooltip("着地直前に、被弾姿勢から通常姿勢へ戻る補間時間。")]
+    [SerializeField]
+    [Min(0f)]
+    private float hitTiltRecoveryDuration = 0.15f;
+
+    [Tooltip("空中ノックバック中、地面までこの距離以内に入ったら被弾姿勢の復帰を開始する。")]
+    [SerializeField]
+    [Min(0f)]
+    private float hitTiltRecoveryGroundDistance = 0.75f;
 
     [Tooltip("被ダメージ時のZ軸回転角度。方向は命中側から決定し、この値は角度の大きさとして使用する。")]
     [SerializeField]
@@ -94,6 +104,12 @@ public class EnemyData : ScriptableObject
 
     public float HitTiltDuration =>
         hitTiltDuration;
+
+    public float HitTiltRecoveryDuration =>
+        hitTiltRecoveryDuration;
+
+    public float HitTiltRecoveryGroundDistance =>
+        hitTiltRecoveryGroundDistance;
 
     public float HitTiltAngle =>
         hitTiltAngle;

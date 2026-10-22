@@ -37,7 +37,8 @@ public sealed class EnemyPlayerReference
             }
 
             playerTransform =
-                playerObject.transform;
+                ResolvePlayerRoot(
+                    playerObject.transform);
         }
 
         resolvedPlayerTransform =
@@ -152,6 +153,34 @@ public sealed class EnemyPlayerReference
         resolvedReceiver = null;
         resolvedReceiverComponent = null;
         return false;
+    }
+
+    /// <summary>
+    /// Player Tagを持つ子Colliderが検索結果になっても、同じPlayer階層内の最上位Player TagをPlayer Rootとして解決する。
+    /// </summary>
+    private static Transform ResolvePlayerRoot(
+        Transform taggedTransform)
+    {
+        Transform resolvedPlayerRoot =
+            taggedTransform;
+
+        Transform currentTransform =
+            taggedTransform.parent;
+
+        while (currentTransform != null)
+        {
+            if (currentTransform.CompareTag(
+                    PLAYER_TAG))
+            {
+                resolvedPlayerRoot =
+                    currentTransform;
+            }
+
+            currentTransform =
+                currentTransform.parent;
+        }
+
+        return resolvedPlayerRoot;
     }
 
     private bool IsCachedAttackHitReceiverValid(

@@ -33,5 +33,6 @@ MonoBehaviour:
   maxDamageMultiplier: 1.25
   bonusDamageMultiplier: 1.5
   enemyPushPower: 2
+  airContactWaitDuration: 1
   wallClimbInputWindow: 0.2
   floorTransitionWallGraceTime: 0.05

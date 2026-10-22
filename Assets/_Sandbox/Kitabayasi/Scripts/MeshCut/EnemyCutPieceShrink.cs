@@ -1,23 +1,21 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Enemyのメッシュ分割後に生成された2つの切断片を、
+/// Enemyのメッシュ分割後に生成された全切断片を、
 /// 指定時間待機した後、徐々に縮小する。
 /// </summary>
 /// <remarks>
 /// Meshの分割、吹き飛ばし、死亡判定、State遷移、
 /// Enemy本体の破棄は担当しない。
-///
-/// 現在のEnemyMeshCutterが生成する
-/// 2つの切断片すべてを同時に縮小する。
 /// </remarks>
 public sealed class EnemyCutPieceShrink : MonoBehaviour
 {
-    private Transform firstPieceTransform;
-    private Transform secondPieceTransform;
+    private readonly List<Transform> pieceTransforms =
+        new List<Transform>();
 
-    private Vector3 firstPieceStartScale;
-    private Vector3 secondPieceStartScale;
+    private readonly List<Vector3> pieceStartScales =
+        new List<Vector3>();
 
     private float shrinkDelay;
     private float shrinkDuration;
@@ -36,13 +34,10 @@ public sealed class EnemyCutPieceShrink : MonoBehaviour
     }
 
     /// <summary>
-    /// 指定された2つの切断片の縮小を開始する。
+    /// 指定された全切断片の縮小を開始する。
     /// </summary>
-    /// <param name="firstPiece">
-    /// 1つ目の切断片。
-    /// </param>
-    /// <param name="secondPiece">
-    /// 2つ目の切断片。
+    /// <param name="pieces">
+    /// EnemyMeshCutterが生成した現在有効な切断片。
     /// </param>
     /// <param name="delay">
     /// 縮小を開始するまでの待機時間。
@@ -51,17 +46,16 @@ public sealed class EnemyCutPieceShrink : MonoBehaviour
     /// 縮小開始からScaleが0になるまでの時間。
     /// </param>
     public bool BeginShrink(
-        Transform firstPiece,
-        Transform secondPiece,
+        IReadOnlyList<Transform> pieces,
         float delay,
         float duration)
     {
-        if (firstPiece == null ||
-            secondPiece == null)
+        if (pieces == null ||
+            pieces.Count == 0)
         {
             Debug.LogWarning(
                 $"{nameof(EnemyCutPieceShrink)}: "
-                + "縮小する切断片が設定されていません。",
+                + "縮小する切断片がありません。",
                 this);
 
             return false;
@@ -69,17 +63,34 @@ public sealed class EnemyCutPieceShrink : MonoBehaviour
 
         StopShrink();
 
-        firstPieceTransform =
-            firstPiece;
+        for (int i = 0;
+             i < pieces.Count;
+             i++)
+        {
+            Transform piece =
+                pieces[i];
 
-        secondPieceTransform =
-            secondPiece;
+            if (piece == null)
+            {
+                continue;
+            }
 
-        firstPieceStartScale =
-            firstPieceTransform.localScale;
+            pieceTransforms.Add(
+                piece);
 
-        secondPieceStartScale =
-            secondPieceTransform.localScale;
+            pieceStartScales.Add(
+                piece.localScale);
+        }
+
+        if (pieceTransforms.Count == 0)
+        {
+            Debug.LogWarning(
+                $"{nameof(EnemyCutPieceShrink)}: "
+                + "有効な切断片Transformがありません。",
+                this);
+
+            return false;
+        }
 
         shrinkDelay =
             Mathf.Max(
@@ -159,14 +170,8 @@ public sealed class EnemyCutPieceShrink : MonoBehaviour
     {
         IsShrinkActive = false;
 
-        firstPieceTransform = null;
-        secondPieceTransform = null;
-
-        firstPieceStartScale =
-            Vector3.zero;
-
-        secondPieceStartScale =
-            Vector3.zero;
+        pieceTransforms.Clear();
+        pieceStartScales.Clear();
 
         shrinkDelay = 0f;
         shrinkDuration = 0f;
@@ -176,43 +181,37 @@ public sealed class EnemyCutPieceShrink : MonoBehaviour
     }
 
     /// <summary>
-    /// 進行度に応じて、
-    /// 両方の切断片を初期Scaleから0まで縮小する。
+    /// 進行度に応じて、全切断片を初期Scaleから0まで縮小する。
     /// </summary>
     private void ApplyShrinkScale(
         float progress)
     {
-        if (firstPieceTransform == null ||
-            secondPieceTransform == null)
+        for (int i = 0;
+             i < pieceTransforms.Count;
+             i++)
         {
-            return;
+            Transform piece =
+                pieceTransforms[i];
+
+            if (piece == null)
+            {
+                continue;
+            }
+
+            piece.localScale =
+                Vector3.Lerp(
+                    pieceStartScales[i],
+                    Vector3.zero,
+                    progress);
         }
-
-        firstPieceTransform.localScale =
-            Vector3.Lerp(
-                firstPieceStartScale,
-                Vector3.zero,
-                progress);
-
-        secondPieceTransform.localScale =
-            Vector3.Lerp(
-                secondPieceStartScale,
-                Vector3.zero,
-                progress);
     }
 
     private void CompleteShrink()
     {
         IsShrinkActive = false;
 
-        firstPieceTransform = null;
-        secondPieceTransform = null;
-
-        firstPieceStartScale =
-            Vector3.zero;
-
-        secondPieceStartScale =
-            Vector3.zero;
+        pieceTransforms.Clear();
+        pieceStartScales.Clear();
 
         shrinkDelay = 0f;
         shrinkDuration = 0f;

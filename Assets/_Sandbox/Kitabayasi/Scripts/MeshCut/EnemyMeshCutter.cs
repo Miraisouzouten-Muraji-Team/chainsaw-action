@@ -851,6 +851,13 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         pieceRigidbody.isKinematic =
             false;
 
+        // 横スクロールのゲームプレイ平面から物理衝突で逸脱しないよう、
+        // ワールドZ位置を固定する。切断片の見た目上の回転はZ軸だけ許可する。
+        pieceRigidbody.constraints =
+            RigidbodyConstraints.FreezePositionZ |
+            RigidbodyConstraints.FreezeRotationX |
+            RigidbodyConstraints.FreezeRotationY;
+
         LogDiagnostic(
             "Scale-03 PieceCreated",
             $"Piece='{pieceObject.name}', " +

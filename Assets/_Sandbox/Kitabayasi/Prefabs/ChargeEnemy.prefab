@@ -377,4 +377,4 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyHealthBarTarget
   healthBarAnchor: {fileID: 0}
-  defaultPositionOffset: {x: 0, y: 0, z: 0}
+  defaultPositionOffset: {x: 0, y: 1.2, z: 0}

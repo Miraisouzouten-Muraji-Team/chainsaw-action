@@ -3,14 +3,14 @@ using UnityEngine;
 
 /// <summary>
 /// Enemy死亡時に切断対象Meshを取得し、
-/// チェンソー軌跡を使って2つの静的Meshへ分割して表示する。
+/// チェンソー軌跡を使って2つの物理切断片へ分割して表示する。
 /// </summary>
 /// <remarks>
 /// SkinnedMeshRendererの場合は死亡時の現在姿勢をBakeしてから切断する。
 /// MeshFilter + MeshRendererの場合はMeshFilterのMeshを切断する。
 ///
 /// HP計算、死亡判定、攻撃受信、チェンソー軌跡記録、
-/// Triangle分割アルゴリズム、切断後の物理演出は担当しない。
+/// Triangle分割アルゴリズム、切断片への飛散速度・方向付与は担当しない。
 /// </remarks>
 public sealed class EnemyMeshCutter : MonoBehaviour
 {
@@ -631,7 +631,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     }
 
     /// <summary>
-    /// 切断後Meshを表示するGameObjectを生成する。
+    /// 切断後Meshを表示し、ステージと物理衝突できるGameObjectを生成する。
     /// </summary>
     private GameObject CreatePieceObject(
         string suffix,
@@ -715,6 +715,34 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
         meshRenderer.sharedMaterials =
             materials;
+
+        Bounds meshBounds =
+            mesh.bounds;
+
+        BoxCollider pieceCollider =
+            pieceObject.AddComponent<BoxCollider>();
+
+        // Mesh.boundsはMesh自身のローカル空間なので、
+        // 同じGameObject上のBoxColliderへそのまま対応付けられる。
+        pieceCollider.center =
+            meshBounds.center;
+
+        pieceCollider.size =
+            meshBounds.size;
+
+        pieceCollider.isTrigger =
+            false;
+
+        Rigidbody pieceRigidbody =
+            pieceObject.AddComponent<Rigidbody>();
+
+        // 分割片の移動はTransformで上書きせず、
+        // 重力とCollider接触を含めてUnity Physicsへ任せる。
+        pieceRigidbody.useGravity =
+            true;
+
+        pieceRigidbody.isKinematic =
+            false;
 
         LogDiagnostic(
             "Scale-03 PieceCreated",

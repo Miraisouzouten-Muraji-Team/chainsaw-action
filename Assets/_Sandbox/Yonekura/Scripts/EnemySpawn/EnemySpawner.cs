@@ -5,12 +5,23 @@ using Cysharp.Threading.Tasks;
 
 // 敵1体ごとの生成設定
 [Serializable]
+/// <summary>
+/// 敵の生成位置や生成数、生成間隔を管理し、
+/// 敵ごとの出現演出を制御する。
+/// </summary>
 public class EnemySpawnEntry
 {
     public enum PlacementMode
     {
-        Simple,
-        Detailed
+        Simple,      // スポナーからの相対位置を指定
+        Detailed     // 専用のスポーンポイントを指定
+    }
+
+    // エネミーごとの出現演出
+    public enum AppearanceType
+    {
+        None,        // 演出なし
+        Dissolve     // ディゾルブ演出
     }
 
     [Header("敵の設定")]
@@ -24,10 +35,15 @@ public class EnemySpawnEntry
     [Tooltip("スポナー位置からのX・Y方向のずれ")]
     public Vector2 offset = Vector2.zero;
 
-    [Tooltip("指定したオブジェクトのX・Y座標を使用")]
+    [Tooltip("詳細配置で使用するスポーンポイント")]
     public Transform spawnPoint;
+
+    [Header("出現演出")]
+    [Tooltip("エネミーがスポーンする際の演出選択")]
+    public AppearanceType appearanceType = AppearanceType.Dissolve;
 }
 
+// 敵の生成と出現演出の開始を管理する
 public class EnemySpawner : MonoBehaviour
 {
     [Header("スポーン設定")]
@@ -50,24 +66,31 @@ public class EnemySpawner : MonoBehaviour
     private float spawnInterval = 0.5f;
 
     [Header("出現演出")]
+    [Tooltip("ディゾルブ演出に使用するマテリアル")]
+    [SerializeField]
+    private Material dissolveMaterial;
+
     [Tooltip("敵が完成するまでの時間")]
     [SerializeField, Min(0f)]
     private float appearanceDuration = 1.0f;
 
+    // 同じスポナーからの重複生成を防ぐ
     private bool hasSpawned;
 
+    // 外部のスクリプトから生成設定を参照するためのプロパティ
     public int EnemyCount => enemyCount;
     public List<EnemySpawnEntry> Enemies => enemies;
 
     // EnemySpawnAreaから呼び出される
     public void SpawnOnce()
     {
+        // すでに生成済みなら何もしない
         if (hasSpawned)
         {
             return;
         }
 
-        // 登録数が足りない場合は生成を開始しない
+        // 敵の設定数が不足している場合は生成を開始しない
         if (enemies == null || enemies.Count < enemyCount)
         {
             Debug.LogError(
@@ -82,9 +105,10 @@ public class EnemySpawner : MonoBehaviour
         SpawnEnemiesAsync().Forget();
     }
 
-    // 敵を順番に生成する
+    // 登録された敵を順番に生成
     private async UniTask SpawnEnemiesAsync()
     {
+        // 実際に1体以上生成できたかを記録
         bool hasSpawnedAny = false;
 
         for (int i = 0; i < enemyCount; i++)
@@ -100,6 +124,7 @@ public class EnemySpawner : MonoBehaviour
                 continue;
             }
 
+            // デフォルトの生成位置と向きはスポナーに合わせる
             Vector3 spawnPosition = transform.position;
             Quaternion spawnRotation = transform.rotation;
 
@@ -128,6 +153,7 @@ public class EnemySpawner : MonoBehaviour
                         continue;
                     }
 
+                    // X・Yは指定位置、Zはスポナーの位置を使用
                     spawnPosition = new Vector3(
                         entry.spawnPoint.position.x,
                         entry.spawnPoint.position.y,
@@ -137,7 +163,7 @@ public class EnemySpawner : MonoBehaviour
                 }
             }
 
-            // 時間差設定がONの場合のみ待機する
+            // 2体目以降は、時間差設定がONの場合のみ待機する
             // 最初に生成できた敵は待たずに生成する
             if (useSpawnDelay && hasSpawnedAny && spawnInterval > 0f)
             {
@@ -151,65 +177,30 @@ public class EnemySpawner : MonoBehaviour
                 spawnPosition,
                 spawnRotation);
 
-            // 出現中はAIを停止
-            EnemyStateMachine stateMachine =
-                spawnedEnemy.GetComponent<EnemyStateMachine>();
-
-            if (stateMachine != null)
-            {
-                stateMachine.enabled = false;
-            }
-
-            // ディゾルブ制御を取得
-            EnemyDissolveController dissolveController =
-                spawnedEnemy.GetComponent<EnemyDissolveController>();
-
-            if (dissolveController == null)
-            {
-                Debug.LogError(
-                    $"{spawnedEnemy.name}: " +
-                    "EnemyDissolveControllerがありません。",
-                    spawnedEnemy);
-
-                // 演出用コンポーネントがない場合はAIを再開する
-                if (stateMachine != null)
-                {
-                    stateMachine.enabled = true;
-                }
-
-                continue;
-            }
-
-            // ディゾルブ完了後にAIを再開
-            PlayAppearanceAsync(
-                spawnedEnemy,
-                stateMachine,
-                dissolveController).Forget();
-
             hasSpawnedAny = true;
-        }
-    }
 
-    // ディゾルブ完了後にAIを再開する
-    private async UniTaskVoid PlayAppearanceAsync(
-        GameObject spawnedEnemy,
-        EnemyStateMachine stateMachine,
-        EnemyDissolveController dissolveController)
-    {
-        // 出現演出が終わるまで待機する
-        await dissolveController.PlayAppearAsync(
-            appearanceDuration);
-
-        // 演出中に敵が削除されていたら終了
-        if (spawnedEnemy == null)
-        {
-            return;
-        }
-
-        //  完全に表示された後でAIを再開する
-        if (stateMachine != null)
-        {
-            stateMachine.enabled = true;
+            // エネミーごとの出現演出を判定
+            if (entry.appearanceType ==
+                EnemySpawnEntry.AppearanceType.Dissolve)
+            {
+                if (EnemyDissolveManager.Instance != null)
+                {
+                    // ディゾルブ演出は敵ごとに開始し、完了を待たず次へ進む
+                    EnemyDissolveManager.Instance
+                        .PlayAppearAsync(
+                            spawnedEnemy,
+                            dissolveMaterial,
+                            appearanceDuration)
+                        .Forget();
+                }
+                else
+                {
+                    // Managerが存在しない場合はエラーを通知
+                    Debug.LogError(
+                        "EnemyDissolveManagerがシーンにありません。",
+                        this);
+                }
+            }
         }
     }
 }

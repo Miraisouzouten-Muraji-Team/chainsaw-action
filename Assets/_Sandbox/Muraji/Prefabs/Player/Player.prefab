@@ -537,6 +537,9 @@ MonoBehaviour:
   debugTargetSpeed: 0
   debugCurrentSpeed: 0
   wallTravelSpeed: 0
+  preventPushingEnemies: 1
+  enemyStopDistance: 0.002
+  debugEnemyMovementBlocked: 0
   groundNormal: {x: 0, y: 1, z: 0}
   debugGroundCollider: {fileID: 0}
   debugGroundSource: 
@@ -846,10 +849,10 @@ CapsuleCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 2
-  m_Radius: 0.06462301
-  m_Height: 0.45529434
+  m_Radius: 0.06462303
+  m_Height: 0.6712483
   m_Direction: 1
-  m_Center: {x: -0.09062346, y: -0.08891465, z: 0.4389533}
+  m_Center: {x: -0.09062386, y: -0.19689158, z: 0.43895325}
 --- !u!114 &6711951221994413545
 MonoBehaviour:
   m_ObjectHideFlags: 0

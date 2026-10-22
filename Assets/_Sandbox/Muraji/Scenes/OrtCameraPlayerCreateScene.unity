@@ -1299,7 +1299,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8720051152875504496, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_Mass
-      value: 0.0000001
+      value: 0.1
       objectReference: {fileID: 0}
     - target: {fileID: 8720051152875504496, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_IsKinematic
@@ -1598,7 +1598,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8720051152875504496, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_Mass
-      value: 0.0000001
+      value: 0.1
       objectReference: {fileID: 0}
     - target: {fileID: 8720051152875504496, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_IsKinematic
@@ -2764,7 +2764,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8720051152875504496, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_Mass
-      value: 0.0000001
+      value: 0.1
       objectReference: {fileID: 0}
     - target: {fileID: 8720051152875504496, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_IsKinematic

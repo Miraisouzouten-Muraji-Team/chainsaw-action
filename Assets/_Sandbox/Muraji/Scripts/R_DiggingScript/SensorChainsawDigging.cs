@@ -625,7 +625,7 @@ public class SensorChainsawDigging : MonoBehaviour
                     Mathf.Abs(facingDirection) > 0.01f
                         ? Mathf.Sign(facingDirection)
                         : 1f;
-
+                
                 if (enemyRigidbody != null &&
                     !enemyRigidbody.isKinematic &&
                     diggingParameter.enemyPushPower > 0f)
@@ -652,7 +652,17 @@ public class SensorChainsawDigging : MonoBehaviour
             {
                 timer -= interval;
 
-                if (!accelerator.TryConsume(diggingParameter.wallConsumeAmount))
+                float consumeAmount = Mathf.Min(
+                    Mathf.Max(0f, diggingParameter.wallConsumeAmount),
+                    Mathf.Max(0f, accelerator.CurrentSpeed - 5f)
+                );
+
+                if (consumeAmount <= 0f)
+                {
+                    continue;
+                }
+
+                if (!accelerator.TryConsume(consumeAmount))
                 {
                     Cancel(false);
                     return;

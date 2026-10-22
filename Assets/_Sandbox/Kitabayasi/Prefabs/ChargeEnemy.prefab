@@ -162,7 +162,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyDamageFlash
   targetRenderers:
-  - {fileID: 0}
+  - {fileID: 3117738715657247664}
   whiteFlashMaterial: {fileID: 2100000, guid: 36abff19a458c8e4d996ddfb5292e557, type: 2}
   blackFlashMaterial: {fileID: 2100000, guid: 6af0a454ecd73a6478577c1d9d5b46d2, type: 2}
 --- !u!114 &480292550696096733
@@ -242,6 +242,9 @@ MonoBehaviour:
   targetSkinnedMeshRenderer: {fileID: 3117738715657247664}
   targetMeshFilter: {fileID: 0}
   cutSurfaceMaterial: {fileID: 2100000, guid: 8fccef3da4d8bef458523fc0ccbdeb2c, type: 2}
+  densityScale: 1
+  minimumPieceMass: 0.1
+  maximumPieceMass: 10
   cutDirectionSampleCount: 4
   cutRangeAxis: 1
   cutRangeMinimumNormalized: 0.21
@@ -261,8 +264,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e30ac8f3642ae644aaef5e508071758b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyCutPieceBurst
-  burstDistance: 1.5
-  burstDuration: 0.2
+  burstImpulse: 8
+  minimumTorqueImpulse: 0.1
+  maximumTorqueImpulse: 0.4
 --- !u!114 &6912552835280146068
 MonoBehaviour:
   m_ObjectHideFlags: 0

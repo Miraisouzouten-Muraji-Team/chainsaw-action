@@ -43,6 +43,16 @@ public sealed class EnemyAttackHitReceiver :
     /// </remarks>
     public Vector2 LastResolvedKnockbackVelocity { get; private set; }
 
+    /// <summary>
+    /// 最後に受けたPlayer攻撃について、Enemyから見た攻撃元の左右方向。
+    /// -1は左側、+1は右側を表す。
+    /// </summary>
+    /// <remarks>
+    /// ノックバック方向と切断片の回転方向で同じ左右判定結果を共有するため、
+    /// ダメージ適用前に確定して保持する。
+    /// </remarks>
+    public float LastHitSourceDirectionSign { get; private set; }
+
     private void Awake()
     {
         enemyHealth =
@@ -120,6 +130,9 @@ public sealed class EnemyAttackHitReceiver :
 
         float hitSourceDirectionSign =
             ResolveHitSourceDirectionSign();
+
+        LastHitSourceDirectionSign =
+            hitSourceDirectionSign;
 
         LastResolvedKnockbackVelocity =
             EnemyKnockbackMotor

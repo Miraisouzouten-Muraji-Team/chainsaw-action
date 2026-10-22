@@ -1204,6 +1204,8 @@ public sealed class StandardEnemyDeathStrategy :
                     cutPieceTransforms,
                     enemyAttackHitReceiver
                         .LastResolvedKnockbackVelocity,
+                    enemyAttackHitReceiver
+                        .LastHitSourceDirectionSign,
                     chainsawRotationRatio);
 
             LogMeshCutDiagnostic(
@@ -1211,6 +1213,7 @@ public sealed class StandardEnemyDeathStrategy :
                 $"BeginBurst result={burstStarted}, " +
                 $"PieceCount={cutPieceTransforms.Count}, " +
                 $"ResolvedKnockbackVelocity={enemyAttackHitReceiver.LastResolvedKnockbackVelocity}, " +
+                $"HitSourceDirectionSign={enemyAttackHitReceiver.LastHitSourceDirectionSign:F1}, " +
                 $"ChainsawRotationRatio={chainsawRotationRatio:F3}");
         }
 

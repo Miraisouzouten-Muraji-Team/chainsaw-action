@@ -33,6 +33,25 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     [SerializeField]
     private Material cutSurfaceMaterial;
 
+    [Header("分割片物理")]
+
+    [Tooltip(
+        "Mesh.boundsから求めた疑似体積へ掛ける密度係数。" +
+        "疑似体積 × Density ScaleをMassの基準値として使用する。")]
+    [SerializeField]
+    [Min(0f)]
+    private float densityScale = 1f;
+
+    [Tooltip("疑似体積から求めたMassの下限。")]
+    [SerializeField]
+    [Min(0.0001f)]
+    private float minimumPieceMass = 0.1f;
+
+    [Tooltip("疑似体積から求めたMassの上限。")]
+    [SerializeField]
+    [Min(0.0001f)]
+    private float maximumPieceMass = 10f;
+
     [Header("切断Plane設定")]
 
     [Tooltip("Bake済み軌跡からCut Plane候補を作る際、各候補位置の代表刃方向・代表移動方向の算出に使用するサンプル数。")]
@@ -850,6 +869,13 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         pieceRigidbody.isKinematic =
             false;
 
+        // 疑似体積は分割片生成時に1回だけ計算する。
+        // Massを慣性テンソル再計算より先に設定することで、
+        // サイズとMassの両方を反映した回転しにくさをUnity Physicsへ引き継ぐ。
+        pieceRigidbody.mass =
+            CalculatePieceMass(
+                meshBounds);
+
         // Rotation Constraintsはワールド空間ではなく慣性空間に適用される。
         // Collider由来の慣性テンソル値は維持しつつ、慣性空間の軸だけを
         // 生成時点のワールド軸へ揃え、画面に垂直なワールドZだけを回転可能にする。
@@ -880,6 +906,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             $"Piece='{pieceObject.name}', " +
             $"MeshBoundsCenter={FormatVector3(mesh.bounds.center)}, " +
             $"MeshBoundsSize={FormatVector3(mesh.bounds.size)}, " +
+            $"PseudoVolume={(meshBounds.size.x * meshBounds.size.y * meshBounds.size.z):F6}, " +
+            $"Mass={pieceRigidbody.mass:F6}, " +
             $"LocalScale={FormatVector3(pieceTransform.localScale)}, " +
             $"LossyScale={FormatVector3(pieceTransform.lossyScale)}, " +
             $"Parent='{(pieceTransform.parent != null ? pieceTransform.parent.name : "null")}', " +
@@ -892,6 +920,46 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             $"SourceWorldBoundsSize={FormatVector3(sourceRenderer.bounds.size)}");
 
         return pieceObject;
+    }
+
+    /// <summary>
+    /// 分割MeshのローカルBoundsを疑似体積として扱い、切断片のMassを決定する。
+    /// </summary>
+    /// <remarks>
+    /// 正確なMesh体積計算は行わず、Boundsの各辺長の積だけを使用する。
+    /// この値は切断片生成時に1回だけ計算し、毎フレーム更新しない。
+    /// </remarks>
+    private float CalculatePieceMass(
+        Bounds meshBounds)
+    {
+        Vector3 boundsSize =
+            meshBounds.size;
+
+        float approximateVolume =
+            boundsSize.x *
+            boundsSize.y *
+            boundsSize.z;
+
+        float resolvedMinimumMass =
+            Mathf.Max(
+                0.0001f,
+                minimumPieceMass);
+
+        float resolvedMaximumMass =
+            Mathf.Max(
+                resolvedMinimumMass,
+                maximumPieceMass);
+
+        float calculatedMass =
+            approximateVolume *
+            Mathf.Max(
+                0f,
+                densityScale);
+
+        return Mathf.Clamp(
+            calculatedMass,
+            resolvedMinimumMass,
+            resolvedMaximumMass);
     }
 
     /// <summary>
@@ -1327,6 +1395,21 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             Mathf.Max(
                 0.0001f,
                 cutSurfaceUvScale);
+
+        densityScale =
+            Mathf.Max(
+                0f,
+                densityScale);
+
+        minimumPieceMass =
+            Mathf.Max(
+                0.0001f,
+                minimumPieceMass);
+
+        maximumPieceMass =
+            Mathf.Max(
+                minimumPieceMass,
+                maximumPieceMass);
     }
 #endif
 

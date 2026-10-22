@@ -55049,6 +55049,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 9062514445631530553, guid: 8b6c165a24a7021498124562437e381e, type: 3}
+      propertyPath: 'targetRenderers.Array.data[0]'
+      value: 
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects:
     - {fileID: 2793125513464034318, guid: 8b6c165a24a7021498124562437e381e, type: 3}
@@ -127407,7 +127411,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 140633332249559882, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: slash1State
-      value: Base Layer.Slash4
+      value: Base Layer.Slash1
       objectReference: {fileID: 0}
     - target: {fileID: 355547232094782628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.x

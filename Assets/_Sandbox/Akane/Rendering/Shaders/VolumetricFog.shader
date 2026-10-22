@@ -19,6 +19,9 @@ Shader "Custom/VolumetricFog"
 
         _PixelEffectEnabled("Pixel Effect Enabled", Float) = 0
 
+        // Opaque Compositeから受け取る統合Depth。
+        [HideInInspector] _PixelCompositeDepthTex("Composite Depth", 2D) = "black" {}
+
         // ============================================================
         // Fog
         // ============================================================
@@ -142,6 +145,9 @@ Shader "Custom/VolumetricFog"
             TEXTURE2D(_PixelMiddleDepthTex);
             TEXTURE2D(_PixelFarDepthTex);
 
+            // Opaque Compositeで生成した統合Depth
+            TEXTURE2D(_PixelCompositeDepthTex);
+
             // ========================================================
             // Material Parameters
             // ========================================================
@@ -217,13 +223,8 @@ Shader "Custom/VolumetricFog"
                     / pow(denominator, 1.5);
             }
 
-            // ========================================================
-            // Sky Depth
-            //
             // Depth Bufferの値からSkyを判定する。
             // Reversed Zと通常のZ Bufferの両方に対応する。
-            // ========================================================
-
             bool IsSkyDepth(float rawDepth)
             {
                 #if UNITY_REVERSED_Z
@@ -233,58 +234,20 @@ Shader "Custom/VolumetricFog"
                 #endif
             }
 
-            float SelectNearestDepth(float currentDepth, float candidateDepth, float candidateAlpha)
-            {
-                if (candidateAlpha <= 0.01 || IsSkyDepth(candidateDepth))
-                {
-                    return currentDepth;
-                }
-
-                #if UNITY_REVERSED_Z
-                    bool isCloser = candidateDepth > currentDepth;
-                #else
-                    bool isCloser = candidateDepth < currentDepth;
-                #endif
-
-                return IsSkyDepth(currentDepth) || isCloser ? candidateDepth : currentDepth;
-            }
-
-            // ========================================================
-            // Composite Depth
-            //
-            // Main CameraのDepthを基準とし、
-            // Pixel Layer Compositeと同じ順番で深度を上書きする。
-            //
-            // 合成順:
-            // Main → Far → Middle → Near
-            //
-            // 各レイヤーに描画物が存在し、
-            // かつSky以外の深度がある場合のみ上書きする。
-            // ========================================================
-
+            // Pixel Renderingの状態に応じてFogで使用するDepthを取得する。
             float GetCompositeDepth(float2 colorUv, float2 depthUv)
             {
-                float result = SampleSceneDepth(depthUv);
-
+                // Pixel OFFではMain CameraのDepthを使用する。
                 if (_PixelEffectEnabled < 0.5)
                 {
-                    return result;
+                    return SampleSceneDepth(depthUv);
                 }
 
-                float farAlpha = SAMPLE_TEXTURE2D(_PixelFarTex, sampler_PointClamp, colorUv).a;
-                float farDepth = SAMPLE_TEXTURE2D(_PixelFarDepthTex, sampler_PointClamp, colorUv).r;
-                result = SelectNearestDepth(result, farDepth, farAlpha);
-
-                float middleAlpha = SAMPLE_TEXTURE2D(_PixelMiddleTex, sampler_PointClamp, colorUv).a;
-                float middleDepth = SAMPLE_TEXTURE2D(_PixelMiddleDepthTex, sampler_PointClamp, colorUv).r;
-                result = SelectNearestDepth(result, middleDepth, middleAlpha);
-
-                float nearAlpha = SAMPLE_TEXTURE2D(_PixelNearTex, sampler_PointClamp, colorUv).a;
-                float nearDepth = SAMPLE_TEXTURE2D(_PixelNearDepthTex, sampler_PointClamp, colorUv).r;
-                result = SelectNearestDepth(result, nearDepth, nearAlpha);
-
-                return result;
+                // Pixel ONではOpaque Compositeで生成した統合Depthを使用する。
+                return SAMPLE_TEXTURE2D(_PixelCompositeDepthTex, sampler_PointClamp, colorUv).r;
             }
+
+
             // ========================================================
             // Fragment Shader
             // ========================================================
@@ -301,8 +264,7 @@ Shader "Custom/VolumetricFog"
                 float2 colorUv = input.texcoord.xy;
 
                 // Depth取得・ワールド座標復元用。
-                float2 depthUv =
-                    input.positionCS.xy / _ScaledScreenParams.xy;
+                float2 depthUv = input.positionCS.xy / _ScaledScreenParams.xy;
 
                 // ====================================================
                 // 2. Scene Color

@@ -26,7 +26,7 @@ MonoBehaviour:
     BlurQuality: 0
     Falloff: 100
     SampleCount: -1
---- !u!114 &-1172159134056201380
+--- !u!114 &-41158547223072018
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -35,17 +35,11 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b00045f12942b46c698459096c89274e, type: 3}
-  m_Name: RetroPixelPostProcessing
-  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.FullScreenPassRendererFeature
-  m_Active: 0
-  injectionPoint: 600
-  fetchColorBuffer: 1
-  requirements: 4
-  passMaterial: {fileID: 2100000, guid: e7a203898512cc244a3ef3404d8c5be2, type: 2}
-  passIndex: 0
-  bindDepthStencilAttachment: 0
-  m_Version: 1
+  m_Script: {fileID: 11500000, guid: 160d7859b1141da4cbc66de7199a98d1, type: 3}
+  m_Name: PixelVolumetricFogRendererFeature
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelVolumetricFogRendererFeature
+  m_Active: 1
+  _fogMaterial: {fileID: 2100000, guid: f5fae617f0634ee4d8f7e660620b1a32, type: 2}
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -71,13 +65,13 @@ MonoBehaviour:
     probeSamplingDebugTexture: {fileID: 0}
     probeVolumeBlendStatesCS: {fileID: 0}
   m_RendererFeatures:
-  - {fileID: -1172159134056201380}
+  - {fileID: 2741325399967955328}
   - {fileID: 2482062767438460493}
   - {fileID: -5791863826025335512}
-  - {fileID: 7218563272067358311}
+  - {fileID: 8704333894310543206}
+  - {fileID: -41158547223072018}
   - {fileID: 4080925466021557763}
-  - {fileID: 5258720680466886612}
-  m_RendererFeatureMap: 5cc3595a7aa7bbef4d7664bbef0e72222835536e892a9faf679e41e40c7d2d6403760ff5165ca238d4af3ad498bafa48
+  m_RendererFeatureMap: 8079d856ed240b264d7664bbef0e72222835536e892a9faf66bfc5308f01cc78ee324cf584c66dff03760ff5165ca238
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -126,6 +120,22 @@ MonoBehaviour:
   passIndex: 0
   bindDepthStencilAttachment: 0
   m_Version: 1
+--- !u!114 &2741325399967955328
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4765c3e4616efde48b6404eb53aef4be, type: 3}
+  m_Name: PixelOpaqueCompositeRendererFeature
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelOpaqueCompositeRendererFeature
+  m_Active: 1
+  _compositeShader: {fileID: 4800000, guid: 327b5843c85b97d45a291a5595b6fc98, type: 3}
+  _gameCompositeMaterial: {fileID: 2100000, guid: 829d71493aac12f46af0c5361e92fca5, type: 2}
+  _sceneCompositeMaterial: {fileID: 2100000, guid: 4aa34f71a53ba11489906ada66f28fb9, type: 2}
 --- !u!114 &4080925466021557763
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -146,7 +156,7 @@ MonoBehaviour:
   passIndex: 0
   bindDepthStencilAttachment: 0
   m_Version: 1
---- !u!114 &5258720680466886612
+--- !u!114 &8704333894310543206
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -155,34 +165,8 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b00045f12942b46c698459096c89274e, type: 3}
-  m_Name: OutlineDepthNormal
-  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.FullScreenPassRendererFeature
+  m_Script: {fileID: 11500000, guid: 2b65696a84d95354789d72d3ddb51520, type: 3}
+  m_Name: PixelOutlineRendererFeature
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelOutlineRendererFeature
   m_Active: 1
-  injectionPoint: 450
-  fetchColorBuffer: 1
-  requirements: 7
-  passMaterial: {fileID: 2100000, guid: cc24803f25cb93543818e95ee7993d0c, type: 2}
-  passIndex: 0
-  bindDepthStencilAttachment: 0
-  m_Version: 1
---- !u!114 &7218563272067358311
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b00045f12942b46c698459096c89274e, type: 3}
-  m_Name: Volumetric Fog
-  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.FullScreenPassRendererFeature
-  m_Active: 1
-  injectionPoint: 550
-  fetchColorBuffer: 1
-  requirements: 5
-  passMaterial: {fileID: 2100000, guid: f5fae617f0634ee4d8f7e660620b1a32, type: 2}
-  passIndex: 0
-  bindDepthStencilAttachment: 0
-  m_Version: 1
+  _outlineMaterial: {fileID: 2100000, guid: e6ceea92ace7d624ba1836a538347054, type: 2}

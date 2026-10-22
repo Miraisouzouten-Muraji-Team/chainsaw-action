@@ -1177,17 +1177,41 @@ public sealed class StandardEnemyDeathStrategy :
         }
         else
         {
+            PlayerAttackHitData lastPlayerAttackHitData =
+                enemyAttackHitReceiver
+                    .LastPlayerAttackHitData;
+
+            float chainsawRotationRatio =
+                lastPlayerAttackHitData != null &&
+                lastPlayerAttackHitData
+                    .HasChainsawRotationRatio
+                    ? lastPlayerAttackHitData
+                        .ChainsawRotationRatio
+                    : 0f;
+
+            if (lastPlayerAttackHitData == null ||
+                !lastPlayerAttackHitData
+                    .HasChainsawRotationRatio)
+            {
+                Debug.LogWarning(
+                    $"{nameof(StandardEnemyDeathStrategy)}: " +
+                    "死亡攻撃時のチェンソー回転率が命中情報にないため、" +
+                    "切断片は最低回転速度で回転させます。");
+            }
+
             bool burstStarted =
                 enemyCutPieceBurst.BeginBurst(
                     cutPieceTransforms,
                     enemyAttackHitReceiver
-                        .LastResolvedKnockbackVelocity);
+                        .LastResolvedKnockbackVelocity,
+                    chainsawRotationRatio);
 
             LogMeshCutDiagnostic(
                 "Death-08 Burst",
                 $"BeginBurst result={burstStarted}, " +
                 $"PieceCount={cutPieceTransforms.Count}, " +
-                $"ResolvedKnockbackVelocity={enemyAttackHitReceiver.LastResolvedKnockbackVelocity}");
+                $"ResolvedKnockbackVelocity={enemyAttackHitReceiver.LastResolvedKnockbackVelocity}, " +
+                $"ChainsawRotationRatio={chainsawRotationRatio:F3}");
         }
 
         if (enemyCutPieceShrink == null)

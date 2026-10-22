@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /// <summary>
 /// Enemyのメッシュ分割後に生成された全切断片へ、
@@ -7,7 +8,7 @@ using UnityEngine;
 /// </summary>
 /// <remarks>
 /// 全切断片は同じゲームプレイ平面上の方向へ飛ばす。
-/// 飛散速度と回転速度は現在は全切断片で共通値を使用する。
+/// 飛散速度は全切断片で共通値を使用し、回転速度は死亡攻撃時のチェンソー回転率から共通値を決定する。
 /// Mesh分割、Rigidbody生成、死亡判定、State遷移、縮小、Enemy本体の破棄は担当しない。
 /// </remarks>
 public sealed class EnemyCutPieceBurst : MonoBehaviour
@@ -24,12 +25,21 @@ public sealed class EnemyCutPieceBurst : MonoBehaviour
     [Min(0f)]
     private float burstSpeed = 8f;
 
+    [Header("回転")]
+
     [Tooltip(
-        "全切断片へ与えるZ軸回転速度（度/秒）。" +
-        "現在は全切断片で同じ値を使用する。")]
+        "チェンソーが最低回転のときに全切断片へ与えるZ軸回転速度（度/秒）。" +
+        "低回転時でも着地までに姿勢が変化しやすいよう、初期値は180度/秒とする。")]
     [SerializeField]
     [Min(0f)]
-    private float rotationSpeedDegreesPerSecond = 360f;
+    private float minimumRotationSpeedDegreesPerSecond = 180f;
+
+    [Tooltip(
+        "チェンソーが最大回転のときに全切断片へ与えるZ軸回転速度（度/秒）。")]
+    [SerializeField]
+    [Min(0f)]
+    [FormerlySerializedAs("rotationSpeedDegreesPerSecond")]
+    private float maximumRotationSpeedDegreesPerSecond = 360f;
 
     /// <summary>
     /// 指定された全切断片を、死亡攻撃の実ノックバック方向へ吹き飛ばす。
@@ -41,9 +51,13 @@ public sealed class EnemyCutPieceBurst : MonoBehaviour
     /// 攻撃元の左右判定まで反映済みのX/Yノックバック初速度。
     /// 強さは使用せず、吹き飛ばす方向だけに使用する。
     /// </param>
+    /// <param name="chainsawRotationRatio">
+    /// 死亡攻撃が命中した瞬間のチェンソー回転率。最低回転を0、最大回転を1とする。
+    /// </param>
     public bool BeginBurst(
         IReadOnlyList<Transform> cutPieces,
-        Vector2 resolvedKnockbackVelocity)
+        Vector2 resolvedKnockbackVelocity,
+        float chainsawRotationRatio)
     {
         if (cutPieces == null ||
             cutPieces.Count == 0)
@@ -79,11 +93,29 @@ public sealed class EnemyCutPieceBurst : MonoBehaviour
         Vector3 velocityChange =
             burstDirection * burstSpeed;
 
-        // Rigidbody.angularVelocityはrad/sなので、
-        // Inspectorでは調整しやすい度/秒で持ち、物理へ渡す直前に変換する。
+        float minimumRotationSpeed =
+            Mathf.Max(
+                0f,
+                minimumRotationSpeedDegreesPerSecond);
+
+        float maximumRotationSpeed =
+            Mathf.Max(
+                minimumRotationSpeed,
+                maximumRotationSpeedDegreesPerSecond);
+
+        float resolvedRotationSpeedDegreesPerSecond =
+            Mathf.Lerp(
+                minimumRotationSpeed,
+                maximumRotationSpeed,
+                Mathf.Clamp01(
+                    chainsawRotationRatio));
+
+        // ForceMode.VelocityChangeのAddTorqueは角速度変化をrad/sで受け取る。
+        // Inspectorでは演出調整しやすい度/秒で持ち、物理へ渡す直前に変換する。
         Vector3 angularVelocityChange =
             Vector3.forward *
-            (rotationSpeedDegreesPerSecond * Mathf.Deg2Rad);
+            (resolvedRotationSpeedDegreesPerSecond *
+             Mathf.Deg2Rad);
 
         int appliedPieceCount = 0;
 
@@ -123,7 +155,7 @@ public sealed class EnemyCutPieceBurst : MonoBehaviour
                     ForceMode.VelocityChange);
             }
 
-            if (rotationSpeedDegreesPerSecond > 0f)
+            if (resolvedRotationSpeedDegreesPerSecond > 0f)
             {
                 pieceRigidbody.AddTorque(
                     angularVelocityChange,
@@ -154,10 +186,15 @@ public sealed class EnemyCutPieceBurst : MonoBehaviour
                 0f,
                 burstSpeed);
 
-        rotationSpeedDegreesPerSecond =
+        minimumRotationSpeedDegreesPerSecond =
             Mathf.Max(
                 0f,
-                rotationSpeedDegreesPerSecond);
+                minimumRotationSpeedDegreesPerSecond);
+
+        maximumRotationSpeedDegreesPerSecond =
+            Mathf.Max(
+                minimumRotationSpeedDegreesPerSecond,
+                maximumRotationSpeedDegreesPerSecond);
     }
 #endif
 }

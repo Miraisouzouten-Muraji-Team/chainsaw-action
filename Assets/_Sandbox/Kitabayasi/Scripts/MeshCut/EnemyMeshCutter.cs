@@ -282,7 +282,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             LogDiagnostic(
                 "Cutter-07 Complete",
                 $"元Rendererを無効化し、{pieceObjects.Count}個の物理切断片生成を完了しました。" +
-                " 各切断片は個別のRigidbodyとBoxColliderを持ちます。");
+                " 各切断片は個別のRigidbodyとCapsuleColliderを持ちます。");
 
             return true;
         }
@@ -826,16 +826,15 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         Bounds meshBounds =
             mesh.bounds;
 
-        BoxCollider pieceCollider =
-            pieceObject.AddComponent<BoxCollider>();
+        CapsuleCollider pieceCollider =
+            pieceObject.AddComponent<CapsuleCollider>();
 
-        // Mesh.boundsはMesh自身のローカル空間なので、
-        // 同じGameObject上のBoxColliderへそのまま対応付けられる。
-        pieceCollider.center =
-            meshBounds.center;
-
-        pieceCollider.size =
-            meshBounds.size;
+        // Mesh.boundsとColliderは同じローカル空間を使う。
+        // 分割片ごとに形状が異なるため、最長軸をカプセルの長辺へ合わせて
+        // BoxColliderの平らな底面で直立し続けやすい状態を避ける。
+        ConfigureCapsuleColliderFromBounds(
+            pieceCollider,
+            meshBounds);
 
         pieceCollider.isTrigger =
             false;
@@ -851,8 +850,26 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         pieceRigidbody.isKinematic =
             false;
 
-        // 横スクロールのゲームプレイ平面から物理衝突で逸脱しないよう、
-        // ワールドZ位置を固定する。切断片の見た目上の回転はZ軸だけ許可する。
+        // Rotation Constraintsはワールド空間ではなく慣性空間に適用される。
+        // Collider由来の慣性テンソル値は維持しつつ、慣性空間の軸だけを
+        // 生成時点のワールド軸へ揃え、画面に垂直なワールドZだけを回転可能にする。
+        pieceRigidbody.ResetInertiaTensor();
+
+        Vector3 calculatedInertiaTensor =
+            pieceRigidbody.inertiaTensor;
+
+        pieceRigidbody.automaticInertiaTensor =
+            false;
+
+        pieceRigidbody.inertiaTensor =
+            calculatedInertiaTensor;
+
+        pieceRigidbody.inertiaTensorRotation =
+            Quaternion.Inverse(pieceRigidbody.rotation);
+
+        // 位置Constraintはワールド空間なので、奥行き方向のZ位置固定はそのまま使う。
+        // 上で慣性軸をワールド軸へ揃えているため、X/Y回転固定後も
+        // EnemyCutPieceBurstが与えるワールドZ軸回転は許可される。
         pieceRigidbody.constraints =
             RigidbodyConstraints.FreezePositionZ |
             RigidbodyConstraints.FreezeRotationX |
@@ -875,6 +892,82 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             $"SourceWorldBoundsSize={FormatVector3(sourceRenderer.bounds.size)}");
 
         return pieceObject;
+    }
+
+    /// <summary>
+    /// 分割メッシュのローカルBoundsを単一のCapsuleColliderで近似する。
+    /// </summary>
+    /// <remarks>
+    /// 特定モデルのローカル軸を前提にせず、Boundsの最長軸をカプセルの長辺にする。
+    /// これにより、元Rendererの回転を引き継ぐ分割片でもColliderの向きを合わせやすくする。
+    /// </remarks>
+    private static void ConfigureCapsuleColliderFromBounds(
+        CapsuleCollider capsuleCollider,
+        Bounds meshBounds)
+    {
+        Vector3 size =
+            meshBounds.size;
+
+        int direction =
+            GetLongestBoundsAxis(size);
+
+        float height;
+        float transverseSizeA;
+        float transverseSizeB;
+
+        switch (direction)
+        {
+            case 0:
+                height = size.x;
+                transverseSizeA = size.y;
+                transverseSizeB = size.z;
+                break;
+
+            case 1:
+                height = size.y;
+                transverseSizeA = size.x;
+                transverseSizeB = size.z;
+                break;
+
+            default:
+                height = size.z;
+                transverseSizeA = size.x;
+                transverseSizeB = size.y;
+                break;
+        }
+
+        float radius =
+            Mathf.Max(transverseSizeA, transverseSizeB) * 0.5f;
+
+        capsuleCollider.center =
+            meshBounds.center;
+
+        capsuleCollider.direction =
+            direction;
+
+        capsuleCollider.radius =
+            radius;
+
+        // Capsuleの全高が直径未満にならないよう保証する。
+        capsuleCollider.height =
+            Mathf.Max(height, radius * 2f);
+    }
+
+    private static int GetLongestBoundsAxis(
+        Vector3 size)
+    {
+        if (size.x >= size.y &&
+            size.x >= size.z)
+        {
+            return 0;
+        }
+
+        if (size.y >= size.z)
+        {
+            return 1;
+        }
+
+        return 2;
     }
 
     /// <summary>

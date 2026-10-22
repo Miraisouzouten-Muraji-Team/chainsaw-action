@@ -20,6 +20,7 @@ using UnityEngine.Serialization;
 [RequireComponent(typeof(EnemyHealth))]
 [RequireComponent(typeof(EnemyDataReference))]
 [RequireComponent(typeof(EnemyDamageFlash))]
+[RequireComponent(typeof(Rigidbody))]
 public class EnemyStateMachine : MonoBehaviour
 {
     [Header("索敵")]
@@ -63,6 +64,8 @@ public class EnemyStateMachine : MonoBehaviour
     private EnemyHealth enemyHealth;
     private EnemyDataReference enemyDataReference;
     private EnemyDamageFlash enemyDamageFlash;
+    private Rigidbody enemyRigidbody;
+    private EnemyKnockbackMotor enemyKnockbackMotor;
 
     private EnemySearchState searchState;
     private EnemyAlertState alertState;
@@ -86,6 +89,9 @@ public class EnemyStateMachine : MonoBehaviour
 
         enemyDamageFlash =
             GetComponent<EnemyDamageFlash>();
+
+        enemyRigidbody =
+            GetComponent<Rigidbody>();
 
         try
         {
@@ -175,6 +181,11 @@ public class EnemyStateMachine : MonoBehaviour
             return;
         }
 
+        // Knockback開始時点の接地状態を正しく判定できるよう、
+        // Damage State中だけでなく常時Motorへ接触情報を渡す。
+        enemyKnockbackMotor?.HandleCollisionEnter(
+            collision);
+
         if (CurrentState
             is IEnemyCollisionEnterReceiver receiver)
         {
@@ -197,12 +208,33 @@ public class EnemyStateMachine : MonoBehaviour
             return;
         }
 
+        enemyKnockbackMotor?.HandleCollisionStay(
+            collision);
+
         if (CurrentState
             is IEnemyCollisionStayReceiver receiver)
         {
             receiver.HandleCollisionStay(
                 collision);
         }
+    }
+
+    /// <summary>
+    /// UnityからCollision終了通知を受信し、
+    /// ノックバック用の接地追跡へ通知する。
+    /// </summary>
+    private void OnCollisionExit(
+        Collision collision)
+    {
+        if (!isActiveAndEnabled ||
+            !isInitialized ||
+            enemyHealth.IsDead)
+        {
+            return;
+        }
+
+        enemyKnockbackMotor?.HandleCollisionExit(
+            collision);
     }
 
     private void OnDisable()
@@ -221,6 +253,10 @@ public class EnemyStateMachine : MonoBehaviour
                 : null;
 
         ExitCurrentState();
+
+        // Disable中はCollision Exitを受け取れない場合があるため、
+        // 再有効化時へ古い接地参照を持ち越さない。
+        enemyKnockbackMotor?.ClearGroundContactTracking();
     }
 
     /// <summary>
@@ -228,14 +264,18 @@ public class EnemyStateMachine : MonoBehaviour
     /// </summary>
     /// <remarks>
     /// 既にDamage State中の場合はStateを切り替えず、
-    /// やられ方向・やられ時間・点滅演出を今回の命中で更新する。
+    /// やられ方向・ノックバック・やられ時間・点滅演出を今回の命中で更新する。
     /// </remarks>
     /// <param name="hitSourceDirectionSign">
     /// X/Yゲームプレイ平面上で見た攻撃元の左右方向。
     /// -1はEnemyの左側、+1は右側。
     /// </param>
+    /// <param name="attackVector">
+    /// 今回命中したAttackDataのAttackVector。
+    /// </param>
     public void RequestDamageState(
-        float hitSourceDirectionSign)
+        float hitSourceDirectionSign,
+        Vector2 attackVector)
     {
         if (!isActiveAndEnabled ||
             !isInitialized ||
@@ -245,8 +285,9 @@ public class EnemyStateMachine : MonoBehaviour
             return;
         }
 
-        damageState.SetHitSourceDirectionSign(
-            hitSourceDirectionSign);
+        damageState.SetHitData(
+            hitSourceDirectionSign,
+            attackVector);
 
         if (ReferenceEquals(
                 CurrentState,
@@ -281,11 +322,18 @@ public class EnemyStateMachine : MonoBehaviour
         }
 
 
+        enemyKnockbackMotor =
+            new EnemyKnockbackMotor(
+                enemyRigidbody);
+
         damageState =
             new EnemyDamageState(
                 enemyDamageFlash,
+                enemyKnockbackMotor,
                 visualRoot,
                 enemyData.HitTiltDuration,
+                enemyData.HitTiltRecoveryDuration,
+                enemyData.HitTiltRecoveryGroundDistance,
                 enemyData.HitTiltAngle,
                 RequestDamageRecovery);
 

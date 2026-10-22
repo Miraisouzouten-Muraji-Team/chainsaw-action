@@ -66,6 +66,9 @@ public sealed class StandardEnemyDeathStrategy :
     private EnemyMeshCutter
         enemyMeshCutter;
 
+    private EnemyCutPieceBurst
+        enemyCutPieceBurst;
+
     private EnemyCutPieceShrink
         enemyCutPieceShrink;
 
@@ -101,6 +104,10 @@ public sealed class StandardEnemyDeathStrategy :
             enemyObject.GetComponent<
                 EnemyMeshCutter>();
 
+        enemyCutPieceBurst =
+            enemyObject.GetComponent<
+                EnemyCutPieceBurst>();
+
         enemyCutPieceShrink =
             enemyObject.GetComponent<
                 EnemyCutPieceShrink>();
@@ -128,6 +135,15 @@ public sealed class StandardEnemyDeathStrategy :
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
                 $"{nameof(EnemyMeshCutter)}が見つかりません。" +
                 "既存のMesh分割死亡演出へのフォールバックは実行されません。",
+                enemyObject);
+        }
+
+        if (enemyCutPieceBurst == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: " +
+                $"{nameof(EnemyCutPieceBurst)}が見つかりません。" +
+                "通常攻撃Mesh分割後の吹き飛ばしは実行されません。",
                 enemyObject);
         }
 
@@ -437,7 +453,7 @@ public sealed class StandardEnemyDeathStrategy :
 
         LogMeshCutDiagnostic(
             "Death-06 CutterResult",
-            "EnemyMeshCutter.TryCutが成功しました。Shrink開始へ進みます。");
+            "EnemyMeshCutter.TryCutが成功しました。切断片Effects開始へ進みます。");
 
         TryBeginCutPieceEffects();
     }
@@ -1144,7 +1160,7 @@ public sealed class StandardEnemyDeathStrategy :
 
             LogMeshCutDiagnosticWarning(
                 "Death-07 PieceEffects",
-                "TryGetCutPieceTransforms=falseのためShrinkを開始できません。");
+                "TryGetCutPieceTransforms=falseのため切断片Effectsを開始できません。");
 
             return;
         }
@@ -1153,14 +1169,31 @@ public sealed class StandardEnemyDeathStrategy :
             "Death-07 PieceEffects",
             $"切断片を{cutPieceTransforms.Count}個取得しました。");
 
-        // 分割片にはそれぞれRigidbodyが付与されているため、
-        // Transform直接移動による旧Burstは開始しない。
-        // 独立した腕なども各自のCollider/Rigidbodyで物理シミュレーションされる。
+        if (enemyCutPieceBurst == null)
+        {
+            LogMeshCutDiagnosticWarning(
+                "Death-08 Burst",
+                $"{nameof(EnemyCutPieceBurst)}がないため吹き飛ばしは開始されません。");
+        }
+        else
+        {
+            bool burstStarted =
+                enemyCutPieceBurst.BeginBurst(
+                    cutPieceTransforms,
+                    enemyAttackHitReceiver
+                        .LastResolvedKnockbackVelocity);
+
+            LogMeshCutDiagnostic(
+                "Death-08 Burst",
+                $"BeginBurst result={burstStarted}, " +
+                $"PieceCount={cutPieceTransforms.Count}, " +
+                $"ResolvedKnockbackVelocity={enemyAttackHitReceiver.LastResolvedKnockbackVelocity}");
+        }
 
         if (enemyCutPieceShrink == null)
         {
             LogMeshCutDiagnosticWarning(
-                "Death-08 Shrink",
+                "Death-09 Shrink",
                 $"{nameof(EnemyCutPieceShrink)}がないため縮小処理は開始されません。");
             return;
         }
@@ -1172,7 +1205,7 @@ public sealed class StandardEnemyDeathStrategy :
                 enemyData.DeathShrinkDuration);
 
         LogMeshCutDiagnostic(
-            "Death-08 Shrink",
+            "Death-09 Shrink",
             $"BeginShrink result={shrinkStarted}, " +
             $"PieceCount={cutPieceTransforms.Count}, " +
             $"IsShrinkActive={enemyCutPieceShrink.IsShrinkActive}, " +

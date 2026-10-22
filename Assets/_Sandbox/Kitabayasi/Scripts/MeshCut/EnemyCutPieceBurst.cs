@@ -1,15 +1,14 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Enemyのメッシュ分割後に生成された2つの切断片を、
-/// 互いに離れる方向へ吹き飛ばす。
+/// Enemyのメッシュ分割後に生成された全切断片へ、
+/// 死亡させた攻撃のノックバック方向を使って物理的な初速と回転を与える。
 /// </summary>
 /// <remarks>
-/// Meshの分割、死亡判定、State遷移、
-/// Enemy本体の破棄は担当しない。
-///
-/// 現段階では分割状態を視認できることを目的として、
-/// Rigidbodyを使用せずTransformを直接移動させる。
+/// 全切断片は同じゲームプレイ平面上の方向へ飛ばす。
+/// 飛散速度と回転速度は現在は全切断片で共通値を使用する。
+/// Mesh分割、Rigidbody生成、死亡判定、State遷移、縮小、Enemy本体の破棄は担当しない。
 /// </remarks>
 public sealed class EnemyCutPieceBurst : MonoBehaviour
 {
@@ -19,229 +18,146 @@ public sealed class EnemyCutPieceBurst : MonoBehaviour
     [Header("吹き飛ばし")]
 
     [Tooltip(
-        "2つの切断片を合わせて離す距離。"
-        + "各切断片はこの半分ずつ逆方向へ移動する。")]
+        "死亡させた攻撃のノックバック方向へ与える初速。" +
+        "現在は全切断片で同じ値を使用する。")]
     [SerializeField]
     [Min(0f)]
-    private float burstDistance = 1.5f;
+    private float burstSpeed = 8f;
 
     [Tooltip(
-        "切断片が指定距離まで移動する時間。"
-        + "0の場合は即座に移動する。")]
+        "全切断片へ与えるZ軸回転速度（度/秒）。" +
+        "現在は全切断片で同じ値を使用する。")]
     [SerializeField]
     [Min(0f)]
-    private float burstDuration = 0.2f;
-
-    private Transform firstPieceTransform;
-    private Transform secondPieceTransform;
-
-    private Vector3 firstPieceStartPosition;
-    private Vector3 secondPieceStartPosition;
-
-    private Vector3 burstDirection;
-
-    private float elapsedTime;
-
-    public bool IsBursting { get; private set; }
-
-    private void Awake()
-    {
-        // 吹き飛ばし開始までは毎フレーム処理を行わない。
-        enabled = false;
-    }
+    private float rotationSpeedDegreesPerSecond = 360f;
 
     /// <summary>
-    /// 指定された2つの切断片の吹き飛ばしを開始する。
+    /// 指定された全切断片を、死亡攻撃の実ノックバック方向へ吹き飛ばす。
     /// </summary>
+    /// <param name="cutPieces">
+    /// EnemyMeshCutterが今回のMesh分割で生成した全切断片。
+    /// </param>
+    /// <param name="resolvedKnockbackVelocity">
+    /// 攻撃元の左右判定まで反映済みのX/Yノックバック初速度。
+    /// 強さは使用せず、吹き飛ばす方向だけに使用する。
+    /// </param>
     public bool BeginBurst(
-        Transform firstPiece,
-        Transform secondPiece)
+        IReadOnlyList<Transform> cutPieces,
+        Vector2 resolvedKnockbackVelocity)
     {
-        if (firstPiece == null ||
-            secondPiece == null)
+        if (cutPieces == null ||
+            cutPieces.Count == 0)
         {
             Debug.LogWarning(
-                $"{nameof(EnemyCutPieceBurst)}: "
-                + "吹き飛ばす切断片が設定されていません。",
+                $"{nameof(EnemyCutPieceBurst)}: " +
+                "吹き飛ばす切断片がありません。",
                 this);
 
             return false;
         }
 
-        Renderer firstRenderer =
-            firstPiece.GetComponent<Renderer>();
+        Vector3 burstDirection =
+            new Vector3(
+                resolvedKnockbackVelocity.x,
+                resolvedKnockbackVelocity.y,
+                0f);
 
-        Renderer secondRenderer =
-            secondPiece.GetComponent<Renderer>();
-
-        if (firstRenderer == null ||
-            secondRenderer == null)
-        {
-            Debug.LogWarning(
-                $"{nameof(EnemyCutPieceBurst)}: "
-                + "切断片にRendererがありません。"
-                + "吹き飛ばし方向を決定できません。",
-                this);
-
-            return false;
-        }
-
-        StopBurst();
-
-        Vector3 direction =
-            firstRenderer.bounds.center -
-            secondRenderer.bounds.center;
-
-        // 現在のゲームプレイ平面はX/Yなので、
-        // 確認用の吹き飛ばしでは奥行き方向へ移動させない。
-        direction.z = 0f;
-
-        if (direction.sqrMagnitude <=
+        if (burstDirection.sqrMagnitude <=
             DIRECTION_EPSILON_SQR)
         {
-            // X/Y平面上で中心位置がほぼ一致する場合でも、
-            // 分割状態を確認できるよう上下方向へ離す。
-            direction =
-                Vector3.up;
+            Debug.LogWarning(
+                $"{nameof(EnemyCutPieceBurst)}: " +
+                "死亡攻撃のノックバックベクトルが0のため、" +
+                "切断片の吹き飛ばし方向を決定できません。",
+                this);
+
+            return false;
         }
-        else
+
+        burstDirection.Normalize();
+
+        Vector3 velocityChange =
+            burstDirection * burstSpeed;
+
+        // Rigidbody.angularVelocityはrad/sなので、
+        // Inspectorでは調整しやすい度/秒で持ち、物理へ渡す直前に変換する。
+        Vector3 angularVelocityChange =
+            Vector3.forward *
+            (rotationSpeedDegreesPerSecond * Mathf.Deg2Rad);
+
+        int appliedPieceCount = 0;
+
+        for (int i = 0;
+             i < cutPieces.Count;
+             i++)
         {
-            direction.Normalize();
+            Transform cutPiece =
+                cutPieces[i];
+
+            if (cutPiece == null)
+            {
+                continue;
+            }
+
+            Rigidbody pieceRigidbody =
+                cutPiece.GetComponent<Rigidbody>();
+
+            if (pieceRigidbody == null ||
+                pieceRigidbody.isKinematic)
+            {
+                Debug.LogWarning(
+                    $"{nameof(EnemyCutPieceBurst)}: " +
+                    $"切断片 '{cutPiece.name}' に有効なRigidbodyがないため、" +
+                    "吹き飛ばしを適用できません。",
+                    cutPiece);
+
+                continue;
+            }
+
+            // 生成直後の各切断片へ1回だけ速度変化を与え、
+            // 以降の重力・衝突・減衰はUnity Physicsへ任せる。
+            if (burstSpeed > 0f)
+            {
+                pieceRigidbody.AddForce(
+                    velocityChange,
+                    ForceMode.VelocityChange);
+            }
+
+            if (rotationSpeedDegreesPerSecond > 0f)
+            {
+                pieceRigidbody.AddTorque(
+                    angularVelocityChange,
+                    ForceMode.VelocityChange);
+            }
+
+            appliedPieceCount++;
         }
 
-        firstPieceTransform =
-            firstPiece;
-
-        secondPieceTransform =
-            secondPiece;
-
-        firstPieceStartPosition =
-            firstPieceTransform.position;
-
-        secondPieceStartPosition =
-            secondPieceTransform.position;
-
-        burstDirection =
-            direction;
-
-        elapsedTime = 0f;
-        IsBursting = true;
-
-        if (burstDistance <= 0f ||
-            burstDuration <= 0f)
+        if (appliedPieceCount == 0)
         {
-            ApplyBurstPosition(1f);
-            CompleteBurst();
+            Debug.LogWarning(
+                $"{nameof(EnemyCutPieceBurst)}: " +
+                "吹き飛ばしを適用できる切断片がありませんでした。",
+                this);
 
-            return true;
+            return false;
         }
-
-        enabled = true;
-
-        ApplyBurstPosition(0f);
 
         return true;
-    }
-
-    private void Update()
-    {
-        if (!IsBursting)
-        {
-            return;
-        }
-
-        elapsedTime +=
-            Time.deltaTime;
-
-        float progress =
-            Mathf.Clamp01(
-                elapsedTime /
-                burstDuration);
-
-        ApplyBurstPosition(
-            progress);
-
-        if (progress >= 1f)
-        {
-            CompleteBurst();
-        }
-    }
-
-    /// <summary>
-    /// 現在の吹き飛ばしを停止する。
-    /// </summary>
-    public void StopBurst()
-    {
-        IsBursting = false;
-
-        firstPieceTransform = null;
-        secondPieceTransform = null;
-
-        burstDirection =
-            Vector3.zero;
-
-        elapsedTime = 0f;
-
-        enabled = false;
-    }
-
-    /// <summary>
-    /// 進行度に応じた切断片の位置を設定する。
-    /// </summary>
-    private void ApplyBurstPosition(
-        float progress)
-    {
-        if (firstPieceTransform == null ||
-            secondPieceTransform == null)
-        {
-            return;
-        }
-
-        float pieceDistance =
-            burstDistance *
-            0.5f;
-
-        Vector3 offset =
-            burstDirection *
-            pieceDistance *
-            progress;
-
-        firstPieceTransform.position =
-            firstPieceStartPosition +
-            offset;
-
-        secondPieceTransform.position =
-            secondPieceStartPosition -
-            offset;
-    }
-
-    private void CompleteBurst()
-    {
-        IsBursting = false;
-
-        firstPieceTransform = null;
-        secondPieceTransform = null;
-
-        burstDirection =
-            Vector3.zero;
-
-        elapsedTime = 0f;
-
-        enabled = false;
     }
 
 #if UNITY_EDITOR
     private void OnValidate()
     {
-        burstDistance =
+        burstSpeed =
             Mathf.Max(
                 0f,
-                burstDistance);
+                burstSpeed);
 
-        burstDuration =
+        rotationSpeedDegreesPerSecond =
             Mathf.Max(
                 0f,
-                burstDuration);
+                rotationSpeedDegreesPerSecond);
     }
 #endif
 }

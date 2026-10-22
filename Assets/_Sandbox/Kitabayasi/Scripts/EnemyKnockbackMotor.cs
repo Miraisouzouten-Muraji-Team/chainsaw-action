@@ -86,6 +86,31 @@ public sealed class EnemyKnockbackMotor
     }
 
     /// <summary>
+    /// AttackVectorと攻撃元の左右位置から、Enemyへ実際に適用するX/Y初速度を求める。
+    /// </summary>
+    /// <remarks>
+    /// 通常ノックバックと死亡時の分割片吹き飛ばしで左右反転規則を共有し、
+    /// 同じ攻撃から異なる方向が算出されることを防ぐ。
+    /// </remarks>
+    public static Vector2 CalculateInitialKnockbackVelocity(
+        Vector2 attackVector,
+        float hitSourceDirectionSign)
+    {
+        float normalizedHitSourceDirectionSign =
+            hitSourceDirectionSign < 0f
+                ? -1f
+                : 1f;
+
+        float horizontalKnockback =
+            Mathf.Abs(attackVector.x) *
+            -normalizedHitSourceDirectionSign;
+
+        return new Vector2(
+            horizontalKnockback,
+            attackVector.y);
+    }
+
+    /// <summary>
     /// 現在位置から下方向へ、Enemy本体の下端を基準に指定距離以内へ
     /// 接地候補となる面があるか判定する。
     /// </summary>
@@ -188,19 +213,10 @@ public sealed class EnemyKnockbackMotor
         Vector2 attackVector,
         float hitSourceDirectionSign)
     {
-        float normalizedHitSourceDirectionSign =
-            hitSourceDirectionSign < 0f
-                ? -1f
-                : 1f;
-
-        float horizontalKnockback =
-            Mathf.Abs(attackVector.x) *
-            -normalizedHitSourceDirectionSign;
-
         Vector2 initialKnockbackVelocity =
-            new Vector2(
-                horizontalKnockback,
-                attackVector.y);
+            CalculateInitialKnockbackVelocity(
+                attackVector,
+                hitSourceDirectionSign);
 
         // Gravityを使用しない飛行Enemyでは「着地待ち」が成立しないため、
         // そのノックバックでは空中→着地を終了条件にしない。

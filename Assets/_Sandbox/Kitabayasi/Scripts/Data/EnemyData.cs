@@ -53,10 +53,20 @@ public class EnemyData : ScriptableObject
     [Min(0f)]
     private float damageFlashDuration = 0.1f;
 
-    [Tooltip("被ダメージ時の傾き継続時間。")]
+    [Tooltip("被ダメージStateの最低継続時間。")]
     [SerializeField]
     [Min(0f)]
     private float hitTiltDuration = 0.5f;
+
+    [Tooltip("着地直前に、被弾姿勢から通常姿勢へ戻る補間時間。")]
+    [SerializeField]
+    [Min(0f)]
+    private float hitTiltRecoveryDuration = 0.15f;
+
+    [Tooltip("空中ノックバック中、地面までこの距離以内に入ったら被弾姿勢の復帰を開始する。")]
+    [SerializeField]
+    [Min(0f)]
+    private float hitTiltRecoveryGroundDistance = 0.75f;
 
     [Tooltip("被ダメージ時のZ軸回転角度。方向は命中側から決定し、この値は角度の大きさとして使用する。")]
     [SerializeField]
@@ -94,6 +104,12 @@ public class EnemyData : ScriptableObject
 
     public float HitTiltDuration =>
         hitTiltDuration;
+
+    public float HitTiltRecoveryDuration =>
+        hitTiltRecoveryDuration;
+
+    public float HitTiltRecoveryGroundDistance =>
+        hitTiltRecoveryGroundDistance;
 
     public float HitTiltAngle =>
         hitTiltAngle;

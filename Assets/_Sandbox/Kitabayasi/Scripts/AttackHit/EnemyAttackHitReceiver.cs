@@ -125,7 +125,8 @@ public sealed class EnemyAttackHitReceiver :
             ResolveHitSourceDirectionSign();
 
         enemyStateMachine.RequestDamageState(
-            hitSourceDirectionSign);
+            hitSourceDirectionSign,
+            playerAttackData.attackVector);
     }
 
     /// <summary>

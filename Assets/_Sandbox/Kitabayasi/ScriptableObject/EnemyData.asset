@@ -12,13 +12,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 25d6fb1eb3f04ce438fb446bebe5411d, type: 3}
   m_Name: EnemyData
   m_EditorClassIdentifier: Assembly-CSharp::EnemyData
-  maxHealth: 100
+  maxHealth: 1
   attackPower: 0
   detectionRadius: 2
   alertDuration: 1
   alertContactDamagePercent: 60
   damageFlashDuration: 0.1
   hitTiltDuration: 0.5
+  hitTiltRecoveryDuration: 0.15
+  hitTiltRecoveryGroundDistance: 0.75
   hitTiltAngle: -15
   deathShrinkDelay: 3
   deathShrinkDuration: 3

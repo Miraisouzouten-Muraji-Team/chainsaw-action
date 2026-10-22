@@ -16,6 +16,9 @@ public class ChainsawAccelerator : MonoBehaviour
     [Tooltip("回転速度、食い込み時の上限、加減速曲線、SEピッチをまとめた設定データ")]
     [SerializeField] private AccelerationParameter accelerationParameter;
 
+    [SerializeField, Min(0.01f)]
+    private float diggingDecelerationTime = 0.3f;
+
     private float minSpeed
     {
         get => accelerationParameter.minSpeed;
@@ -93,6 +96,12 @@ public class ChainsawAccelerator : MonoBehaviour
 
     private TransitionMode transitionMode;
 
+    private bool isBonusDecelerating;
+    private float bonusDecelerationElapsed;
+    private float bonusDecelerationDuration;
+    private float bonusDecelerationStartSpeed;
+    private float bonusDecelerationTargetSpeed;
+
     // SOの割り当てを確認してから、従来通り初期回転数を設定する。
     private void Awake()
     {
@@ -112,6 +121,13 @@ public class ChainsawAccelerator : MonoBehaviour
     {
         if (deltaTime <= 0f)
         {
+            return;
+        }
+
+        // 専用減速中は通常の加減速を重ねない。進行は食い込み側から行う。
+        if (isBonusDecelerating)
+        {
+            wasDigging = isDigging;
             return;
         }
 
@@ -172,9 +188,13 @@ public class ChainsawAccelerator : MonoBehaviour
             transitionMode == TransitionMode.Accelerating;
 
         float duration = Mathf.Max(
-            MIN_TRANSITION_DURATION,
-            increasing ? accelerationTime : decelerationTime
-        );
+    MIN_TRANSITION_DURATION,
+    increasing
+        ? accelerationTime
+        : transitionMode == TransitionMode.SettlingToDiggingLimit
+            ? diggingDecelerationTime
+            : decelerationTime
+);
 
         AnimationCurve curve = increasing
             ? accelerationCurve
@@ -222,6 +242,61 @@ public class ChainsawAccelerator : MonoBehaviour
             : Mathf.Clamp01(curve.Evaluate(time));
     }
 
+    // 現在値から指定値へ減速する準備を行う。現在値が低い場合は増やさない。
+    public void BeginBonusDeceleration(float targetSpeed, float duration)
+    {
+        if (!isActiveAndEnabled || accelerationParameter == null)
+        {
+            return;
+        }
+
+        bonusDecelerationStartSpeed = CurrentSpeed;
+        bonusDecelerationTargetSpeed = Mathf.Min(CurrentSpeed, Mathf.Max(0f, targetSpeed));
+        bonusDecelerationDuration = Mathf.Max(MIN_TRANSITION_DURATION, duration);
+        bonusDecelerationElapsed = 0f;
+        isBonusDecelerating = CurrentSpeed > bonusDecelerationTargetSpeed;
+        transitionInitialized = false;
+    }
+
+    // 食い込み側のFixedUpdate経由で時間を進め、指定秒数で滑らかに減速する。
+    public void TickBonusDeceleration(float deltaTime)
+    {
+        if (!isBonusDecelerating || deltaTime <= 0f)
+        {
+            return;
+        }
+
+        bonusDecelerationElapsed = Mathf.Min(
+            bonusDecelerationDuration, bonusDecelerationElapsed + deltaTime);
+        float progress = bonusDecelerationElapsed / bonusDecelerationDuration;
+        float blend = Mathf.SmoothStep(0f, 1f, progress);
+        float speed = Mathf.Lerp(
+            bonusDecelerationStartSpeed, bonusDecelerationTargetSpeed, blend);
+
+        // 攻撃などによる別の消費があっても、その分を回復させない。
+        CurrentSpeed = Mathf.Min(CurrentSpeed, speed);
+
+        if (bonusDecelerationElapsed >= bonusDecelerationDuration)
+        {
+            CancelBonusDeceleration();
+        }
+    }
+
+    // 専用減速を終了し、次の通常更新で現在値から加減速を再計算する。
+    public void CancelBonusDeceleration()
+    {
+        isBonusDecelerating = false;
+        bonusDecelerationElapsed = 0f;
+        transitionInitialized = false;
+    }
+
+    // 無効化・再有効化をまたいで専用減速が残らないようにする。
+    private void OnDisable()
+    {
+        CancelBonusDeceleration();
+    }
+
+    // 指定量を消費する。残量不足の場合は消費せず失敗を返す。
     public bool TryConsume(float amount)
     {
         amount = Mathf.Max(0f, amount);

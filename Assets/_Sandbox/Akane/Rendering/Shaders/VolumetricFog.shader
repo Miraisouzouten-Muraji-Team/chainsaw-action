@@ -223,7 +223,6 @@ Shader "Custom/VolumetricFog"
                     / pow(denominator, 1.5);
             }
 
-            
             // Depth Bufferの値からSkyを判定する。
             // Reversed Zと通常のZ Bufferの両方に対応する。
             bool IsSkyDepth(float rawDepth)

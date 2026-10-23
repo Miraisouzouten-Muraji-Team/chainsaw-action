@@ -110905,6 +110905,11 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1214011989}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!4 &1217448208 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 7810380243804671968, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1227616715
 GameObject:
   m_ObjectHideFlags: 0
@@ -127621,6 +127626,26 @@ PrefabInstance:
     - target: {fileID: 8819875367603587682, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Center.y
       value: -21.477894
+      objectReference: {fileID: 0}
+    - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: hurtDuration
+      value: 0.4
+      objectReference: {fileID: 0}
+    - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: flashInterval
+      value: 0.075
+      objectReference: {fileID: 0}
+    - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: flashMaterial
+      value: 
+      objectReference: {fileID: 2100000, guid: e7276798a66027b429efebfb3e455121, type: 2}
+    - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: flashModelRoot
+      value: 
+      objectReference: {fileID: 1217448208}
+    - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: damageInvulnerabilityDuration
+      value: 0.25
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects:

@@ -167615,6 +167615,11 @@ ParticleSystem:
         m_PostInfinity: 2
         m_RotationOrder: 4
     vectorLabel1_3: W
+--- !u!4 &1341389786 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2292058601784843701, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1638604907}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1341550073
 GameObject:
   m_ObjectHideFlags: 0
@@ -188808,7 +188813,7 @@ MeshRenderer:
   m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: fd9c9ee73e2d66143b28564b9e869f9a, type: 2}
+  - {fileID: 2100000, guid: ed011486abd015042930cfc06f735d4c, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -194665,6 +194670,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyHealthBarTarget
   healthBarAnchor: {fileID: 622990553}
+  defaultPositionOffset: {x: 0, y: 0, z: 0}
 --- !u!1 &1487383721
 GameObject:
   m_ObjectHideFlags: 0
@@ -195177,11 +195183,6 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1534480552}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
---- !u!224 &1544278450 stripped
-RectTransform:
-  m_CorrespondingSourceObject: {fileID: 1396881970845061301, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
-  m_PrefabInstance: {fileID: 1638604907}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1544946817
 GameObject:
   m_ObjectHideFlags: 0
@@ -206530,7 +206531,7 @@ PrefabInstance:
     - {fileID: 8177089103862375041, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
     - {fileID: 3052411843547816630, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
     m_AddedGameObjects:
-    - targetCorrespondingSourceObject: {fileID: 1396881970845061301, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+    - targetCorrespondingSourceObject: {fileID: 2292058601784843701, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       insertIndex: -1
       addedObject: {fileID: 2004721916}
     m_AddedComponents: []
@@ -234037,7 +234038,7 @@ RectTransform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1544278450}
+  m_Father: {fileID: 1341389786}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}

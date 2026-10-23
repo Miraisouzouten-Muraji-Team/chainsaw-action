@@ -207,7 +207,7 @@ public sealed class MeshConnectedComponentSplitter
     /// 同一位置とみなせる頂点へ共通IDを割り当てる。
     /// </summary>
     /// <remarks>
-    /// ChainsawMeshCutProcessorの出力はTriangleごとに頂点が複製されるため、
+    /// MeshPlaneSplitterの出力はTriangleごとに頂点が複製されるため、
     /// index一致では連結を判定できない。隣接セルも確認して許容距離内の頂点だけをまとめる。
     /// </remarks>
     private static int[] BuildConnectedVertexIds(

@@ -6,14 +6,11 @@ using UnityEngine;
 /// 通常Enemyで共通して使用する死亡処理を担当する。
 /// </summary>
 /// <remarks>
-/// 死亡原因となった攻撃がEnemyMeshCutDeathEffectのTriggerAttackDataと一致する場合は、
-/// 可変数Fragmentへ分割して吹き飛ばすMeshCut死亡演出を優先する。
-/// 食い込み用MeshCut死亡演出の対象外で、かつ死亡原因AttackDataに対応する
-/// ChainsawAttackTrajectoryProfileが設定されている場合は、
-/// Bake済み軌跡をWorld空間へ復元してEnemyMeshCutterによるMesh分割死亡演出を行う。
+/// 死亡原因AttackDataに対応するChainsawAttackTrajectoryProfileが設定されている場合は、
+/// Bake済み軌跡をWorld空間へ復元してEnemyMeshCutterによる通常攻撃用Mesh分割死亡演出を行う。
 ///
 /// 死亡開始時にはEnemy本体と子階層に存在していたColliderを無効化する。
-/// Mesh分割アルゴリズム、Fragmentの具体的な物理挙動、State遷移、HP管理、
+/// Mesh分割アルゴリズム、切断片の具体的な物理挙動、State遷移、HP管理、
 /// Enemy本体の最終破棄は担当しない。
 /// </remarks>
 [Serializable]
@@ -60,9 +57,6 @@ public sealed class StandardEnemyDeathStrategy :
     private EnemyAttackHitReceiver
         enemyAttackHitReceiver;
 
-    private EnemyMeshCutDeathEffect
-        enemyMeshCutDeathEffect;
-
     private EnemyMeshCutter
         enemyMeshCutter;
 
@@ -75,7 +69,6 @@ public sealed class StandardEnemyDeathStrategy :
     private Collider[] enemyColliders;
 
     private bool isDeathActive;
-    private bool isMeshCutDeathEffectActive;
 
     public void Initialize(
         EnemyData enemyData,
@@ -95,10 +88,6 @@ public sealed class StandardEnemyDeathStrategy :
         enemyAttackHitReceiver =
             enemyObject.GetComponent<
                 EnemyAttackHitReceiver>();
-
-        enemyMeshCutDeathEffect =
-            enemyObject.GetComponent<
-                EnemyMeshCutDeathEffect>();
 
         enemyMeshCutter =
             enemyObject.GetComponent<
@@ -134,7 +123,7 @@ public sealed class StandardEnemyDeathStrategy :
             Debug.LogWarning(
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
                 $"{nameof(EnemyMeshCutter)}が見つかりません。" +
-                "既存のMesh分割死亡演出へのフォールバックは実行されません。",
+                "通常攻撃Mesh分割死亡演出は実行されません。",
                 enemyObject);
         }
 
@@ -152,7 +141,7 @@ public sealed class StandardEnemyDeathStrategy :
             Debug.LogWarning(
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
                 $"{nameof(EnemyCutPieceShrink)}が見つかりません。" +
-                "既存メッシュ分割後の縮小は実行されません。",
+                "通常攻撃Mesh分割後の縮小は実行されません。",
                 enemyObject);
         }
     }
@@ -161,16 +150,7 @@ public sealed class StandardEnemyDeathStrategy :
     {
         isDeathActive = true;
 
-        isMeshCutDeathEffectActive =
-            false;
-
         DisableEnemyColliders();
-
-        if (TryBeginMeshCutDeathEffect())
-        {
-            return;
-        }
-
         TryCutDeathMesh();
     }
 
@@ -179,13 +159,6 @@ public sealed class StandardEnemyDeathStrategy :
         if (!isDeathActive)
         {
             return false;
-        }
-
-        if (isMeshCutDeathEffectActive)
-        {
-            return
-                enemyMeshCutDeathEffect == null ||
-                !enemyMeshCutDeathEffect.IsPlaying;
         }
 
         bool hasCompletedShrink =
@@ -199,18 +172,6 @@ public sealed class StandardEnemyDeathStrategy :
     public void EndDeath()
     {
         isDeathActive = false;
-
-        if (isMeshCutDeathEffectActive)
-        {
-            enemyMeshCutDeathEffect
-                ?.StopMeshCut();
-
-            isMeshCutDeathEffectActive =
-                false;
-
-            return;
-        }
-
         enemyCutPieceShrink?.StopShrink();
     }
 
@@ -234,62 +195,8 @@ public sealed class StandardEnemyDeathStrategy :
     }
 
     /// <summary>
-    /// 死亡原因のAttackDataが設定済みTriggerAttackDataと一致する場合だけ
-    /// MeshCut死亡演出を開始する。
-    /// </summary>
-    /// <remarks>
-    /// EnemyAttackHitReceiverはTakeDamageより先にLastPlayerAttackHitDataを保存するため、
-    /// HP0のDied通知から即座にDeath Stateへ入っても死亡原因となった攻撃を参照できる。
-    /// </remarks>
-    private bool TryBeginMeshCutDeathEffect()
-    {
-        if (enemyAttackHitReceiver == null ||
-            enemyMeshCutDeathEffect == null)
-        {
-            return false;
-        }
-
-        PlayerAttackHitData
-            lastPlayerAttackHitData =
-                enemyAttackHitReceiver
-                    .LastPlayerAttackHitData;
-
-        if (lastPlayerAttackHitData == null)
-        {
-            return false;
-        }
-
-        AttackData triggerAttackData =
-            enemyMeshCutDeathEffect
-                .TriggerAttackData;
-
-        if (triggerAttackData == null ||
-            lastPlayerAttackHitData.AttackData !=
-            triggerAttackData)
-        {
-            return false;
-        }
-
-        if (!enemyMeshCutDeathEffect
-                .TryBeginMeshCut())
-        {
-            Debug.LogWarning(
-                $"{nameof(StandardEnemyDeathStrategy)}: " +
-                "MeshCut死亡演出を開始できなかったため、" +
-                "既存のMesh分割死亡演出へフォールバックします。");
-
-            return false;
-        }
-
-        isMeshCutDeathEffectActive =
-            true;
-
-        return true;
-    }
-
-    /// <summary>
     /// 死亡原因のAttackDataに対応するBake済みチェンソー軌跡をWorld空間へ復元し、
-    /// 既存のMesh分割死亡演出を開始する。
+    /// 通常攻撃用のMesh分割死亡演出を開始する。
     /// </summary>
     private void TryCutDeathMesh()
     {

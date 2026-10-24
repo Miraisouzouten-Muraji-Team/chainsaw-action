@@ -76338,6 +76338,70 @@ ParticleSystem:
         m_PostInfinity: 2
         m_RotationOrder: 4
     vectorLabel1_3: W
+--- !u!1 &803453946
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 803453947}
+  - component: {fileID: 803453949}
+  - component: {fileID: 803453948}
+  m_Layer: 0
+  m_Name: PlayerDamageScreenEffect
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &803453947
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 803453946}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1217448208}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &803453948
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 803453946}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 776dc5136991bf548905828379b952e4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerDamageScreenEffect
+  screenData: {fileID: 11400000, guid: 40da88de0547b0c459193a624d717edf, type: 2}
+  volumePriority: 100
+--- !u!114 &803453949
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 803453946}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 172515602e62fb746b5d573b38a5fe58, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Core.Runtime::UnityEngine.Rendering.Volume
+  m_IsGlobal: 1
+  priority: 0
+  blendDistance: 0
+  weight: 1
+  sharedProfile: {fileID: 11400000, guid: 94b7990be548e6f43bd9bcf7cdebcd0c, type: 2}
 --- !u!1 &813824891
 GameObject:
   m_ObjectHideFlags: 0
@@ -127520,6 +127584,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 11400000, guid: cc70e515e00be2641893e60bf8efc78e, type: 2}
     - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: damageScreenEffect
+      value: 
+      objectReference: {fileID: 803453948}
+    - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: damageInvulnerabilityDuration
       value: 1
       objectReference: {fileID: 0}
@@ -127541,6 +127609,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2292058601784843701, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1893948134}
+    - targetCorrespondingSourceObject: {fileID: 7810380243804671968, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 803453947}
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
 --- !u!1 &1357045557

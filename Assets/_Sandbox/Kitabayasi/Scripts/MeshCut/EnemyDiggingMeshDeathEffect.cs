@@ -608,12 +608,17 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         Bounds meshBounds =
             mesh.bounds;
 
-        CapsuleCollider pieceCollider =
-            pieceObject.AddComponent<CapsuleCollider>();
+        BoxCollider pieceCollider =
+            pieceObject.AddComponent<BoxCollider>();
 
-        ConfigureCapsuleColliderFromBounds(
-            pieceCollider,
-            meshBounds);
+        // Mesh.boundsとBoxColliderは同じローカル空間を使う。
+        // くい込み死亡Pieceは丸い端面で転がり続ける挙動を避けるため、
+        // 分割MeshのBoundsへそのまま合わせた箱形状で衝突させる。
+        pieceCollider.center =
+            meshBounds.center;
+
+        pieceCollider.size =
+            meshBounds.size;
 
         pieceCollider.isTrigger =
             false;
@@ -687,80 +692,6 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             calculatedMass,
             resolvedMinimumMass,
             resolvedMaximumMass);
-    }
-
-    private static void ConfigureCapsuleColliderFromBounds(
-        CapsuleCollider capsuleCollider,
-        Bounds meshBounds)
-    {
-        Vector3 size =
-            meshBounds.size;
-
-        int direction =
-            GetLongestBoundsAxis(
-                size);
-
-        float height;
-        float transverseSizeA;
-        float transverseSizeB;
-
-        switch (direction)
-        {
-            case 0:
-                height = size.x;
-                transverseSizeA = size.y;
-                transverseSizeB = size.z;
-                break;
-
-            case 1:
-                height = size.y;
-                transverseSizeA = size.x;
-                transverseSizeB = size.z;
-                break;
-
-            default:
-                height = size.z;
-                transverseSizeA = size.x;
-                transverseSizeB = size.y;
-                break;
-        }
-
-        float radius =
-            Mathf.Max(
-                transverseSizeA,
-                transverseSizeB) *
-            0.5f;
-
-        capsuleCollider.center =
-            meshBounds.center;
-
-        capsuleCollider.direction =
-            direction;
-
-        capsuleCollider.radius =
-            radius;
-
-        capsuleCollider.height =
-            Mathf.Max(
-                height,
-                radius * 2f);
-    }
-
-    private static int GetLongestBoundsAxis(
-        Vector3 size)
-    {
-        if (size.x >= size.y &&
-            size.x >= size.z)
-        {
-            return 0;
-        }
-
-        if (size.y >= size.z)
-        {
-            return 1;
-        }
-
-        return 2;
     }
 
     private static void CopyRendererSettings(

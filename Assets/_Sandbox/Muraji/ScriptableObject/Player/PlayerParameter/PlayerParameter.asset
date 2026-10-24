@@ -15,14 +15,15 @@ MonoBehaviour:
   moveSpeed: 11
   acceleration: 20
   deceleration: 30
-  moveDeadZone: 0.2
+  attackMoveSpeedMultiplier: 0
+  moveDeadZone: 0.3
   jumpForce: 35
   airJumpForce: 37.5
   coyoteTime: 0.1
   gravityScale: 8
   jumpStartGravityMultiplier: 0.7
-  maxFallGravityMultiplier: 2
-  fallGravityIncreaseTime: 0.35
+  maxFallGravityMultiplier: 1.75
+  fallGravityIncreaseTime: 0.9
   maxFallSpeed: 20
   groundRayLayers:
     serializedVersion: 2

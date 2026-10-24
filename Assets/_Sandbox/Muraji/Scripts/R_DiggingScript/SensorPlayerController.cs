@@ -318,8 +318,10 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
-        // 壁登り中も向きを固定し、逆入力で壁検出Rayが反対を向かないようにする。
-        if (chainsawDigging.Surface != ChainsawSurface.Floor &&
+        // 攻撃中は向きを固定し、左右入力による見た目と食い込み判定の反転を防ぐ。
+        // 壁登りを含む食い込み中の向き固定も維持する。
+        if (!IsAttacking &&
+            chainsawDigging.Surface != ChainsawSurface.Floor &&
             chainsawDigging.Surface != ChainsawSurface.Wall &&
             chainsawDigging.Surface != ChainsawSurface.Ceiling &&
             chainsawDigging.Surface != ChainsawSurface.Enemy &&
@@ -458,6 +460,12 @@ public class SensorPlayerController : MonoBehaviour
         bool isKnockbackActive =
             knockbackVelocity != 0f || knockbackHopPending;
 
+        // 攻撃中の横移動倍率を取得する。食い込みと押し戻しは既存の速度を優先する。
+        float attackMovementMultiplier =
+            IsAttacking && !chainsawDigging.IsDigging && !isKnockbackActive
+                ? Mathf.Clamp01(playerParameter.attackMoveSpeedMultiplier)
+                : 1f;
+
         // 押し戻し中は、引き継いだ速度や移動入力より押し戻し速度を優先する。
         if (knockbackVelocity != 0f)
         {
@@ -470,9 +478,10 @@ public class SensorPlayerController : MonoBehaviour
             );
         }
 
-        // 空中攻撃を理由に横速度をゼロへ上書きしない。
+        // 保持中の横速度は変更せず、実際に適用する速度へ攻撃中の倍率を掛ける。
+        // 空中攻撃でも元の速度を基準にするため、毎物理更新で倍率が累積しない。
         Vector3 velocity = playerRigidbody.linearVelocity;
-        velocity.x = currentSpeed;
+        velocity.x = currentSpeed * attackMovementMultiplier;
         if (chainsawDigging.TryTakeDash(out float power))
         {
             currentSpeed += facingDirection * power;
@@ -555,7 +564,7 @@ public class SensorPlayerController : MonoBehaviour
             ApplyJumpGravity(ref velocity, deltaTime);
         }
 
-        // 踏み込みは通常移動とは別に加算する。
+        // 踏み込みは通常移動とは別に、同じ攻撃中の倍率を掛けて加算する。
         if (isKnockbackActive ||
             isAirAttackCombo ||
             chainsawDigging.IsDigging)

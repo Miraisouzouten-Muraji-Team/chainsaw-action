@@ -253,7 +253,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
         return contact.Collider != null;
     }
 
-    // 床を検出した場合、または床食い込み継続中だけ、実際の支持面を共有する。
+    // 床候補・床食い込み継続中・未接触からの開始時に、実際の支持面を共有する。
     private void ApplyPlayerGroundSupport(
         ChainsawSurface currentSurface,
         ref SensorChainsawContact contact)
@@ -262,7 +262,8 @@ public class SensorChainsawContactDetector : MonoBehaviour
             playerController = ownerRoot.GetComponent<SensorPlayerController>();
 
         bool canReplaceFloor = contact.Surface == ChainsawSurface.Floor ||
-            (contact.Collider == null && currentSurface == ChainsawSurface.Floor);
+            (contact.Collider == null &&
+             (currentSurface == ChainsawSurface.Floor || currentSurface == ChainsawSurface.None));
 
         if (!canReplaceFloor || playerController == null ||
             !playerController.TryGetGroundSupport(out SensorChainsawContact ground) ||

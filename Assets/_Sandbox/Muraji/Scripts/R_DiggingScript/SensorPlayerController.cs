@@ -318,8 +318,10 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
-        // 壁登り中も向きを固定し、逆入力で壁検出Rayが反対を向かないようにする。
-        if (chainsawDigging.Surface != ChainsawSurface.Floor &&
+        // 攻撃中は向きを固定し、左右入力による見た目と食い込み判定の反転を防ぐ。
+        // 壁登りを含む食い込み中の向き固定も維持する。
+        if (!IsAttacking &&
+            chainsawDigging.Surface != ChainsawSurface.Floor &&
             chainsawDigging.Surface != ChainsawSurface.Wall &&
             chainsawDigging.Surface != ChainsawSurface.Ceiling &&
             chainsawDigging.Surface != ChainsawSurface.Enemy &&

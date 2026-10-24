@@ -74,6 +74,12 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     private readonly List<GameObject> pieceObjects =
         new List<GameObject>();
 
+    private readonly EnemyPlayerReference playerReference =
+        new EnemyPlayerReference();
+
+    private readonly List<Collider> playerColliders =
+        new List<Collider>();
+
     /// <summary>
     /// このEnemyについて、分割Piece生成と元Rendererの非表示まで完了しているかを示す。
     /// </summary>
@@ -138,6 +144,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
                 LogFailure(failureReason);
                 return false;
             }
+
+            ResolvePlayerCollidersForPieceCollision();
 
             if (!TryCreatePieceObjects(
                     splitPieceMeshes,
@@ -658,7 +666,55 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             RigidbodyConstraints.FreezeRotationX |
             RigidbodyConstraints.FreezeRotationY;
 
+        IgnorePlayerCollisions(
+            pieceCollider);
+
         return pieceObject;
+    }
+
+    /// <summary>
+    /// Player Tagから解決したPlayer階層のColliderを、今回生成する全Piece用に保持する。
+    /// </summary>
+    private void ResolvePlayerCollidersForPieceCollision()
+    {
+        playerColliders.Clear();
+
+        if (playerReference.TryGetPlayerColliders(
+                playerColliders))
+        {
+            return;
+        }
+
+        Debug.LogWarning(
+            $"{nameof(EnemyDiggingMeshDeathEffect)}: " +
+            "Player TagからPlayer Colliderを取得できませんでした。" +
+            "Piece生成は継続しますが、Playerとの衝突無効化は適用されません。",
+            this);
+    }
+
+    /// <summary>
+    /// Piece ColliderとPlayer階層の各Colliderの組み合わせだけ物理衝突を無効化する。
+    /// </summary>
+    private void IgnorePlayerCollisions(
+        Collider pieceCollider)
+    {
+        for (int colliderIndex = 0;
+             colliderIndex < playerColliders.Count;
+             colliderIndex++)
+        {
+            Collider playerCollider =
+                playerColliders[colliderIndex];
+
+            if (playerCollider == null)
+            {
+                continue;
+            }
+
+            Physics.IgnoreCollision(
+                pieceCollider,
+                playerCollider,
+                true);
+        }
     }
 
     private float CalculatePieceMass(

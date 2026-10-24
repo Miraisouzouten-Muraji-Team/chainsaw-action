@@ -30,6 +30,8 @@ public sealed class PlayerHealth : MonoBehaviour
     // 現在HPと最大HP、HPが0になった瞬間を外部へ通知する。
     public event Action<float, float> HealthChanged;
     public event Action Died;
+    // リスポーンなどでHPを全回復したとき、被弾演出の解除を通知する。
+    public event Action HealthRestored;
 
     // プレイヤーごと・設定SOごとの接触履歴。共有SOには書き込まない。
     private sealed class ExposureState
@@ -220,5 +222,6 @@ public sealed class PlayerHealth : MonoBehaviour
         currentHealth = maxHealth;
         ResetRecoveryTimer();
         HealthChanged?.Invoke(currentHealth, maxHealth);
+        HealthRestored?.Invoke();
     }
 }

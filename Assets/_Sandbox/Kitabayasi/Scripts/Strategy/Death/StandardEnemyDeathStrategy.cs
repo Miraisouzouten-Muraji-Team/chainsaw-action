@@ -33,7 +33,7 @@ public sealed class StandardEnemyDeathStrategy :
 
     [Header("診断ログ")]
     [Tooltip(
-        "Bake済み軌跡の選択・World復元・EnemyMeshCutter・Burst/Shrink開始までを段階的にConsoleへ出力する。" +
+        "Bake済み軌跡の選択・World復元・EnemyMeshCutter・Shrink開始までを段階的にConsoleへ出力する。" +
         "原因特定後は無効化してよい。")]
     [SerializeField]
     private bool enableMeshCutDiagnosticLogs = true;
@@ -65,9 +65,6 @@ public sealed class StandardEnemyDeathStrategy :
 
     private EnemyMeshCutter
         enemyMeshCutter;
-
-    private EnemyCutPieceBurst
-        enemyCutPieceBurst;
 
     private EnemyCutPieceShrink
         enemyCutPieceShrink;
@@ -104,10 +101,6 @@ public sealed class StandardEnemyDeathStrategy :
             enemyObject.GetComponent<
                 EnemyMeshCutter>();
 
-        enemyCutPieceBurst =
-            enemyObject.GetComponent<
-                EnemyCutPieceBurst>();
-
         enemyCutPieceShrink =
             enemyObject.GetComponent<
                 EnemyCutPieceShrink>();
@@ -135,15 +128,6 @@ public sealed class StandardEnemyDeathStrategy :
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
                 $"{nameof(EnemyMeshCutter)}が見つかりません。" +
                 "既存の2分割死亡演出へのフォールバックは実行されません。",
-                enemyObject);
-        }
-
-        if (enemyCutPieceBurst == null)
-        {
-            Debug.LogWarning(
-                $"{nameof(StandardEnemyDeathStrategy)}: " +
-                $"{nameof(EnemyCutPieceBurst)}が見つかりません。" +
-                "既存メッシュ分割後の吹き飛ばしは実行されません。",
                 enemyObject);
         }
 
@@ -188,16 +172,11 @@ public sealed class StandardEnemyDeathStrategy :
                 !enemyMeshCutDeathEffect.IsPlaying;
         }
 
-        bool hasCompletedBurst =
-            enemyCutPieceBurst == null ||
-            !enemyCutPieceBurst.IsBursting;
-
         bool hasCompletedShrink =
             enemyCutPieceShrink == null ||
             !enemyCutPieceShrink.IsShrinkActive;
 
         return
-            hasCompletedBurst &&
             hasCompletedShrink;
     }
 
@@ -216,7 +195,6 @@ public sealed class StandardEnemyDeathStrategy :
             return;
         }
 
-        enemyCutPieceBurst?.StopBurst();
         enemyCutPieceShrink?.StopShrink();
     }
 
@@ -459,7 +437,7 @@ public sealed class StandardEnemyDeathStrategy :
 
         LogMeshCutDiagnostic(
             "Death-06 CutterResult",
-            "EnemyMeshCutter.TryCutが成功しました。Burst/Shrink開始へ進みます。");
+            "EnemyMeshCutter.TryCutが成功しました。Shrink開始へ進みます。");
 
         TryBeginCutPieceEffects();
     }
@@ -1164,7 +1142,7 @@ public sealed class StandardEnemyDeathStrategy :
 
             LogMeshCutDiagnosticWarning(
                 "Death-07 PieceEffects",
-                "TryGetCutPieceTransforms=falseのためBurst/Shrinkを開始できません。");
+                "TryGetCutPieceTransforms=falseのためShrinkを開始できません。");
 
             return;
         }
@@ -1173,28 +1151,14 @@ public sealed class StandardEnemyDeathStrategy :
             "Death-07 PieceEffects",
             $"切断片を取得しました。First='{firstPiece.name}', Second='{secondPiece.name}'");
 
-        if (enemyCutPieceBurst == null)
-        {
-            LogMeshCutDiagnosticWarning(
-                "Death-08 Burst",
-                $"{nameof(EnemyCutPieceBurst)}がないため吹き飛ばし処理は開始されません。");
-        }
-        else
-        {
-            bool burstStarted =
-                enemyCutPieceBurst.BeginBurst(
-                    firstPiece,
-                    secondPiece);
-
-            LogMeshCutDiagnostic(
-                "Death-08 Burst",
-                $"BeginBurst result={burstStarted}, IsBursting={enemyCutPieceBurst.IsBursting}");
-        }
+        // 分割片にはRigidbodyが付与されているため、
+        // EnemyCutPieceBurstによるTransform直接移動は開始しない。
+        // ステージ衝突の確認中は物理シミュレーションだけで移動させる。
 
         if (enemyCutPieceShrink == null)
         {
             LogMeshCutDiagnosticWarning(
-                "Death-09 Shrink",
+                "Death-08 Shrink",
                 $"{nameof(EnemyCutPieceShrink)}がないため縮小処理は開始されません。");
             return;
         }
@@ -1207,7 +1171,7 @@ public sealed class StandardEnemyDeathStrategy :
                 enemyData.DeathShrinkDuration);
 
         LogMeshCutDiagnostic(
-            "Death-09 Shrink",
+            "Death-08 Shrink",
             $"BeginShrink result={shrinkStarted}, " +
             $"IsShrinkActive={enemyCutPieceShrink.IsShrinkActive}, " +
             $"Delay={enemyData.DeathShrinkDelay:F3}, Duration={enemyData.DeathShrinkDuration:F3}");

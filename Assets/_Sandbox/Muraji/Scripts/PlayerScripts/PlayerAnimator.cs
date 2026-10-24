@@ -16,6 +16,15 @@ public class PlayerAnimator : MonoBehaviour
     [Header("攻撃トレイル")]
     [SerializeField] SlashTrailEffect slashTrailEffect;
 
+    [Header("被弾アニメーション")]
+    [Tooltip("やられモーションを設定したAnimatorステートのフルパスです。例：Base Layer.Hurt")]
+    [SerializeField] private string hurtState = "Base Layer.Hurt";
+
+    private const string HURT_PARAMETER = "IsHurt";
+    private bool isHurtAnimationActive;
+    private bool rootMotionBeforeHurt;
+    public bool IsHurtAnimationActive => isHurtAnimationActive;
+
     int activeHash;
     bool attackActive;
 
@@ -66,6 +75,7 @@ public class PlayerAnimator : MonoBehaviour
 
     public bool StartDiggingAnimation(ChainsawSurface surface)
     {
+        if (isHurtAnimationActive) return false;
         if (animator == null)
         {
             animator = GetComponent<Animator>();
@@ -232,6 +242,72 @@ public class PlayerAnimator : MonoBehaviour
     }
 
 
+    // 攻撃・食い込みの再生状態を解除し、やられステートを先頭から再生する。
+    public bool PlayHurt()
+    {
+        if (animator == null) animator = GetComponent<Animator>();
+        if (animator == null || !animator.isActiveAndEnabled) return false;
+
+        EndSlash(false);
+        CancelDiggingAnimation();
+        // 硬直中にモーションの移動量で本体が動かないよう、一時的に無効化する。
+        if (!isHurtAnimationActive) rootMotionBeforeHurt = animator.applyRootMotion;
+        animator.applyRootMotion = false;
+        isHurtAnimationActive = true;
+        animator.SetFloat("Speed", 0f);
+        SetHurtParameter(true);
+
+        // 被弾前に予約された攻撃・ジャンプの遷移を残さない。
+        foreach (AnimatorControllerParameter parameter in animator.parameters)
+        {
+            if (parameter.type == AnimatorControllerParameterType.Trigger)
+                animator.ResetTrigger(parameter.nameHash);
+        }
+
+        int hash = Animator.StringToHash(hurtState);
+        if (string.IsNullOrEmpty(hurtState) || !animator.HasState(0, hash))
+        {
+            Debug.LogError("やられ：Hurt Stateに指定したステートがありません。Animatorにモーションとステートを設定してください。", this);
+            return false;
+        }
+        animator.Play(hash, 0, 0f);
+        return true;
+    }
+
+    // 硬直終了時にやられ状態を解除し、指定された場合は待機を再生する。
+    public void EndHurt(bool returnToIdle)
+    {
+        bool wasHurt = isHurtAnimationActive;
+        isHurtAnimationActive = false;
+        if (wasHurt && animator != null) animator.applyRootMotion = rootMotionBeforeHurt;
+        SetHurtParameter(false);
+        if (!wasHurt || !returnToIdle || animator == null || !animator.isActiveAndEnabled)
+            return;
+
+        int hash = Animator.StringToHash(idleState);
+        if (!animator.HasState(0, hash))
+        {
+            Debug.LogError("やられ：Idle Stateのフルパスを確認してください。", this);
+            return;
+        }
+        animator.SetFloat("Speed", 0f);
+        animator.Play(hash, 0, 0f);
+    }
+
+    // IsHurtのBoolが存在する場合、Animator側の遷移条件にも被弾状態を通知する。
+    private void SetHurtParameter(bool value)
+    {
+        if (animator == null) return;
+        foreach (AnimatorControllerParameter parameter in animator.parameters)
+        {
+            if (parameter.name == HURT_PARAMETER && parameter.type == AnimatorControllerParameterType.Bool)
+            {
+                animator.SetBool(HURT_PARAMETER, value);
+                return;
+            }
+        }
+    }
+
     // Inspectorからの動作確認用。
     // 実行中にコンポーネントのメニューから呼び出す。
     [ContextMenu("Test/Start Digging Animation")]
@@ -260,7 +336,7 @@ public class PlayerAnimator : MonoBehaviour
     public void SetSpeed(float speed)
     {
         // 移動速度を通知。
-        animator.SetFloat("Speed", Mathf.Abs(speed));
+        animator.SetFloat("Speed", isHurtAnimationActive ? 0f : Mathf.Abs(speed));
 
         // 食い込みアニメーション中かを通知。
         // 終了モーション中もtrueを維持する。
@@ -269,6 +345,7 @@ public class PlayerAnimator : MonoBehaviour
 
     public void PlayJump()
     {
+        if (isHurtAnimationActive) return;
         CancelDiggingAnimation();
         int jumpHash = Animator.StringToHash(jumpState);
         if (animator.HasState(0, jumpHash)) animator.Play(jumpHash, 0, 0f);
@@ -293,6 +370,7 @@ public class PlayerAnimator : MonoBehaviour
     // 既存のPlayJumpには手を加えず、未設定時のみそこへ戻す。
     private void PlayAdditionalJumpState(string statePath)
     {
+        if (isHurtAnimationActive) return;
         if (animator == null)
         {
             animator = GetComponent<Animator>();
@@ -318,13 +396,14 @@ public class PlayerAnimator : MonoBehaviour
     {
         bool wasDigging = IsDiggingAnimationActive;
         CancelDiggingAnimation();
-        if (wasDigging && animator != null && animator.isActiveAndEnabled &&
+        if (!isHurtAnimationActive && wasDigging && animator != null && animator.isActiveAndEnabled &&
             animator.GetCurrentAnimatorStateInfo(0).fullPathHash == diggingStateHash)
             animator.Play(idleState, 0, 0f);
     }
 
     public void PlayWedgie()
     {
+        if (isHurtAnimationActive) return;
         animator.SetTrigger("Wedgie");
     }
 
@@ -342,6 +421,7 @@ public class PlayerAnimator : MonoBehaviour
     // 入力予約時ではなく、実際に次段へ進むときに呼ぶ。
     public bool StartSlash(int step, AttackData data)
     {
+        if (isHurtAnimationActive) return false;
         if (animator == null)
         {
             animator = GetComponent<Animator>();
@@ -430,7 +510,7 @@ public class PlayerAnimator : MonoBehaviour
             attackHitBox.EndAttack();
         }
 
-        if (returnToIdle &&
+        if (returnToIdle && !isHurtAnimationActive &&
             animator != null &&
             animator.isActiveAndEnabled)
         {
@@ -479,6 +559,7 @@ public class PlayerAnimator : MonoBehaviour
 
     void OnDisable()
     {
+        EndHurt(false);
         CancelDiggingAnimation();
         EndSlash(false);
     }

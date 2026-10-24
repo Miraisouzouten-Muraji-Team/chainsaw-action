@@ -763,7 +763,7 @@ MonoBehaviour:
   flashModelRoot: {fileID: 4814178263090608376}
   flashRenderers: []
   flashMaterial: {fileID: 2100000, guid: e7276798a66027b429efebfb3e455121, type: 2}
-  flashInterval: 0.1
+  flashInterval: 0.075
   damageInvulnerabilityRemaining: 0
 --- !u!1 &7542431373430556866
 GameObject:

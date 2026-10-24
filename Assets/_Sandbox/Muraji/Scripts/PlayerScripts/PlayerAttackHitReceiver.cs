@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 // 敵の命中情報を受け取り、HP・やられ硬直・被弾後の無敵と点滅を管理する。
+[DefaultExecutionOrder(2500)]
 [DisallowMultipleComponent]
 [RequireComponent(typeof(PlayerHealth))]
 public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
@@ -36,6 +37,28 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     public bool IsDamageInvulnerable => damageInvulnerabilityRemaining > 0f;
 
     private PlayerHealth playerHealth;
+    private Rigidbody playerBody;
+
+    // この処理が変更したColliderの組み合わせと、変更前の設定を記録する。
+    private struct IgnoredEnemyPair
+    {
+        public Collider Player;
+        public Collider Enemy;
+        public bool WasIgnored;
+    }
+
+    private readonly List<Collider> playerCollisionBuffer = new List<Collider>();
+    private readonly List<Collider> enemyCollisionBuffer = new List<Collider>();
+    private readonly List<IgnoredEnemyPair> ignoredEnemyPairs = new List<IgnoredEnemyPair>();
+    private readonly HashSet<(Collider, Collider)> registeredEnemyPairs =
+        new HashSet<(Collider, Collider)>();
+
+    // 被弾後の無敵と、既存の食い込み回避のどちらでも敵本体との衝突を無効にする。
+    public bool IgnoresEnemyBodyCollisions =>
+        isActiveAndEnabled && playerHealth != null && playerHealth.isActiveAndEnabled &&
+        !playerHealth.IsDead && playerController != null && playerController.isActiveAndEnabled &&
+        (IsDamageInvulnerable || !playerController.CanTakeDamage);
+
     private bool processingHit;
     private int lifecycleVersion;
     private float flashElapsed;
@@ -69,6 +92,8 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
             enabled = false;
             return;
         }
+
+        playerBody = playerController.GetComponent<Rigidbody>();
 
         playerHealth.Died += HandleDied;
         playerHealth.HealthRestored += HandleHealthRestored;
@@ -115,6 +140,8 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
             }
 
             playerController.BeginDamageStun(hurtDuration);
+            // 被弾を受信した物理ステップから、敵本体に押されないようにする。
+            UpdateEnemyCollisionIgnores();
             BeginFlashing();
         }
         finally
@@ -126,6 +153,8 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     // 無敵時間と点滅を物理更新で進め、終了時に元の描画へ戻す。
     private void FixedUpdate()
     {
+        // 回避だけが有効な場合や、途中で出現・再有効化した敵にも対応する。
+        UpdateEnemyCollisionIgnores();
         if (!IsDamageInvulnerable) return;
         if (playerHealth == null || playerHealth.IsDead || playerController == null ||
             !playerController.isActiveAndEnabled)
@@ -138,12 +167,91 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
         damageInvulnerabilityRemaining = Mathf.Max(0f, damageInvulnerabilityRemaining - deltaTime);
         if (!IsDamageInvulnerable)
         {
+            // 食い込みの回避も終了していれば、次の物理計算から衝突を元へ戻す。
+            UpdateEnemyCollisionIgnores();
             RestoreMaterials();
             return;
         }
 
         flashElapsed += deltaTime;
         ApplyFlashPhase();
+    }
+
+    // 無敵中だけ、プレイヤー本体と敵本体の物理Colliderの衝突を無効にする。
+    // Triggerや地形のCollider、レイヤー全体の衝突設定は変更しない。
+    private void UpdateEnemyCollisionIgnores()
+    {
+        if (!IgnoresEnemyBodyCollisions || playerBody == null)
+        {
+            RestoreEnemyCollisions();
+            return;
+        }
+
+        // 身体や敵が途中で追加・再有効化された場合も、物理計算前に反映する。
+        playerBody.GetComponentsInChildren<Collider>(true, playerCollisionBuffer);
+        EnemyAttackHitReceiver[] enemies =
+            Object.FindObjectsByType<EnemyAttackHitReceiver>(FindObjectsSortMode.None);
+
+        foreach (EnemyAttackHitReceiver enemy in enemies)
+        {
+            if (enemy == null || !enemy.isActiveAndEnabled ||
+                enemy.transform.IsChildOf(playerController.transform)) continue;
+
+            // Receiverが子にある場合は、その親の敵Rigidbodyから本体を収集する。
+            Rigidbody enemyBody = enemy.GetComponentInParent<Rigidbody>();
+            if (enemyBody == playerBody) continue;
+            Transform enemyRoot = enemyBody != null ? enemyBody.transform : enemy.transform;
+            enemyRoot.GetComponentsInChildren<Collider>(true, enemyCollisionBuffer);
+
+            foreach (Collider enemyCollider in enemyCollisionBuffer)
+            {
+                if (!IsActiveBodyCollider(enemyCollider) ||
+                    enemyCollider.attachedRigidbody == playerBody ||
+                    (enemyBody != null && enemyCollider.attachedRigidbody != enemyBody)) continue;
+
+                foreach (Collider playerCollider in playerCollisionBuffer)
+                {
+                    if (!IsActiveBodyCollider(playerCollider) ||
+                        playerCollider.attachedRigidbody != playerBody) continue;
+
+                    var key = (playerCollider, enemyCollider);
+                    if (registeredEnemyPairs.Add(key))
+                    {
+                        ignoredEnemyPairs.Add(new IgnoredEnemyPair
+                        {
+                            Player = playerCollider,
+                            Enemy = enemyCollider,
+                            WasIgnored = Physics.GetIgnoreCollision(playerCollider, enemyCollider)
+                        });
+                    }
+
+                    // Colliderの再有効化などで設定が消えても適用し直す。
+                    if (!Physics.GetIgnoreCollision(playerCollider, enemyCollider))
+                        Physics.IgnoreCollision(playerCollider, enemyCollider, true);
+                }
+            }
+        }
+    }
+
+    // 有効な非Trigger Colliderだけを物理的な身体として扱う。
+    private static bool IsActiveBodyCollider(Collider target)
+    {
+        return target != null && target.enabled && target.gameObject.activeInHierarchy &&
+            !target.isTrigger;
+    }
+
+    // この処理で変更した組み合わせだけを、無敵開始前の衝突設定へ戻す。
+    private void RestoreEnemyCollisions()
+    {
+        foreach (IgnoredEnemyPair pair in ignoredEnemyPairs)
+        {
+            if (pair.Player == null || pair.Enemy == null) continue;
+            Physics.IgnoreCollision(pair.Player, pair.Enemy, pair.WasIgnored);
+        }
+        ignoredEnemyPairs.Clear();
+        registeredEnemyPairs.Clear();
+        playerCollisionBuffer.Clear();
+        enemyCollisionBuffer.Clear();
     }
 
     // 専用マテリアルを生成し、現在の材質とプロパティを保存して白から点滅を始める。
@@ -305,6 +413,7 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     {
         lifecycleVersion++;
         damageInvulnerabilityRemaining = 0f;
+        RestoreEnemyCollisions();
         RestoreMaterials();
         if (playerController != null) playerController.CancelDamageStun(returnToIdle);
     }
@@ -335,6 +444,7 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
             playerHealth.Died -= HandleDied;
             playerHealth.HealthRestored -= HandleHealthRestored;
         }
+        RestoreEnemyCollisions();
         RestoreMaterials();
         if (whiteMaterial != null) Destroy(whiteMaterial);
         if (blackMaterial != null) Destroy(blackMaterial);

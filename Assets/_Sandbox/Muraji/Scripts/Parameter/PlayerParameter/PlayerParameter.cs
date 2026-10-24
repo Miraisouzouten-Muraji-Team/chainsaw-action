@@ -15,6 +15,12 @@ public class PlayerParameter : ScriptableObject
     [SerializeField]
     public float deceleration = 10f;
 
+    [Header("攻撃中の移動")]
+    // 通常の横移動と地上攻撃の踏み込みに適用する倍率。
+    [Tooltip("攻撃中の横移動速度の倍率です。1で通常時と同じ、0.5で半分、0で停止します。地上攻撃の踏み込みと空中攻撃の横移動にも適用します。重力・食い込み・押し戻し・壁ジャンプの速度維持には適用しません。")]
+    [SerializeField, Range(0f, 1f)]
+    public float attackMoveSpeedMultiplier = 1f;
+
     [Header("移動スティックの遊び")]
     [Tooltip("横方向の移動入力を無視する範囲です。0.2なら左右とも入力の大きさが0.2以下では移動・向き変更しません。範囲を超えた入力は0～1へつなぎ直します。0なら遊びを追加しません。")]
     [SerializeField, Range(0f, 0.95f)]

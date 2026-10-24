@@ -13,8 +13,15 @@ public class SensorPlayerController : MonoBehaviour
     [SerializeField] private SensorChainsawDigging chainsawDigging;
     [SerializeField] private ChainsawAccelerator chainsawAccelerator;
 
+    [Header("壁への直接食い込み速度")]
+    [Tooltip("回転速度をこの値で割って、壁登りの基本速度に加えます。小さいほど回転速度による加速が大きくなります。床から壁への速度引き継ぎには使用しません。")]
+    [SerializeField, Min(0.01f)] private float directWallSpeedDivisor = 100f;
+
     public bool CanTakeDamage =>
         chainsawDigging == null || !chainsawDigging.IsEvading;
+
+    private float damageStunRemaining;
+    public bool IsDamageStunned => damageStunRemaining > 0f;
 
     private float facingDirection = 1f;
     public float FacingDirection => facingDirection;
@@ -74,18 +81,6 @@ public class SensorPlayerController : MonoBehaviour
     private bool useDirectWallSpeed;
 
     private float knockbackVelocity;
-
-    [Header("敵への接触による押し出し防止")]
-    [Tooltip("プレイヤー本体の移動先に敵の物理Colliderがある場合、その手前で横移動を制限します。敵側の移動や力の設定は変更しません。")]
-    [SerializeField] private bool preventPushingEnemies = true;
-
-    [Tooltip("敵本体との間に残す小さな隙間です。大きくすると接触による攻撃判定が届かなくなるため、まずは0.002を使用してください。")]
-    [SerializeField, Min(0f)] private float enemyStopDistance = 0.002f;
-
-    [Tooltip("直近の物理更新で、敵への横移動を制限したかを表示します。")]
-    [SerializeField] private bool debugEnemyMovementBlocked;
-
-    private const float ENEMY_BLOCK_NORMAL_X = 0.5f;
 
     private bool knockbackHopPending;
 
@@ -304,10 +299,9 @@ public class SensorPlayerController : MonoBehaviour
         }
     }
 
-    // 入力・攻撃を更新する。食い込み中は移動入力による向き変更を止め、接触判定の方向を維持する。
     void Update()
     {
-        if (IsImpactStunned || wallJumpStunRemaining > 0f)
+        if (IsDamageStunned || IsImpactStunned || wallJumpStunRemaining > 0f)
         {
             input.ResetInput();
             return;
@@ -324,15 +318,14 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
-        float moveInput = GetMoveInputWithDeadZone();
-
+        // 壁登り中も向きを固定し、逆入力で壁検出Rayが反対を向かないようにする。
         if (chainsawDigging.Surface != ChainsawSurface.Floor &&
             chainsawDigging.Surface != ChainsawSurface.Wall &&
             chainsawDigging.Surface != ChainsawSurface.Ceiling &&
             chainsawDigging.Surface != ChainsawSurface.Enemy &&
-            moveInput != 0f)
+            input.MoveInput != 0f)
         {
-            facingDirection = Mathf.Sign(moveInput);
+            facingDirection = Mathf.Sign(input.MoveInput);
             ApplyFacingRotation();
         }
 
@@ -363,12 +356,17 @@ public class SensorPlayerController : MonoBehaviour
     private void FixedUpdate()
     {
         float deltaTime = Time.fixedDeltaTime;
-        debugEnemyMovementBlocked = false;
 
         if (playerRigidbody == null || playerRigidbody.isKinematic)
         {
             ascentStartSpeed = 0f;
             fallElapsedTime = 0f;
+            return;
+        }
+
+        // 被弾硬直中は入力による移動を止め、落下と硬直時間だけを進める。
+        if (TickDamageStun(deltaTime))
+        {
             return;
         }
 
@@ -645,14 +643,94 @@ public class SensorPlayerController : MonoBehaviour
         debugVelocityBeforeWall = velocity;
         debugWallBlocked = ApplyWallMovementBlock(ref velocity);
         debugVelocityAfterWall = velocity;
-        // 物理シミュレーション前に制限し、こちらの移動速度を敵へ押し付けない。
-        // 敵食い込み中の位置追従は、既存の専用処理を維持する。
-        debugEnemyMovementBlocked = ApplyEnemyMovementBlock(ref velocity, deltaTime);
         playerRigidbody.linearVelocity = velocity;
 
         playerAnimator.SetSpeed(
             knockbackVelocity != 0f ? 0f : currentSpeed
         );
+    }
+
+    // 被弾時に攻撃・食い込み・移動予約を終了し、指定時間の操作硬直を開始する。
+    public void BeginDamageStun(float duration)
+    {
+        if (!isActiveAndEnabled || playerRigidbody == null || playerAnimator == null)
+        {
+            return;
+        }
+
+        RestoreImpactConstraints();
+        impactStunRemaining = 0f;
+        impactBounceDirection = 0f;
+        wallJumpStunRemaining = 0f;
+        wallJumpDirectionHoldRemaining = 0f;
+        wallJumpLaunchPending = false;
+        pendingWallJumpVelocity = Vector3.zero;
+        wallJumpHorizontalVelocity = 0f;
+        jumpPending = false;
+        pendingJumpPower = 0f;
+        pendingJumpCount = 0;
+        knockbackVelocity = 0f;
+        knockbackHopPending = false;
+        pendingCornerCorrection = Vector3.zero;
+        ceilingCornerJumpPending = false;
+        ceilingCornerGraceUntil = 0f;
+        currentSpeed = 0f;
+        wallTravelSpeed = 0f;
+        useDirectWallSpeed = false;
+        ascentStartSpeed = 0f;
+        fallElapsedTime = 0f;
+        lastGroundedTime = float.NegativeInfinity;
+        ResetFloorTravelImpact();
+        wallAscentImpactArmed = false;
+        lastDiggingPhysicsVelocity = Vector3.zero;
+        lastDiggingPhysicsSurface = ChainsawSurface.None;
+
+        CancelAttack();
+        if (chainsawDigging != null)
+        {
+            chainsawDigging.Cancel(true);
+            chainsawDigging.TryTakeWallBounce(out _);
+        }
+
+        // 空中でも停止し続けないよう、下向きの速度は保持する。
+        if (!playerRigidbody.isKinematic)
+        {
+            playerRigidbody.linearVelocity = new Vector3(
+                0f, Mathf.Min(0f, playerRigidbody.linearVelocity.y), 0f);
+        }
+        damageStunRemaining = Mathf.Max(0.01f, duration);
+        if (input != null) input.ResetInput();
+        playerAnimator.PlayHurt();
+    }
+
+    // 硬直中の落下と残り時間を更新し、終了した物理更新で待機へ戻す。
+    private bool TickDamageStun(float deltaTime)
+    {
+        if (!IsDamageStunned) return false;
+
+        RefreshGroundRayState();
+        currentSpeed = 0f;
+        Vector3 velocity = playerRigidbody.linearVelocity;
+        velocity.x = 0f;
+        velocity.z = 0f;
+        ApplyJumpGravity(ref velocity, deltaTime);
+        playerRigidbody.linearVelocity = velocity;
+        playerAnimator.SetSpeed(0f);
+        if (input != null) input.ResetInput();
+
+        damageStunRemaining = Mathf.Max(0f, damageStunRemaining - deltaTime);
+        if (damageStunRemaining <= 0f)
+        {
+            playerAnimator.EndHurt(true);
+        }
+        return true;
+    }
+
+    // 死亡・復活・無効化時に硬直を解除し、必要な場合だけ待機へ戻す。
+    public void CancelDamageStun(bool returnToIdle)
+    {
+        damageStunRemaining = 0f;
+        if (playerAnimator != null) playerAnimator.EndHurt(returnToIdle);
     }
 
     // 壁への直接食い込み速度を、基本速度と現在の回転速度から計算する。
@@ -663,28 +741,7 @@ public class SensorPlayerController : MonoBehaviour
             : 0f;
 
         return Mathf.Max(0f, playerParameter.wallClimbSpeed)
-            + rotationSpeed / Mathf.Max(0.01f, playerParameter.directWallSpeedDivisor);
-    }
-
-    // PlayerParameterの遊び設定で横入力の中心付近を無効化し、残りを0～1へ補正する。
-    private float GetMoveInputWithDeadZone()
-    {
-        if (input == null || playerParameter == null)
-        {
-            return 0f;
-        }
-
-        float moveInput = Mathf.Clamp(input.MoveInput, -1f, 1f);
-        float inputMagnitude = Mathf.Abs(moveInput);
-        float deadZone = Mathf.Clamp(playerParameter.moveDeadZone, 0f, 0.95f);
-
-        if (inputMagnitude <= deadZone)
-        {
-            return 0f;
-        }
-
-        return Mathf.Sign(moveInput) *
-            ((inputMagnitude - deadZone) / (1f - deadZone));
+            + rotationSpeed / Mathf.Max(0.01f, directWallSpeedDivisor);
     }
 
     // 設定アセットの移動速度と加減速を使い、現在速度を更新する。
@@ -706,7 +763,7 @@ public class SensorPlayerController : MonoBehaviour
 
         float moveInput = isAutoMoving
             ? facingDirection
-            : GetMoveInputWithDeadZone();
+            : Mathf.Clamp(input.MoveInput, -1f, 1f);
 
         float speedBonus = chainsawDigging.MoveSpeedBonus;
         float targetSpeed = moveInput * (playerParameter.moveSpeed + speedBonus);
@@ -889,7 +946,7 @@ public class SensorPlayerController : MonoBehaviour
         if (Mathf.Abs(requestedSpeed) <= 0.01f)
         {
             float direction = chainsawDigging.IsDigging
-                ? facingDirection : GetMoveInputWithDeadZone();
+                ? facingDirection : input.MoveInput;
             requestedSpeed = direction * playerParameter.moveSpeed;
         }
 
@@ -1107,6 +1164,7 @@ public class SensorPlayerController : MonoBehaviour
 
         // 移動を止める処理より先に、実際に触れた地形の面を記録する。
         if (groundProbe != null) groundProbe.RecordContact(collision);
+        if (IsDamageStunned) return;
 
         // 頭部が天井の端に軽く当たったときだけ、横移動を予約する。
         bool correctingCeilingCorner = TryQueueCeilingCornerCorrection(collision);
@@ -1114,7 +1172,6 @@ public class SensorPlayerController : MonoBehaviour
             TryBeginDiggingImpact(collision);
 
         UpdateWallContact(collision);
-        StopMovementIntoEnemyContact(collision);
     }
 
     void OnCollisionStay(Collision collision)
@@ -1126,6 +1183,7 @@ public class SensorPlayerController : MonoBehaviour
 
         // 移動を止める処理より先に、実際に触れた地形の面を記録する。
         if (groundProbe != null) groundProbe.RecordContact(collision);
+        if (IsDamageStunned) return;
 
         // 同じ地形への接触中も、角の状態を判定し直す。
         bool correctingCeilingCorner = TryQueueCeilingCornerCorrection(collision);
@@ -1133,7 +1191,6 @@ public class SensorPlayerController : MonoBehaviour
             TryBeginDiggingImpact(collision);
 
         UpdateWallContact(collision);
-        StopMovementIntoEnemyContact(collision);
     }
 
     // 接触が終了した地形を、接地と壁停止の両方から解除する。
@@ -1256,121 +1313,6 @@ public class SensorPlayerController : MonoBehaviour
             pendingCornerCorrection = Vector3.zero;
     }
 
-    // 本体の移動先にある敵を調べ、1物理ステップで敵へ入り込まない横速度へ制限する。
-    private bool ApplyEnemyMovementBlock(ref Vector3 velocity, float deltaTime)
-    {
-        if (!preventPushingEnemies || playerRigidbody == null || deltaTime <= 0f ||
-            Mathf.Abs(velocity.x) <= 0.0001f ||
-            chainsawDigging.Surface == ChainsawSurface.Enemy)
-        {
-            return false;
-        }
-
-        float direction = Mathf.Sign(velocity.x);
-        float movementDistance = Mathf.Abs(velocity.x) * deltaTime;
-        float stopDistance = Mathf.Max(0f, enemyStopDistance);
-        float allowedDistance = movementDistance;
-
-        // Triggerは攻撃・食い込みの検出用なので、物理的な進路を塞ぐ対象にしない。
-        // 複数の結果から敵だけを選び、床や壁は既存の処理へ任せる。
-        RaycastHit[] hits = playerRigidbody.SweepTestAll(
-            Vector3.right * direction,
-            movementDistance + stopDistance,
-            QueryTriggerInteraction.Ignore);
-
-        foreach (RaycastHit hit in hits)
-        {
-            if (!IsEnemyBodyCollider(hit.collider) ||
-                hit.normal.x * direction >= -ENEMY_BLOCK_NORMAL_X)
-            {
-                continue;
-            }
-
-            allowedDistance = Mathf.Min(
-                allowedDistance, Mathf.Max(0f, hit.distance - stopDistance));
-        }
-
-        if (allowedDistance >= movementDistance)
-        {
-            return false;
-        }
-
-        velocity.x = direction * allowedDistance / deltaTime;
-        StopEnemyApproachMovement(direction);
-        return true;
-    }
-
-    // 既存の敵受信コンポーネントを基準に、敵の本体Colliderだけを識別する。
-    private bool IsEnemyBodyCollider(Collider target)
-    {
-        return target != null && !target.isTrigger &&
-            target.attachedRigidbody != playerRigidbody &&
-            target.GetComponentInParent<EnemyAttackHitReceiver>() != null;
-    }
-
-    // 接触が既に発生した場合も、敵へ向かう横移動だけを直ちに解除する。
-    private void StopMovementIntoEnemyContact(Collision collision)
-    {
-        if (!preventPushingEnemies || !IsEnemyBodyCollider(collision.collider) ||
-            playerRigidbody == null ||
-            chainsawDigging.Surface == ChainsawSurface.Enemy)
-        {
-            return;
-        }
-
-        Vector3 velocity = playerRigidbody.linearVelocity;
-        bool blocked = false;
-
-        for (int i = 0; i < collision.contactCount; i++)
-        {
-            float normalX = collision.GetContact(i).normal.x;
-            if (Mathf.Abs(normalX) <= ENEMY_BLOCK_NORMAL_X)
-            {
-                continue;
-            }
-
-            float direction = -Mathf.Sign(normalX);
-            if (velocity.x * direction > 0f)
-            {
-                velocity.x = 0f;
-                blocked = true;
-            }
-
-            if (currentSpeed * direction > 0f)
-            {
-                blocked = true;
-            }
-
-            StopEnemyApproachMovement(direction);
-        }
-
-        if (blocked)
-        {
-            playerRigidbody.linearVelocity = velocity;
-            playerAnimator.SetSpeed(0f);
-        }
-    }
-
-    // 敵へ向かう通常移動・押し戻し・攻撃の踏み込みを解除し、攻撃自体は継続する。
-    private void StopEnemyApproachMovement(float direction)
-    {
-        if (currentSpeed * direction > 0f)
-        {
-            currentSpeed = 0f;
-        }
-
-        if (knockbackVelocity * direction > 0f)
-        {
-            knockbackVelocity = 0f;
-        }
-
-        if (attackMoveTimeRemaining > 0f && attackMoveDirection * direction > 0f)
-        {
-            ClearAttackMovement();
-        }
-    }
-
-    // 地形の接触記録を更新し、壁へ向かう移動をその場で停止する。
     private void UpdateWallContact(Collision collision)
     {
         if (playerMidCollider == null)
@@ -2099,7 +2041,7 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
-        debugEnemyMovementBlocked = false;
+        CancelDamageStun(false);
         if (groundProbe != null) groundProbe.Clear();
         debugGroundCollider = null;
         debugGroundSource = "未接地";

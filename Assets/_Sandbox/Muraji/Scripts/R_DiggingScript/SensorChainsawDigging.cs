@@ -24,6 +24,11 @@ public class SensorChainsawDigging : MonoBehaviour
     [Tooltip("敵への食い込み攻撃データ")]
     [SerializeField] private AttackData diggingAttackData;
 
+    [Header("ボーナス成立時のアクセル減速")]
+    [Tooltip("ボーナス成立時のアクセル値から35まで減らす秒数です。通常のアクセル減速とは別に設定できます。")]
+    [SerializeField, Min(0.01f)]
+    private float bonusAcceleratorDecelerationDuration = 0.3f;
+
     private float wallContactLostTime;
     private float ceilingBonusRamp;
 
@@ -98,8 +103,6 @@ public class SensorChainsawDigging : MonoBehaviour
     private float pendingBounceDirection;
     // 空中で食い込みを入力し、最初の接触を待っている状態。
     private bool isWaitingForContact;
-    // 空中入力後、接触が見つからない間に経過した時間。
-    private float airContactWaitElapsed;
 
     // Floor → Wallの切り替え直後に一時的に保持するWall候補。
     private Collider pendingWallCollider;
@@ -277,7 +280,6 @@ public class SensorChainsawDigging : MonoBehaviour
                 // 未接触でも要求を保持し、FixedUpdateから接触を探し続ける。
                 IsRequested = true;
                 isWaitingForContact = true;
-                airContactWaitElapsed = 0f;
 
                 // 既存の停止処理を使い、モーションを保持する。
                 playerAnimator.HoldDiggingAnimationImmediately();
@@ -305,7 +307,6 @@ public class SensorChainsawDigging : MonoBehaviour
         contact = initialContact;
         IsRequested = true;
         isWaitingForContact = false;
-        airContactWaitElapsed = 0f;
         wallContactLostTime = 0f;
     }    // PlayerControllerのFixedUpdateから呼び、接触状態の更新と消費処理を行う。
     public void Tick(
@@ -388,21 +389,10 @@ public class SensorChainsawDigging : MonoBehaviour
             {
                 // 空中入力後の最初の接触待ちでは、要求とモーションを維持する。
                 // 接触後に対象を見失った場合は、従来どおり解除する。
-                if (isWaitingForContact)
+                if (!isWaitingForContact)
                 {
-                    airContactWaitElapsed += deltaTime;
-
-                    // 設定時間内に接触できなければ、構えを解除してIdleへ戻す。
-                    if (airContactWaitElapsed >=
-                        diggingParameter.airContactWaitDuration)
-                    {
-                        Cancel(true);
-                    }
-
-                    return;
+                    Cancel(false);
                 }
-
-                Cancel(false);
 
                 return;
             }
@@ -533,6 +523,9 @@ public class SensorChainsawDigging : MonoBehaviour
         {
             return;
         }
+
+        // Controller側の通常アクセル更新と分離し、食い込みの物理更新で減速する。
+        accelerator.TickBonusDeceleration(deltaTime);
 
         timer += deltaTime;
         // 敵への食い込み中、指定間隔ごとにリソースを消費して攻撃する。
@@ -793,6 +786,13 @@ public class SensorChainsawDigging : MonoBehaviour
             chainsawAttack.BeginDigging();
         }
 
+        // 消費前の値でボーナスを判定した後、指定秒数で35まで減速する。
+        // 開始時点で35以下なら上げず、ボーナス判定も維持する。
+        if (HasBonus && accelerator.CurrentSpeed > 35f)
+        {
+            accelerator.BeginBonusDeceleration(35f, bonusAcceleratorDecelerationDuration);
+        }
+
         if (Surface ==
             ChainsawSurface.Floor)
         {
@@ -833,7 +833,6 @@ public class SensorChainsawDigging : MonoBehaviour
 
         // 接触後は、既存の食い込み継続・解除処理へ移行する。
         isWaitingForContact = false;
-        airContactWaitElapsed = 0f;
 
         LogDiggingContact();
 
@@ -896,9 +895,14 @@ public class SensorChainsawDigging : MonoBehaviour
     public void Cancel(
         bool immediate)
     {
+        // 食い込みが解除されたら専用減速も終了し、通常のアクセル操作へ戻す。
+        if (accelerator != null)
+        {
+            accelerator.CancelBonusDeceleration();
+        }
+
         // 攻撃・ジャンプ・無効化でも、接触待ちを残さない。
         isWaitingForContact = false;
-        airContactWaitElapsed = 0f;
         IsRequested = false;
         Surface =
             ChainsawSurface.None;

@@ -1,4 +1,4 @@
-Shader "Project/Stage/Surface"
+Shader "Custom/StageSurface"
 {
     Properties
     {
@@ -10,22 +10,12 @@ Shader "Project/Stage/Surface"
         [HDR] _StageSurfaceColor("Surface Color", Color) = (1, 1, 1, 1)
         _StageInnerColor("Inner Color", Color) = (0.25, 0.25, 0.25, 1)
 
-        // Unity標準Cubeの場合、上面はObject SpaceのY=0.5。
-        _StageSurfaceAxisOS("Surface Axis OS", Vector) = (0, 1, 0, 0)
-        _StageTopOS("Surface Top OS", Float) = 0.5
-
-        // 表面から内側へテクスチャを表示する幅。
-        _StageBandWidth("Surface Band Width", Float) = 0.5
+        // ゲーム画面の地形外周から淵テクスチャを表示する幅（ワールド単位）。
+        _StageEdgeWidth("Edge Width", Range(0, 2)) = 0.5
 
         // 1 Unity Unitあたりのテクスチャ投影間隔。
         _StageTileSize("Tile Size", Float) = 1.0
         _StageProjectionSharpness("Projection Sharpness", Range(1, 32)) = 8.0
-
-        // 指定された表面方向と法線の一致判定。
-        _StageNormalThreshold("Normal Threshold", Range(-1, 1)) = 0.7
-
-        // 側面の表面帯を有効にする。
-        [Toggle] _StageSideBandEnabled("Side Band Enabled", Float) = 1.0
 
         // ============================================================
         // Lit

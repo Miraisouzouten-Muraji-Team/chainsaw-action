@@ -758,7 +758,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAttackHitReceiver
   playerController: {fileID: 4996046773718306232}
-  damageReactionData: {fileID: 0}
+  damageReactionData: {fileID: 11400000, guid: cc70e515e00be2641893e60bf8efc78e, type: 2}
   flashModelRoot: {fileID: 4814178263090608376}
   flashRenderers: []
   damageInvulnerabilityRemaining: 0

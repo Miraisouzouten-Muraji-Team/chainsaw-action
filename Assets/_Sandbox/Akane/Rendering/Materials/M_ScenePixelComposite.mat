@@ -145,10 +145,10 @@ Material:
     - _Metallic: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.005
-    - _PixelEffectEnabled: 1
+    - _PixelEffectEnabled: 0
     - _QueueOffset: 0
     - _ReceiveShadows: 1
-    - _SceneNormalPreviewEnabled: 0
+    - _SceneNormalPreviewEnabled: 1
     - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1

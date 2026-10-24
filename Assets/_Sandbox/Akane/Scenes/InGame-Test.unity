@@ -15037,6 +15037,7 @@ GameObject:
   - component: {fileID: 36762796}
   - component: {fileID: 36762795}
   - component: {fileID: 36762794}
+  - component: {fileID: 36762797}
   m_Layer: 0
   m_Name: Ground_5
   m_TagString: Untagged
@@ -15137,6 +15138,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 36762792}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &36762797
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 36762792}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &44806317
 GameObject:
   m_ObjectHideFlags: 0
@@ -25774,55 +25787,6 @@ ParticleSystem:
         m_PostInfinity: 2
         m_RotationOrder: 4
     vectorLabel1_3: W
---- !u!1 &95078783
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 95078785}
-  - component: {fileID: 95078784}
-  m_Layer: 0
-  m_Name: Global Volume
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &95078784
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 95078783}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 172515602e62fb746b5d573b38a5fe58, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.RenderPipelines.Core.Runtime::UnityEngine.Rendering.Volume
-  m_IsGlobal: 1
-  priority: 0
-  blendDistance: 0
-  weight: 1
-  sharedProfile: {fileID: 11400000, guid: 74fa27d73f9d93743ae3f0f876adf90e, type: 2}
---- !u!4 &95078785
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 95078783}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.26414186, y: 2.1287599, z: 0.41002774}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &103910355 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 7693575932677042664, guid: 6d4f233d85e96ec458a6134ad2180c37, type: 3}
@@ -32067,67 +32031,6 @@ Transform:
   - {fileID: 1001676258}
   m_Father: {fileID: 479787035}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1001 &216000364
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 2690375056591095246, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
-      propertyPath: _targetCamera
-      value: 
-      objectReference: {fileID: 1638604908}
-    - target: {fileID: 3787682293900627802, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0.18477
-      objectReference: {fileID: 0}
-    - target: {fileID: 3787682293900627802, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: -0.64932
-      objectReference: {fileID: 0}
-    - target: {fileID: 3787682293900627802, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: -1
-      objectReference: {fileID: 0}
-    - target: {fileID: 3787682293900627802, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 3787682293900627802, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3787682293900627802, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3787682293900627802, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3787682293900627802, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3787682293900627802, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 3787682293900627802, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 8373345782407234652, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
-      propertyPath: m_Name
-      value: Rendering
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 767a8b06bdfc51b4181939aba1ecf6d8, type: 3}
 --- !u!1 &225802531
 GameObject:
   m_ObjectHideFlags: 0
@@ -43427,6 +43330,7 @@ GameObject:
   - component: {fileID: 321679407}
   - component: {fileID: 321679406}
   - component: {fileID: 321679405}
+  - component: {fileID: 321679408}
   m_Layer: 0
   m_Name: DamageGround_2
   m_TagString: Untagged
@@ -43527,6 +43431,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 321679403}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &321679408
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 321679403}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &347113209
 GameObject:
   m_ObjectHideFlags: 0
@@ -64934,6 +64850,7 @@ GameObject:
   - component: {fileID: 504361439}
   - component: {fileID: 504361438}
   - component: {fileID: 504361437}
+  - component: {fileID: 504361440}
   m_Layer: 0
   m_Name: Ground_10
   m_TagString: Untagged
@@ -65034,6 +64951,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 504361435}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &504361440
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 504361435}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &516052293 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 389620136403560438, guid: 4424c1ff10383e448be8e709503944c8, type: 3}
@@ -81338,6 +81267,7 @@ GameObject:
   - component: {fileID: 720241461}
   - component: {fileID: 720241460}
   - component: {fileID: 720241459}
+  - component: {fileID: 720241462}
   m_Layer: 0
   m_Name: DamageGround_6
   m_TagString: Untagged
@@ -81438,6 +81368,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 720241457}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &720241462
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 720241457}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &733450112
 GameObject:
   m_ObjectHideFlags: 0
@@ -86726,6 +86668,7 @@ GameObject:
   - component: {fileID: 759503295}
   - component: {fileID: 759503294}
   - component: {fileID: 759503293}
+  - component: {fileID: 759503296}
   m_Layer: 0
   m_Name: Wall_1
   m_TagString: Untagged
@@ -86826,6 +86769,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 759503291}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &759503296
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 759503291}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!4 &770332509 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4687296828369897747, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
@@ -106891,6 +106846,7 @@ GameObject:
   - component: {fileID: 840288445}
   - component: {fileID: 840288444}
   - component: {fileID: 840288443}
+  - component: {fileID: 840288446}
   m_Layer: 0
   m_Name: Wall_2
   m_TagString: Untagged
@@ -106991,6 +106947,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 840288441}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &840288446
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 840288441}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &841112058
 GameObject:
   m_ObjectHideFlags: 0
@@ -107003,6 +106971,7 @@ GameObject:
   - component: {fileID: 841112062}
   - component: {fileID: 841112061}
   - component: {fileID: 841112060}
+  - component: {fileID: 841112063}
   m_Layer: 0
   m_Name: Wall_1
   m_TagString: Untagged
@@ -107103,6 +107072,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 841112058}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &841112063
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 841112058}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &848017348
 GameObject:
   m_ObjectHideFlags: 0
@@ -107370,6 +107351,7 @@ GameObject:
   - component: {fileID: 858724735}
   - component: {fileID: 858724734}
   - component: {fileID: 858724733}
+  - component: {fileID: 858724736}
   m_Layer: 0
   m_Name: DamageGround_4
   m_TagString: Untagged
@@ -107470,6 +107452,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 858724731}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &858724736
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 858724731}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &871263956
 GameObject:
   m_ObjectHideFlags: 0
@@ -112538,6 +112532,7 @@ GameObject:
   - component: {fileID: 895410699}
   - component: {fileID: 895410698}
   - component: {fileID: 895410697}
+  - component: {fileID: 895410700}
   m_Layer: 0
   m_Name: Ground_3
   m_TagString: Untagged
@@ -112638,6 +112633,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 895410695}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &895410700
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 895410695}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &902978848 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 7048664761331804946, guid: 4424c1ff10383e448be8e709503944c8, type: 3}
@@ -112752,6 +112759,7 @@ GameObject:
   - component: {fileID: 909844402}
   - component: {fileID: 909844401}
   - component: {fileID: 909844400}
+  - component: {fileID: 909844403}
   m_Layer: 0
   m_Name: Ground_7 (1)
   m_TagString: Untagged
@@ -112852,6 +112860,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 909844398}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &909844403
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 909844398}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &913009808
 GameObject:
   m_ObjectHideFlags: 0
@@ -117703,6 +117723,7 @@ GameObject:
   - component: {fileID: 916608729}
   - component: {fileID: 916608728}
   - component: {fileID: 916608727}
+  - component: {fileID: 916608730}
   m_Layer: 0
   m_Name: DamageGround_5
   m_TagString: Untagged
@@ -117803,6 +117824,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 916608725}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &916608730
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 916608725}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &921565747
 GameObject:
   m_ObjectHideFlags: 0
@@ -122829,6 +122862,7 @@ GameObject:
   - component: {fileID: 924616809}
   - component: {fileID: 924616808}
   - component: {fileID: 924616807}
+  - component: {fileID: 924616810}
   m_Layer: 0
   m_Name: DamageGround_1
   m_TagString: Untagged
@@ -122929,6 +122963,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 924616805}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &924616810
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 924616805}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &929567476
 GameObject:
   m_ObjectHideFlags: 0
@@ -128184,6 +128230,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 954509147}
+  - component: {fileID: 954509148}
   m_Layer: 0
   m_Name: Area1
   m_TagString: Untagged
@@ -128229,6 +128276,29 @@ Transform:
   - {fileID: 1621473748}
   m_Father: {fileID: 855411346}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &954509148
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 954509146}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a157a422a4745ae42b525a48e2702d0a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfaceMask
+  stageMaterial: {fileID: 0}
+  edgeWidth: 0.5
+  stageRoot: {fileID: 954509147}
+  includeInactive: 0
+  removeLegacyPiecesOnApply: 1
+  pixelsPerUnit: 24
+  maxDistance: 2
+  padding: 1
+  distanceTexture: {fileID: 2800000, guid: 6db455c6a8cf4f54cb7fb0cc68b38ed6, type: 3}
+  uvTransform: {x: -5.125, y: -2, z: 0.017229002, w: 0.02669633}
+  bakedMaxDistance: 2
 --- !u!1 &962887312
 GameObject:
   m_ObjectHideFlags: 0
@@ -129301,6 +129371,7 @@ GameObject:
   - component: {fileID: 1029608730}
   - component: {fileID: 1029608729}
   - component: {fileID: 1029608728}
+  - component: {fileID: 1029608731}
   m_Layer: 0
   m_Name: Ground_12
   m_TagString: Untagged
@@ -129401,6 +129472,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1029608726}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &1029608731
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1029608726}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &1032286341
 GameObject:
   m_ObjectHideFlags: 0
@@ -156590,6 +156673,7 @@ GameObject:
   - component: {fileID: 1233196453}
   - component: {fileID: 1233196452}
   - component: {fileID: 1233196451}
+  - component: {fileID: 1233196454}
   m_Layer: 0
   m_Name: DamageGround_3
   m_TagString: Untagged
@@ -156690,6 +156774,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1233196449}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &1233196454
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1233196449}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!4 &1233528048 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 2129012232027234204, guid: adce9d3aecc806e4291b160d931e27a8, type: 3}
@@ -162407,6 +162503,7 @@ GameObject:
   - component: {fileID: 1292048322}
   - component: {fileID: 1292048321}
   - component: {fileID: 1292048320}
+  - component: {fileID: 1292048323}
   m_Layer: 0
   m_Name: Ground_11
   m_TagString: Untagged
@@ -162507,6 +162604,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1292048318}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &1292048323
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1292048318}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &1298647075
 GameObject:
   m_ObjectHideFlags: 0
@@ -167615,6 +167724,11 @@ ParticleSystem:
         m_PostInfinity: 2
         m_RotationOrder: 4
     vectorLabel1_3: W
+--- !u!4 &1341389786 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2292058601784843701, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1638604907}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1341550073
 GameObject:
   m_ObjectHideFlags: 0
@@ -172860,6 +172974,7 @@ GameObject:
   - component: {fileID: 1367236305}
   - component: {fileID: 1367236304}
   - component: {fileID: 1367236303}
+  - component: {fileID: 1367236306}
   m_Layer: 0
   m_Name: Ground_1
   m_TagString: Untagged
@@ -172960,6 +173075,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1367236301}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &1367236306
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1367236301}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!4 &1379867503 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4682796787561128585, guid: 4424c1ff10383e448be8e709503944c8, type: 3}
@@ -188740,6 +188867,7 @@ GameObject:
   - component: {fileID: 1416525152}
   - component: {fileID: 1416525151}
   - component: {fileID: 1416525150}
+  - component: {fileID: 1416525153}
   m_Layer: 0
   m_Name: Ground_2
   m_TagString: Untagged
@@ -188756,7 +188884,7 @@ Transform:
   m_GameObject: {fileID: 1416525148}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 10.0447, y: 0.75, z: 0}
+  m_LocalPosition: {x: 10, y: 0.75, z: 0}
   m_LocalScale: {x: 13.088745, y: 3.5, z: 2}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -188808,7 +188936,7 @@ MeshRenderer:
   m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: fd9c9ee73e2d66143b28564b9e869f9a, type: 2}
+  - {fileID: 2100000, guid: ed011486abd015042930cfc06f735d4c, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -188840,6 +188968,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1416525148}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &1416525153
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1416525148}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &1422323461
 GameObject:
   m_ObjectHideFlags: 0
@@ -194665,6 +194805,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyHealthBarTarget
   healthBarAnchor: {fileID: 622990553}
+  defaultPositionOffset: {x: 0, y: 0, z: 0}
 --- !u!1 &1487383721
 GameObject:
   m_ObjectHideFlags: 0
@@ -195077,6 +195218,7 @@ GameObject:
   - component: {fileID: 1534480556}
   - component: {fileID: 1534480555}
   - component: {fileID: 1534480554}
+  - component: {fileID: 1534480557}
   m_Layer: 0
   m_Name: Ground_4
   m_TagString: Untagged
@@ -195177,11 +195319,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1534480552}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
---- !u!224 &1544278450 stripped
-RectTransform:
-  m_CorrespondingSourceObject: {fileID: 1396881970845061301, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
-  m_PrefabInstance: {fileID: 1638604907}
+--- !u!114 &1534480557
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1534480552}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &1544946817
 GameObject:
   m_ObjectHideFlags: 0
@@ -205711,6 +205860,7 @@ GameObject:
   - component: {fileID: 1625511653}
   - component: {fileID: 1625511652}
   - component: {fileID: 1625511651}
+  - component: {fileID: 1625511654}
   m_Layer: 0
   m_Name: DamageGround_6 (1)
   m_TagString: Untagged
@@ -205811,6 +205961,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1625511649}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &1625511654
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1625511649}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1001 &1638604907
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -205861,7 +206023,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 668464074485390800, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: _pixelRenderingEnabled
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 754838725843248050, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Layer
@@ -206530,7 +206692,7 @@ PrefabInstance:
     - {fileID: 8177089103862375041, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
     - {fileID: 3052411843547816630, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
     m_AddedGameObjects:
-    - targetCorrespondingSourceObject: {fileID: 1396881970845061301, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+    - targetCorrespondingSourceObject: {fileID: 2292058601784843701, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       insertIndex: -1
       addedObject: {fileID: 2004721916}
     m_AddedComponents: []
@@ -206732,6 +206894,7 @@ GameObject:
   - component: {fileID: 1666203700}
   - component: {fileID: 1666203699}
   - component: {fileID: 1666203698}
+  - component: {fileID: 1666203701}
   m_Layer: 0
   m_Name: Ground_6
   m_TagString: Untagged
@@ -206832,6 +206995,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1666203696}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &1666203701
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1666203696}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &1666267556
 GameObject:
   m_ObjectHideFlags: 0
@@ -234037,7 +234212,7 @@ RectTransform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1544278450}
+  m_Father: {fileID: 1341389786}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
@@ -240070,6 +240245,7 @@ GameObject:
   - component: {fileID: 2092153664}
   - component: {fileID: 2092153663}
   - component: {fileID: 2092153662}
+  - component: {fileID: 2092153665}
   m_Layer: 0
   m_Name: Ground_12 (1)
   m_TagString: Untagged
@@ -240170,6 +240346,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2092153660}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &2092153665
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2092153660}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &2102546997
 GameObject:
   m_ObjectHideFlags: 0
@@ -240396,6 +240584,7 @@ GameObject:
   - component: {fileID: 2131022721}
   - component: {fileID: 2131022720}
   - component: {fileID: 2131022719}
+  - component: {fileID: 2131022722}
   m_Layer: 0
   m_Name: Ground_8 (1)
   m_TagString: Untagged
@@ -240496,6 +240685,18 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2131022717}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &2131022722
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2131022717}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e6b3aada4bcca4b4b8467be4e1eb5e80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::StageSurfacePiece
 --- !u!1 &2136905701
 GameObject:
   m_ObjectHideFlags: 0
@@ -240780,6 +240981,4 @@ SceneRoots:
   - {fileID: 2083064119}
   - {fileID: 1307294217}
   - {fileID: 1638604907}
-  - {fileID: 95078785}
-  - {fileID: 216000364}
   - {fileID: 430990842}

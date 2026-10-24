@@ -35,7 +35,7 @@ Shader "Custom/PixelLayerComposite"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
-            #include "Assets/_Sandbox/Akane/Rendering/Shaders/PixelOpaqueSelection.hlsl"
+            #include "Assets/_Sandbox/Akane/Rendering/Shaders/Includes/PixelOpaqueSelection.hlsl"
 
             TEXTURE2D(_PixelNearTex);
             TEXTURE2D(_PixelMiddleTex);

@@ -2162,6 +2162,10 @@ PrefabInstance:
       propertyPath: impactCameraShake
       value: 
       objectReference: {fileID: 2791087658966089985}
+    - target: {fileID: 4996046773718306232, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
+      propertyPath: directWallSpeedDivisor
+      value: 5
+      objectReference: {fileID: 0}
     - target: {fileID: 7542431373430556866, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
       propertyPath: m_Name
       value: Player 1

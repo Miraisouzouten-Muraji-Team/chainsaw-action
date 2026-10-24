@@ -758,12 +758,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAttackHitReceiver
   playerController: {fileID: 4996046773718306232}
-  hurtDuration: 0.25
-  damageInvulnerabilityDuration: 1
+  damageReactionData: {fileID: 0}
   flashModelRoot: {fileID: 4814178263090608376}
   flashRenderers: []
-  flashMaterial: {fileID: 2100000, guid: e7276798a66027b429efebfb3e455121, type: 2}
-  flashInterval: 0.075
   damageInvulnerabilityRemaining: 0
 --- !u!1 &7542431373430556866
 GameObject:
@@ -856,7 +853,7 @@ MonoBehaviour:
   playerParameter: {fileID: 11400000, guid: 95f83e18d5c42904aa49a97890997239, type: 2}
   chainsawDigging: {fileID: 4166513584750343507}
   chainsawAccelerator: {fileID: 3199202209234272052}
-  directWallSpeedDivisor: 100
+  directWallSpeedDivisor: 5
   groundCheckTransform: {fileID: 4866853695070243676}
   isGroundedByRay: 0
   visualRoot: {fileID: 4814178263090608376}

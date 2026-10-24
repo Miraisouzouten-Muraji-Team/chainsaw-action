@@ -32,6 +32,37 @@ Transform:
   - {fileID: 8361931589012585916}
   m_Father: {fileID: 4687296828369897747}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &6589534277802073492
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5142552796670060070}
+  m_Layer: 6
+  m_Name: BurstOrigin
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5142552796670060070
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6589534277802073492}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0.927, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 4687296828369897747}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &6838508827869361679
 GameObject:
   m_ObjectHideFlags: 0
@@ -53,6 +84,8 @@ GameObject:
   - component: {fileID: 6912552835280146068}
   - component: {fileID: 8587413997287062916}
   - component: {fileID: 5667644167212863587}
+  - component: {fileID: 2506202088071218169}
+  - component: {fileID: 4435205662285071390}
   m_Layer: 6
   m_Name: ChargeEnemy
   m_TagString: Untagged
@@ -74,6 +107,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 6351129882097626863}
+  - {fileID: 5142552796670060070}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!65 &8057573899729614334
@@ -162,7 +196,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyDamageFlash
   targetRenderers:
-  - {fileID: 0}
+  - {fileID: 3117738715657247664}
   whiteFlashMaterial: {fileID: 2100000, guid: 36abff19a458c8e4d996ddfb5292e557, type: 2}
   blackFlashMaterial: {fileID: 2100000, guid: 6af0a454ecd73a6478577c1d9d5b46d2, type: 2}
 --- !u!114 &480292550696096733
@@ -197,6 +231,7 @@ MonoBehaviour:
         - {fileID: 11400000, guid: e2dc96d5bbd2d8746a2fe4f25ccf2bae, type: 2}
         - {fileID: 11400000, guid: 61602f79a95b44545aeaaa498e3d0c4b, type: 2}
         - {fileID: 11400000, guid: 51cf14bc037d2294990288d016e884dc, type: 2}
+        diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
         enableMeshCutDiagnosticLogs: 1
         enableTrajectoryCoordinateValidation: 1
         drawReconstructedTrajectory: 1
@@ -242,6 +277,9 @@ MonoBehaviour:
   targetSkinnedMeshRenderer: {fileID: 3117738715657247664}
   targetMeshFilter: {fileID: 0}
   cutSurfaceMaterial: {fileID: 2100000, guid: 8fccef3da4d8bef458523fc0ccbdeb2c, type: 2}
+  densityScale: 1
+  minimumPieceMass: 0.1
+  maximumPieceMass: 10
   cutDirectionSampleCount: 4
   cutRangeAxis: 1
   cutRangeMinimumNormalized: 0.21
@@ -261,8 +299,34 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e30ac8f3642ae644aaef5e508071758b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyCutPieceBurst
-  burstDistance: 1.5
-  burstDuration: 0.2
+  burstImpulse: 8
+  burstVelocityDecayDuration: 0.8
+  burstVelocityDecayCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  minimumTorqueImpulse: 0.1
+  maximumTorqueImpulse: 0.4
 --- !u!114 &6912552835280146068
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -302,6 +366,44 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelRenderOverride
   _group: 0
+--- !u!114 &2506202088071218169
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6838508827869361679}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fa1069a84d1d03a4dafcb7c44a6a4fed, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyDiggingMeshDeathEffect
+  targetSkinnedMeshRenderer: {fileID: 3117738715657247664}
+  targetMeshFilter: {fileID: 0}
+  cutSurfaceMaterial: {fileID: 2100000, guid: efba80df10aeb624e82f4d1d32902613, type: 2}
+  targetPieceCount: 8
+  cutSurfaceUvScale: 1
+  densityScale: 1
+  minimumPieceMass: 0.1
+  maximumPieceMass: 10
+--- !u!114 &4435205662285071390
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6838508827869361679}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ecfa225638ba7754481e634c345171a6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyDiggingDeathBurst
+  burstOrigin: {fileID: 5142552796670060070}
+  upperBurstForce: 8
+  upperTorqueStrength: 0.3
+  lowerBurstForce: 10
+  lowerDownwardBias: 1
+  directionSpread: 10
 --- !u!1001 &8322991892443372119
 PrefabInstance:
   m_ObjectHideFlags: 0

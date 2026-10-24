@@ -6,14 +6,11 @@ using UnityEngine;
 /// 通常Enemyで共通して使用する死亡処理を担当する。
 /// </summary>
 /// <remarks>
-/// 死亡原因となった攻撃がEnemyMeshCutDeathEffectのTriggerAttackDataと一致する場合は、
-/// 可変数Fragmentへ分割して吹き飛ばすMeshCut死亡演出を優先する。
-/// 食い込み用MeshCut死亡演出の対象外で、かつ死亡原因AttackDataに対応する
-/// ChainsawAttackTrajectoryProfileが設定されている場合は、
-/// Bake済み軌跡をWorld空間へ復元してEnemyMeshCutterによる2分割死亡演出を行う。
+/// 死亡原因AttackDataを確認し、通常攻撃死亡はEnemyMeshCutter、
+/// くい込み攻撃死亡はEnemyDiggingMeshDeathEffectへ委譲する。
 ///
 /// 死亡開始時にはEnemy本体と子階層に存在していたColliderを無効化する。
-/// Mesh分割アルゴリズム、Fragmentの具体的な物理挙動、State遷移、HP管理、
+/// Mesh分割アルゴリズム、切断片の具体的な物理挙動、State遷移、HP管理、
 /// Enemy本体の最終破棄は担当しない。
 /// </remarks>
 [Serializable]
@@ -23,13 +20,20 @@ public sealed class StandardEnemyDeathStrategy :
     private const float COORDINATE_ROUND_TRIP_WARNING_THRESHOLD = 0.001f;
     private const float SCALE_DIFFERENCE_WARNING_THRESHOLD = 0.001f;
 
-    [Header("通常攻撃2分割")]
+    [Header("通常攻撃Mesh分割")]
     [Tooltip(
         "Slash1 / Slash2 / Slash3など、通常攻撃ごとのBake済み軌跡Profile。" +
         "死亡原因のAttackDataとProfile内のAttackDataを参照一致で照合する。")]
     [SerializeField]
     private ChainsawAttackTrajectoryProfile[]
         chainsawAttackTrajectoryProfiles;
+
+    [Header("くい込み攻撃Mesh分割")]
+    [Tooltip(
+        "このAttackDataで死亡した場合にEnemyDiggingMeshDeathEffectを使用する。" +
+        "未設定の場合、くい込み死亡ルートは無効。")]
+    [SerializeField]
+    private AttackData diggingAttackData;
 
     [Header("診断ログ")]
     [Tooltip(
@@ -60,11 +64,17 @@ public sealed class StandardEnemyDeathStrategy :
     private EnemyAttackHitReceiver
         enemyAttackHitReceiver;
 
-    private EnemyMeshCutDeathEffect
-        enemyMeshCutDeathEffect;
-
     private EnemyMeshCutter
         enemyMeshCutter;
+
+    private EnemyDiggingMeshDeathEffect
+        enemyDiggingMeshDeathEffect;
+
+    private EnemyDiggingDeathBurst
+        enemyDiggingDeathBurst;
+
+    private EnemyCutPieceBurst
+        enemyCutPieceBurst;
 
     private EnemyCutPieceShrink
         enemyCutPieceShrink;
@@ -72,7 +82,6 @@ public sealed class StandardEnemyDeathStrategy :
     private Collider[] enemyColliders;
 
     private bool isDeathActive;
-    private bool isMeshCutDeathEffectActive;
 
     public void Initialize(
         EnemyData enemyData,
@@ -93,13 +102,21 @@ public sealed class StandardEnemyDeathStrategy :
             enemyObject.GetComponent<
                 EnemyAttackHitReceiver>();
 
-        enemyMeshCutDeathEffect =
-            enemyObject.GetComponent<
-                EnemyMeshCutDeathEffect>();
-
         enemyMeshCutter =
             enemyObject.GetComponent<
                 EnemyMeshCutter>();
+
+        enemyDiggingMeshDeathEffect =
+            enemyObject.GetComponent<
+                EnemyDiggingMeshDeathEffect>();
+
+        enemyDiggingDeathBurst =
+            enemyObject.GetComponent<
+                EnemyDiggingDeathBurst>();
+
+        enemyCutPieceBurst =
+            enemyObject.GetComponent<
+                EnemyCutPieceBurst>();
 
         enemyCutPieceShrink =
             enemyObject.GetComponent<
@@ -127,7 +144,36 @@ public sealed class StandardEnemyDeathStrategy :
             Debug.LogWarning(
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
                 $"{nameof(EnemyMeshCutter)}が見つかりません。" +
-                "既存の2分割死亡演出へのフォールバックは実行されません。",
+                "通常攻撃Mesh分割死亡演出は実行されません。",
+                enemyObject);
+        }
+
+        if (diggingAttackData != null &&
+            enemyDiggingMeshDeathEffect == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: " +
+                $"{nameof(EnemyDiggingMeshDeathEffect)}が見つかりません。" +
+                "くい込み攻撃死亡時のMesh分割演出は実行されません。",
+                enemyObject);
+        }
+
+        if (diggingAttackData != null &&
+            enemyDiggingDeathBurst == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: " +
+                $"{nameof(EnemyDiggingDeathBurst)}が見つかりません。" +
+                "くい込み攻撃死亡時の専用飛散は実行されません。",
+                enemyObject);
+        }
+
+        if (enemyCutPieceBurst == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: " +
+                $"{nameof(EnemyCutPieceBurst)}が見つかりません。" +
+                "通常攻撃Mesh分割後の吹き飛ばしは実行されません。",
                 enemyObject);
         }
 
@@ -136,7 +182,7 @@ public sealed class StandardEnemyDeathStrategy :
             Debug.LogWarning(
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
                 $"{nameof(EnemyCutPieceShrink)}が見つかりません。" +
-                "既存メッシュ分割後の縮小は実行されません。",
+                "Mesh分割死亡後の縮小は実行されません。",
                 enemyObject);
         }
     }
@@ -145,17 +191,8 @@ public sealed class StandardEnemyDeathStrategy :
     {
         isDeathActive = true;
 
-        isMeshCutDeathEffectActive =
-            false;
-
         DisableEnemyColliders();
-
-        if (TryBeginMeshCutDeathEffect())
-        {
-            return;
-        }
-
-        TryCutDeathMesh();
+        TryBeginDeathMeshEffect();
     }
 
     public bool UpdateDeath()
@@ -163,13 +200,6 @@ public sealed class StandardEnemyDeathStrategy :
         if (!isDeathActive)
         {
             return false;
-        }
-
-        if (isMeshCutDeathEffectActive)
-        {
-            return
-                enemyMeshCutDeathEffect == null ||
-                !enemyMeshCutDeathEffect.IsPlaying;
         }
 
         bool hasCompletedShrink =
@@ -183,18 +213,6 @@ public sealed class StandardEnemyDeathStrategy :
     public void EndDeath()
     {
         isDeathActive = false;
-
-        if (isMeshCutDeathEffectActive)
-        {
-            enemyMeshCutDeathEffect
-                ?.StopMeshCut();
-
-            isMeshCutDeathEffectActive =
-                false;
-
-            return;
-        }
-
         enemyCutPieceShrink?.StopShrink();
     }
 
@@ -218,68 +236,97 @@ public sealed class StandardEnemyDeathStrategy :
     }
 
     /// <summary>
-    /// 死亡原因のAttackDataが設定済みTriggerAttackDataと一致する場合だけ
-    /// MeshCut死亡演出を開始する。
+    /// 死亡原因AttackDataから、通常攻撃死亡とくい込み攻撃死亡のどちらを開始するか選択する。
     /// </summary>
-    /// <remarks>
-    /// EnemyAttackHitReceiverはTakeDamageより先にLastPlayerAttackHitDataを保存するため、
-    /// HP0のDied通知から即座にDeath Stateへ入っても死亡原因となった攻撃を参照できる。
-    /// </remarks>
-    private bool TryBeginMeshCutDeathEffect()
+    private void TryBeginDeathMeshEffect()
     {
-        if (enemyAttackHitReceiver == null ||
-            enemyMeshCutDeathEffect == null)
+        if (enemyAttackHitReceiver != null)
         {
-            return false;
-        }
-
-        PlayerAttackHitData
-            lastPlayerAttackHitData =
+            PlayerAttackHitData lastPlayerAttackHitData =
                 enemyAttackHitReceiver
                     .LastPlayerAttackHitData;
 
-        if (lastPlayerAttackHitData == null)
-        {
-            return false;
+            if (lastPlayerAttackHitData != null &&
+                diggingAttackData != null &&
+                lastPlayerAttackHitData.AttackData == diggingAttackData)
+            {
+                TryBeginDiggingDeathMesh();
+                return;
+            }
         }
 
-        AttackData triggerAttackData =
-            enemyMeshCutDeathEffect
-                .TriggerAttackData;
+        TryCutDeathMesh();
+    }
 
-        if (triggerAttackData == null ||
-            lastPlayerAttackHitData.AttackData !=
-            triggerAttackData)
-        {
-            return false;
-        }
-
-        if (!enemyMeshCutDeathEffect
-                .TryBeginMeshCut())
+    /// <summary>
+    /// くい込み攻撃死亡用の目標Piece数分割を開始する。
+    /// チェンソー軌跡、通常攻撃用Cut Range、AttackVector、チェンソー回転数は使用しない。
+    /// </summary>
+    private void TryBeginDiggingDeathMesh()
+    {
+        if (enemyDiggingMeshDeathEffect == null)
         {
             Debug.LogWarning(
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
-                "MeshCut死亡演出を開始できなかったため、" +
-                "既存の2分割死亡演出へフォールバックします。");
+                $"{nameof(EnemyDiggingMeshDeathEffect)}がないため、" +
+                "くい込み攻撃死亡のMesh分割を開始できません。");
 
-            return false;
+            return;
         }
 
-        isMeshCutDeathEffectActive =
-            true;
+        bool splitSucceeded =
+            enemyDiggingMeshDeathEffect
+                .TryCreatePieces();
 
-        return true;
+        if (!splitSucceeded)
+        {
+            return;
+        }
+
+        var pieceTransforms =
+            new List<Transform>();
+
+        if (!enemyDiggingMeshDeathEffect
+                .TryGetPieceTransforms(
+                    pieceTransforms))
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: " +
+                "くい込み死亡Mesh分割には成功しましたが、" +
+                "生成されたPieceを取得できませんでした。");
+
+            return;
+        }
+
+        if (enemyDiggingDeathBurst == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(StandardEnemyDeathStrategy)}: " +
+                $"{nameof(EnemyDiggingDeathBurst)}がないため、" +
+                "くい込み死亡Pieceの専用飛散は開始されません。");
+        }
+        else
+        {
+            enemyDiggingDeathBurst.BeginBurst(
+                pieceTransforms);
+        }
+
+        // Enemy本体の破棄はShrink完了後にDeath State側で行われるため、
+        // 飛散開始後も既存の共通縮小フローへそのまま接続する。
+        TryBeginPieceShrink(
+            pieceTransforms,
+            "Death-Digging-04 Shrink");
     }
 
     /// <summary>
     /// 死亡原因のAttackDataに対応するBake済みチェンソー軌跡をWorld空間へ復元し、
-    /// 既存の2分割死亡演出を開始する。
+    /// 通常攻撃用のMesh分割死亡演出を開始する。
     /// </summary>
     private void TryCutDeathMesh()
     {
         LogMeshCutDiagnostic(
             "Death-01 Start",
-            "通常攻撃2分割死亡演出の開始判定に入りました。");
+            "通常攻撃Mesh分割死亡演出の開始判定に入りました。");
 
         if (enemyAttackHitReceiver == null ||
             enemyMeshCutter == null)
@@ -330,7 +377,7 @@ public sealed class StandardEnemyDeathStrategy :
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
                 "死亡原因のAttackDataに対応する" +
                 $"{nameof(ChainsawAttackTrajectoryProfile)}がありません。" +
-                "通常攻撃の2分割メッシュ切断は実行されません。");
+                "通常攻撃のメッシュ切断は実行されません。");
 
             LogMeshCutDiagnosticWarning(
                 "Death-03 Profile",
@@ -437,7 +484,7 @@ public sealed class StandardEnemyDeathStrategy :
 
         LogMeshCutDiagnostic(
             "Death-06 CutterResult",
-            "EnemyMeshCutter.TryCutが成功しました。Shrink開始へ進みます。");
+            "EnemyMeshCutter.TryCutが成功しました。切断片Effects開始へ進みます。");
 
         TryBeginCutPieceEffects();
     }
@@ -477,7 +524,7 @@ public sealed class StandardEnemyDeathStrategy :
             Debug.LogWarning(
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
                 $"AttackData '{attackData.name}' に複数のTrajectory Profileが対応しています。" +
-                "Slashを一意に判別できないため、2分割メッシュ切断は実行しません。");
+                "Slashを一意に判別できないため、メッシュ切断は実行しません。");
 
             return null;
         }
@@ -1127,11 +1174,13 @@ public sealed class StandardEnemyDeathStrategy :
 
     private void TryBeginCutPieceEffects()
     {
+        var cutPieceTransforms =
+            new List<Transform>();
+
         bool hasCutPieces =
             enemyMeshCutter
                 .TryGetCutPieceTransforms(
-                    out Transform firstPiece,
-                    out Transform secondPiece);
+                    cutPieceTransforms);
 
         if (!hasCutPieces)
         {
@@ -1142,37 +1191,93 @@ public sealed class StandardEnemyDeathStrategy :
 
             LogMeshCutDiagnosticWarning(
                 "Death-07 PieceEffects",
-                "TryGetCutPieceTransforms=falseのためShrinkを開始できません。");
+                "TryGetCutPieceTransforms=falseのため切断片Effectsを開始できません。");
 
             return;
         }
 
         LogMeshCutDiagnostic(
             "Death-07 PieceEffects",
-            $"切断片を取得しました。First='{firstPiece.name}', Second='{secondPiece.name}'");
+            $"切断片を{cutPieceTransforms.Count}個取得しました。");
 
-        // 分割片にはRigidbodyが付与されているため、
-        // EnemyCutPieceBurstによるTransform直接移動は開始しない。
-        // ステージ衝突の確認中は物理シミュレーションだけで移動させる。
+        if (enemyCutPieceBurst == null)
+        {
+            LogMeshCutDiagnosticWarning(
+                "Death-08 Burst",
+                $"{nameof(EnemyCutPieceBurst)}がないため吹き飛ばしは開始されません。");
+        }
+        else
+        {
+            PlayerAttackHitData lastPlayerAttackHitData =
+                enemyAttackHitReceiver
+                    .LastPlayerAttackHitData;
 
+            float chainsawRotationRatio =
+                lastPlayerAttackHitData != null &&
+                lastPlayerAttackHitData
+                    .HasChainsawRotationRatio
+                    ? lastPlayerAttackHitData
+                        .ChainsawRotationRatio
+                    : 0f;
+
+            if (lastPlayerAttackHitData == null ||
+                !lastPlayerAttackHitData
+                    .HasChainsawRotationRatio)
+            {
+                Debug.LogWarning(
+                    $"{nameof(StandardEnemyDeathStrategy)}: " +
+                    "死亡攻撃時のチェンソー回転率が命中情報にないため、" +
+                    "切断片は最低回転速度で回転させます。");
+            }
+
+            bool burstStarted =
+                enemyCutPieceBurst.BeginBurst(
+                    cutPieceTransforms,
+                    enemyAttackHitReceiver
+                        .LastResolvedKnockbackVelocity,
+                    enemyAttackHitReceiver
+                        .LastHitSourceDirectionSign,
+                    chainsawRotationRatio);
+
+            LogMeshCutDiagnostic(
+                "Death-08 Burst",
+                $"BeginBurst result={burstStarted}, " +
+                $"PieceCount={cutPieceTransforms.Count}, " +
+                $"ResolvedKnockbackVelocity={enemyAttackHitReceiver.LastResolvedKnockbackVelocity}, " +
+                $"HitSourceDirectionSign={enemyAttackHitReceiver.LastHitSourceDirectionSign:F1}, " +
+                $"ChainsawRotationRatio={chainsawRotationRatio:F3}");
+        }
+
+        TryBeginPieceShrink(
+            cutPieceTransforms,
+            "Death-09 Shrink");
+    }
+
+    /// <summary>
+    /// 分割方式に依存しない死亡後Piece縮小を開始する。
+    /// </summary>
+    private void TryBeginPieceShrink(
+        IReadOnlyList<Transform> pieceTransforms,
+        string diagnosticStage)
+    {
         if (enemyCutPieceShrink == null)
         {
             LogMeshCutDiagnosticWarning(
-                "Death-08 Shrink",
+                diagnosticStage,
                 $"{nameof(EnemyCutPieceShrink)}がないため縮小処理は開始されません。");
             return;
         }
 
         bool shrinkStarted =
             enemyCutPieceShrink.BeginShrink(
-                firstPiece,
-                secondPiece,
+                pieceTransforms,
                 enemyData.DeathShrinkDelay,
                 enemyData.DeathShrinkDuration);
 
         LogMeshCutDiagnostic(
-            "Death-08 Shrink",
+            diagnosticStage,
             $"BeginShrink result={shrinkStarted}, " +
+            $"PieceCount={pieceTransforms.Count}, " +
             $"IsShrinkActive={enemyCutPieceShrink.IsShrinkActive}, " +
             $"Delay={enemyData.DeathShrinkDelay:F3}, Duration={enemyData.DeathShrinkDuration:F3}");
     }

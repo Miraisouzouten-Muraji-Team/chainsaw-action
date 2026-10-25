@@ -167,7 +167,7 @@ public sealed class PlayerHealth : MonoBehaviour
         return false;
     }
 
-    // 接触している物理更新だけ時間を進め、最大HP基準の累計減少量の差分を適用する。
+    // 接触中の差分ダメージを現在HPへ適用する。時間到達を理由に残りHPを全削除しない。
     public void ApplyFloorContact(DamageFloorData data)
     {
         if (!initialized || !isActiveAndEnabled || IsDead || data == null)
@@ -184,16 +184,30 @@ public sealed class PlayerHealth : MonoBehaviour
         if (state.LastFixedTime == fixedTime) return;
         state.LastFixedTime = fixedTime;
 
-        state.ElapsedSeconds = Math.Min(
-            data.SecondsToZero, state.ElapsedSeconds + Time.fixedDeltaTime);
-        float normalizedTime = Mathf.Clamp01(
-            (float)(state.ElapsedSeconds / data.SecondsToZero));
-        float loss = Mathf.Max(state.AppliedLoss, data.EvaluateLoss(normalizedTime));
-        float damage = maxHealth * (loss - state.AppliedLoss);
+        double secondsToZero = data.SecondsToZero;
+        double elapsedSeconds = state.ElapsedSeconds + Math.Max(0d, Time.fixedDeltaTime);
+        double completedCycles = Math.Floor(elapsedSeconds / secondsToZero);
+        double nextElapsedSeconds = elapsedSeconds % secondsToZero;
+        float normalizedTime = Mathf.Clamp01((float)(nextElapsedSeconds / secondsToZero));
+        float loss = data.EvaluateLoss(normalizedTime);
+
+        // 同じ周期内では、下向きのカーブによる回復・二重ダメージを従来どおり防ぐ。
+        if (completedCycles < 1d)
+            loss = Mathf.Max(state.AppliedLoss, loss);
+
+        // 設定時間は「最大HP分のダメージを与える周期」として使う。
+        // 周期をまたいだ差分も含め、回復後は現在HPが実際に尽きるまで減少を続ける。
+        double lossDelta = completedCycles >= 1d
+            ? completedCycles - state.AppliedLoss + loss
+            : loss - state.AppliedLoss;
+        float damage = maxHealth * (float)Math.Max(0d, lossDelta);
+
+        state.ElapsedSeconds = nextElapsedSeconds;
         state.AppliedLoss = loss;
 
-        // 終了点では浮動小数点の丸めで微小なHPが残らないようにする。
-        if (normalizedTime >= 1f || loss >= 1f)
+        // 今回の差分でHPが尽きる場合だけ、最大HPの十万分の一以下の丸め誤差を吸収する。
+        // 周期の終了だけを理由に、大きく残っているHPを削除することはない。
+        if (damage > 0f && currentHealth <= damage + maxHealth * 0.00001f)
             damage = currentHealth;
 
         TakeDamage(damage);

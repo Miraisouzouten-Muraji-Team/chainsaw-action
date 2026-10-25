@@ -1481,6 +1481,14 @@ public class SensorPlayerController : MonoBehaviour
         slashStep = step;
         CurrentAttackData = data;
 
+        // 次段の開始時に接地状態を再判定する。
+        // 空中で始めたコンボでも、着地後に開始する段は踏み込みを許可する。
+        // 1撃目はSlashで判定した開始状態を維持する。
+        if (step > 1)
+        {
+            isAirAttackCombo = !IsGrounded();
+        }
+
         BeginAttackMovement(data);
 
         IsAttacking = true;

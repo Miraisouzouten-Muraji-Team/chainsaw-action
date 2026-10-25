@@ -246,17 +246,6 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 49256497}
   m_CullTransparentMesh: 1
---- !u!114 &62004499 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3534543486487261138, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
-  m_PrefabInstance: {fileID: 3728899942424499822}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Text
 --- !u!1 &73971517
 GameObject:
   m_ObjectHideFlags: 0
@@ -539,7 +528,7 @@ PrefabInstance:
     - target: {fileID: 6693984465514045975, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
       propertyPath: text
       value: 
-      objectReference: {fileID: 253561404}
+      objectReference: {fileID: 0}
     - target: {fileID: 6693984465514045975, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
       propertyPath: selectMark
       value: 
@@ -632,17 +621,6 @@ PrefabInstance:
       addedObject: {fileID: 2138214305}
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
---- !u!114 &253561404 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3534543486487261138, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
-  m_PrefabInstance: {fileID: 248134474}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Text
 --- !u!1001 &371207979
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -698,7 +676,7 @@ PrefabInstance:
     - target: {fileID: 6693984465514045975, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
       propertyPath: text
       value: 
-      objectReference: {fileID: 1301826196}
+      objectReference: {fileID: 0}
     - target: {fileID: 6693984465514045975, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
       propertyPath: selectMark
       value: 
@@ -1679,17 +1657,6 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 848e15ff6ea945b4a94e7306797208bb, type: 3}
---- !u!114 &1301826196 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3534543486487261138, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
-  m_PrefabInstance: {fileID: 371207979}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Text
 --- !u!1 &1339249603
 GameObject:
   m_ObjectHideFlags: 0
@@ -2242,7 +2209,7 @@ PrefabInstance:
     - target: {fileID: 6693984465514045975, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
       propertyPath: text
       value: 
-      objectReference: {fileID: 2106060765}
+      objectReference: {fileID: 0}
     - target: {fileID: 6693984465514045975, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
       propertyPath: selectMark
       value: 
@@ -2610,17 +2577,6 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 848e15ff6ea945b4a94e7306797208bb, type: 3}
---- !u!114 &2106060765 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3534543486487261138, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
-  m_PrefabInstance: {fileID: 1666285174}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5f7201a12d95ffc409449d95f23cf332, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Text
 --- !u!224 &2138214305 stripped
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 259165074313242503, guid: 848e15ff6ea945b4a94e7306797208bb, type: 3}
@@ -2689,7 +2645,7 @@ PrefabInstance:
     - target: {fileID: 6693984465514045975, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
       propertyPath: text
       value: 
-      objectReference: {fileID: 62004499}
+      objectReference: {fileID: 0}
     - target: {fileID: 6693984465514045975, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
       propertyPath: selectMark
       value: 

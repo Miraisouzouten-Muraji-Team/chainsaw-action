@@ -1,12 +1,12 @@
 using UnityEngine;
 
-// HPゲージの表示とダメージアニメーションを管理
+/// <summary>
+/// HPゲージの表示とダメージアニメーションを管理するクラス。
+/// </summary>
 public class ArcHPBarController : MonoBehaviour
 {
     [Header("ゲージの参照")]
-    [SerializeField] private ArcHPBarGraphic background;
-    [SerializeField] private ArcHPBarGraphic greenBar;
-    [SerializeField] private ArcHPBarGraphic damageBar;
+    [SerializeField] private HPBarGraphic hpBar;
 
     [Header("アニメーション設定")]
     [SerializeField] private float damageFadeDuration = 1.8f;
@@ -17,30 +17,18 @@ public class ArcHPBarController : MonoBehaviour
     // 現在HPの割合
     private float currentRatio = 1f;
 
-    // 赤ゲージの終点。ダメージ前のHP位置を保持する
+    // ダメージゲージの終点となるHPの割合
     private float damageEndRatio = 1f;
 
+    // 前回のHPと最大HP
     private float previousHP = -1f;
     private float previousMaxHP = -1f;
 
-    // アニメーション開始時の赤ゲージの終点
+    // アニメーション開始時のダメージゲージの位置
     private float damageStartRatio = 1f;
 
     // アニメーションの経過時間
     private float damageElapsed = 0f;
-
-    private void OnHealthChanged(float currentHP, float maxHP)
-    {
-        SetHP(currentHP, maxHP);
-    }
-
-    private void OnDestroy()
-    {
-        if (playerHealth != null)
-        {
-            playerHealth.HealthChanged -= OnHealthChanged;
-        }
-    }
 
     private void Start()
     {
@@ -61,75 +49,98 @@ public class ArcHPBarController : MonoBehaviour
             playerHealth.MaxHealth);
     }
 
+    private void OnDestroy()
+    {
+        // 登録したイベントを解除
+        if (playerHealth != null)
+        {
+            playerHealth.HealthChanged -= OnHealthChanged;
+        }
+    }
+
+    private void OnHealthChanged(float currentHP, float maxHP)
+    {
+        // HPが変更されたらゲージを更新
+        SetHP(currentHP, maxHP);
+    }
+
     private void Update()
     {
+        // ダメージゲージが現在HP以下ならアニメーション不要
         if (damageEndRatio <= currentRatio)
+        {
             return;
+        }
 
-        // アニメーションの経過時間を加算
         damageElapsed += Time.deltaTime;
 
-        // 0～1の範囲に変換
+        // アニメーション時間が0以下にならないようにする
         float duration = Mathf.Max(0.01f, damageFadeDuration);
+
+        // 経過時間からアニメーションの進行度を計算
         float t = Mathf.Clamp01(damageElapsed / duration);
 
-        // 赤ゲージを一定時間かけて縮める
+        // ダメージゲージを現在HPの位置まで徐々に移動
         damageEndRatio = Mathf.Lerp(
             damageStartRatio,
             currentRatio,
-            t
-        );
+            t);
 
-        UpdateDamageBar();
+        UpdateBars();
     }
 
-    // 外部のHP管理スクリプトから呼び出す
+    /// <summary>
+    /// 現在HPと最大HPをもとに、HPゲージを更新する。
+    /// </summary>
+    /// <param name="currentHP">現在のHP。</param>
+    /// <param name="maxHP">最大HP。</param>
     public void SetHP(float currentHP, float maxHP)
     {
+        // 最大HPが0以下ならゲージを空にする
         if (maxHP <= 0f)
         {
             currentRatio = 0f;
             damageEndRatio = 0f;
+            damageStartRatio = 0f;
+
             UpdateBars();
             return;
         }
 
+        // HPを0から最大HPまでの範囲に収める
         float newHP = Mathf.Clamp(currentHP, 0f, maxHP);
         float newRatio = newHP / maxHP;
 
-        // 初回設定、または最大HPの変更時
+        // 初回設定、または最大HPが変更された場合
         if (previousHP < 0f || previousMaxHP != maxHP)
         {
             currentRatio = newRatio;
             damageEndRatio = newRatio;
-
             damageStartRatio = newRatio;
         }
         else if (newHP < previousHP)
         {
-            // 現在表示している赤ゲージの終点を維持する
+            // ダメージを受けた場合
+            // 現在のダメージゲージの位置をアニメーション開始位置として保持
             damageStartRatio = Mathf.Max(
                 damageEndRatio,
-                currentRatio
-            );
+                currentRatio);
 
             damageEndRatio = damageStartRatio;
-
-            // アニメーションを最初から開始
             damageElapsed = 0f;
 
-            // 緑ゲージを新しいHPまで減らす
+            // HPゲージを新しいHPの位置へ更新
             currentRatio = newRatio;
         }
         else if (newHP > previousHP)
         {
-            // 回復時：赤ゲージを回復後のHP位置まで戻す
+            // 回復した場合はダメージゲージもHPの位置へ戻す
             currentRatio = newRatio;
             damageEndRatio = newRatio;
-
             damageStartRatio = newRatio;
         }
 
+        // 次回のHP変更判定に使う値を保存
         previousHP = newHP;
         previousMaxHP = maxHP;
 
@@ -138,18 +149,13 @@ public class ArcHPBarController : MonoBehaviour
 
     private void UpdateBars()
     {
-        if (background != null)
-            background.SetRange(0f, 1f);
+        if (hpBar == null)
+        {
+            return;
+        }
 
-        if (greenBar != null)
-            greenBar.SetRange(0f, currentRatio);
-
-        UpdateDamageBar();
-    }
-
-    private void UpdateDamageBar()
-    {
-        if (damageBar != null)
-            damageBar.SetRange(currentRatio, damageEndRatio);
+        // HP本体とダメージゲージの表示割合を反映
+        hpBar.SetHPFill(currentRatio);
+        hpBar.SetDamageFill(damageEndRatio);
     }
 }

@@ -1,141 +1,287 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
-using UnityEngine.Sprites;
 
-// 回転速度に応じて、指定した角度範囲の扇形を描画する
+/// <summary>
+/// Shader Graphを使用して円弧ゲージを表示し、色設定と針の回転を管理する。
+/// </summary>
+[ExecuteAlways]
+[RequireComponent(typeof(CanvasRenderer))]
 public class GlowArcGraphic : MaskableGraphic
 {
-    [Header("回転速度の参照")]
-    [SerializeField] private ChainsawAccelerator accelerator;
+    /// <summary>
+    /// 円弧の色とグラデーションの設定。
+    /// </summary>
+    [Serializable]
+    public class ColorStop
+    {
+        [Tooltip("この色を適用する位置。0が円弧の開始位置、1が終了位置です。")]
+        [Range(0f, 1f)]
+        public float position;
 
-    [Header("半円画像")]
-    [SerializeField] private Sprite arcSprite;
+        [Tooltip("0から指定の位置までに設定する色。")]
+        public Color color = Color.white;
 
-    [Header("角度設定")]
+        [Tooltip("ONにすると、境界付近でグラデーションを作成。OFFの場合は境界で色を切り替えます。")]
+        public bool gradientFromPrevious;
+
+        [Tooltip("グラデーションを適用する範囲の幅。値を大きくすると、色が変化する範囲が広がります。")]
+        [Min(0.001f)]
+        public float gradientWidth = 0.03f;
+    }
+
+    private static readonly int StartAngleId =
+        Shader.PropertyToID("_ArcStartAngle");
+
+    private static readonly int EndAngleId =
+        Shader.PropertyToID("_ArcEndAngle");
+
+    private static readonly int ThicknessId =
+        Shader.PropertyToID("_ArcThickness");
+
+    private static readonly int ColorRampId =
+        Shader.PropertyToID("_ColorRamp");
+
+    private const int RampResolution = 1024;
+
+    [Header("Shader Graph Material")]
+    [Tooltip("Tachometerの描画に使用するShader Graph対応のマテリアルを設定します。")]
+    [SerializeField] private Material arcMaterial;
+
+    [Header("Tachometer設定")]
+    [Tooltip("Tachometerの開始角度。Shader Graph側では真下を0度として時計回りに角度を計算します。")]
     [SerializeField] private float startAngle = 130f;
+
+    [Tooltip("Tachometerの終了角度。開始角度からの描画範囲を決定します。")]
     [SerializeField] private float endAngle = 0f;
 
-    [Header("表示設定")]
-    [SerializeField, Range(0f, 1f)] private float minSpeedRatio = 0f;
-    [SerializeField, Range(0f, 1f)] private float maxSpeedRatio = 1f;
-    [SerializeField, Range(10, 200)] private int segments = 100;
+    [Tooltip("Tachometerの太さ。値を大きくするとリングが太くなります。")]
+    [SerializeField, Range(0.001f, 0.5f)]
+    private float thickness = 0.08f;
 
-    // 現在のゲージ表示割合
-    private float fillRatio;
-
-    // 描画に使用するテクスチャ
-    public override Texture mainTexture =>
-        arcSprite != null ? arcSprite.texture : s_WhiteTexture;
-
-    protected override void Awake()
+    [Header("色設定")]
+    [Tooltip("Tachometerの色を設定。追加要素で色を増やせ、後から追加したElementほど、指定Positionより左側の色を上書きします。")]
+    [SerializeField]
+    private List<ColorStop> colorStops = new List<ColorStop>
     {
-        base.Awake();
-        // 初期状態ではゲージを空にする
-        fillRatio = 0f;
+        new ColorStop
+        {
+            position = 0f,
+            color = Color.blue,
+            gradientFromPrevious = false
+        },
+        new ColorStop
+        {
+            position = 0.8f,
+            color = Color.yellow,
+            gradientFromPrevious = false
+        }
+    };
+
+    [Header("針の設定")]
+    [Tooltip("針の回転に使用する速度情報を持つChainsawAcceleratorを設定します。")]
+    [SerializeField] private ChainsawAccelerator accelerator;
+
+    [Tooltip("回転させる針のRectTransformを設定。TachometerのStartAngleとEndAngleに合わせて回転します。")]
+    [SerializeField] private RectTransform needle;
+
+    private Material runtimeMaterial;
+    private Texture2D colorRamp;
+
+    private void Awake()
+    {
+        InitializeMaterial();
+        RefreshShaderSettings();
+    }
+
+    protected override void OnEnable()
+    {
+        base.OnEnable();
+
+        InitializeMaterial();
+        RefreshShaderSettings();
     }
 
     private void Update()
     {
-        // 回転速度の参照先が設定されていない場合は処理しない
-        if (accelerator == null)
-            return;
-
-        // 速度を0～1の表示割合に変換する
-        fillRatio = Mathf.InverseLerp(
-            minSpeedRatio,
-            maxSpeedRatio,
-            Mathf.Clamp01(accelerator.SpeedRatio)
-        );
-
-        // ゲージの再描画を要求する
-        SetVerticesDirty();
+        UpdateNeedle();
     }
 
-    // 扇形の頂点と三角形を生成する
-    protected override void OnPopulateMesh(VertexHelper vh)
-    {
-        // 前回の描画で生成した頂点・三角形を削除する
-        vh.Clear();
-
-        if (arcSprite == null || fillRatio <= 0f)
-            return;
-
-        // UIの表示領域を取得する
-        Rect rect = GetPixelAdjustedRect();
-
-        // 描画領域の幅・高さが 0 の場合は計算できないため終了する
-        if (rect.width <= 0f || rect.height <= 0f)
-            return;
-
-        // 扇形の中心と半径を決める
-        Vector2 center = new Vector2(rect.center.x, rect.yMin);
-        float radius = Mathf.Min(rect.width * 0.5f, rect.height);
-        Vector4 uv = DataUtility.GetOuterUV(arcSprite);
-
-        // 表示割合に応じて終端角度を決める
-        float currentAngle = Mathf.Lerp(startAngle, endAngle, fillRatio);
-        float totalAngle = startAngle - currentAngle;
-        int count = Mathf.Max(1, Mathf.CeilToInt(segments * fillRatio));
-
-        // 頂点0を扇形の中心にする
-        AddVertex(vh, center, rect, uv);
-
-        // 円弧上の頂点を追加し、三角形で中心と結ぶ
-        for (int i = 0; i <= count; i++)
-        {
-            // 0～1の割合に変換し、円弧上の位置を求める
-            float t = (float)i / count;
-            float angle = (startAngle - totalAngle * t) * Mathf.Deg2Rad;
-
-            // 角度から円弧上の座標を計算する
-            Vector2 position = center + new Vector2(
-                Mathf.Cos(angle),
-                Mathf.Sin(angle)
-            ) * radius;
-
-            // 計算した位置に頂点を追加
-            AddVertex(vh, position, rect, uv);
-
-            // 中心・前の頂点・現在の頂点を結び、三角形を作る
-            if (i > 0)
-                vh.AddTriangle(0, i, i + 1);
-        }
-    }
-
-    // 頂点の位置・色・UV座標を設定する
-    private void AddVertex(
-        VertexHelper vh,
-        Vector2 position,
-        Rect rect,
-        Vector4 uv
-    )
-    {
-        // 頂点の位置を0～1の割合に変換する(テクスチャのUV座標を求めるために使用)
-        float x = Mathf.Clamp01((position.x - rect.xMin) / rect.width);
-        float y = Mathf.Clamp01((position.y - rect.yMin) / rect.height);
-
-        // UI用の頂点データを作成する
-        UIVertex vertex = UIVertex.simpleVert;
-
-        // 頂点の位置と色を設定する
-        vertex.position = position;
-        vertex.color = color;
-
-        // 頂点の位置に対応するテクスチャのUV座標を設定する
-        vertex.uv0 = new Vector2(
-            Mathf.Lerp(uv.x, uv.z, x),
-            Mathf.Lerp(uv.y, uv.w, y)
-        );
-
-        // 作成した頂点をメッシュに追加する
-        vh.AddVert(vertex);
-    }
-
-#if UNITY_EDITOR
+    /// <summary>
+    /// Inspectorで設定が変更されたときに、円弧の表示設定を更新する。
+    /// </summary>
     protected override void OnValidate()
     {
         base.OnValidate();
+
+        if (!isActiveAndEnabled)
+            return;
+
+        InitializeMaterial();
+        RefreshShaderSettings();
         SetVerticesDirty();
     }
-#endif
+
+    private void InitializeMaterial()
+    {
+        if (runtimeMaterial != null)
+            return;
+
+        if (arcMaterial == null)
+            return;
+
+        runtimeMaterial = new Material(arcMaterial)
+        {
+            name = arcMaterial.name + " (Runtime)"
+        };
+
+        // このUIオブジェクト専用のMaterialを使う
+        base.material = runtimeMaterial;
+    }
+
+    private void RefreshShaderSettings()
+    {
+        if (runtimeMaterial == null)
+            InitializeMaterial();
+
+        if (runtimeMaterial == null)
+            return;
+
+        runtimeMaterial.SetFloat(StartAngleId, startAngle);
+        runtimeMaterial.SetFloat(EndAngleId, endAngle);
+        runtimeMaterial.SetFloat(ThicknessId, thickness);
+
+        UpdateColorRamp();
+    }
+
+    private void UpdateColorRamp()
+    {
+        if (runtimeMaterial == null)
+            return;
+
+        if (colorRamp == null)
+        {
+            colorRamp = new Texture2D(
+                RampResolution,
+                1,
+                TextureFormat.RGBA32,
+                false,
+                true
+            )
+            {
+                name = "GlowArc Color Ramp",
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear,
+                hideFlags = HideFlags.DontSave
+            };
+        }
+
+        Color[] pixels = new Color[RampResolution];
+
+        for (int i = 0; i < RampResolution; i++)
+        {
+            float t = (float)i / (RampResolution - 1);
+            pixels[i] = EvaluateColor(t);
+        }
+
+        colorRamp.SetPixels(pixels);
+        colorRamp.Apply(false, false);
+
+        runtimeMaterial.SetTexture(ColorRampId, colorRamp);
+    }
+
+    private Color EvaluateColor(float t)
+    {
+        if (colorStops == null || colorStops.Count == 0)
+            return Color.white;
+
+        // Element 0を全体の基本色にする
+        Color currentColor = colorStops[0].color;
+
+        // Element 1以降は、Positionより左側の色を上書きする
+        for (int i = 1; i < colorStops.Count; i++)
+        {
+            ColorStop stop = colorStops[i];
+            float boundary = Mathf.Clamp01(stop.position);
+
+            // グラデーションがOFFなら、境界で色を切り替える
+            if (!stop.gradientFromPrevious)
+            {
+                if (t < boundary)
+                    currentColor = stop.color;
+
+                continue;
+            }
+
+            // グラデーションの範囲を計算する
+            float halfWidth = Mathf.Max(0.001f, stop.gradientWidth) * 0.5f;
+            float gradientStart = boundary - halfWidth;
+            float gradientEnd = boundary + halfWidth;
+
+            if (t < gradientStart)
+            {
+                // 境界より左側では、追加した色で上書きする
+                currentColor = stop.color;
+            }
+            else if (t <= gradientEnd)
+            {
+                // 境界付近では、追加した色から右側の色へ滑らかに変化させる
+                float blend = Mathf.InverseLerp(
+                    gradientStart,
+                    gradientEnd,
+                    t
+                );
+
+                blend = Mathf.SmoothStep(0f, 1f, blend);
+
+                currentColor = Color.Lerp(
+                    stop.color,
+                    currentColor,
+                    blend
+                );
+            }
+        }
+
+        return currentColor;
+    }
+
+    // 速度に応じて、針オブジェクトを円弧に沿って時計回りに回転させる。
+    // 円弧の開始角度から終了角度までを針の可動範囲とする。
+    private void UpdateNeedle()
+    {
+        if (needle == null || accelerator == null)
+            return;
+
+        // 速度を0～1に収める
+        float speedRatio = Mathf.Clamp01(accelerator.SpeedRatio);
+
+        // 円弧の開始角度から終了角度まで計算する
+        float meterAngle = Mathf.Lerp(
+            startAngle,
+            endAngle,
+            speedRatio
+        );
+
+        // タコメーター用の角度をUnityのZ回転に変換する
+        float unityAngle = 180f - meterAngle;
+
+        // 針を回転させる
+        needle.localRotation = Quaternion.Euler(
+            0f,
+            0f,
+            unityAngle
+        );
+    }
+    protected override void OnDestroy()
+    {
+        // このコンポーネント専用に生成したリソースを破棄する
+        if (runtimeMaterial != null)
+            DestroyImmediate(runtimeMaterial);
+
+        if (colorRamp != null)
+            DestroyImmediate(colorRamp);
+
+        base.OnDestroy();
+    }
 }

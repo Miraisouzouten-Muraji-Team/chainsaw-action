@@ -34,6 +34,25 @@ public sealed class EnemyAttackHitReceiver :
     /// </summary>
     public PlayerAttackHitData LastPlayerAttackHitData { get; private set; }
 
+    /// <summary>
+    /// 最後に受けたPlayer攻撃について、左右判定まで反映した実ノックバック初速度。
+    /// </summary>
+    /// <remarks>
+    /// EnemyHealth.TakeDamage内で死亡通知が同期的に発火するため、
+    /// 死亡処理から参照できるようダメージ適用前に確定して保持する。
+    /// </remarks>
+    public Vector2 LastResolvedKnockbackVelocity { get; private set; }
+
+    /// <summary>
+    /// 最後に受けたPlayer攻撃について、Enemyから見た攻撃元の左右方向。
+    /// -1は左側、+1は右側を表す。
+    /// </summary>
+    /// <remarks>
+    /// ノックバック方向と切断片の回転方向で同じ左右判定結果を共有するため、
+    /// ダメージ適用前に確定して保持する。
+    /// </remarks>
+    public float LastHitSourceDirectionSign { get; private set; }
+
     private void Awake()
     {
         enemyHealth =
@@ -102,6 +121,27 @@ public sealed class EnemyAttackHitReceiver :
             return;
         }
 
+        // EnemyHealthでは0以下のダメージを無効としているため、
+        // 実際にダメージが成立しない場合はノックバック情報も更新しない。
+        if (playerAttackData.damage <= 0)
+        {
+            return;
+        }
+
+        float hitSourceDirectionSign =
+            ResolveHitSourceDirectionSign();
+
+        LastHitSourceDirectionSign =
+            hitSourceDirectionSign;
+
+        LastResolvedKnockbackVelocity =
+            EnemyKnockbackMotor
+                .CalculateInitialKnockbackVelocity(
+                    playerAttackData.attackVector,
+                    hitSourceDirectionSign);
+
+        // TakeDamage内でDiedが同期通知されるため、
+        // 死亡攻撃の方向をDeath Strategyから参照できる状態にしてからHPへ反映する。
         enemyHealth.TakeDamage(
             playerAttackData.damage);
 
@@ -112,17 +152,6 @@ public sealed class EnemyAttackHitReceiver :
         {
             return;
         }
-
-        // EnemyHealthでは0以下のダメージを無効としているため、
-        // 実際にダメージが成立しない場合は
-        // やられStateにも遷移させない。
-        if (playerAttackData.damage <= 0)
-        {
-            return;
-        }
-
-        float hitSourceDirectionSign =
-            ResolveHitSourceDirectionSign();
 
         enemyStateMachine.RequestDamageState(
             hitSourceDirectionSign,

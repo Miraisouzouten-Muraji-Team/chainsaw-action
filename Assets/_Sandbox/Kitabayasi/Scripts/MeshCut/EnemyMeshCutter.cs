@@ -3,7 +3,7 @@ using UnityEngine;
 
 /// <summary>
 /// Enemy死亡時に切断対象Meshを取得し、
-/// チェンソー軌跡を使って2つの物理切断片へ分割して表示する。
+/// チェンソー軌跡で切断した後、連結成分ごとの物理切断片へ分離して表示する。
 /// </summary>
 /// <remarks>
 /// SkinnedMeshRendererの場合は死亡時の現在姿勢をBakeしてから切断する。
@@ -32,6 +32,25 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     [Tooltip("切断面専用SubMeshへ設定するMaterial。")]
     [SerializeField]
     private Material cutSurfaceMaterial;
+
+    [Header("分割片物理")]
+
+    [Tooltip(
+        "Mesh.boundsから求めた疑似体積へ掛ける密度係数。" +
+        "疑似体積 × Density ScaleをMassの基準値として使用する。")]
+    [SerializeField]
+    [Min(0f)]
+    private float densityScale = 1f;
+
+    [Tooltip("疑似体積から求めたMassの下限。")]
+    [SerializeField]
+    [Min(0.0001f)]
+    private float minimumPieceMass = 0.1f;
+
+    [Tooltip("疑似体積から求めたMassの上限。")]
+    [SerializeField]
+    [Min(0.0001f)]
+    private float maximumPieceMass = 10f;
 
     [Header("切断Plane設定")]
 
@@ -68,7 +87,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     [Header("診断ログ")]
 
     [Tooltip(
-        "2分割死亡演出の入力軌跡、切断対象Mesh、Processor結果、生成片までを段階的にConsoleへ出力する。" +
+        "Mesh分割死亡演出の入力軌跡、切断対象Mesh、Processor結果、連結成分分離、生成片までを段階的にConsoleへ出力する。" +
         "原因特定後は無効化してよい。")]
     [SerializeField]
     private bool enableDiagnosticLogs = true;
@@ -76,11 +95,20 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     private readonly ChainsawMeshCutProcessor cutProcessor =
         new ChainsawMeshCutProcessor();
 
-    private Mesh firstPieceRuntimeMesh;
-    private Mesh secondPieceRuntimeMesh;
+    private readonly MeshConnectedComponentSplitter connectedComponentSplitter =
+        new MeshConnectedComponentSplitter();
 
-    private GameObject firstPieceObject;
-    private GameObject secondPieceObject;
+    private readonly List<Mesh> runtimePieceMeshes =
+        new List<Mesh>();
+
+    private readonly List<GameObject> pieceObjects =
+        new List<GameObject>();
+
+    private readonly EnemyPlayerReference playerReference =
+        new EnemyPlayerReference();
+
+    private readonly List<Collider> playerColliders =
+        new List<Collider>();
 
     private bool hasCompletedCut;
 
@@ -98,7 +126,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     /// 死亡させたチェンソー攻撃が保持している確定済み軌跡。
     /// </param>
     /// <returns>
-    /// 2つのMesh生成と表示切り替えまで成功した場合はtrue。
+    /// 1つ以上の物理切断片生成と表示切り替えまで成功した場合はtrue。
     /// </returns>
     public bool TryCut(ChainsawAttackTrajectory trajectory)
     {
@@ -221,35 +249,57 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
             LogDiagnostic(
                 "Cutter-04 Processor",
-                "Processorによる2Mesh生成に成功しました。" +
-                $" First={BuildMeshSummary(firstPieceMesh)} /" +
-                $" Second={BuildMeshSummary(secondPieceMesh)}");
+                "Processorによる切断面両側のMesh生成に成功しました。" +
+                $" FirstSide={BuildMeshSummary(firstPieceMesh)} /" +
+                $" SecondSide={BuildMeshSummary(secondPieceMesh)}");
+
+            if (!TrySplitConnectedComponents(
+                    firstPieceMesh,
+                    secondPieceMesh,
+                    out List<Mesh> splitPieceMeshes,
+                    out failureReason))
+            {
+                LogDiagnosticWarning(
+                    "Cutter-05 ConnectedComponents",
+                    $"連結成分の分離で停止しました。{failureReason}");
+
+                LogCutFailure(failureReason);
+                return false;
+            }
+
+            LogDiagnostic(
+                "Cutter-05 ConnectedComponents",
+                $"連結成分を{splitPieceMeshes.Count}個の独立Meshへ分離しました。");
 
             Material[] pieceMaterials =
                 BuildPieceMaterials(sourceRenderer);
 
-            firstPieceRuntimeMesh =
-                firstPieceMesh;
+            ResolvePlayerCollidersForPieceCollision();
 
-            secondPieceRuntimeMesh =
-                secondPieceMesh;
+            for (int pieceIndex = 0;
+                 pieceIndex < splitPieceMeshes.Count;
+                 pieceIndex++)
+            {
+                Mesh pieceMesh =
+                    splitPieceMeshes[pieceIndex];
 
-            firstPieceObject = CreatePieceObject(
-                "FirstPiece",
-                firstPieceRuntimeMesh,
-                pieceMaterials,
-                sourceRenderer);
+                runtimePieceMeshes.Add(
+                    pieceMesh);
 
-            secondPieceObject = CreatePieceObject(
-                "SecondPiece",
-                secondPieceRuntimeMesh,
-                pieceMaterials,
-                sourceRenderer);
+                GameObject pieceObject =
+                    CreatePieceObject(
+                        $"Piece_{pieceIndex:D2}",
+                        pieceMesh,
+                        pieceMaterials,
+                        sourceRenderer);
+
+                pieceObjects.Add(
+                    pieceObject);
+            }
 
             LogDiagnostic(
-                "Cutter-05 PieceObjects",
-                $"切断片GameObjectを生成しました。" +
-                $" First={firstPieceObject.name}, Second={secondPieceObject.name}," +
+                "Cutter-06 PieceObjects",
+                $"切断片GameObjectを{pieceObjects.Count}個生成しました。" +
                 $" ParentRenderer={sourceRenderer.name}");
 
             sourceRenderer.enabled = false;
@@ -257,9 +307,9 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             hasCompletedCut = true;
 
             LogDiagnostic(
-                "Cutter-06 Complete",
-                "元Rendererを無効化し、2分割処理を完了しました。" +
-                " このログまで出ている場合、以降の問題は切断片取得またはBurst/Shrink開始側です。");
+                "Cutter-07 Complete",
+                $"元Rendererを無効化し、{pieceObjects.Count}個の物理切断片生成を完了しました。" +
+                " 各切断片は個別のRigidbodyとCapsuleColliderを持ちます。");
 
             return true;
         }
@@ -273,28 +323,112 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     }
 
     /// <summary>
-    /// Mesh分割によって生成された2つの切断片を取得する。
+    /// Mesh分割によって生成された全切断片を取得する。
     /// </summary>
+    /// <param name="destination">
+    /// 呼び出し側が所有する格納先。呼び出し時に内容をクリアしてから現在有効な切断片を追加する。
+    /// </param>
     /// <returns>
-    /// Mesh分割済みで、両方の切断片が存在する場合はtrue。
+    /// Mesh分割済みで、1つ以上の切断片が存在する場合はtrue。
     /// </returns>
     public bool TryGetCutPieceTransforms(
-        out Transform firstPieceTransform,
-        out Transform secondPieceTransform)
+        List<Transform> destination)
     {
-        firstPieceTransform =
-            firstPieceObject != null
-                ? firstPieceObject.transform
-                : null;
+        if (destination == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(EnemyMeshCutter)}: "
+                + "切断片の格納先Listがnullです。",
+                this);
 
-        secondPieceTransform =
-            secondPieceObject != null
-                ? secondPieceObject.transform
-                : null;
+            return false;
+        }
 
-        return hasCompletedCut &&
-               firstPieceTransform != null &&
-               secondPieceTransform != null;
+        destination.Clear();
+
+        if (!hasCompletedCut)
+        {
+            return false;
+        }
+
+        for (int i = 0;
+             i < pieceObjects.Count;
+             i++)
+        {
+            GameObject pieceObject =
+                pieceObjects[i];
+
+            if (pieceObject != null)
+            {
+                destination.Add(
+                    pieceObject.transform);
+            }
+        }
+
+        return destination.Count > 0;
+    }
+
+    /// <summary>
+    /// Processorが生成した切断面両側のMeshを、連結成分単位の独立Meshへ分離する。
+    /// </summary>
+    private bool TrySplitConnectedComponents(
+        Mesh firstSideMesh,
+        Mesh secondSideMesh,
+        out List<Mesh> splitPieceMeshes,
+        out string failureReason)
+    {
+        splitPieceMeshes =
+            new List<Mesh>();
+
+        try
+        {
+            if (!connectedComponentSplitter.TrySplit(
+                    firstSideMesh,
+                    out List<Mesh> firstSideComponents,
+                    out failureReason))
+            {
+                return false;
+            }
+
+            splitPieceMeshes.AddRange(
+                firstSideComponents);
+
+            if (!connectedComponentSplitter.TrySplit(
+                    secondSideMesh,
+                    out List<Mesh> secondSideComponents,
+                    out failureReason))
+            {
+                DestroyRuntimeMeshes(
+                    splitPieceMeshes);
+
+                splitPieceMeshes.Clear();
+                return false;
+            }
+
+            splitPieceMeshes.AddRange(
+                secondSideComponents);
+
+            if (splitPieceMeshes.Count == 0)
+            {
+                failureReason =
+                    "連結成分分離後の切断片がありません。";
+
+                return false;
+            }
+
+            failureReason = null;
+            return true;
+        }
+        finally
+        {
+            // Processorの2側Meshは連結成分Meshへコピー済みなので、
+            // 最終的な表示・物理片としては保持しない。
+            DestroyRuntimeMesh(
+                firstSideMesh);
+
+            DestroyRuntimeMesh(
+                secondSideMesh);
+        }
     }
 
     /// <summary>
@@ -719,16 +853,15 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         Bounds meshBounds =
             mesh.bounds;
 
-        BoxCollider pieceCollider =
-            pieceObject.AddComponent<BoxCollider>();
+        CapsuleCollider pieceCollider =
+            pieceObject.AddComponent<CapsuleCollider>();
 
-        // Mesh.boundsはMesh自身のローカル空間なので、
-        // 同じGameObject上のBoxColliderへそのまま対応付けられる。
-        pieceCollider.center =
-            meshBounds.center;
-
-        pieceCollider.size =
-            meshBounds.size;
+        // Mesh.boundsとColliderは同じローカル空間を使う。
+        // 分割片ごとに形状が異なるため、最長軸をカプセルの長辺へ合わせて
+        // BoxColliderの平らな底面で直立し続けやすい状態を避ける。
+        ConfigureCapsuleColliderFromBounds(
+            pieceCollider,
+            meshBounds);
 
         pieceCollider.isTrigger =
             false;
@@ -744,11 +877,48 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         pieceRigidbody.isKinematic =
             false;
 
+        // 疑似体積は分割片生成時に1回だけ計算する。
+        // Massを慣性テンソル再計算より先に設定することで、
+        // サイズとMassの両方を反映した回転しにくさをUnity Physicsへ引き継ぐ。
+        pieceRigidbody.mass =
+            CalculatePieceMass(
+                meshBounds);
+
+        // Rotation Constraintsはワールド空間ではなく慣性空間に適用される。
+        // Collider由来の慣性テンソル値は維持しつつ、慣性空間の軸だけを
+        // 生成時点のワールド軸へ揃え、画面に垂直なワールドZだけを回転可能にする。
+        pieceRigidbody.ResetInertiaTensor();
+
+        Vector3 calculatedInertiaTensor =
+            pieceRigidbody.inertiaTensor;
+
+        pieceRigidbody.automaticInertiaTensor =
+            false;
+
+        pieceRigidbody.inertiaTensor =
+            calculatedInertiaTensor;
+
+        pieceRigidbody.inertiaTensorRotation =
+            Quaternion.Inverse(pieceRigidbody.rotation);
+
+        // 位置Constraintはワールド空間なので、奥行き方向のZ位置固定はそのまま使う。
+        // 上で慣性軸をワールド軸へ揃えているため、X/Y回転固定後も
+        // EnemyCutPieceBurstが与えるワールドZ軸回転は許可される。
+        pieceRigidbody.constraints =
+            RigidbodyConstraints.FreezePositionZ |
+            RigidbodyConstraints.FreezeRotationX |
+            RigidbodyConstraints.FreezeRotationY;
+
+        IgnorePlayerCollisions(
+            pieceCollider);
+
         LogDiagnostic(
             "Scale-03 PieceCreated",
             $"Piece='{pieceObject.name}', " +
             $"MeshBoundsCenter={FormatVector3(mesh.bounds.center)}, " +
             $"MeshBoundsSize={FormatVector3(mesh.bounds.size)}, " +
+            $"PseudoVolume={(meshBounds.size.x * meshBounds.size.y * meshBounds.size.z):F6}, " +
+            $"Mass={pieceRigidbody.mass:F6}, " +
             $"LocalScale={FormatVector3(pieceTransform.localScale)}, " +
             $"LossyScale={FormatVector3(pieceTransform.lossyScale)}, " +
             $"Parent='{(pieceTransform.parent != null ? pieceTransform.parent.name : "null")}', " +
@@ -761,6 +931,167 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             $"SourceWorldBoundsSize={FormatVector3(sourceRenderer.bounds.size)}");
 
         return pieceObject;
+    }
+
+    /// <summary>
+    /// Player Tagから解決したPlayer階層のColliderを、今回生成する全Piece用に保持する。
+    /// </summary>
+    private void ResolvePlayerCollidersForPieceCollision()
+    {
+        playerColliders.Clear();
+
+        if (playerReference.TryGetPlayerColliders(
+                playerColliders))
+        {
+            return;
+        }
+
+        Debug.LogWarning(
+            $"{nameof(EnemyMeshCutter)}: " +
+            "Player TagからPlayer Colliderを取得できませんでした。" +
+            "Piece生成は継続しますが、Playerとの衝突無効化は適用されません。",
+            this);
+    }
+
+    /// <summary>
+    /// Piece ColliderとPlayer階層の各Colliderの組み合わせだけ物理衝突を無効化する。
+    /// </summary>
+    private void IgnorePlayerCollisions(
+        Collider pieceCollider)
+    {
+        for (int colliderIndex = 0;
+             colliderIndex < playerColliders.Count;
+             colliderIndex++)
+        {
+            Collider playerCollider =
+                playerColliders[colliderIndex];
+
+            if (playerCollider == null)
+            {
+                continue;
+            }
+
+            Physics.IgnoreCollision(
+                pieceCollider,
+                playerCollider,
+                true);
+        }
+    }
+
+    /// <summary>
+    /// 分割MeshのローカルBoundsを疑似体積として扱い、切断片のMassを決定する。
+    /// </summary>
+    /// <remarks>
+    /// 正確なMesh体積計算は行わず、Boundsの各辺長の積だけを使用する。
+    /// この値は切断片生成時に1回だけ計算し、毎フレーム更新しない。
+    /// </remarks>
+    private float CalculatePieceMass(
+        Bounds meshBounds)
+    {
+        Vector3 boundsSize =
+            meshBounds.size;
+
+        float approximateVolume =
+            boundsSize.x *
+            boundsSize.y *
+            boundsSize.z;
+
+        float resolvedMinimumMass =
+            Mathf.Max(
+                0.0001f,
+                minimumPieceMass);
+
+        float resolvedMaximumMass =
+            Mathf.Max(
+                resolvedMinimumMass,
+                maximumPieceMass);
+
+        float calculatedMass =
+            approximateVolume *
+            Mathf.Max(
+                0f,
+                densityScale);
+
+        return Mathf.Clamp(
+            calculatedMass,
+            resolvedMinimumMass,
+            resolvedMaximumMass);
+    }
+
+    /// <summary>
+    /// 分割メッシュのローカルBoundsを単一のCapsuleColliderで近似する。
+    /// </summary>
+    /// <remarks>
+    /// 特定モデルのローカル軸を前提にせず、Boundsの最長軸をカプセルの長辺にする。
+    /// これにより、元Rendererの回転を引き継ぐ分割片でもColliderの向きを合わせやすくする。
+    /// </remarks>
+    private static void ConfigureCapsuleColliderFromBounds(
+        CapsuleCollider capsuleCollider,
+        Bounds meshBounds)
+    {
+        Vector3 size =
+            meshBounds.size;
+
+        int direction =
+            GetLongestBoundsAxis(size);
+
+        float height;
+        float transverseSizeA;
+        float transverseSizeB;
+
+        switch (direction)
+        {
+            case 0:
+                height = size.x;
+                transverseSizeA = size.y;
+                transverseSizeB = size.z;
+                break;
+
+            case 1:
+                height = size.y;
+                transverseSizeA = size.x;
+                transverseSizeB = size.z;
+                break;
+
+            default:
+                height = size.z;
+                transverseSizeA = size.x;
+                transverseSizeB = size.y;
+                break;
+        }
+
+        float radius =
+            Mathf.Max(transverseSizeA, transverseSizeB) * 0.5f;
+
+        capsuleCollider.center =
+            meshBounds.center;
+
+        capsuleCollider.direction =
+            direction;
+
+        capsuleCollider.radius =
+            radius;
+
+        // Capsuleの全高が直径未満にならないよう保証する。
+        capsuleCollider.height =
+            Mathf.Max(height, radius * 2f);
+    }
+
+    private static int GetLongestBoundsAxis(
+        Vector3 size)
+    {
+        if (size.x >= size.y &&
+            size.x >= size.z)
+        {
+            return 0;
+        }
+
+        if (size.y >= size.z)
+        {
+            return 1;
+        }
+
+        return 2;
     }
 
     /// <summary>
@@ -1037,14 +1368,28 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
     private void OnDestroy()
     {
-        DestroyRuntimeMesh(
-            firstPieceRuntimeMesh);
+        DestroyRuntimeMeshes(
+            runtimePieceMeshes);
 
-        DestroyRuntimeMesh(
-            secondPieceRuntimeMesh);
+        runtimePieceMeshes.Clear();
+        pieceObjects.Clear();
+    }
 
-        firstPieceRuntimeMesh = null;
-        secondPieceRuntimeMesh = null;
+    private static void DestroyRuntimeMeshes(
+        IReadOnlyList<Mesh> meshes)
+    {
+        if (meshes == null)
+        {
+            return;
+        }
+
+        for (int i = 0;
+             i < meshes.Count;
+             i++)
+        {
+            DestroyRuntimeMesh(
+                meshes[i]);
+        }
     }
 
     /// <summary>
@@ -1106,6 +1451,21 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             Mathf.Max(
                 0.0001f,
                 cutSurfaceUvScale);
+
+        densityScale =
+            Mathf.Max(
+                0f,
+                densityScale);
+
+        minimumPieceMass =
+            Mathf.Max(
+                0.0001f,
+                minimumPieceMass);
+
+        maximumPieceMass =
+            Mathf.Max(
+                minimumPieceMass,
+                maximumPieceMass);
     }
 #endif
 

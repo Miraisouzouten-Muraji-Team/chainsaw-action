@@ -8,6 +8,7 @@ public sealed class PlayerGroundProbe
     private const float NORMAL_Z_LIMIT = 0.5f;
     private const float SCORE_EPSILON = 0.001f;
     private const float SWEEP_SKIN = 0.02f;
+    private const float CONTACT_POINT_TOLERANCE = 0.002f;
 
     private readonly Rigidbody body;
     private readonly Transform feet;
@@ -16,8 +17,12 @@ public sealed class PlayerGroundProbe
         new Dictionary<Collider, List<ContactPoint>>();
     private readonly List<Collider> invalidContacts = new List<Collider>();
 
+    private readonly List<Collider> bodyColliders = new List<Collider>();
+
     private SensorChainsawContact support;
     public bool IsGrounded { get; private set; }
+    // 移動補助の先読みとは別に、本体が床付近にあると確認できた状態。
+    public bool HasJumpSupport { get; private set; }
     public Vector3 Normal => IsGrounded ? support.Normal : Vector3.up;
     public string Source { get; private set; } = "未接地";
     public float NormalThreshold => Mathf.Clamp(settings.groundRayNormalThreshold, 0.1f, 1f);
@@ -65,6 +70,7 @@ public sealed class PlayerGroundProbe
     private void ResetSupport()
     {
         IsGrounded = false;
+        HasJumpSupport = false;
         support = default;
         Source = "未接地";
     }
@@ -83,6 +89,8 @@ public sealed class PlayerGroundProbe
             return;
         }
 
+        // 実際に身体として衝突するColliderを確認する。Triggerや別Rigidbodyは使用しない。
+        body.GetComponentsInChildren<Collider>(true, bodyColliders);
         Vector3 velocity = body.linearVelocity;
         float direction = Mathf.Abs(requestedSpeed) > SCORE_EPSILON
             ? Mathf.Sign(requestedSpeed) : 0f;
@@ -108,6 +116,8 @@ public sealed class PlayerGroundProbe
                 if (point.point.y > body.worldCenterOfMass.y ||
                     !TryGetFloorNormal(point.normal, out Vector3 normal)) continue;
                 if (!continuing && Vector3.Dot(velocity, normal) > SEPARATION_SPEED) continue;
+                // 歩行用の接触採用は従来どおりにする。
+                // 本体との距離による追加制限は、後段のHasJumpSupportだけに適用する。
 
                 ConsiderSupport(pair.Key, point.point, normal, direction, previousCollider,
                     "物理接触", ref bestRise, ref bestDistance);
@@ -120,6 +130,10 @@ public sealed class PlayerGroundProbe
         if (!IsGrounded)
             CollectRaySupport(terrainLayers, velocity, continuing, direction, previousCollider,
                 ref bestRise, ref bestDistance);
+
+        // 現在の接触・足元Rayを、本体Colliderの実際の形状でも確認する。
+        // この後の下り追従・前方の斜面への先読みでは、ジャンプ許可を新規に作らない。
+        HasJumpSupport = IsGrounded && IsBodyNearSupport(support.Collider, support.Point);
 
         // 下りの追従は直前まで接地していた場合だけ。空中から地面を吸い上げない。
         if (!IsGrounded && continuing && settings.slopeGroundSnapDistance > 0f &&
@@ -193,6 +207,37 @@ public sealed class PlayerGroundProbe
             ConsiderSupport(nearest.collider, nearest.point, normal, direction, previousCollider,
                 "足元Ray", ref bestRise, ref bestDistance);
         }
+    }
+
+    // 地面の候補点付近に、現在の本体Colliderがあるかを形状で確認する。
+    // Ground Check Transformの高さでは判定せず、物理接触の余白だけを許可する。
+    private bool IsBodyNearSupport(Collider target, Vector3 point)
+    {
+        if (target == null || point.y > body.worldCenterOfMass.y) return false;
+
+        foreach (Collider bodyCollider in bodyColliders)
+        {
+            if (bodyCollider == null || !bodyCollider.enabled ||
+                !bodyCollider.gameObject.activeInHierarchy || bodyCollider.isTrigger ||
+                bodyCollider.attachedRigidbody != body)
+            {
+                continue;
+            }
+
+            // ClosestPointで形状を検証できる、身体用のColliderだけを使う。
+            bool supportedShape = bodyCollider is BoxCollider ||
+                bodyCollider is SphereCollider || bodyCollider is CapsuleCollider ||
+                (bodyCollider is MeshCollider mesh && mesh.convex);
+            if (!supportedShape) continue;
+
+            float tolerance = Mathf.Max(CONTACT_POINT_TOLERANCE,
+                bodyCollider.contactOffset + target.contactOffset);
+            Vector3 closestPoint = bodyCollider.ClosestPoint(point);
+            if ((closestPoint - point).sqrMagnitude <= tolerance * tolerance)
+                return true;
+        }
+
+        return false;
     }
 
     // プレイヤーの物理形状で照会し、最も手前の地形だけを返す。

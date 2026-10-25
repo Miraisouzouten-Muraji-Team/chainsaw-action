@@ -382,10 +382,10 @@ CapsuleCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 2
-  m_Radius: 0.06462303
-  m_Height: 0.6712483
+  m_Radius: 0.09429269
+  m_Height: 0.914277
   m_Direction: 1
-  m_Center: {x: -0.09062386, y: -0.19689158, z: 0.43895325}
+  m_Center: {x: -0.09062663, y: -0.31840366, z: 0.4801032}
 --- !u!114 &2192336546025605430
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -758,9 +758,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAttackHitReceiver
   playerController: {fileID: 4996046773718306232}
-  damageReactionData: {fileID: 11400000, guid: cc70e515e00be2641893e60bf8efc78e, type: 2}
+  damageScreenEffect: {fileID: 0}
+  hurtDuration: 0.4
+  damageInvulnerabilityDuration: 2
   flashModelRoot: {fileID: 4814178263090608376}
   flashRenderers: []
+  flashMaterial: {fileID: 0}
+  flashInterval: 0.08
   damageInvulnerabilityRemaining: 0
 --- !u!1 &7542431373430556866
 GameObject:
@@ -898,7 +902,7 @@ MonoBehaviour:
   playerAnimator: {fileID: 2921792244955255645}
   chainsawAttack: {fileID: 2192336546025605430}
   diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
-  bonusAcceleratorDecelerationDuration: 0.1
+  surfaceContactGraceTime: 0.1
 --- !u!114 &6047860458994670659
 MonoBehaviour:
   m_ObjectHideFlags: 0

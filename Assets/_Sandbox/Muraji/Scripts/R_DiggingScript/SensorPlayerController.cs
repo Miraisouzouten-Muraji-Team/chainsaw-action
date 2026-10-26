@@ -12,6 +12,8 @@ public class SensorPlayerController : MonoBehaviour
     [Header("食い込み")]
     [SerializeField] private SensorChainsawDigging chainsawDigging;
     [SerializeField] private ChainsawAccelerator chainsawAccelerator;
+    [Tooltip("チェーンソーのループSEを再生するAudioSourceを指定してください。")]
+    [SerializeField] private AudioSource chainsawAudioSource;
 
     [Header("壁への直接食い込み速度")]
     [Tooltip("回転速度をこの値で割って、壁登りの基本速度に加えます。小さいほど回転速度による加速が大きくなります。床から壁への速度引き継ぎには使用しません。")]
@@ -382,6 +384,12 @@ public class SensorPlayerController : MonoBehaviour
                 deltaTime,
                 chainsawDigging.IsDigging
             );
+
+            // 更新されたアクセル値に合わせてSEのピッチを変更する。
+            if (chainsawAudioSource != null)
+            {
+                chainsawAudioSource.pitch = chainsawAccelerator.CurrentPitch;
+            }
         }
 
         if (TickDiggingImpactStun(deltaTime))

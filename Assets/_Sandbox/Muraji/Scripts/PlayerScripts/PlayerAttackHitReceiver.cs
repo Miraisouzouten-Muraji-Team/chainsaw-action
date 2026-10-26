@@ -73,6 +73,7 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     private bool warnedDamageCameraShake;
     private bool processingHit;
     private int lifecycleVersion;
+    private float previousHealth;
 
     // HP・親の操作処理を取得し、死亡と全回復による演出解除を登録する。
     private void Awake()
@@ -102,6 +103,14 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
 
         playerHealth.Died += HandleDied;
         playerHealth.HealthRestored += HandleHealthRestored;
+    }
+
+    // PlayerHealthのAwakeで初期HPが確定してから比較値とHP通知を登録する。
+    private void Start()
+    {
+        if (playerHealth == null) return;
+        previousHealth = playerHealth.CurrentHealth;
+        playerHealth.HealthChanged += HandleHealthChanged;
     }
 
     // 有効な敵の命中だけを適用し、実際にHPが減った場合にやられと点滅を開始する。
@@ -148,9 +157,6 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
             if (damageScreenEffect != null)
                 damageScreenEffect.PlayDamageEffect();
 
-            // 既存のやられ演出と同じく、実際にHPが減って生存している場合だけ揺らす。
-            PlayDamageCameraShake();
-
             playerController.BeginDamageStun(hurtDuration);
             // 被弾を受信した物理ステップから、敵本体に押されないようにする。
             UpdateEnemyCollisionIgnores();
@@ -161,6 +167,19 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
         {
             processingHit = false;
         }
+    }
+
+    // ダメージ元を問わずHPの減少を検出する。回復では揺らさず、連続ダメージでは揺れを更新する。
+    private void HandleHealthChanged(float currentHealth, float maxHealth)
+    {
+        bool healthDecreased = currentHealth < previousHealth;
+        previousHealth = currentHealth;
+
+        if (!healthDecreased || !isActiveAndEnabled || playerHealth == null ||
+            !playerHealth.isActiveAndEnabled)
+            return;
+
+        PlayDamageCameraShake();
     }
 
     // 有効なシェイク参照を取得し、指定時間と強さで既存のカメラ演出を呼び出す。
@@ -334,6 +353,7 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     {
         if (playerHealth != null)
         {
+            playerHealth.HealthChanged -= HandleHealthChanged;
             playerHealth.Died -= HandleDied;
             playerHealth.HealthRestored -= HandleHealthRestored;
         }

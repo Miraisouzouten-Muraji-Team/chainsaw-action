@@ -31,9 +31,9 @@ MonoBehaviour:
   groundRaySideOffset: 0.4
   groundRayStartHeight: 0.1
   groundRayDistance: 0.25
-  groundRayNormalThreshold: 0.1
-  groundRayContactTolerance: 0.1
-  slopeGroundSnapDistance: 0.75
+  groundRayNormalThreshold: 0.7
+  groundRayContactTolerance: 0.03
+  slopeGroundSnapDistance: 0.1
   slopeGroundStickSpeed: 1
   slopeGroundProbeDistance: 0.2
   wallKnockbackSpeed: 8

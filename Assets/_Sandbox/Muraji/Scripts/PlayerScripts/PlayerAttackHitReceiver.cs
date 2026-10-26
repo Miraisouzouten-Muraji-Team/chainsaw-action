@@ -14,15 +14,25 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     [Tooltip("プレイヤーの操作処理です。未設定なら自分または親から取得します。")]
     [SerializeField] private SensorPlayerController playerController;
 
-    [Header("被弾設定")]
-    [Tooltip("やられ硬直・無敵時間・点滅用マテリアル・点滅間隔をまとめた設定アセットです。実行中の残り時間はこのアセットへ書き込みません。")]
-    [SerializeField] private PlayerDamageReactionData damageReactionData;
+    [Tooltip("被弾時に画面の周囲を赤くする演出です。専用Volumeと同じオブジェクトのPlayerDamageScreenEffectを指定します。")]
+    [SerializeField] private PlayerDamageScreenEffect damageScreenEffect;
+
+    [Header("敵からの被弾")]
+    [Tooltip("やられ状態で移動・攻撃・ジャンプ・食い込みの入力を止める秒数です。空中では落下を続けます。")]
+    [SerializeField, Min(0.01f)] private float hurtDuration = 0.4f;
+    [Tooltip("敵からの追加ダメージを無効にする秒数です。硬直時間とは別です。0なら追加の無敵時間を設けません。")]
+    [SerializeField, Min(0f)] private float damageInvulnerabilityDuration = 2f;
 
     [Header("無敵中の白黒点滅")]
     [Tooltip("点滅させる身体・武器の親です。残像やエフェクトの親は含めないでください。")]
     [SerializeField] private Transform flashModelRoot;
     [Tooltip("個別指定する場合の描画対象です。空欄なら見た目の親からMeshRendererとSkinnedMeshRendererを取得します。")]
     [SerializeField] private Renderer[] flashRenderers;
+    [Tooltip("白黒点滅の元にするUniversal Render Pipeline/Litのマテリアルです。実行時に専用コピーを作り、元の設定は変更しません。")]
+    [SerializeField] private Material flashMaterial;
+    [Tooltip("白と黒を切り替える間隔です。無敵時間が終わると元のマテリアルへ戻ります。")]
+    [SerializeField, Min(0.01f)] private float flashInterval = 0.08f;
+
     [Header("実行中の確認")]
     [Tooltip("敵の攻撃に対する追加の無敵時間の残りです。")]
     [SerializeField] private float damageInvulnerabilityRemaining;
@@ -75,13 +85,6 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     // HP・親の操作処理を取得し、死亡と全回復による演出解除を登録する。
     private void Awake()
     {
-        if (damageReactionData == null)
-        {
-            Debug.LogError("被弾処理：PlayerDamageReactionDataを作成してDamage Reaction Dataへ設定してください。", this);
-            enabled = false;
-            return;
-        }
-
         playerHealth = GetComponent<PlayerHealth>();
         if (playerController == null)
             playerController = GetComponentInParent<SensorPlayerController>();
@@ -126,7 +129,7 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
             int versionBefore = lifecycleVersion;
 
             // HP変更イベント中に別の攻撃が来ても、同じ被弾を重ねない。
-            damageInvulnerabilityRemaining = Mathf.Max(0f, damageReactionData.DamageInvulnerabilityDuration);
+            damageInvulnerabilityRemaining = Mathf.Max(0f, damageInvulnerabilityDuration);
             playerHealth.TakeDamage(damage);
 
             // 死亡・復活や無効化がHP通知中に起きた場合、やられで上書きしない。
@@ -139,7 +142,11 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
                 return;
             }
 
-            playerController.BeginDamageStun(damageReactionData.HurtDuration);
+            // 無敵・回避で無効になった攻撃ではなく、実際にHPが減った被弾だけで演出する。
+            if (damageScreenEffect != null)
+                damageScreenEffect.PlayDamageEffect();
+
+            playerController.BeginDamageStun(hurtDuration);
             // 被弾を受信した物理ステップから、敵本体に押されないようにする。
             UpdateEnemyCollisionIgnores();
             BeginFlashing();
@@ -312,20 +319,20 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     private bool PrepareFlashMaterials()
     {
         if (whiteMaterial != null && blackMaterial != null) return true;
-        if (damageReactionData.FlashMaterial == null || damageReactionData.FlashMaterial.shader == null ||
-            damageReactionData.FlashMaterial.shader.name != "Universal Render Pipeline/Lit" ||
-            !damageReactionData.FlashMaterial.shader.isSupported)
+        if (flashMaterial == null || flashMaterial.shader == null ||
+            flashMaterial.shader.name != "Universal Render Pipeline/Lit" ||
+            !flashMaterial.shader.isSupported)
         {
             if (!warnedFlashSettings)
             {
                 warnedFlashSettings = true;
-                Debug.LogWarning("被弾点滅：PlayerDamageReactionDataのFlash MaterialへUniversal Render Pipeline/Litのマテリアルを設定してください。硬直と無敵は動作します。", this);
+                Debug.LogWarning("被弾点滅：Universal Render Pipeline/LitのマテリアルをFlash Materialへ設定してください。硬直と無敵は動作します。", this);
             }
             return false;
         }
 
-        whiteMaterial = new Material(damageReactionData.FlashMaterial) { name = "PlayerHurt_White", hideFlags = HideFlags.DontSave };
-        blackMaterial = new Material(damageReactionData.FlashMaterial) { name = "PlayerHurt_Black", hideFlags = HideFlags.DontSave };
+        whiteMaterial = new Material(flashMaterial) { name = "PlayerHurt_White", hideFlags = HideFlags.DontSave };
+        blackMaterial = new Material(flashMaterial) { name = "PlayerHurt_Black", hideFlags = HideFlags.DontSave };
         ConfigureLitFlashMaterial(whiteMaterial, Color.white);
         ConfigureLitFlashMaterial(blackMaterial, Color.black);
         return true;
@@ -379,7 +386,7 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     // 指定間隔で白黒を切り替える。同じ色の間は再割り当てしない。
     private void ApplyFlashPhase()
     {
-        int phase = Mathf.FloorToInt(flashElapsed / Mathf.Max(0.01f, damageReactionData.FlashInterval)) % 2;
+        int phase = Mathf.FloorToInt(flashElapsed / Mathf.Max(0.01f, flashInterval)) % 2;
         if (phase == lastFlashPhase) return;
         lastFlashPhase = phase;
         foreach (FlashPart part in activeFlashParts)
@@ -413,6 +420,9 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     {
         lifecycleVersion++;
         damageInvulnerabilityRemaining = 0f;
+        // 死亡・復活・無効化の際、画面の赤い縁取りも残さない。
+        if (damageScreenEffect != null)
+            damageScreenEffect.ResetEffect();
         RestoreEnemyCollisions();
         RestoreMaterials();
         if (playerController != null) playerController.CancelDamageStun(returnToIdle);

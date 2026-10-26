@@ -541,6 +541,7 @@ public class SensorPlayerController : MonoBehaviour
             jumpPending = false;
             velocity.y = pendingJumpPower;
             jumpsUsed = pendingJumpCount;
+            ClearJumpGroundState();
 
             ascentStartSpeed = Mathf.Max(pendingJumpPower, 0f);
             fallElapsedTime = 0f;
@@ -585,6 +586,7 @@ public class SensorPlayerController : MonoBehaviour
             velocity.y = pendingWallJumpVelocity.y;
             wallJumpHorizontalVelocity = velocity.x;
             wallJumpDirectionHoldRemaining = playerParameter.surfaceStickJumpNoOverrideTime;
+            ClearJumpGroundState();
             currentSpeed = velocity.x;
             ascentStartSpeed = Mathf.Max(velocity.y, 0f);
             fallElapsedTime = 0f;
@@ -875,7 +877,8 @@ public class SensorPlayerController : MonoBehaviour
 
         // ジャンプ入力の瞬間にも更新し、直前の物理フレームの判定ズレを防ぐ。
         RefreshGroundRayState();
-        bool isGrounded = wasDiggingFloor || isGroundedByRay;
+        // 先読みの接地ではなく、本体の支持を確認できた場合だけ初段を許可する。
+        bool isGrounded = wasDiggingFloor || HasJumpGroundSupport();
 
         // 初段をまだ使っておらず、最後の接地から設定時間以内なら許可する。
         // 壁・天井・敵への食い込み中や押し戻し中には適用しない。
@@ -960,13 +963,37 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         groundProbe.Refresh(groundMask, requestedSpeed, Time.fixedDeltaTime, allowGrounding);
-        isGroundedByRay = groundProbe.IsGrounded;
+        bool hasSupport = groundProbe.TryGetSupport(out SensorChainsawContact support);
+
+        // 接地の可否は既存のGroundProbeへ任せる。
+        // 足元Transformと接触点の距離で、正常な着地を追加拒否しない。
+        isGroundedByRay = groundProbe.IsGrounded && hasSupport;
         groundNormal = groundProbe.Normal;
         debugGroundSource = groundProbe.Source;
-        debugGroundCollider = groundProbe.TryGetSupport(out SensorChainsawContact support)
-            ? support.Collider : null;
+        debugGroundCollider = hasSupport ? support.Collider : null;
 
-        if (isGroundedByRay) jumpsUsed = 0;
+        // 下り追従や前方の先読みだけでは回数を戻さず、本体の支持確認を必要とする。
+        if (HasJumpGroundSupport()) jumpsUsed = 0;
+    }
+
+    // 移動補助用の接地と区別し、ジャンプ回数を回復できる支持面かを返す。
+    private bool HasJumpGroundSupport()
+    {
+        if (chainsawDigging != null && chainsawDigging.Surface == ChainsawSurface.Floor)
+            return true;
+
+        return isGroundedByRay && groundProbe != null && groundProbe.HasJumpSupport;
+    }
+
+    // ジャンプ前の接触記録と接地結果を破棄し、空中での回数回復を防ぐ。
+    private void ClearJumpGroundState()
+    {
+        if (groundProbe != null) groundProbe.Clear();
+        isGroundedByRay = false;
+        groundNormal = Vector3.up;
+        debugGroundCollider = null;
+        debugGroundSource = "ジャンプ離地";
+        lastGroundedTime = float.NegativeInfinity;
     }
 
     // 許可する斜面の高低差を考慮し、接地Rayの開始高さと探索距離を求める。
@@ -1481,6 +1508,14 @@ public class SensorPlayerController : MonoBehaviour
         slashStep = step;
         CurrentAttackData = data;
 
+        // 次段の開始時に接地状態を再判定する。
+        // 空中で始めたコンボでも、着地後に開始する段は踏み込みを許可する。
+        // 1撃目はSlashで判定した開始状態を維持する。
+        if (step > 1)
+        {
+            isAirAttackCombo = !IsGrounded();
+        }
+
         BeginAttackMovement(data);
 
         IsAttacking = true;
@@ -1930,9 +1965,9 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
-        // 空中では時刻を更新しない。
-        // IsGrounded自体の判定内容は変更しない。
-        if (IsGrounded())
+        // 本体の支持を確認できた時刻だけを記録する。
+        // 下り追従や前方の先読みだけでコヨーテタイムを延長しない。
+        if (HasJumpGroundSupport())
         {
             lastGroundedTime = Time.time;
         }

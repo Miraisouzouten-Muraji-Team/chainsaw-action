@@ -93863,6 +93863,11 @@ ParticleSystem:
         m_PostInfinity: 2
         m_RotationOrder: 4
     vectorLabel1_3: W
+--- !u!65 &1037928482 stripped
+BoxCollider:
+  m_CorrespondingSourceObject: {fileID: 7538539728159171228, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1038940356
 GameObject:
   m_ObjectHideFlags: 0
@@ -127463,6 +127468,10 @@ PrefabInstance:
       propertyPath: m_LocalPosition.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 7122561860674349961, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Avatar
+      value: 
+      objectReference: {fileID: 9000000, guid: 11839c23749655143a04a429ffbd0680, type: 3}
     - target: {fileID: 7146252939418605793, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.z
       value: 0
@@ -127520,6 +127529,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 11400000, guid: cc70e515e00be2641893e60bf8efc78e, type: 2}
     - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: damageScreenEffect
+      value: 
+      objectReference: {fileID: 2132166585}
+    - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: damageInvulnerabilityDuration
       value: 1
       objectReference: {fileID: 0}
@@ -127541,7 +127554,10 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2292058601784843701, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1893948134}
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 5046133520663052250, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1994472489}
   m_SourcePrefab: {fileID: 100100000, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
 --- !u!1 &1357045557
 GameObject:
@@ -127977,6 +127993,11 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 1057318734}
   m_SourcePrefab: {fileID: 100100000, guid: 4424c1ff10383e448be8e709503944c8, type: 3}
+--- !u!65 &1416235475 stripped
+BoxCollider:
+  m_CorrespondingSourceObject: {fileID: 7824983804689355250, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1431690092
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -133316,6 +133337,16 @@ ParticleSystem:
 Transform:
   m_CorrespondingSourceObject: {fileID: 5519733933652949044, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
   m_PrefabInstance: {fileID: 1320403784}
+  m_PrefabAsset: {fileID: 0}
+--- !u!136 &1450876168 stripped
+CapsuleCollider:
+  m_CorrespondingSourceObject: {fileID: 8279207665114747908, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
+--- !u!65 &1459240117 stripped
+BoxCollider:
+  m_CorrespondingSourceObject: {fileID: 2868328230527693890, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
   m_PrefabAsset: {fileID: 0}
 --- !u!4 &1461808514 stripped
 Transform:
@@ -217850,6 +217881,37 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1979131192}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &1994472484 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 5046133520663052250, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1994472489
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1994472484}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a55c5b60857f2764d9eab0f8f3b750ef, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RuntimeDebugVisualizer
+  settings: {fileID: 11400000, guid: 14a355d329a8ca143a64c66c122565e0, type: 2}
+  group: Player
+  forceVisible: 1
+  displayStatus: 
+  color: {r: 0, g: 1, b: 0, a: 1}
+  targets:
+  - {fileID: 2030072459}
+  - {fileID: 1037928482}
+  - {fileID: 1416235475}
+  - {fileID: 1459240117}
+  - {fileID: 1450876168}
+  rays: []
+  segments: 24
+  drawingLayer: 0
 --- !u!1 &1999055609
 GameObject:
   m_ObjectHideFlags: 0
@@ -238389,6 +238451,11 @@ ParticleSystem:
         m_PostInfinity: 2
         m_RotationOrder: 4
     vectorLabel1_3: W
+--- !u!65 &2030072459 stripped
+BoxCollider:
+  m_CorrespondingSourceObject: {fileID: 3231404754770767936, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &2034804800
 GameObject:
   m_ObjectHideFlags: 0
@@ -239370,6 +239437,17 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2116743035}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &2132166585 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 2078790591055865928, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 776dc5136991bf548905828379b952e4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerDamageScreenEffect
 --- !u!1 &2142679297
 GameObject:
   m_ObjectHideFlags: 0

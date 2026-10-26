@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
-using Unity.Profiling;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -59,16 +57,11 @@ public sealed class GraphicsDebugMenu : MonoBehaviour
         public UniversalAdditionalCameraData data;
         public bool post, shadows;
     }
-    private sealed class Counter
-    {
-        public string label;
-        public ProfilerRecorder recorder;
-    }
     private readonly List<CameraState> cameras = new List<CameraState>();
     private readonly Dictionary<Behaviour, bool> componentStates = new Dictionary<Behaviour, bool>();
     private readonly Dictionary<Renderer, bool> rendererStates = new Dictionary<Renderer, bool>();
-    private readonly List<Counter> counters = new List<Counter>();
-    private readonly StringBuilder text = new StringBuilder(512);
+    private GraphicsDebugStats statistics;
+    private Vector2 statsScroll;
     private ToggleTargets[] groups;
     private RenderPipelineAsset previousQualityPipeline;
     private UniversalRenderPipelineAsset runtimePipeline;
@@ -87,7 +80,7 @@ public sealed class GraphicsDebugMenu : MonoBehaviour
         if (!Application.isEditor && !Debug.isDebugBuild && !allowReleaseBuild)
         { enabled = false; return; }
         Capture();
-        StartCounters();
+        statistics = new GraphicsDebugStats();
     }
 
     private void Capture()
@@ -112,8 +105,13 @@ public sealed class GraphicsDebugMenu : MonoBehaviour
                 if (camera == null) continue;
                 if (!camera.TryGetComponent<UniversalAdditionalCameraData>(out var data))
                 { Debug.LogWarning("Graphics Debug: camera has no URP Additional Camera Data: " + camera.name, this); continue; }
-                cameras.Add(new CameraState { camera = camera, data = data,
-                    post = data.renderPostProcessing, shadows = data.renderShadows });
+                cameras.Add(new CameraState
+                {
+                    camera = camera,
+                    data = data,
+                    post = data.renderPostProcessing,
+                    shadows = data.renderShadows
+                });
             }
         previousQualityPipeline = QualitySettings.renderPipeline;
         var source = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
@@ -135,23 +133,6 @@ public sealed class GraphicsDebugMenu : MonoBehaviour
         captured = true;
     }
 
-    private void StartCounters()
-    {
-        AddCounter("Batches", "Batches Count");
-        AddCounter("Draw calls", "Draw Calls Count");
-        AddCounter("SetPass", "SetPass Calls Count");
-        AddCounter("Triangles", "Triangles Count");
-        AddCounter("Vertices", "Vertices Count");
-    }
-
-    private void AddCounter(string label, string name)
-    {
-        var counter = new Counter { label = label };
-        try { counter.recorder = ProfilerRecorder.StartNew(ProfilerCategory.Render, name, 1); }
-        catch (Exception exception) { Debug.LogWarning("Graphics Debug counter unavailable: " + name + " / " + exception.Message, this); }
-        counters.Add(counter);
-    }
-
     private void Update()
     {
         bool toggle = false;
@@ -169,15 +150,7 @@ public sealed class GraphicsDebugMenu : MonoBehaviour
             fps = frames / Mathf.Max(0.0001f, elapsed);
             ms = elapsed * 1000f / Mathf.Max(1, frames);
             frames = 0; elapsed = refresh = 0;
-            text.Clear();
-            text.AppendLine($"FPS: {fps:F1}   Frame: {ms:F2} ms");
-            text.AppendLine($"Screen: {Screen.width} x {Screen.height}");
-            foreach (var counter in counters)
-                text.AppendLine(counter.label + ": " +
-                    (counter.recorder.Valid && counter.recorder.Count > 0
-                    ? counter.recorder.LastValue.ToString("N0") : "N/A"));
-            text.Append("Scope: runtime profiler counters (all cameras)");
-            statsText = text.ToString();
+            statsText = statistics.Build(fps, ms);
         }
     }
 
@@ -264,11 +237,21 @@ public sealed class GraphicsDebugMenu : MonoBehaviour
         try
         {
             if (GUI.Button(new Rect(width - 202, 12, 190, 30), "Graphics Debug [F2]")) SetOpen(!opened);
-            if (showStats) GUI.Box(new Rect(width - 332, 48, 320, 182), statsText);
+            float statsHeight = Mathf.Min(450, height * 0.52f);
+            if (showStats)
+            {
+                GUILayout.BeginArea(new Rect(Mathf.Max(12, width - 492), 48,
+                    Mathf.Min(480, width - 24), statsHeight), GUI.skin.box);
+                statsScroll = GUILayout.BeginScrollView(statsScroll);
+                GUILayout.Label(statsText);
+                GUILayout.EndScrollView();
+                GUILayout.EndArea();
+            }
             if (showPreviews) DrawPreviews(width, height);
             if (!opened) return;
-            GUILayout.BeginArea(new Rect(Mathf.Max(12, width - 442), 238, 430,
-                Mathf.Max(100, height - 250)), GUI.skin.box);
+            float menuTop = showStats ? 56 + statsHeight : 48;
+            GUILayout.BeginArea(new Rect(Mathf.Max(12, width - 442), menuTop, 430,
+                Mathf.Max(80, height - menuTop - 12)), GUI.skin.box);
             scroll = GUILayout.BeginScrollView(scroll);
             GUILayout.Label("Graphics Debug (separate from gameplay debug)");
             showStats = GUILayout.Toggle(showStats, "Show rendering stats");
@@ -338,15 +321,15 @@ public sealed class GraphicsDebugMenu : MonoBehaviour
     {
         SetOpen(false);
         ResetToInitial();
-        foreach (var counter in counters) counter.recorder.Dispose();
-        counters.Clear();
+        statistics?.Dispose();
+        statistics = null;
         if (runtimePipeline != null)
         {
             if (QualitySettings.renderPipeline == runtimePipeline)
                 QualitySettings.renderPipeline = previousQualityPipeline;
             // 外部のQuality変更などで参照中のコピーは破棄しない。
             if (GraphicsSettings.currentRenderPipeline != runtimePipeline)
-            Destroy(runtimePipeline);
+                Destroy(runtimePipeline);
         }
         runtimePipeline = null;
         componentStates.Clear(); rendererStates.Clear(); cameras.Clear();

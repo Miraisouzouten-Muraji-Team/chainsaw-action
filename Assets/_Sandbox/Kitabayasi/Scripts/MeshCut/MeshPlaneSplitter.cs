@@ -218,6 +218,14 @@ public sealed class MeshPlaneSplitter
 
         var cutSegments = new List<CutSegment>();
 
+        // Triangle単位で一時Collectionを生成しないため、分割処理中だけ使う作業領域を再利用する。
+        // List.Clear()後もCapacityは維持されるため、交差Triangle数に比例したManaged Allocationを避けられる。
+        var triangleIndices = new List<int>();
+        var clippedPolygon = new List<VertexData>(4);
+        var cutPoints = new List<Vector3>(3);
+        var cutPointSourceEdgeVertexIndexA = new List<int>(3);
+        var cutPointSourceEdgeVertexIndexB = new List<int>(3);
+
         int positiveOnlyTriangleCount = 0;
         int negativeOnlyTriangleCount = 0;
         int intersectingTriangleCount = 0;
@@ -235,9 +243,13 @@ public sealed class MeshPlaneSplitter
                 return false;
             }
 
-            int[] triangles = sourceMesh.GetTriangles(subMeshIndex);
+            // Arrayを返すGetTrianglesではなく、同じListへ書き込むoverloadを使う。
+            // SubMeshごとのindex配列生成を避けつつ、既存と同じapplyBaseVertex=trueの挙動を維持する。
+            sourceMesh.GetTriangles(
+                triangleIndices,
+                subMeshIndex);
 
-            if (triangles.Length % 3 != 0)
+            if (triangleIndices.Count % 3 != 0)
             {
                 failureReason =
                     $"SubMesh {subMeshIndex} のTriangle index数が不正です。";
@@ -245,12 +257,12 @@ public sealed class MeshPlaneSplitter
             }
 
             for (int triangleIndex = 0;
-                 triangleIndex < triangles.Length;
+                 triangleIndex < triangleIndices.Count;
                  triangleIndex += 3)
             {
-                int indexA = triangles[triangleIndex];
-                int indexB = triangles[triangleIndex + 1];
-                int indexC = triangles[triangleIndex + 2];
+                int indexA = triangleIndices[triangleIndex];
+                int indexB = triangleIndices[triangleIndex + 1];
+                int indexC = triangleIndices[triangleIndex + 2];
 
                 if (!IsValidVertexIndex(indexA, sourceVertices.Length) ||
                     !IsValidVertexIndex(indexB, sourceVertices.Length) ||
@@ -261,15 +273,7 @@ public sealed class MeshPlaneSplitter
                     return false;
                 }
 
-                int[] triangleVertexIndices =
-                {
-                    indexA,
-                    indexB,
-                    indexC
-                };
-
-                VertexData[] triangle =
-                {
+                VertexData vertexA =
                     CreateVertexData(
                         indexA,
                         sourceVertices,
@@ -277,7 +281,9 @@ public sealed class MeshPlaneSplitter
                         sourceUv,
                         sourceTangents,
                         hasUv,
-                        hasTangents),
+                        hasTangents);
+
+                VertexData vertexB =
                     CreateVertexData(
                         indexB,
                         sourceVertices,
@@ -285,7 +291,9 @@ public sealed class MeshPlaneSplitter
                         sourceUv,
                         sourceTangents,
                         hasUv,
-                        hasTangents),
+                        hasTangents);
+
+                VertexData vertexC =
                     CreateVertexData(
                         indexC,
                         sourceVertices,
@@ -293,17 +301,19 @@ public sealed class MeshPlaneSplitter
                         sourceUv,
                         sourceTangents,
                         hasUv,
-                        hasTangents)
-                };
+                        hasTangents);
 
-                float distanceA = cutPlane.GetDistanceToPoint(
-                    triangle[0].Position);
+                float distanceA =
+                    cutPlane.GetDistanceToPoint(
+                        vertexA.Position);
 
-                float distanceB = cutPlane.GetDistanceToPoint(
-                    triangle[1].Position);
+                float distanceB =
+                    cutPlane.GetDistanceToPoint(
+                        vertexB.Position);
 
-                float distanceC = cutPlane.GetDistanceToPoint(
-                    triangle[2].Position);
+                float distanceC =
+                    cutPlane.GetDistanceToPoint(
+                        vertexC.Position);
 
                 if (!IsFinite(distanceA) ||
                     !IsFinite(distanceB) ||
@@ -313,13 +323,6 @@ public sealed class MeshPlaneSplitter
                         "PlaneとTriangleの距離計算でNaN / Infinityを検出しました。";
                     return false;
                 }
-
-                float[] distances =
-                {
-                    distanceA,
-                    distanceB,
-                    distanceC
-                };
 
                 bool hasPositiveVertex =
                     distanceA > geometryEpsilon ||
@@ -336,9 +339,9 @@ public sealed class MeshPlaneSplitter
                     positiveOnlyTriangleCount++;
 
                     firstBuilder.AddTriangle(
-                        triangle[0],
-                        triangle[1],
-                        triangle[2],
+                        vertexA,
+                        vertexB,
+                        vertexC,
                         subMeshIndex,
                         false);
 
@@ -350,9 +353,9 @@ public sealed class MeshPlaneSplitter
                     negativeOnlyTriangleCount++;
 
                     secondBuilder.AddTriangle(
-                        triangle[0],
-                        triangle[1],
-                        triangle[2],
+                        vertexA,
+                        vertexB,
+                        vertexC,
                         subMeshIndex,
                         false);
 
@@ -361,33 +364,52 @@ public sealed class MeshPlaneSplitter
 
                 intersectingTriangleCount++;
 
-                List<VertexData> positivePolygon = ClipTriangle(
-                    triangle,
-                    distances,
+                ClipTriangle(
+                    vertexA,
+                    vertexB,
+                    vertexC,
+                    distanceA,
+                    distanceB,
+                    distanceC,
                     true,
-                    geometryEpsilon);
-
-                List<VertexData> negativePolygon = ClipTriangle(
-                    triangle,
-                    distances,
-                    false,
-                    geometryEpsilon);
+                    geometryEpsilon,
+                    clippedPolygon);
 
                 firstBuilder.AddConvexPolygon(
-                    positivePolygon,
+                    clippedPolygon,
                     subMeshIndex,
                     false);
 
+                ClipTriangle(
+                    vertexA,
+                    vertexB,
+                    vertexC,
+                    distanceA,
+                    distanceB,
+                    distanceC,
+                    false,
+                    geometryEpsilon,
+                    clippedPolygon);
+
                 secondBuilder.AddConvexPolygon(
-                    negativePolygon,
+                    clippedPolygon,
                     subMeshIndex,
                     false);
 
                 if (!TryGetCutSegment(
-                        triangle,
-                        triangleVertexIndices,
-                        distances,
+                        vertexA,
+                        vertexB,
+                        vertexC,
+                        indexA,
+                        indexB,
+                        indexC,
+                        distanceA,
+                        distanceB,
+                        distanceC,
                         geometryEpsilon,
+                        cutPoints,
+                        cutPointSourceEdgeVertexIndexA,
+                        cutPointSourceEdgeVertexIndexB,
                         out CutSegment cutSegment,
                         out bool isDegenerateSegment))
                 {
@@ -406,9 +428,15 @@ public sealed class MeshPlaneSplitter
                                 subMeshIndex,
                                 triangleIndex / 3,
                                 triangleIndex,
-                                triangle,
-                                triangleVertexIndices,
-                                distances,
+                                vertexA,
+                                vertexB,
+                                vertexC,
+                                indexA,
+                                indexB,
+                                indexC,
+                                distanceA,
+                                distanceB,
+                                distanceC,
                                 geometryEpsilon);
 
                             loggedDegenerateCutSegmentCount++;
@@ -573,64 +601,82 @@ public sealed class MeshPlaneSplitter
                 : Vector4.zero);
     }
 
-    private static List<VertexData> ClipTriangle(
-        IReadOnlyList<VertexData> triangle,
-        IReadOnlyList<float> distances,
+    private static void ClipTriangle(
+        VertexData vertexA,
+        VertexData vertexB,
+        VertexData vertexC,
+        float distanceA,
+        float distanceB,
+        float distanceC,
         bool keepPositiveSide,
-        float geometryEpsilon)
+        float geometryEpsilon,
+        List<VertexData> output)
     {
-        var output =
-            new List<VertexData>(4);
+        // TriangleごとにListを生成せず、呼び出し側が分割処理中に再利用する作業領域へ書き込む。
+        output.Clear();
 
-        VertexData previousVertex =
-            triangle[triangle.Count - 1];
+        AddClippedEdge(
+            vertexC,
+            vertexA,
+            distanceC,
+            distanceA,
+            keepPositiveSide,
+            geometryEpsilon,
+            output);
 
-        float previousDistance =
-            distances[distances.Count - 1];
+        AddClippedEdge(
+            vertexA,
+            vertexB,
+            distanceA,
+            distanceB,
+            keepPositiveSide,
+            geometryEpsilon,
+            output);
 
+        AddClippedEdge(
+            vertexB,
+            vertexC,
+            distanceB,
+            distanceC,
+            keepPositiveSide,
+            geometryEpsilon,
+            output);
+
+        if (output.Count >= 2 &&
+            ArePositionsClose(
+                output[0].Position,
+                output[output.Count - 1].Position,
+                geometryEpsilon))
+        {
+            output.RemoveAt(
+                output.Count - 1);
+        }
+    }
+
+    private static void AddClippedEdge(
+        VertexData previousVertex,
+        VertexData currentVertex,
+        float previousDistance,
+        float currentDistance,
+        bool keepPositiveSide,
+        float geometryEpsilon,
+        List<VertexData> output)
+    {
         bool previousInside =
             IsInsideHalfSpace(
                 previousDistance,
                 keepPositiveSide,
                 geometryEpsilon);
 
-        for (int i = 0; i < triangle.Count; i++)
+        bool currentInside =
+            IsInsideHalfSpace(
+                currentDistance,
+                keepPositiveSide,
+                geometryEpsilon);
+
+        if (currentInside)
         {
-            VertexData currentVertex =
-                triangle[i];
-
-            float currentDistance =
-                distances[i];
-
-            bool currentInside =
-                IsInsideHalfSpace(
-                    currentDistance,
-                    keepPositiveSide,
-                    geometryEpsilon);
-
-            if (currentInside)
-            {
-                if (!previousInside)
-                {
-                    VertexData intersection =
-                        InterpolateToPlane(
-                            previousVertex,
-                            currentVertex,
-                            previousDistance,
-                            currentDistance);
-
-                    AddDistinctPolygonVertex(
-                        output,
-                        intersection,
-                        geometryEpsilon);
-                }
-
-                AddDistinctPolygonVertex(
-                    output,
-                    currentVertex,
-                    geometryEpsilon);
-            }
-            else if (previousInside)
+            if (!previousInside)
             {
                 VertexData intersection =
                     InterpolateToPlane(
@@ -645,27 +691,30 @@ public sealed class MeshPlaneSplitter
                     geometryEpsilon);
             }
 
-            previousVertex =
-                currentVertex;
+            AddDistinctPolygonVertex(
+                output,
+                currentVertex,
+                geometryEpsilon);
 
-            previousDistance =
-                currentDistance;
-
-            previousInside =
-                currentInside;
+            return;
         }
 
-        if (output.Count >= 2 &&
-            ArePositionsClose(
-                output[0].Position,
-                output[output.Count - 1].Position,
-                geometryEpsilon))
+        if (!previousInside)
         {
-            output.RemoveAt(
-                output.Count - 1);
+            return;
         }
 
-        return output;
+        VertexData exitIntersection =
+            InterpolateToPlane(
+                previousVertex,
+                currentVertex,
+                previousDistance,
+                currentDistance);
+
+        AddDistinctPolygonVertex(
+            output,
+            exitIntersection,
+            geometryEpsilon);
     }
 
     private static bool IsInsideHalfSpace(
@@ -717,10 +766,19 @@ public sealed class MeshPlaneSplitter
     }
 
     private static bool TryGetCutSegment(
-        IReadOnlyList<VertexData> triangle,
-        IReadOnlyList<int> sourceVertexIndices,
-        IReadOnlyList<float> distances,
+        VertexData vertexA,
+        VertexData vertexB,
+        VertexData vertexC,
+        int sourceVertexIndexA,
+        int sourceVertexIndexB,
+        int sourceVertexIndexC,
+        float distanceA,
+        float distanceB,
+        float distanceC,
         float geometryEpsilon,
+        List<Vector3> points,
+        List<int> pointSourceEdgeVertexIndexA,
+        List<int> pointSourceEdgeVertexIndexB,
         out CutSegment cutSegment,
         out bool isDegenerateSegment)
     {
@@ -729,107 +787,53 @@ public sealed class MeshPlaneSplitter
 
         if (!IsFinite(geometryEpsilon) ||
             geometryEpsilon <= 0.0f ||
-            triangle == null ||
-            sourceVertexIndices == null ||
-            distances == null ||
-            triangle.Count != distances.Count ||
-            triangle.Count != sourceVertexIndices.Count)
+            points == null ||
+            pointSourceEdgeVertexIndexA == null ||
+            pointSourceEdgeVertexIndexB == null)
         {
             return false;
         }
 
-        var points =
-            new List<Vector3>(3);
+        // 交差TriangleごとにListを生成せず、TrySplitMeshで確保した作業領域を再利用する。
+        points.Clear();
+        pointSourceEdgeVertexIndexA.Clear();
+        pointSourceEdgeVertexIndexB.Clear();
 
-        var pointSourceEdgeVertexIndexA =
-            new List<int>(3);
-
-        var pointSourceEdgeVertexIndexB =
-            new List<int>(3);
-
-        for (int i = 0;
-             i < triangle.Count;
-             i++)
-        {
-            int nextIndex =
-                (i + 1) % triangle.Count;
-
-            Vector3 currentPosition =
-                triangle[i].Position;
-
-            Vector3 nextPosition =
-                triangle[nextIndex].Position;
-
-            float currentDistance =
-                distances[i];
-
-            float nextDistance =
-                distances[nextIndex];
-
-            int currentSourceVertexIndex =
-                sourceVertexIndices[i];
-
-            int nextSourceVertexIndex =
-                sourceVertexIndices[nextIndex];
-
-            if (!IsFinite(currentPosition) ||
-                !IsFinite(nextPosition) ||
-                !IsFinite(currentDistance) ||
-                !IsFinite(nextDistance))
-            {
-                return false;
-            }
-
-            if (Mathf.Abs(currentDistance) <=
-                geometryEpsilon)
-            {
-                // Plane上の元頂点は (vertex, vertex) として保持する。
-                // 交差Edgeとは区別し、隣接Triangle間では同じ元頂点として接続する。
-                AddDistinctCutPoint(
-                    points,
-                    pointSourceEdgeVertexIndexA,
-                    pointSourceEdgeVertexIndexB,
-                    currentPosition,
-                    currentSourceVertexIndex,
-                    currentSourceVertexIndex);
-            }
-
-            bool crossesPlane =
-                (currentDistance > geometryEpsilon &&
-                 nextDistance < -geometryEpsilon) ||
-                (currentDistance < -geometryEpsilon &&
-                 nextDistance > geometryEpsilon);
-
-            if (!crossesPlane)
-            {
-                continue;
-            }
-
-            VertexData intersection =
-                InterpolateToPlane(
-                    triangle[i],
-                    triangle[nextIndex],
-                    currentDistance,
-                    nextDistance);
-
-            if (!IsFinite(intersection.Position))
-            {
-                return false;
-            }
-
-            GetCanonicalEdgeVertexIndices(
-                currentSourceVertexIndex,
-                nextSourceVertexIndex,
-                out int sourceEdgeVertexIndexA,
-                out int sourceEdgeVertexIndexB);
-
-            AddDistinctCutPoint(
+        if (!TryAddCutPointsForEdge(
+                vertexA,
+                vertexB,
+                sourceVertexIndexA,
+                sourceVertexIndexB,
+                distanceA,
+                distanceB,
+                geometryEpsilon,
                 points,
                 pointSourceEdgeVertexIndexA,
-                pointSourceEdgeVertexIndexB,
-                intersection.Position,
-                sourceEdgeVertexIndexA,
-                sourceEdgeVertexIndexB);
+                pointSourceEdgeVertexIndexB) ||
+            !TryAddCutPointsForEdge(
+                vertexB,
+                vertexC,
+                sourceVertexIndexB,
+                sourceVertexIndexC,
+                distanceB,
+                distanceC,
+                geometryEpsilon,
+                points,
+                pointSourceEdgeVertexIndexA,
+                pointSourceEdgeVertexIndexB) ||
+            !TryAddCutPointsForEdge(
+                vertexC,
+                vertexA,
+                sourceVertexIndexC,
+                sourceVertexIndexA,
+                distanceC,
+                distanceA,
+                geometryEpsilon,
+                points,
+                pointSourceEdgeVertexIndexA,
+                pointSourceEdgeVertexIndexB))
+        {
+            return false;
         }
 
         if (points.Count < 2)
@@ -919,6 +923,80 @@ public sealed class MeshPlaneSplitter
                 pointSourceEdgeVertexIndexB[firstPointIndex],
                 pointSourceEdgeVertexIndexA[secondPointIndex],
                 pointSourceEdgeVertexIndexB[secondPointIndex]);
+
+        return true;
+    }
+
+    private static bool TryAddCutPointsForEdge(
+        VertexData currentVertex,
+        VertexData nextVertex,
+        int currentSourceVertexIndex,
+        int nextSourceVertexIndex,
+        float currentDistance,
+        float nextDistance,
+        float geometryEpsilon,
+        List<Vector3> points,
+        List<int> pointSourceEdgeVertexIndexA,
+        List<int> pointSourceEdgeVertexIndexB)
+    {
+        if (!IsFinite(currentVertex.Position) ||
+            !IsFinite(nextVertex.Position) ||
+            !IsFinite(currentDistance) ||
+            !IsFinite(nextDistance))
+        {
+            return false;
+        }
+
+        if (Mathf.Abs(currentDistance) <=
+            geometryEpsilon)
+        {
+            // Plane上の元頂点は (vertex, vertex) として保持する。
+            // 交差Edgeとは区別し、隣接Triangle間では同じ元頂点として接続する。
+            AddDistinctCutPoint(
+                points,
+                pointSourceEdgeVertexIndexA,
+                pointSourceEdgeVertexIndexB,
+                currentVertex.Position,
+                currentSourceVertexIndex,
+                currentSourceVertexIndex);
+        }
+
+        bool crossesPlane =
+            (currentDistance > geometryEpsilon &&
+             nextDistance < -geometryEpsilon) ||
+            (currentDistance < -geometryEpsilon &&
+             nextDistance > geometryEpsilon);
+
+        if (!crossesPlane)
+        {
+            return true;
+        }
+
+        VertexData intersection =
+            InterpolateToPlane(
+                currentVertex,
+                nextVertex,
+                currentDistance,
+                nextDistance);
+
+        if (!IsFinite(intersection.Position))
+        {
+            return false;
+        }
+
+        GetCanonicalEdgeVertexIndices(
+            currentSourceVertexIndex,
+            nextSourceVertexIndex,
+            out int sourceEdgeVertexIndexA,
+            out int sourceEdgeVertexIndexB);
+
+        AddDistinctCutPoint(
+            points,
+            pointSourceEdgeVertexIndexA,
+            pointSourceEdgeVertexIndexB,
+            intersection.Position,
+            sourceEdgeVertexIndexA,
+            sourceEdgeVertexIndexB);
 
         return true;
     }
@@ -1192,9 +1270,15 @@ public sealed class MeshPlaneSplitter
         int subMeshIndex,
         int triangleIndex,
         int triangleIndexBufferOffset,
-        IReadOnlyList<VertexData> triangle,
-        IReadOnlyList<int> sourceVertexIndices,
-        IReadOnlyList<float> distances,
+        VertexData vertexA,
+        VertexData vertexB,
+        VertexData vertexC,
+        int sourceVertexIndexA,
+        int sourceVertexIndexB,
+        int sourceVertexIndexC,
+        float distanceA,
+        float distanceB,
+        float distanceC,
         float geometryEpsilon)
     {
         if (!ENABLE_BOUNDARY_DIAGNOSTIC_LOGS)
@@ -1205,50 +1289,89 @@ public sealed class MeshPlaneSplitter
         var edgeDetails =
             new List<string>(3);
 
-        for (int i = 0; i < 3; i++)
-        {
-            int nextIndex =
-                (i + 1) % 3;
+        AddDegenerateCutSegmentEdgeDiagnostic(
+            edgeDetails,
+            0,
+            vertexA,
+            vertexB,
+            sourceVertexIndexA,
+            sourceVertexIndexB,
+            distanceA,
+            distanceB,
+            geometryEpsilon);
 
-            GetCanonicalEdgeVertexIndices(
-                sourceVertexIndices[i],
-                sourceVertexIndices[nextIndex],
-                out int edgeVertexIndexA,
-                out int edgeVertexIndexB);
+        AddDegenerateCutSegmentEdgeDiagnostic(
+            edgeDetails,
+            1,
+            vertexB,
+            vertexC,
+            sourceVertexIndexB,
+            sourceVertexIndexC,
+            distanceB,
+            distanceC,
+            geometryEpsilon);
 
-            bool crossesPlane =
-                (distances[i] > geometryEpsilon &&
-                 distances[nextIndex] < -geometryEpsilon) ||
-                (distances[i] < -geometryEpsilon &&
-                 distances[nextIndex] > geometryEpsilon);
-
-            bool currentOnPlane =
-                Mathf.Abs(distances[i]) <= geometryEpsilon;
-
-            bool nextOnPlane =
-                Mathf.Abs(distances[nextIndex]) <= geometryEpsilon;
-
-            edgeDetails.Add(
-                $"  Edge[{i}]: SourceEdge=({edgeVertexIndexA}, {edgeVertexIndexB}), " +
-                $"Distance=({distances[i]:E6}, {distances[nextIndex]:E6}), " +
-                $"CurrentOnPlane={currentOnPlane}, " +
-                $"NextOnPlane={nextOnPlane}, " +
-                $"CrossesPlane={crossesPlane}, " +
-                $"PositionA={FormatDiagnosticVector3(triangle[i].Position)}, " +
-                $"PositionB={FormatDiagnosticVector3(triangle[nextIndex].Position)}");
-        }
+        AddDegenerateCutSegmentEdgeDiagnostic(
+            edgeDetails,
+            2,
+            vertexC,
+            vertexA,
+            sourceVertexIndexC,
+            sourceVertexIndexA,
+            distanceC,
+            distanceA,
+            geometryEpsilon);
 
         Debug.LogWarning(
             "[MeshCutBoundaryDiagnostic][DegenerateCutSegment]\n" +
             $"SubMesh={subMeshIndex}, " +
             $"Triangle={triangleIndex}, " +
             $"TriangleIndexBufferOffset={triangleIndexBufferOffset}, " +
-            $"SourceVertexIndices=({sourceVertexIndices[0]}, {sourceVertexIndices[1]}, {sourceVertexIndices[2]}), " +
+            $"SourceVertexIndices=({sourceVertexIndexA}, {sourceVertexIndexB}, {sourceVertexIndexC}), " +
             $"GeometryEpsilon={geometryEpsilon:E6}\n" +
-            $"Vertex[0]={FormatDiagnosticVector3(triangle[0].Position)}, Distance={distances[0]:E6}\n" +
-            $"Vertex[1]={FormatDiagnosticVector3(triangle[1].Position)}, Distance={distances[1]:E6}\n" +
-            $"Vertex[2]={FormatDiagnosticVector3(triangle[2].Position)}, Distance={distances[2]:E6}\n" +
+            $"Vertex[0]={FormatDiagnosticVector3(vertexA.Position)}, Distance={distanceA:E6}\n" +
+            $"Vertex[1]={FormatDiagnosticVector3(vertexB.Position)}, Distance={distanceB:E6}\n" +
+            $"Vertex[2]={FormatDiagnosticVector3(vertexC.Position)}, Distance={distanceC:E6}\n" +
             string.Join("\n", edgeDetails));
+    }
+
+    private static void AddDegenerateCutSegmentEdgeDiagnostic(
+        List<string> edgeDetails,
+        int edgeIndex,
+        VertexData currentVertex,
+        VertexData nextVertex,
+        int currentSourceVertexIndex,
+        int nextSourceVertexIndex,
+        float currentDistance,
+        float nextDistance,
+        float geometryEpsilon)
+    {
+        GetCanonicalEdgeVertexIndices(
+            currentSourceVertexIndex,
+            nextSourceVertexIndex,
+            out int edgeVertexIndexA,
+            out int edgeVertexIndexB);
+
+        bool crossesPlane =
+            (currentDistance > geometryEpsilon &&
+             nextDistance < -geometryEpsilon) ||
+            (currentDistance < -geometryEpsilon &&
+             nextDistance > geometryEpsilon);
+
+        bool currentOnPlane =
+            Mathf.Abs(currentDistance) <= geometryEpsilon;
+
+        bool nextOnPlane =
+            Mathf.Abs(nextDistance) <= geometryEpsilon;
+
+        edgeDetails.Add(
+            $"  Edge[{edgeIndex}]: SourceEdge=({edgeVertexIndexA}, {edgeVertexIndexB}), " +
+            $"Distance=({currentDistance:E6}, {nextDistance:E6}), " +
+            $"CurrentOnPlane={currentOnPlane}, " +
+            $"NextOnPlane={nextOnPlane}, " +
+            $"CrossesPlane={crossesPlane}, " +
+            $"PositionA={FormatDiagnosticVector3(currentVertex.Position)}, " +
+            $"PositionB={FormatDiagnosticVector3(nextVertex.Position)}");
     }
 
     /// <summary>

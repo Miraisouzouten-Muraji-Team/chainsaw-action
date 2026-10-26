@@ -21,14 +21,20 @@ public sealed class EnemyAttackState :
     IEnemyCollisionStayReceiver
 {
     private readonly IEnemyAttackStrategy attackStrategy;
+    private readonly Action requestAttackCycleCompletion;
 
     private float initialAttackDirectionSign = 1f;
+    private bool hasRequestedAttackCycleCompletion;
 
     public EnemyAttackState(
-        IEnemyAttackStrategy attackStrategy)
+        IEnemyAttackStrategy attackStrategy,
+        Action requestAttackCycleCompletion)
     {
         this.attackStrategy = attackStrategy
             ?? throw new ArgumentNullException(nameof(attackStrategy));
+
+        this.requestAttackCycleCompletion = requestAttackCycleCompletion
+            ?? throw new ArgumentNullException(nameof(requestAttackCycleCompletion));
     }
 
     /// <summary>
@@ -45,13 +51,22 @@ public sealed class EnemyAttackState :
 
     public void Enter()
     {
+        hasRequestedAttackCycleCompletion = false;
+
         attackStrategy.BeginAttack(
             initialAttackDirectionSign);
     }
 
     public void Update()
     {
-        attackStrategy.UpdateAttack();
+        if (hasRequestedAttackCycleCompletion ||
+            !attackStrategy.UpdateAttack())
+        {
+            return;
+        }
+
+        hasRequestedAttackCycleCompletion = true;
+        requestAttackCycleCompletion.Invoke();
     }
 
     public void HandleCollisionEnter(

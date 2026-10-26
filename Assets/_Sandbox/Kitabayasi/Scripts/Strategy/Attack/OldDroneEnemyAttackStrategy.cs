@@ -159,12 +159,16 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
         }
     }
 
-    public void UpdateAttack()
+    public bool UpdateAttack()
     {
         if (isAttackActive)
         {
             updateCurrentPhase?.Invoke();
         }
+
+        // 旧型DroneはAttack State内で攻撃ループを継続するため、
+        // StateMachineへ攻撃サイクル完了を要求しない。
+        return false;
     }
 
     public void HandleCollisionEnter(Collision collision)

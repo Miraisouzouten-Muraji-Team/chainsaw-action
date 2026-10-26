@@ -401,7 +401,8 @@ public class EnemyStateMachine : MonoBehaviour
 
         attackState =
             new EnemyAttackState(
-                attackStrategy);
+                attackStrategy,
+                RequestAttackCycleCompletion);
     }
 
     /// <summary>
@@ -441,6 +442,37 @@ public class EnemyStateMachine : MonoBehaviour
         }
 
         ChangeState(attackState);
+    }
+
+    /// <summary>
+    /// 1攻撃サイクル完了後、通常Searchと同じ条件でPlayerを再検知する。
+    /// 検知中ならAttack Stateを入り直し、未検知ならSearch Stateへ戻す。
+    /// </summary>
+    private void RequestAttackCycleCompletion()
+    {
+        if (!isActiveAndEnabled ||
+            enemyHealth.IsDead ||
+            !ReferenceEquals(
+                CurrentState,
+                attackState))
+        {
+            return;
+        }
+
+        if (searchStrategy.TryDetectPlayer(
+                out float detectedPlayerDirectionSign))
+        {
+            attackState.SetInitialAttackDirection(
+                detectedPlayerDirectionSign);
+
+            // 同じStateへのChangeStateは無視されるため、
+            // 1サイクル分のStrategy状態を確実に終了してからAttackへ入り直す。
+            ExitCurrentState();
+            ChangeState(attackState);
+            return;
+        }
+
+        ChangeState(searchState);
     }
 
     /// <summary>

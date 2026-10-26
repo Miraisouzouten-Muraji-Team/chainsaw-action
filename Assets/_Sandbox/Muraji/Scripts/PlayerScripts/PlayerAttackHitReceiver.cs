@@ -7,9 +7,6 @@ using UnityEngine;
 [RequireComponent(typeof(PlayerHealth))]
 public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
 {
-    private static readonly int BASE_COLOR = Shader.PropertyToID("_BaseColor");
-    private static readonly int EMISSION_COLOR = Shader.PropertyToID("_EmissionColor");
-
     [Header("参照")]
     [Tooltip("プレイヤーの操作処理です。未設定なら自分または親から取得します。")]
     [SerializeField] private SensorPlayerController playerController;
@@ -17,13 +14,24 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     [Tooltip("被弾時に画面の周囲を赤くする演出です。専用Volumeと同じオブジェクトのPlayerDamageScreenEffectを指定します。")]
     [SerializeField] private PlayerDamageScreenEffect damageScreenEffect;
 
+    [Tooltip("敵とギミックで共用する点滅処理です。未設定なら同じオブジェクトから取得し、なければ従来の設定を使って自動追加します。")]
+    [SerializeField] private PlayerDamageMaterialFlash damageMaterialFlash;
+
     [Header("敵からの被弾")]
     [Tooltip("やられ状態で移動・攻撃・ジャンプ・食い込みの入力を止める秒数です。空中では落下を続けます。")]
     [SerializeField, Min(0.01f)] private float hurtDuration = 0.4f;
     [Tooltip("敵からの追加ダメージを無効にする秒数です。硬直時間とは別です。0なら追加の無敵時間を設けません。")]
     [SerializeField, Min(0f)] private float damageInvulnerabilityDuration = 2f;
 
-    [Header("無敵中の白黒点滅")]
+    [Header("敵からの被弾時のカメラシェイク")]
+    [Tooltip("被弾時に揺らす既存のCameraShake_Systemです。未設定ならMainCamera自身と親、子から探します。複数カメラがある場合は手動で指定してください。")]
+    [SerializeField] private CameraShake_System damageCameraShake;
+    [Tooltip("敵から攻撃を受けたときにカメラを揺らす秒数です。0なら揺らしません。既存システムに従いヒットストップ中も進みます。")]
+    [SerializeField, Min(0f)] private float damageShakeDuration = 0.15f;
+    [Tooltip("被弾時のカメラの揺れ幅です。値が大きいほど強く揺れます。0なら揺らしません。")]
+    [SerializeField, Min(0f)] private float damageShakeMagnitude = 0.1f;
+
+    [Header("点滅コンポーネント自動追加時の引き継ぎ設定")]
     [Tooltip("点滅させる身体・武器の親です。残像やエフェクトの親は含めないでください。")]
     [SerializeField] private Transform flashModelRoot;
     [Tooltip("個別指定する場合の描画対象です。空欄なら見た目の親からMeshRendererとSkinnedMeshRendererを取得します。")]
@@ -62,25 +70,9 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
         !playerHealth.IsDead && playerController != null && playerController.isActiveAndEnabled &&
         (IsDamageInvulnerable || !playerController.CanTakeDamage);
 
+    private bool warnedDamageCameraShake;
     private bool processingHit;
     private int lifecycleVersion;
-    private float flashElapsed;
-    private int lastFlashPhase = -1;
-    private bool warnedFlashSettings;
-    private Material whiteMaterial;
-    private Material blackMaterial;
-
-    private sealed class FlashPart
-    {
-        public Renderer Renderer;
-        public Material[] OriginalMaterials;
-        public Material[] WhiteMaterials;
-        public Material[] BlackMaterials;
-        public MaterialPropertyBlock OriginalBlock;
-        public MaterialPropertyBlock[] OriginalSlotBlocks;
-    }
-
-    private readonly List<FlashPart> activeFlashParts = new List<FlashPart>();
 
     // HP・親の操作処理を取得し、死亡と全回復による演出解除を登録する。
     private void Awake()
@@ -97,6 +89,16 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
         }
 
         playerBody = playerController.GetComponent<Rigidbody>();
+
+        // 既存のInspector設定を維持しつつ、材質を変更する担当を一つに統一する。
+        if (damageMaterialFlash == null)
+            damageMaterialFlash = GetComponent<PlayerDamageMaterialFlash>();
+        if (damageMaterialFlash == null)
+        {
+            damageMaterialFlash = gameObject.AddComponent<PlayerDamageMaterialFlash>();
+            damageMaterialFlash.ConfigureLegacySettings(
+                flashModelRoot, flashRenderers, flashMaterial, flashInterval);
+        }
 
         playerHealth.Died += HandleDied;
         playerHealth.HealthRestored += HandleHealthRestored;
@@ -146,10 +148,14 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
             if (damageScreenEffect != null)
                 damageScreenEffect.PlayDamageEffect();
 
+            // 既存のやられ演出と同じく、実際にHPが減って生存している場合だけ揺らす。
+            PlayDamageCameraShake();
+
             playerController.BeginDamageStun(hurtDuration);
             // 被弾を受信した物理ステップから、敵本体に押されないようにする。
             UpdateEnemyCollisionIgnores();
-            BeginFlashing();
+            if (damageMaterialFlash != null)
+                damageMaterialFlash.PlayDamageFlash(damageInvulnerabilityRemaining);
         }
         finally
         {
@@ -157,7 +163,42 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
         }
     }
 
-    // 無敵時間と点滅を物理更新で進め、終了時に元の描画へ戻す。
+    // 有効なシェイク参照を取得し、指定時間と強さで既存のカメラ演出を呼び出す。
+    private void PlayDamageCameraShake()
+    {
+        if (damageShakeDuration <= 0f || damageShakeMagnitude <= 0f ||
+            float.IsNaN(damageShakeDuration) || float.IsInfinity(damageShakeDuration) ||
+            float.IsNaN(damageShakeMagnitude) || float.IsInfinity(damageShakeMagnitude))
+        {
+            return;
+        }
+
+        if (damageCameraShake == null)
+        {
+            Camera mainCamera = Camera.main;
+            if (mainCamera != null)
+            {
+                damageCameraShake = mainCamera.GetComponentInParent<CameraShake_System>();
+                if (damageCameraShake == null)
+                    damageCameraShake = mainCamera.GetComponentInChildren<CameraShake_System>();
+            }
+        }
+
+        if (damageCameraShake == null || !damageCameraShake.isActiveAndEnabled)
+        {
+            if (!warnedDamageCameraShake)
+            {
+                warnedDamageCameraShake = true;
+                Debug.LogWarning(
+                    "被弾カメラシェイク：Damage Camera Shakeに、有効なCameraShake_Systemを指定してください。ダメージや硬直の処理は継続します。", this);
+            }
+            return;
+        }
+
+        damageCameraShake.Shake(damageShakeDuration, damageShakeMagnitude);
+    }
+
+    // 無敵時間と敵本体との衝突除外を物理更新で管理する。
     private void FixedUpdate()
     {
         // 回避だけが有効な場合や、途中で出現・再有効化した敵にも対応する。
@@ -176,12 +217,8 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
         {
             // 食い込みの回避も終了していれば、次の物理計算から衝突を元へ戻す。
             UpdateEnemyCollisionIgnores();
-            RestoreMaterials();
             return;
         }
-
-        flashElapsed += deltaTime;
-        ApplyFlashPhase();
     }
 
     // 無敵中だけ、プレイヤー本体と敵本体の物理Colliderの衝突を無効にする。
@@ -261,160 +298,6 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
         enemyCollisionBuffer.Clear();
     }
 
-    // 専用マテリアルを生成し、現在の材質とプロパティを保存して白から点滅を始める。
-    private void BeginFlashing()
-    {
-        RestoreMaterials();
-        if (!IsDamageInvulnerable) return;
-
-        if (!PrepareFlashMaterials()) return;
-
-        Renderer[] sources = flashRenderers != null && flashRenderers.Length > 0
-            ? flashRenderers
-            : flashModelRoot != null
-                ? flashModelRoot.GetComponentsInChildren<Renderer>(true)
-                : new Renderer[0];
-
-        HashSet<Renderer> registered = new HashSet<Renderer>();
-        foreach (Renderer source in sources)
-        {
-            if (source == null || !registered.Add(source) ||
-                (source is not MeshRenderer && source is not SkinnedMeshRenderer)) continue;
-
-            Material[] originals = source.sharedMaterials;
-            if (originals.Length == 0) continue;
-            FlashPart part = new FlashPart
-            {
-                Renderer = source,
-                OriginalMaterials = originals,
-                WhiteMaterials = new Material[originals.Length],
-                BlackMaterials = new Material[originals.Length],
-                OriginalBlock = new MaterialPropertyBlock(),
-                OriginalSlotBlocks = new MaterialPropertyBlock[originals.Length]
-            };
-            source.GetPropertyBlock(part.OriginalBlock);
-            for (int i = 0; i < originals.Length; i++)
-            {
-                part.WhiteMaterials[i] = whiteMaterial;
-                part.BlackMaterials[i] = blackMaterial;
-                part.OriginalSlotBlocks[i] = new MaterialPropertyBlock();
-                source.GetPropertyBlock(part.OriginalSlotBlocks[i], i);
-                source.SetPropertyBlock(null, i);
-            }
-            source.SetPropertyBlock(null);
-            activeFlashParts.Add(part);
-        }
-
-        if (activeFlashParts.Count == 0 && !warnedFlashSettings)
-        {
-            warnedFlashSettings = true;
-            Debug.LogWarning("被弾点滅：Flash Model RootまたはFlash Renderersに身体の描画対象を設定してください。", this);
-        }
-        flashElapsed = 0f;
-        lastFlashPhase = -1;
-        ApplyFlashPhase();
-    }
-
-    // 割り当てたURP Litの専用コピーを、白黒点滅用に作成する。
-    private bool PrepareFlashMaterials()
-    {
-        if (whiteMaterial != null && blackMaterial != null) return true;
-        if (flashMaterial == null || flashMaterial.shader == null ||
-            flashMaterial.shader.name != "Universal Render Pipeline/Lit" ||
-            !flashMaterial.shader.isSupported)
-        {
-            if (!warnedFlashSettings)
-            {
-                warnedFlashSettings = true;
-                Debug.LogWarning("被弾点滅：Universal Render Pipeline/LitのマテリアルをFlash Materialへ設定してください。硬直と無敵は動作します。", this);
-            }
-            return false;
-        }
-
-        whiteMaterial = new Material(flashMaterial) { name = "PlayerHurt_White", hideFlags = HideFlags.DontSave };
-        blackMaterial = new Material(flashMaterial) { name = "PlayerHurt_Black", hideFlags = HideFlags.DontSave };
-        ConfigureLitFlashMaterial(whiteMaterial, Color.white);
-        ConfigureLitFlashMaterial(blackMaterial, Color.black);
-        return true;
-    }
-
-    // Litの反射・透過・テクスチャの影響を抑え、Emissionで白と黒を指定する。
-    // 実行時のコピーだけに適用し、元のマテリアルは変更しない。
-    private static void ConfigureLitFlashMaterial(Material material, Color color)
-    {
-        material.SetColor(BASE_COLOR, Color.black);
-        material.SetColor(EMISSION_COLOR, color);
-        material.SetTexture("_BaseMap", Texture2D.whiteTexture);
-        material.SetTexture("_EmissionMap", Texture2D.whiteTexture);
-        material.SetFloat("_Surface", 0f);
-        material.SetFloat("_AlphaClip", 0f);
-        material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.One);
-        material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.Zero);
-        material.SetFloat("_ZWrite", 1f);
-        material.SetFloat("_Metallic", 0f);
-        material.SetFloat("_Smoothness", 0f);
-        material.SetFloat("_SpecularHighlights", 0f);
-        material.SetFloat("_EnvironmentReflections", 0f);
-        material.SetFloat("_ReceiveShadows", 0f);
-        if (material.HasProperty("_SpecColor")) material.SetColor("_SpecColor", Color.black);
-        if (material.HasProperty("_ZWriteControl")) material.SetFloat("_ZWriteControl", 1f);
-        if (material.HasProperty("_SrcBlendAlpha"))
-            material.SetFloat("_SrcBlendAlpha", (float)UnityEngine.Rendering.BlendMode.One);
-        if (material.HasProperty("_DstBlendAlpha"))
-            material.SetFloat("_DstBlendAlpha", (float)UnityEngine.Rendering.BlendMode.Zero);
-
-        material.EnableKeyword("_EMISSION");
-        material.EnableKeyword("_SPECULARHIGHLIGHTS_OFF");
-        material.EnableKeyword("_ENVIRONMENTREFLECTIONS_OFF");
-        material.EnableKeyword("_RECEIVE_SHADOWS_OFF");
-        material.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
-        material.DisableKeyword("_ALPHATEST_ON");
-        material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-        material.DisableKeyword("_ALPHAMODULATE_ON");
-        material.DisableKeyword("_NORMALMAP");
-        material.DisableKeyword("_PARALLAXMAP");
-        material.DisableKeyword("_METALLICSPECGLOSSMAP");
-        material.DisableKeyword("_DETAIL_MULX2");
-        material.DisableKeyword("_DETAIL_SCALED");
-        material.DisableKeyword("_CLEARCOAT");
-        material.DisableKeyword("_CLEARCOATMAP");
-        material.SetOverrideTag("RenderType", "Opaque");
-        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
-        material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
-    }
-
-    // 指定間隔で白黒を切り替える。同じ色の間は再割り当てしない。
-    private void ApplyFlashPhase()
-    {
-        int phase = Mathf.FloorToInt(flashElapsed / Mathf.Max(0.01f, flashInterval)) % 2;
-        if (phase == lastFlashPhase) return;
-        lastFlashPhase = phase;
-        foreach (FlashPart part in activeFlashParts)
-        {
-            if (part.Renderer != null)
-                part.Renderer.sharedMaterials = phase == 0 ? part.WhiteMaterials : part.BlackMaterials;
-        }
-    }
-
-    // 保存したマテリアルとプロパティを戻し、点滅用の対象一覧を空にする。
-    private void RestoreMaterials()
-    {
-        foreach (FlashPart part in activeFlashParts)
-        {
-            if (part.Renderer == null) continue;
-            part.Renderer.sharedMaterials = part.OriginalMaterials;
-            part.Renderer.SetPropertyBlock(part.OriginalBlock.isEmpty ? null : part.OriginalBlock);
-            for (int i = 0; i < part.OriginalSlotBlocks.Length; i++)
-            {
-                MaterialPropertyBlock block = part.OriginalSlotBlocks[i];
-                part.Renderer.SetPropertyBlock(block.isEmpty ? null : block, i);
-            }
-        }
-        activeFlashParts.Clear();
-        flashElapsed = 0f;
-        lastFlashPhase = -1;
-    }
-
     // 復活処理などから被弾演出と無敵を解除する。
     public void ResetDamageFeedback(bool returnToIdle)
     {
@@ -424,7 +307,7 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
         if (damageScreenEffect != null)
             damageScreenEffect.ResetEffect();
         RestoreEnemyCollisions();
-        RestoreMaterials();
+        if (damageMaterialFlash != null) damageMaterialFlash.StopFlashing();
         if (playerController != null) playerController.CancelDamageStun(returnToIdle);
     }
 
@@ -446,7 +329,7 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
         ResetDamageFeedback(playerHealth != null && !playerHealth.IsDead);
     }
 
-    // イベント購読と、このコンポーネントが作成したマテリアルを破棄する。
+    // イベント購読を解除し、変更した衝突設定と点滅を元へ戻す。
     private void OnDestroy()
     {
         if (playerHealth != null)
@@ -455,8 +338,6 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
             playerHealth.HealthRestored -= HandleHealthRestored;
         }
         RestoreEnemyCollisions();
-        RestoreMaterials();
-        if (whiteMaterial != null) Destroy(whiteMaterial);
-        if (blackMaterial != null) Destroy(blackMaterial);
+        if (damageMaterialFlash != null) damageMaterialFlash.StopFlashing();
     }
 }

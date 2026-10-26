@@ -127533,6 +127533,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 2132166585}
     - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: damageMaterialFlash
+      value: 
+      objectReference: {fileID: 2030072464}
+    - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: damageInvulnerabilityDuration
       value: 1
       objectReference: {fileID: 0}
@@ -127558,6 +127562,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 5046133520663052250, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1994472489}
+    - targetCorrespondingSourceObject: {fileID: 8614425227431722280, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 2030072464}
   m_SourcePrefab: {fileID: 100100000, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
 --- !u!1 &1357045557
 GameObject:
@@ -175521,6 +175528,11 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1653065052}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &1654554865 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 8614425227431722280, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1659468283
 GameObject:
   m_ObjectHideFlags: 0
@@ -238456,6 +238468,23 @@ BoxCollider:
   m_CorrespondingSourceObject: {fileID: 3231404754770767936, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
   m_PrefabInstance: {fileID: 1351245142}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &2030072464
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1654554865}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1743c38f8d344cc4eb3559b3f488c544, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerDamageMaterialFlash
+  defaultFlashDuration: 0.5
+  flashModelRoot: {fileID: 1217448208}
+  flashRenderers: []
+  flashMaterial: {fileID: 2100000, guid: e7276798a66027b429efebfb3e455121, type: 2}
+  flashInterval: 0.08
 --- !u!1 &2034804800
 GameObject:
   m_ObjectHideFlags: 0

@@ -74,11 +74,21 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     private readonly List<GameObject> pieceObjects =
         new List<GameObject>();
 
+    // targetPieceCountを基準に死亡前へ生成コストを移すための事前生成殻。
+    // 連結成分分離で不足した分だけ死亡時に追加生成する。
+    private readonly List<GameObject> preGeneratedPieceObjects =
+        new List<GameObject>();
+
     private readonly EnemyPlayerReference playerReference =
         new EnemyPlayerReference();
 
     private readonly List<Collider> playerColliders =
         new List<Collider>();
+
+    private void Awake()
+    {
+        PreGeneratePieceObjects();
+    }
 
     /// <summary>
     /// このEnemyについて、分割Piece生成と元Rendererの非表示まで完了しているかを示す。
@@ -479,11 +489,15 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
                         pieceMesh.subMeshCount);
 
                 GameObject pieceObject =
-                    CreatePieceObject(
-                        pieceIndex,
-                        pieceMesh,
-                        pieceMaterials,
-                        sourceRenderer);
+                    GetOrCreatePieceObject(
+                        pieceIndex);
+
+                ConfigurePieceObject(
+                    pieceObject,
+                    pieceIndex,
+                    pieceMesh,
+                    pieceMaterials,
+                    sourceRenderer);
 
                 runtimePieceMeshes.Add(
                     pieceMesh);
@@ -533,17 +547,95 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     }
 
     /// <summary>
-    /// 分割後Meshを表示し、現在の通常攻撃Pieceと同じ方式で物理衝突可能なGameObjectを生成する。
+    /// targetPieceCountを基準に、くい込み死亡Piece用GameObjectと必要Componentだけを死亡前に生成する。
     /// </summary>
-    private GameObject CreatePieceObject(
+    private void PreGeneratePieceObjects()
+    {
+        int resolvedCount =
+            Mathf.Max(
+                0,
+                targetPieceCount);
+
+        for (int pieceIndex = 0;
+             pieceIndex < resolvedCount;
+             pieceIndex++)
+        {
+            GameObject pieceObject =
+                CreatePieceShell(
+                    $"{name}_PreGeneratedDiggingPiece_{pieceIndex:D2}");
+
+            preGeneratedPieceObjects.Add(
+                pieceObject);
+        }
+    }
+
+    /// <summary>
+    /// 事前生成範囲内なら既存の殻を返し、不足時だけ死亡フレームで追加生成する。
+    /// </summary>
+    private GameObject GetOrCreatePieceObject(
+        int pieceIndex)
+    {
+        if (pieceIndex < preGeneratedPieceObjects.Count)
+        {
+            GameObject preGeneratedPieceObject =
+                preGeneratedPieceObjects[pieceIndex];
+
+            if (preGeneratedPieceObject != null)
+            {
+                return preGeneratedPieceObject;
+            }
+        }
+
+        return CreatePieceShell(
+            $"{name}_FallbackDiggingPiece_{pieceIndex:D2}");
+    }
+
+    /// <summary>
+    /// Meshを持たないくい込み死亡Piece用の殻を作る。
+    /// </summary>
+    /// <remarks>
+    /// GameObjectを先に非アクティブ化してからCollider/Rigidbodyを追加し、
+    /// 使用前の殻がPhysicsシミュレーションへ参加しないようにする。
+    /// </remarks>
+    private GameObject CreatePieceShell(
+        string objectName)
+    {
+        var pieceObject =
+            new GameObject(
+                objectName);
+
+        pieceObject.SetActive(
+            false);
+
+        pieceObject.transform.SetParent(
+            transform,
+            false);
+
+        MeshFilter meshFilter =
+            pieceObject.AddComponent<MeshFilter>();
+
+        meshFilter.sharedMesh =
+            null;
+
+        pieceObject.AddComponent<MeshRenderer>();
+        pieceObject.AddComponent<BoxCollider>();
+        pieceObject.AddComponent<Rigidbody>();
+
+        return pieceObject;
+    }
+
+    /// <summary>
+    /// 事前生成済み、または不足時に追加生成した殻へ死亡時固有のPiece設定を適用する。
+    /// </summary>
+    private void ConfigurePieceObject(
+        GameObject pieceObject,
         int pieceIndex,
         Mesh mesh,
         Material[] materials,
         Renderer sourceRenderer)
     {
-        var pieceObject =
-            new GameObject(
-                $"{sourceRenderer.name}_DiggingPiece_{pieceIndex:D2}");
+        pieceObject.name =
+            $"{sourceRenderer.name}_DiggingPiece_{pieceIndex:D2}";
 
         pieceObject.layer =
             sourceRenderer.gameObject.layer;
@@ -598,13 +690,13 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         }
 
         MeshFilter meshFilter =
-            pieceObject.AddComponent<MeshFilter>();
+            pieceObject.GetComponent<MeshFilter>();
 
         meshFilter.sharedMesh =
             mesh;
 
         MeshRenderer meshRenderer =
-            pieceObject.AddComponent<MeshRenderer>();
+            pieceObject.GetComponent<MeshRenderer>();
 
         CopyRendererSettings(
             sourceRenderer,
@@ -617,7 +709,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             mesh.bounds;
 
         BoxCollider pieceCollider =
-            pieceObject.AddComponent<BoxCollider>();
+            pieceObject.GetComponent<BoxCollider>();
 
         // Mesh.boundsとBoxColliderは同じローカル空間を使う。
         // くい込み死亡Pieceは丸い端面で転がり続ける挙動を避けるため、
@@ -632,7 +724,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             false;
 
         Rigidbody pieceRigidbody =
-            pieceObject.AddComponent<Rigidbody>();
+            pieceObject.GetComponent<Rigidbody>();
 
         pieceRigidbody.useGravity =
             true;
@@ -666,10 +758,13 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             RigidbodyConstraints.FreezeRotationX |
             RigidbodyConstraints.FreezeRotationY;
 
+        // 事前生成時にはPlayer Colliderが変化する可能性があるためIgnoreCollisionを固定せず、
+        // Mesh・Collider・Rigidbody・Transform確定後の有効化時に毎回適用する。
+        pieceObject.SetActive(
+            true);
+
         IgnorePlayerCollisions(
             pieceCollider);
-
-        return pieceObject;
     }
 
     /// <summary>
@@ -783,8 +878,43 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
              i < pieceObjects.Count;
              i++)
         {
-            DestroyRuntimeObject(
-                pieceObjects[i]);
+            GameObject pieceObject =
+                pieceObjects[i];
+
+            if (pieceObject == null)
+            {
+                continue;
+            }
+
+            if (preGeneratedPieceObjects.Contains(
+                    pieceObject))
+            {
+                // 事前生成殻はEnemy初期化時の生成コストを再利用するため破棄せず戻す。
+                // Runtime Mesh参照だけ外し、再試行時に上書き可能なInactive状態へ戻す。
+                pieceObject.SetActive(
+                    false);
+
+                MeshFilter meshFilter =
+                    pieceObject.GetComponent<MeshFilter>();
+
+                if (meshFilter != null)
+                {
+                    meshFilter.sharedMesh =
+                        null;
+                }
+
+                pieceObject.transform.SetParent(
+                    transform,
+                    false);
+            }
+            else
+            {
+                pieceObject.SetActive(
+                    false);
+
+                DestroyRuntimeObject(
+                    pieceObject);
+            }
         }
 
         pieceObjects.Clear();
@@ -801,6 +931,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
 
         runtimePieceMeshes.Clear();
         pieceObjects.Clear();
+        preGeneratedPieceObjects.Clear();
     }
 
 #if UNITY_EDITOR

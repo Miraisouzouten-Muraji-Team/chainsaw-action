@@ -13,9 +13,6 @@ public sealed class ChainsawMeshCutProcessor
 {
     private const float MIN_DIRECTION_SQR_MAGNITUDE = 0.00000001f;
 
-    // Cut Range選択・最終境界検証を実Meshで確認するための診断ログ。
-    private const bool ENABLE_BOUNDARY_DIAGNOSTIC_LOGS = true;
-
     private readonly MeshPlaneSplitter meshPlaneSplitter =
         new MeshPlaneSplitter();
 
@@ -32,6 +29,7 @@ public sealed class ChainsawMeshCutProcessor
         float cutRangeMinimumNormalized,
         float cutRangeMaximumNormalized,
         float cutSurfaceUvScale,
+        bool enableDiagnostics,
         out Mesh firstPieceMesh,
         out Mesh secondPieceMesh,
         out string failureReason)
@@ -39,6 +37,10 @@ public sealed class ChainsawMeshCutProcessor
         firstPieceMesh = null;
         secondPieceMesh = null;
         failureReason = null;
+
+#if !UNITY_EDITOR && !DEVELOPMENT_BUILD
+        enableDiagnostics = false;
+#endif
 
         if (!ValidateInputs(
                 sourceMesh,
@@ -53,19 +55,52 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
+        Vector3[] sourceVertices =
+            sourceMesh.vertices;
+
+        if (!TryGetSourceTriangleIndices(
+                sourceMesh,
+                sourceVertices.Length,
+                out List<int[]> sourceTrianglesBySubMesh,
+                out failureReason))
+        {
+            return false;
+        }
+
         float geometryEpsilon =
             MeshPlaneSplitter.CalculateGeometryEpsilon(sourceMesh.bounds);
 
+        if (!TryCalculateCutRangeParameters(
+                sourceVertices,
+                sourceToCutRangeSpace,
+                cutRangeAxis,
+                cutRangeMinimumNormalized,
+                cutRangeMaximumNormalized,
+                out Bounds cutRangeSpaceBounds,
+                out float cutRangeMinimum,
+                out float cutRangeMaximum,
+                out float cutRangeGeometryEpsilon,
+                out failureReason))
+        {
+            return false;
+        }
+
         if (!TryCreateCutPlane(
-                sourceMesh,
+                sourceVertices,
+                sourceTrianglesBySubMesh,
                 localTipPositions,
                 localRootPositions,
                 cutDirectionSampleCount,
                 sourceToCutRangeSpace,
                 cutRangeAxis,
+                cutRangeSpaceBounds,
                 cutRangeMinimumNormalized,
                 cutRangeMaximumNormalized,
+                cutRangeMinimum,
+                cutRangeMaximum,
                 geometryEpsilon,
+                cutRangeGeometryEpsilon,
+                enableDiagnostics,
                 out Plane correctedCutPlane,
                 out failureReason))
         {
@@ -81,16 +116,19 @@ public sealed class ChainsawMeshCutProcessor
                 cutBoundaryPoints =>
                 {
                     return TryValidateFinalCutBoundaryWithinRange(
-                            sourceMesh,
                             cutBoundaryPoints,
                             sourceToCutRangeSpace,
                             cutRangeAxis,
-                            cutRangeMinimumNormalized,
-                            cutRangeMaximumNormalized,
+                            cutRangeSpaceBounds,
+                            cutRangeMinimum,
+                            cutRangeMaximum,
+                            cutRangeGeometryEpsilon,
+                            enableDiagnostics,
                             out string boundaryFailureReason)
                         ? null
                         : boundaryFailureReason;
                 },
+                enableDiagnostics,
                 out firstPieceMesh,
                 out secondPieceMesh,
                 out failureReason))
@@ -181,36 +219,72 @@ public sealed class ChainsawMeshCutProcessor
         return true;
     }
 
+    private static bool TryGetSourceTriangleIndices(
+        Mesh sourceMesh,
+        int sourceVertexCount,
+        out List<int[]> sourceTrianglesBySubMesh,
+        out string failureReason)
+    {
+        sourceTrianglesBySubMesh =
+            new List<int[]>(sourceMesh.subMeshCount);
+
+        for (int subMeshIndex = 0;
+             subMeshIndex < sourceMesh.subMeshCount;
+             subMeshIndex++)
+        {
+            if (sourceMesh.GetTopology(subMeshIndex) !=
+                MeshTopology.Triangles)
+            {
+                failureReason =
+                    $"SubMesh {subMeshIndex} がTriangles topologyではありません。";
+                return false;
+            }
+
+            int[] triangles =
+                sourceMesh.GetTriangles(subMeshIndex);
+
+            for (int triangleIndex = 0;
+                 triangleIndex < triangles.Length;
+                 triangleIndex++)
+            {
+                if (!IsValidVertexIndex(
+                        triangles[triangleIndex],
+                        sourceVertexCount))
+                {
+                    failureReason =
+                        $"SubMesh {subMeshIndex} に範囲外の頂点indexがあります。";
+                    return false;
+                }
+            }
+
+            sourceTrianglesBySubMesh.Add(triangles);
+        }
+
+        failureReason = null;
+        return true;
+    }
+
 
     private bool TryCreateCutPlane(
-        Mesh sourceMesh,
+        IReadOnlyList<Vector3> sourceVertices,
+        IReadOnlyList<int[]> sourceTrianglesBySubMesh,
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
         int cutDirectionSampleCount,
         Matrix4x4 sourceToCutRangeSpace,
         MeshCutRangeAxis cutRangeAxis,
+        Bounds cutRangeSpaceBounds,
         float cutRangeMinimumNormalized,
         float cutRangeMaximumNormalized,
+        float cutRangeMinimum,
+        float cutRangeMaximum,
         float geometryEpsilon,
+        float cutRangeGeometryEpsilon,
+        bool enableDiagnostics,
         out Plane correctedCutPlane,
         out string failureReason)
     {
         correctedCutPlane = default;
-
-        if (!TryCalculateCutRangeParameters(
-                sourceMesh,
-                sourceToCutRangeSpace,
-                cutRangeAxis,
-                cutRangeMinimumNormalized,
-                cutRangeMaximumNormalized,
-                out Bounds cutRangeSpaceBounds,
-                out float cutRangeMinimum,
-                out float cutRangeMaximum,
-                out float cutRangeGeometryEpsilon,
-                out failureReason))
-        {
-            return false;
-        }
 
         string lastTrajectoryCandidateFailure = null;
         int sampleCount = localTipPositions.Count;
@@ -261,7 +335,8 @@ public sealed class ChainsawMeshCutProcessor
                 correctedPlanePoint);
 
             if (!TryValidateCutPlaneWithinRange(
-                    sourceMesh,
+                    sourceVertices,
+                    sourceTrianglesBySubMesh,
                     candidatePlane,
                     sourceToCutRangeSpace,
                     cutRangeAxis,
@@ -282,22 +357,25 @@ public sealed class ChainsawMeshCutProcessor
             correctedCutPlane =
                 candidatePlane;
 
-            LogCutRangePlaneSelectionDiagnostic(
-                "Trajectory",
-                cutRangeAxis,
-                cutRangeSpaceBounds,
-                cutRangeMinimumNormalized,
-                cutRangeMaximumNormalized,
-                cutRangeMinimum,
-                cutRangeMaximum,
-                startIndex,
-                endIndex,
-                originalPointInCutRangeSpace,
-                correctedPointInCutRangeSpace,
-                intersectionMinimum,
-                intersectionMaximum,
-                intersectionSegmentCount,
-                cutRangeGeometryEpsilon);
+            if (enableDiagnostics)
+            {
+                LogCutRangePlaneSelectionDiagnostic(
+                    "Trajectory",
+                    cutRangeAxis,
+                    cutRangeSpaceBounds,
+                    cutRangeMinimumNormalized,
+                    cutRangeMaximumNormalized,
+                    cutRangeMinimum,
+                    cutRangeMaximum,
+                    startIndex,
+                    endIndex,
+                    originalPointInCutRangeSpace,
+                    correctedPointInCutRangeSpace,
+                    intersectionMinimum,
+                    intersectionMaximum,
+                    intersectionSegmentCount,
+                    cutRangeGeometryEpsilon);
+            }
 
             failureReason = null;
             return true;
@@ -307,7 +385,8 @@ public sealed class ChainsawMeshCutProcessor
         // 「範囲外を切らない」を最優先してCut Range Axisに直交するPlaneへフォールバックする。
         // 位置は軌跡サンプルから選ぶため、切断高さ/左右位置は可能な限り攻撃軌跡へ追従する。
         if (TryCreateAxisAlignedFallbackCutPlane(
-                sourceMesh,
+                sourceVertices,
+                sourceTrianglesBySubMesh,
                 localTipPositions,
                 localRootPositions,
                 sourceToCutRangeSpace,
@@ -319,6 +398,7 @@ public sealed class ChainsawMeshCutProcessor
                 cutRangeMaximum,
                 geometryEpsilon,
                 cutRangeGeometryEpsilon,
+                enableDiagnostics,
                 out correctedCutPlane,
                 out failureReason))
         {
@@ -466,7 +546,7 @@ public sealed class ChainsawMeshCutProcessor
     }
 
     private static bool TryCalculateCutRangeParameters(
-        Mesh sourceMesh,
+        IReadOnlyList<Vector3> sourceVertices,
         Matrix4x4 sourceToCutRangeSpace,
         MeshCutRangeAxis cutRangeAxis,
         float cutRangeMinimumNormalized,
@@ -483,7 +563,7 @@ public sealed class ChainsawMeshCutProcessor
         cutRangeGeometryEpsilon = 0.0f;
 
         if (!TryCalculateMeshBoundsInSpace(
-                sourceMesh,
+                sourceVertices,
                 sourceToCutRangeSpace,
                 out cutRangeSpaceBounds))
         {
@@ -602,7 +682,8 @@ public sealed class ChainsawMeshCutProcessor
     }
 
     private static bool TryValidateCutPlaneWithinRange(
-        Mesh sourceMesh,
+        IReadOnlyList<Vector3> sourceVertices,
+        IReadOnlyList<int[]> sourceTrianglesBySubMesh,
         Plane cutPlane,
         Matrix4x4 sourceToCutRangeSpace,
         MeshCutRangeAxis cutRangeAxis,
@@ -624,24 +705,20 @@ public sealed class ChainsawMeshCutProcessor
         intersectionSegmentCount =
             0;
 
-        Vector3[] sourceVertices =
-            sourceMesh.vertices;
+        float allowedMinimum =
+            cutRangeMinimum -
+            cutRangeGeometryEpsilon;
+
+        float allowedMaximum =
+            cutRangeMaximum +
+            cutRangeGeometryEpsilon;
 
         for (int subMeshIndex = 0;
-             subMeshIndex < sourceMesh.subMeshCount;
+             subMeshIndex < sourceTrianglesBySubMesh.Count;
              subMeshIndex++)
         {
-            if (sourceMesh.GetTopology(subMeshIndex) !=
-                MeshTopology.Triangles)
-            {
-                failureReason =
-                    $"SubMesh {subMeshIndex} がTriangles topologyではありません。";
-                return false;
-            }
-
             int[] triangles =
-                sourceMesh.GetTriangles(
-                    subMeshIndex);
+                sourceTrianglesBySubMesh[subMeshIndex];
 
             for (int triangleIndex = 0;
                  triangleIndex + 2 < triangles.Length;
@@ -655,21 +732,6 @@ public sealed class ChainsawMeshCutProcessor
 
                 int indexC =
                     triangles[triangleIndex + 2];
-
-                if (!IsValidVertexIndex(
-                        indexA,
-                        sourceVertices.Length) ||
-                    !IsValidVertexIndex(
-                        indexB,
-                        sourceVertices.Length) ||
-                    !IsValidVertexIndex(
-                        indexC,
-                        sourceVertices.Length))
-                {
-                    failureReason =
-                        $"SubMesh {subMeshIndex} に範囲外の頂点indexがあります。";
-                    return false;
-                }
 
                 Vector3[] trianglePositions =
                 {
@@ -760,6 +822,19 @@ public sealed class ChainsawMeshCutProcessor
                         Mathf.Max(
                             intersectionMaximum,
                             axisPosition);
+
+                    // 一度でも許容範囲外へ出た切断境界は、残りTriangleを調べても
+                    // 有効候補へ戻らないため、この候補の走査をここで終了する。
+                    if (intersectionMinimum < allowedMinimum ||
+                        intersectionMaximum > allowedMaximum)
+                    {
+                        failureReason =
+                            "Cut Planeの実切断境界がCut Range外まで到達します。" +
+                            $" Boundary=[{intersectionMinimum:F6}, {intersectionMaximum:F6}]," +
+                            $" Allowed=[{cutRangeMinimum:F6}, {cutRangeMaximum:F6}]," +
+                            $" Axis={cutRangeAxis}";
+                        return false;
+                    }
                 }
             }
         }
@@ -768,25 +843,6 @@ public sealed class ChainsawMeshCutProcessor
         {
             failureReason =
                 "Cut PlaneとMeshから有効な切断境界を取得できませんでした。";
-            return false;
-        }
-
-        float allowedMinimum =
-            cutRangeMinimum -
-            cutRangeGeometryEpsilon;
-
-        float allowedMaximum =
-            cutRangeMaximum +
-            cutRangeGeometryEpsilon;
-
-        if (intersectionMinimum < allowedMinimum ||
-            intersectionMaximum > allowedMaximum)
-        {
-            failureReason =
-                "Cut Planeの実切断境界がCut Range外まで到達します。" +
-                $" Boundary=[{intersectionMinimum:F6}, {intersectionMaximum:F6}]," +
-                $" Allowed=[{cutRangeMinimum:F6}, {cutRangeMaximum:F6}]," +
-                $" Axis={cutRangeAxis}";
             return false;
         }
 
@@ -906,7 +962,8 @@ public sealed class ChainsawMeshCutProcessor
     }
 
     private static bool TryCreateAxisAlignedFallbackCutPlane(
-        Mesh sourceMesh,
+        IReadOnlyList<Vector3> sourceVertices,
+        IReadOnlyList<int[]> sourceTrianglesBySubMesh,
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
         Matrix4x4 sourceToCutRangeSpace,
@@ -918,6 +975,7 @@ public sealed class ChainsawMeshCutProcessor
         float cutRangeMaximum,
         float geometryEpsilon,
         float cutRangeGeometryEpsilon,
+        bool enableDiagnostics,
         out Plane fallbackCutPlane,
         out string failureReason)
     {
@@ -1004,7 +1062,8 @@ public sealed class ChainsawMeshCutProcessor
             }
 
             if (!TryValidateCutPlaneWithinRange(
-                    sourceMesh,
+                    sourceVertices,
+                    sourceTrianglesBySubMesh,
                     planeInSourceSpace,
                     sourceToCutRangeSpace,
                     cutRangeAxis,
@@ -1025,22 +1084,25 @@ public sealed class ChainsawMeshCutProcessor
             fallbackCutPlane =
                 planeInSourceSpace;
 
-            LogCutRangePlaneSelectionDiagnostic(
-                "AxisAlignedFallback",
-                cutRangeAxis,
-                cutRangeSpaceBounds,
-                cutRangeMinimumNormalized,
-                cutRangeMaximumNormalized,
-                cutRangeMinimum,
-                cutRangeMaximum,
-                -1,
-                -1,
-                planePointInCutRangeSpace,
-                planePointInCutRangeSpace,
-                intersectionMinimum,
-                intersectionMaximum,
-                intersectionSegmentCount,
-                cutRangeGeometryEpsilon);
+            if (enableDiagnostics)
+            {
+                LogCutRangePlaneSelectionDiagnostic(
+                    "AxisAlignedFallback",
+                    cutRangeAxis,
+                    cutRangeSpaceBounds,
+                    cutRangeMinimumNormalized,
+                    cutRangeMaximumNormalized,
+                    cutRangeMinimum,
+                    cutRangeMaximum,
+                    -1,
+                    -1,
+                    planePointInCutRangeSpace,
+                    planePointInCutRangeSpace,
+                    intersectionMinimum,
+                    intersectionMaximum,
+                    intersectionSegmentCount,
+                    cutRangeGeometryEpsilon);
+            }
 
             failureReason = null;
             return true;
@@ -1138,12 +1200,31 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
-        Vector3[] vertices =
+        Vector3[] sourceVertices =
             sourceMesh.vertices;
+
+        return TryCalculateMeshBoundsInSpace(
+            sourceVertices,
+            sourceToTargetSpace,
+            out bounds);
+    }
+
+    private static bool TryCalculateMeshBoundsInSpace(
+        IReadOnlyList<Vector3> sourceVertices,
+        Matrix4x4 sourceToTargetSpace,
+        out Bounds bounds)
+    {
+        bounds = default;
+
+        if (sourceVertices == null ||
+            sourceVertices.Count == 0)
+        {
+            return false;
+        }
 
         Vector3 firstVertex =
             sourceToTargetSpace.MultiplyPoint3x4(
-                vertices[0]);
+                sourceVertices[0]);
 
         if (!IsFinite(firstVertex))
         {
@@ -1155,11 +1236,11 @@ public sealed class ChainsawMeshCutProcessor
                 firstVertex,
                 Vector3.zero);
 
-        for (int i = 1; i < vertices.Length; i++)
+        for (int i = 1; i < sourceVertices.Count; i++)
         {
             Vector3 vertex =
                 sourceToTargetSpace.MultiplyPoint3x4(
-                    vertices[i]);
+                    sourceVertices[i]);
 
             if (!IsFinite(vertex))
             {
@@ -1297,29 +1378,16 @@ public sealed class ChainsawMeshCutProcessor
     }
 
     private static bool TryValidateFinalCutBoundaryWithinRange(
-        Mesh sourceMesh,
         IReadOnlyList<Vector3> cutBoundaryPoints,
         Matrix4x4 sourceToCutRangeSpace,
         MeshCutRangeAxis cutRangeAxis,
-        float cutRangeMinimumNormalized,
-        float cutRangeMaximumNormalized,
+        Bounds cutRangeSpaceBounds,
+        float cutRangeMinimum,
+        float cutRangeMaximum,
+        float cutRangeGeometryEpsilon,
+        bool enableDiagnostics,
         out string failureReason)
     {
-        if (!TryCalculateCutRangeParameters(
-                sourceMesh,
-                sourceToCutRangeSpace,
-                cutRangeAxis,
-                cutRangeMinimumNormalized,
-                cutRangeMaximumNormalized,
-                out Bounds cutRangeSpaceBounds,
-                out float cutRangeMinimum,
-                out float cutRangeMaximum,
-                out float cutRangeGeometryEpsilon,
-                out failureReason))
-        {
-            return false;
-        }
-
         float boundaryMinimum =
             float.PositiveInfinity;
 
@@ -1371,7 +1439,7 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
-        if (ENABLE_BOUNDARY_DIAGNOSTIC_LOGS)
+        if (enableDiagnostics)
         {
             Debug.Log(
                 "[MeshCutBoundaryDiagnostic][FinalCutRangeValidation] " +
@@ -1458,11 +1526,6 @@ public sealed class ChainsawMeshCutProcessor
         int intersectionSegmentCount,
         float cutRangeGeometryEpsilon)
     {
-        if (!ENABLE_BOUNDARY_DIAGNOSTIC_LOGS)
-        {
-            return;
-        }
-
         Debug.Log(
             "[MeshCutBoundaryDiagnostic][CutRangePlaneSelection] " +
             $"Mode={selectionMode}, " +

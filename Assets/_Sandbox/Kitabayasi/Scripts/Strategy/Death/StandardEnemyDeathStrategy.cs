@@ -40,19 +40,19 @@ public sealed class StandardEnemyDeathStrategy :
         "Bake済み軌跡の選択・World復元・EnemyMeshCutter・Shrink開始までを段階的にConsoleへ出力する。" +
         "原因特定後は無効化してよい。")]
     [SerializeField]
-    private bool enableMeshCutDiagnosticLogs = true;
+    private bool enableMeshCutDiagnosticLogs = false;
 
     [Tooltip(
         "Bake済みLocal座標→Runtime World座標→Local座標の往復誤差と、" +
         "Bake時/Runtime時の基準Transform、現在のChainsaw Tip / Rootとの距離を出力する。")]
     [SerializeField]
-    private bool enableTrajectoryCoordinateValidation = true;
+    private bool enableTrajectoryCoordinateValidation = false;
 
     [Tooltip(
         "Runtimeで復元したBake軌跡をDebug.DrawLineでScene Viewへ表示する。" +
         "Game Viewで見る場合はGizmos表示を有効にする。")]
     [SerializeField]
-    private bool drawReconstructedTrajectory = true;
+    private bool drawReconstructedTrajectory = false;
 
     [Tooltip("復元軌跡をScene Viewへ残す秒数。")]
     [Min(0.0f)]
@@ -82,6 +82,42 @@ public sealed class StandardEnemyDeathStrategy :
     private Collider[] enemyColliders;
 
     private bool isDeathActive;
+
+    private bool ShouldRunMeshCutDiagnostics
+    {
+        get
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            return enableMeshCutDiagnosticLogs;
+#else
+            return false;
+#endif
+        }
+    }
+
+    private bool ShouldRunTrajectoryCoordinateValidation
+    {
+        get
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            return enableTrajectoryCoordinateValidation;
+#else
+            return false;
+#endif
+        }
+    }
+
+    private bool ShouldDrawReconstructedTrajectory
+    {
+        get
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            return drawReconstructedTrajectory;
+#else
+            return false;
+#endif
+        }
+    }
 
     public void Initialize(
         EnemyData enemyData,
@@ -324,18 +360,24 @@ public sealed class StandardEnemyDeathStrategy :
     /// </summary>
     private void TryCutDeathMesh()
     {
-        LogMeshCutDiagnostic(
-            "Death-01 Start",
-            "通常攻撃Mesh分割死亡演出の開始判定に入りました。");
+        if (ShouldRunMeshCutDiagnostics)
+        {
+            LogMeshCutDiagnostic(
+                "Death-01 Start",
+                "通常攻撃Mesh分割死亡演出の開始判定に入りました。");
+        }
 
         if (enemyAttackHitReceiver == null ||
             enemyMeshCutter == null)
         {
-            LogMeshCutDiagnosticWarning(
-                "Death-01 Start",
-                $"必要Componentが不足しています。" +
-                $" EnemyAttackHitReceiver={(enemyAttackHitReceiver != null)}," +
-                $" EnemyMeshCutter={(enemyMeshCutter != null)}");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "Death-01 Start",
+                    $"必要Componentが不足しています。" +
+                    $" EnemyAttackHitReceiver={(enemyAttackHitReceiver != null)}," +
+                    $" EnemyMeshCutter={(enemyMeshCutter != null)}");
+            }
             return;
         }
 
@@ -351,9 +393,12 @@ public sealed class StandardEnemyDeathStrategy :
                 "死亡原因となったPlayerAttackHitDataがありません。" +
                 "メッシュ分割は実行されません。");
 
-            LogMeshCutDiagnosticWarning(
-                "Death-02 HitData",
-                "LastPlayerAttackHitData=nullのため停止しました。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "Death-02 HitData",
+                    "LastPlayerAttackHitData=nullのため停止しました。");
+            }
 
             return;
         }
@@ -361,11 +406,14 @@ public sealed class StandardEnemyDeathStrategy :
         ScriptableObject attackData =
             lastPlayerAttackHitData.AttackData;
 
-        LogMeshCutDiagnostic(
-            "Death-02 HitData",
-            attackData == null
-                ? "死亡原因AttackData=null"
-                : $"死亡原因AttackData='{attackData.name}' ({attackData.GetType().Name})");
+        if (ShouldRunMeshCutDiagnostics)
+        {
+            LogMeshCutDiagnostic(
+                "Death-02 HitData",
+                attackData == null
+                    ? "死亡原因AttackData=null"
+                    : $"死亡原因AttackData='{attackData.name}' ({attackData.GetType().Name})");
+        }
 
         ChainsawAttackTrajectoryProfile trajectoryProfile =
             FindTrajectoryProfile(
@@ -379,19 +427,25 @@ public sealed class StandardEnemyDeathStrategy :
                 $"{nameof(ChainsawAttackTrajectoryProfile)}がありません。" +
                 "通常攻撃のメッシュ切断は実行されません。");
 
-            LogMeshCutDiagnosticWarning(
-                "Death-03 Profile",
-                "対応Profileを一意に解決できなかったため停止しました。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "Death-03 Profile",
+                    "対応Profileを一意に解決できなかったため停止しました。");
+            }
 
             return;
         }
 
-        LogMeshCutDiagnostic(
-            "Death-03 Profile",
-            $"Profile='{trajectoryProfile.name}', " +
-            $"SourceClip='{(trajectoryProfile.SourceAnimationClip != null ? trajectoryProfile.SourceAnimationClip.name : "null")}', " +
-            $"Samples={trajectoryProfile.SampleCount}, " +
-            $"ReferencePath='{trajectoryProfile.TrajectoryReferencePath}'");
+        if (ShouldRunMeshCutDiagnostics)
+        {
+            LogMeshCutDiagnostic(
+                "Death-03 Profile",
+                $"Profile='{trajectoryProfile.name}', " +
+                $"SourceClip='{(trajectoryProfile.SourceAnimationClip != null ? trajectoryProfile.SourceAnimationClip.name : "null")}', " +
+                $"Samples={trajectoryProfile.SampleCount}, " +
+                $"ReferencePath='{trajectoryProfile.TrajectoryReferencePath}'");
+        }
 
         if (!trajectoryProfile.HasValidTrajectory)
         {
@@ -400,9 +454,12 @@ public sealed class StandardEnemyDeathStrategy :
                 $"{trajectoryProfile.name}に有効なBake済み軌跡がありません。" +
                 "2サンプル以上の軌跡をBakeしてください。");
 
-            LogMeshCutDiagnosticWarning(
-                "Death-03 Profile",
-                $"Bake済みSample数={trajectoryProfile.SampleCount}のため停止しました。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "Death-03 Profile",
+                    $"Bake済みSample数={trajectoryProfile.SampleCount}のため停止しました。");
+            }
 
             return;
         }
@@ -416,9 +473,12 @@ public sealed class StandardEnemyDeathStrategy :
                 "Player Transformを取得できないため、" +
                 "Bake済み軌跡をWorld空間へ復元できません。");
 
-            LogMeshCutDiagnosticWarning(
-                "Death-04 Reference",
-                "Player Transformを取得できなかったため停止しました。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "Death-04 Reference",
+                    "Player Transformを取得できなかったため停止しました。");
+            }
 
             return;
         }
@@ -428,26 +488,32 @@ public sealed class StandardEnemyDeathStrategy :
                 trajectoryProfile,
                 out Transform trajectoryReferenceTransform))
         {
-            LogMeshCutDiagnosticWarning(
-                "Death-04 Reference",
-                "Bake時のTrajectory Reference TransformをRuntime階層から解決できなかったため停止しました。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "Death-04 Reference",
+                    "Bake時のTrajectory Reference TransformをRuntime階層から解決できなかったため停止しました。");
+            }
             return;
         }
 
-        LogMeshCutDiagnostic(
-            "Death-04 Reference",
-            $"Player='{playerTransform.name}', " +
-            $"TrajectoryReference='{trajectoryReferenceTransform.name}', " +
-            $"Position={FormatVector3(trajectoryReferenceTransform.position)}, " +
-            $"RotationEuler={FormatVector3(trajectoryReferenceTransform.rotation.eulerAngles)}, " +
-            $"LossyScale={FormatVector3(trajectoryReferenceTransform.lossyScale)}");
+        if (ShouldRunMeshCutDiagnostics)
+        {
+            LogMeshCutDiagnostic(
+                "Death-04 Reference",
+                $"Player='{playerTransform.name}', " +
+                $"TrajectoryReference='{trajectoryReferenceTransform.name}', " +
+                $"Position={FormatVector3(trajectoryReferenceTransform.position)}, " +
+                $"RotationEuler={FormatVector3(trajectoryReferenceTransform.rotation.eulerAngles)}, " +
+                $"LossyScale={FormatVector3(trajectoryReferenceTransform.lossyScale)}");
+        }
 
         ChainsawAttackTrajectory worldTrajectory =
             CreateWorldTrajectory(
                 trajectoryProfile,
                 trajectoryReferenceTransform);
 
-        if (enableTrajectoryCoordinateValidation)
+        if (ShouldRunTrajectoryCoordinateValidation)
         {
             ValidateTrajectoryCoordinateConversion(
                 playerTransform,
@@ -456,7 +522,7 @@ public sealed class StandardEnemyDeathStrategy :
                 worldTrajectory);
         }
 
-        if (drawReconstructedTrajectory)
+        if (ShouldDrawReconstructedTrajectory)
         {
             DrawTrajectoryCoordinateValidation(
                 playerTransform,
@@ -464,10 +530,13 @@ public sealed class StandardEnemyDeathStrategy :
                 worldTrajectory);
         }
 
-        LogMeshCutDiagnostic(
-            "Death-05 WorldTrajectory",
-            BuildWorldTrajectorySummary(
-                worldTrajectory));
+        if (ShouldRunMeshCutDiagnostics)
+        {
+            LogMeshCutDiagnostic(
+                "Death-05 WorldTrajectory",
+                BuildWorldTrajectorySummary(
+                    worldTrajectory));
+        }
 
         bool cutSucceeded =
             enemyMeshCutter.TryCut(
@@ -475,16 +544,22 @@ public sealed class StandardEnemyDeathStrategy :
 
         if (!cutSucceeded)
         {
-            LogMeshCutDiagnosticWarning(
-                "Death-06 CutterResult",
-                $"{nameof(EnemyMeshCutter)}.TryCutがfalseを返しました。" +
-                " 詳細な停止地点は[Cutter-xx]ログとEnemyMeshCutterのfailureReasonを確認してください。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "Death-06 CutterResult",
+                    $"{nameof(EnemyMeshCutter)}.TryCutがfalseを返しました。" +
+                    " 詳細な停止地点は[Cutter-xx]ログとEnemyMeshCutterのfailureReasonを確認してください。");
+            }
             return;
         }
 
-        LogMeshCutDiagnostic(
-            "Death-06 CutterResult",
-            "EnemyMeshCutter.TryCutが成功しました。切断片Effects開始へ進みます。");
+        if (ShouldRunMeshCutDiagnostics)
+        {
+            LogMeshCutDiagnostic(
+                "Death-06 CutterResult",
+                "EnemyMeshCutter.TryCutが成功しました。切断片Effects開始へ進みます。");
+        }
 
         TryBeginCutPieceEffects();
     }
@@ -629,9 +704,12 @@ public sealed class StandardEnemyDeathStrategy :
             trajectoryProfile.SampleCount == 0 ||
             worldTrajectory.SampleCount == 0)
         {
-            LogMeshCutDiagnosticWarning(
-                "CoordinateValidation",
-                "座標変換検証に必要な参照またはサンプルが不足しています。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "CoordinateValidation",
+                    "座標変換検証に必要な参照またはサンプルが不足しています。");
+            }
             return;
         }
 
@@ -640,11 +718,14 @@ public sealed class StandardEnemyDeathStrategy :
 
         if (!hasCoordinateDiagnosticMetadata)
         {
-            LogMeshCutDiagnosticWarning(
-                "CoordinateValidation",
-                "Profileに今回追加した座標変換診断用Bake情報がありません。" +
-                "ChainsawAttackTrajectoryBakerでこのProfileを再Bakeしてください。" +
-                "Local→World→Localの往復誤差は確認できますが、Bake/Runtime基準比較と現在のTip/Root比較は行いません。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "CoordinateValidation",
+                    "Profileに今回追加した座標変換診断用Bake情報がありません。" +
+                    "ChainsawAttackTrajectoryBakerでこのProfileを再Bakeしてください。" +
+                    "Local→World→Localの往復誤差は確認できますが、Bake/Runtime基準比較と現在のTip/Root比較は行いません。");
+            }
         }
 
         int sampleCount =
@@ -819,11 +900,14 @@ public sealed class StandardEnemyDeathStrategy :
             trajectoryProfile.BakedPlayerRootName !=
                 playerTransform.name)
         {
-            LogMeshCutDiagnosticWarning(
-                "CoordinateValidation",
-                $"Bake時Player Root='{trajectoryProfile.BakedPlayerRootName}' と " +
-                $"RuntimeのPlayer Tag取得結果='{playerTransform.name}' が一致していません。" +
-                "別Transformを基準に座標復元している可能性があります。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "CoordinateValidation",
+                    $"Bake時Player Root='{trajectoryProfile.BakedPlayerRootName}' と " +
+                    $"RuntimeのPlayer Tag取得結果='{playerTransform.name}' が一致していません。" +
+                    "別Transformを基準に座標復元している可能性があります。");
+            }
         }
 
         if (hasCoordinateDiagnosticMetadata &&
@@ -832,10 +916,13 @@ public sealed class StandardEnemyDeathStrategy :
             trajectoryProfile.BakedTrajectoryReferenceName !=
                 trajectoryReferenceTransform.name)
         {
-            LogMeshCutDiagnosticWarning(
-                "CoordinateValidation",
-                $"Bake時Trajectory Reference='{trajectoryProfile.BakedTrajectoryReferenceName}' と " +
-                $"Runtime解決結果='{trajectoryReferenceTransform.name}' が一致していません。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "CoordinateValidation",
+                    $"Bake時Trajectory Reference='{trajectoryProfile.BakedTrajectoryReferenceName}' と " +
+                    $"Runtime解決結果='{trajectoryReferenceTransform.name}' が一致していません。");
+            }
         }
 
         if (hasCoordinateDiagnosticMetadata)
@@ -855,12 +942,15 @@ public sealed class StandardEnemyDeathStrategy :
                 referenceScaleDifference >
                     SCALE_DIFFERENCE_WARNING_THRESHOLD)
             {
-                LogMeshCutDiagnosticWarning(
-                    "CoordinateValidation",
-                    $"Bake時とRuntimeで基準TransformのLossy Scaleが異なります。" +
-                    $" PlayerRoot差={playerRootScaleDifference:F6}, " +
-                    $"Reference差={referenceScaleDifference:F6}。" +
-                    "TransformPointはScaleの影響を受けるため、復元位置が変わります。");
+                if (ShouldRunMeshCutDiagnostics)
+                {
+                    LogMeshCutDiagnosticWarning(
+                        "CoordinateValidation",
+                        $"Bake時とRuntimeで基準TransformのLossy Scaleが異なります。" +
+                        $" PlayerRoot差={playerRootScaleDifference:F6}, " +
+                        $"Reference差={referenceScaleDifference:F6}。" +
+                        "TransformPointはScaleの影響を受けるため、復元位置が変わります。");
+                }
             }
         }
 
@@ -869,21 +959,27 @@ public sealed class StandardEnemyDeathStrategy :
             maximumRootLocalRoundTripError >
                 COORDINATE_ROUND_TRIP_WARNING_THRESHOLD)
         {
-            LogMeshCutDiagnosticWarning(
-                "CoordinateValidation",
-                "RuntimeのLocal→World→Local往復誤差が大きいです。" +
-                "Transform階層またはScaleを確認してください。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "CoordinateValidation",
+                    "RuntimeのLocal→World→Local往復誤差が大きいです。" +
+                    "Transform階層またはScaleを確認してください。");
+            }
         }
 
         if (hasCoordinateDiagnosticMetadata &&
             (!liveTipResolved ||
              !liveRootResolved))
         {
-            LogMeshCutDiagnosticWarning(
-                "CoordinateValidation",
-                "Bake時に保存したChainsaw Tip / Root PathをRuntime Player Rootから解決できません。" +
-                "Bake時Player RootとRuntimeのPlayer Tag対象が異なる、またはPlayer階層が変更された可能性があります。" +
-                "この診断項目はProfileを再Bakeした後に有効になります。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "CoordinateValidation",
+                    "Bake時に保存したChainsaw Tip / Root PathをRuntime Player Rootから解決できません。" +
+                    "Bake時Player RootとRuntimeのPlayer Tag対象が異なる、またはPlayer階層が変更された可能性があります。" +
+                    "この診断項目はProfileを再Bakeした後に有効になります。");
+            }
         }
     }
 
@@ -1189,22 +1285,31 @@ public sealed class StandardEnemyDeathStrategy :
                 "Mesh分割には成功しましたが、" +
                 "生成された切断片を取得できませんでした。");
 
-            LogMeshCutDiagnosticWarning(
-                "Death-07 PieceEffects",
-                "TryGetCutPieceTransforms=falseのため切断片Effectsを開始できません。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "Death-07 PieceEffects",
+                    "TryGetCutPieceTransforms=falseのため切断片Effectsを開始できません。");
+            }
 
             return;
         }
 
-        LogMeshCutDiagnostic(
-            "Death-07 PieceEffects",
-            $"切断片を{cutPieceTransforms.Count}個取得しました。");
+        if (ShouldRunMeshCutDiagnostics)
+        {
+            LogMeshCutDiagnostic(
+                "Death-07 PieceEffects",
+                $"切断片を{cutPieceTransforms.Count}個取得しました。");
+        }
 
         if (enemyCutPieceBurst == null)
         {
-            LogMeshCutDiagnosticWarning(
-                "Death-08 Burst",
-                $"{nameof(EnemyCutPieceBurst)}がないため吹き飛ばしは開始されません。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    "Death-08 Burst",
+                    $"{nameof(EnemyCutPieceBurst)}がないため吹き飛ばしは開始されません。");
+            }
         }
         else
         {
@@ -1239,13 +1344,16 @@ public sealed class StandardEnemyDeathStrategy :
                         .LastHitSourceDirectionSign,
                     chainsawRotationRatio);
 
-            LogMeshCutDiagnostic(
-                "Death-08 Burst",
-                $"BeginBurst result={burstStarted}, " +
-                $"PieceCount={cutPieceTransforms.Count}, " +
-                $"ResolvedKnockbackVelocity={enemyAttackHitReceiver.LastResolvedKnockbackVelocity}, " +
-                $"HitSourceDirectionSign={enemyAttackHitReceiver.LastHitSourceDirectionSign:F1}, " +
-                $"ChainsawRotationRatio={chainsawRotationRatio:F3}");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnostic(
+                    "Death-08 Burst",
+                    $"BeginBurst result={burstStarted}, " +
+                    $"PieceCount={cutPieceTransforms.Count}, " +
+                    $"ResolvedKnockbackVelocity={enemyAttackHitReceiver.LastResolvedKnockbackVelocity}, " +
+                    $"HitSourceDirectionSign={enemyAttackHitReceiver.LastHitSourceDirectionSign:F1}, " +
+                    $"ChainsawRotationRatio={chainsawRotationRatio:F3}");
+            }
         }
 
         TryBeginPieceShrink(
@@ -1262,9 +1370,12 @@ public sealed class StandardEnemyDeathStrategy :
     {
         if (enemyCutPieceShrink == null)
         {
-            LogMeshCutDiagnosticWarning(
-                diagnosticStage,
-                $"{nameof(EnemyCutPieceShrink)}がないため縮小処理は開始されません。");
+            if (ShouldRunMeshCutDiagnostics)
+            {
+                LogMeshCutDiagnosticWarning(
+                    diagnosticStage,
+                    $"{nameof(EnemyCutPieceShrink)}がないため縮小処理は開始されません。");
+            }
             return;
         }
 
@@ -1274,12 +1385,15 @@ public sealed class StandardEnemyDeathStrategy :
                 enemyData.DeathShrinkDelay,
                 enemyData.DeathShrinkDuration);
 
-        LogMeshCutDiagnostic(
-            diagnosticStage,
-            $"BeginShrink result={shrinkStarted}, " +
-            $"PieceCount={pieceTransforms.Count}, " +
-            $"IsShrinkActive={enemyCutPieceShrink.IsShrinkActive}, " +
-            $"Delay={enemyData.DeathShrinkDelay:F3}, Duration={enemyData.DeathShrinkDuration:F3}");
+        if (ShouldRunMeshCutDiagnostics)
+        {
+            LogMeshCutDiagnostic(
+                diagnosticStage,
+                $"BeginShrink result={shrinkStarted}, " +
+                $"PieceCount={pieceTransforms.Count}, " +
+                $"IsShrinkActive={enemyCutPieceShrink.IsShrinkActive}, " +
+                $"Delay={enemyData.DeathShrinkDelay:F3}, Duration={enemyData.DeathShrinkDuration:F3}");
+        }
     }
 
     private static string BuildWorldTrajectorySummary(
@@ -1328,7 +1442,7 @@ public sealed class StandardEnemyDeathStrategy :
         string stage,
         string message)
     {
-        if (!enableMeshCutDiagnosticLogs)
+        if (!ShouldRunMeshCutDiagnostics)
         {
             return;
         }
@@ -1341,7 +1455,7 @@ public sealed class StandardEnemyDeathStrategy :
         string stage,
         string message)
     {
-        if (!enableMeshCutDiagnosticLogs)
+        if (!ShouldRunMeshCutDiagnostics)
         {
             return;
         }

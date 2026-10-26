@@ -16,9 +16,6 @@ public sealed class MeshPlaneSplitter
     private const float MIN_GEOMETRY_EPSILON = 0.000001f;
     private const float MIN_DIRECTION_SQR_MAGNITUDE = 0.00000001f;
 
-    // CutSegmentの短さではなく元Mesh Topologyを維持してBoundaryを構築する修正後も、
-    // 実Meshで境界グラフを検証できるよう残している診断ログ。安定確認後に不要ならfalseへ戻す。
-    private const bool ENABLE_BOUNDARY_DIAGNOSTIC_LOGS = true;
     private const int MAX_BOUNDARY_DIAGNOSTIC_NODE_DETAILS = 20;
     private const int MAX_DEGENERATE_SEGMENT_DIAGNOSTIC_DETAILS = 30;
     private const int MAX_NEARBY_ENDPOINT_DIAGNOSTIC_DETAILS = 20;
@@ -47,6 +44,7 @@ public sealed class MeshPlaneSplitter
             "MeshPlaneSplit_FirstPiece",
             "MeshPlaneSplit_SecondPiece",
             null,
+            false,
             out firstPieceMesh,
             out secondPieceMesh,
             out failureReason);
@@ -66,12 +64,17 @@ public sealed class MeshPlaneSplitter
         string firstPieceMeshName,
         string secondPieceMeshName,
         Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
+        bool enableDiagnostics,
         out Mesh firstPieceMesh,
         out Mesh secondPieceMesh,
         out string failureReason)
     {
         firstPieceMesh = null;
         secondPieceMesh = null;
+
+#if !UNITY_EDITOR && !DEVELOPMENT_BUILD
+        enableDiagnostics = false;
+#endif
 
         if (!ValidateInputs(
                 sourceMesh,
@@ -93,6 +96,7 @@ public sealed class MeshPlaneSplitter
             firstPieceMeshName,
             secondPieceMeshName,
             cutBoundaryValidator,
+            enableDiagnostics,
             out firstPieceMesh,
             out secondPieceMesh,
             out failureReason);
@@ -168,6 +172,7 @@ public sealed class MeshPlaneSplitter
         string firstPieceMeshName,
         string secondPieceMeshName,
         Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
+        bool enableDiagnostics,
         out Mesh firstPieceMesh,
         out Mesh secondPieceMesh,
         out string failureReason)
@@ -336,7 +341,10 @@ public sealed class MeshPlaneSplitter
 
                 if (!hasNegativeVertex)
                 {
-                    positiveOnlyTriangleCount++;
+                    if (enableDiagnostics)
+                    {
+                        positiveOnlyTriangleCount++;
+                    }
 
                     firstBuilder.AddTriangle(
                         vertexA,
@@ -350,7 +358,10 @@ public sealed class MeshPlaneSplitter
 
                 if (!hasPositiveVertex)
                 {
-                    negativeOnlyTriangleCount++;
+                    if (enableDiagnostics)
+                    {
+                        negativeOnlyTriangleCount++;
+                    }
 
                     secondBuilder.AddTriangle(
                         vertexA,
@@ -362,7 +373,10 @@ public sealed class MeshPlaneSplitter
                     continue;
                 }
 
-                intersectingTriangleCount++;
+                if (enableDiagnostics)
+                {
+                    intersectingTriangleCount++;
+                }
 
                 ClipTriangle(
                     vertexA,
@@ -419,27 +433,30 @@ public sealed class MeshPlaneSplitter
                     // TryGetCutSegment側でCutSegmentとして残す。
                     if (isDegenerateSegment)
                     {
-                        degenerateCutSegmentCount++;
-
-                        if (loggedDegenerateCutSegmentCount <
-                            MAX_DEGENERATE_SEGMENT_DIAGNOSTIC_DETAILS)
+                        if (enableDiagnostics)
                         {
-                            LogDegenerateCutSegmentDiagnostic(
-                                subMeshIndex,
-                                triangleIndex / 3,
-                                triangleIndex,
-                                vertexA,
-                                vertexB,
-                                vertexC,
-                                indexA,
-                                indexB,
-                                indexC,
-                                distanceA,
-                                distanceB,
-                                distanceC,
-                                geometryEpsilon);
+                            degenerateCutSegmentCount++;
 
-                            loggedDegenerateCutSegmentCount++;
+                            if (loggedDegenerateCutSegmentCount <
+                                MAX_DEGENERATE_SEGMENT_DIAGNOSTIC_DETAILS)
+                            {
+                                LogDegenerateCutSegmentDiagnostic(
+                                    subMeshIndex,
+                                    triangleIndex / 3,
+                                    triangleIndex,
+                                    vertexA,
+                                    vertexB,
+                                    vertexC,
+                                    indexA,
+                                    indexB,
+                                    indexC,
+                                    distanceA,
+                                    distanceB,
+                                    distanceC,
+                                    geometryEpsilon);
+
+                                loggedDegenerateCutSegmentCount++;
+                            }
                         }
 
                         continue;
@@ -472,15 +489,18 @@ public sealed class MeshPlaneSplitter
             }
         }
 
-        LogSplitDiagnostic(
-            geometryEpsilon,
-            positiveOnlyTriangleCount,
-            negativeOnlyTriangleCount,
-            intersectingTriangleCount,
-            cutSegments.Count,
-            degenerateCutSegmentCount,
-            firstBuilder.OriginalTriangleCount,
-            secondBuilder.OriginalTriangleCount);
+        if (enableDiagnostics)
+        {
+            LogSplitDiagnostic(
+                geometryEpsilon,
+                positiveOnlyTriangleCount,
+                negativeOnlyTriangleCount,
+                intersectingTriangleCount,
+                cutSegments.Count,
+                degenerateCutSegmentCount,
+                firstBuilder.OriginalTriangleCount,
+                secondBuilder.OriginalTriangleCount);
+        }
 
         if (firstBuilder.OriginalTriangleCount == 0)
         {
@@ -535,6 +555,7 @@ public sealed class MeshPlaneSplitter
                 sourceVertices,
                 cutPlane,
                 geometryEpsilon,
+                enableDiagnostics,
                 out List<List<Vector3>> boundaryLoops,
                 out failureReason))
         {
@@ -598,7 +619,8 @@ public sealed class MeshPlaneSplitter
                 : Vector2.zero,
             hasTangents
                 ? tangents[index]
-                : Vector4.zero);
+                : Vector4.zero,
+            index);
     }
 
     private static void ClipTriangle(
@@ -1062,6 +1084,7 @@ public sealed class MeshPlaneSplitter
         IReadOnlyList<Vector3> sourceVertices,
         Plane cutPlane,
         float geometryEpsilon,
+        bool enableDiagnostics,
         out List<List<Vector3>> boundaryLoops,
         out string failureReason)
     {
@@ -1075,10 +1098,11 @@ public sealed class MeshPlaneSplitter
         var uniqueEdges =
             new HashSet<long>();
 
-        // 各Boundary Edgeが、どのCutSegment（=どの元Triangle）から生成されたかを保持する。
-        // 境界グラフがDegree=1 / Degree>=3になった際の診断専用で、ループ構築ロジックには影響しない。
-        var edgeSourceSegmentIndices =
-            new Dictionary<long, int>();
+        // 各Boundary Edgeの生成元追跡は診断専用。OFF時はDictionary自体を生成しない。
+        Dictionary<long, int> edgeSourceSegmentIndices =
+            enableDiagnostics
+                ? new Dictionary<long, int>()
+                : null;
 
         int collapsedSegmentCount = 0;
         int duplicateEdgeCount = 0;
@@ -1113,7 +1137,11 @@ public sealed class MeshPlaneSplitter
             if (firstNodeIndex ==
                 secondNodeIndex)
             {
-                collapsedSegmentCount++;
+                if (enableDiagnostics)
+                {
+                    collapsedSegmentCount++;
+                }
+
                 continue;
             }
 
@@ -1124,26 +1152,32 @@ public sealed class MeshPlaneSplitter
 
             if (!uniqueEdges.Add(edgeKey))
             {
-                duplicateEdgeCount++;
-
-                if (edgeSourceSegmentIndices.TryGetValue(
-                        edgeKey,
-                        out int existingSegmentIndex))
+                if (enableDiagnostics)
                 {
-                    LogDuplicateBoundaryEdgeDiagnostic(
-                        firstNodeIndex,
-                        secondNodeIndex,
-                        existingSegmentIndex,
-                        i,
-                        cutSegments);
+                    duplicateEdgeCount++;
+
+                    if (edgeSourceSegmentIndices.TryGetValue(
+                            edgeKey,
+                            out int existingSegmentIndex))
+                    {
+                        LogDuplicateBoundaryEdgeDiagnostic(
+                            firstNodeIndex,
+                            secondNodeIndex,
+                            existingSegmentIndex,
+                            i,
+                            cutSegments);
+                    }
                 }
 
                 continue;
             }
 
-            edgeSourceSegmentIndices.Add(
-                edgeKey,
-                i);
+            if (enableDiagnostics)
+            {
+                edgeSourceSegmentIndices.Add(
+                    edgeKey,
+                    i);
+            }
 
             nodes[firstNodeIndex]
                 .Neighbors
@@ -1154,19 +1188,22 @@ public sealed class MeshPlaneSplitter
                 .Add(firstNodeIndex);
         }
 
-        LogBoundaryGraphDiagnostic(
-            cutSegments.Count,
-            sourceSplitVertexMatchEpsilon,
-            nodes,
-            uniqueEdges.Count,
-            collapsedSegmentCount,
-            duplicateEdgeCount,
-            cutSegments,
-            edgeSourceSegmentIndices,
-            sourceMesh,
-            sourceVertices,
-            cutPlane,
-            geometryEpsilon);
+        if (enableDiagnostics)
+        {
+            LogBoundaryGraphDiagnostic(
+                cutSegments.Count,
+                sourceSplitVertexMatchEpsilon,
+                nodes,
+                uniqueEdges.Count,
+                collapsedSegmentCount,
+                duplicateEdgeCount,
+                cutSegments,
+                edgeSourceSegmentIndices,
+                sourceMesh,
+                sourceVertices,
+                cutPlane,
+                geometryEpsilon);
+        }
 
         if (uniqueEdges.Count < 3)
         {
@@ -1281,11 +1318,6 @@ public sealed class MeshPlaneSplitter
         float distanceC,
         float geometryEpsilon)
     {
-        if (!ENABLE_BOUNDARY_DIAGNOSTIC_LOGS)
-        {
-            return;
-        }
-
         var edgeDetails =
             new List<string>(3);
 
@@ -1387,11 +1419,6 @@ public sealed class MeshPlaneSplitter
         int firstPieceTriangleCount,
         int secondPieceTriangleCount)
     {
-        if (!ENABLE_BOUNDARY_DIAGNOSTIC_LOGS)
-        {
-            return;
-        }
-
         Debug.Log(
             "[MeshCutBoundaryDiagnostic][SplitSummary] " +
             $"GeometryEpsilon={geometryEpsilon:E6}, " +
@@ -1425,11 +1452,6 @@ public sealed class MeshPlaneSplitter
         Plane cutPlane,
         float geometryEpsilon)
     {
-        if (!ENABLE_BOUNDARY_DIAGNOSTIC_LOGS)
-        {
-            return;
-        }
-
         int degreeZeroCount = 0;
         int degreeOneCount = 0;
         int degreeTwoCount = 0;
@@ -2019,8 +2041,7 @@ public sealed class MeshPlaneSplitter
         int duplicateSegmentIndex,
         IReadOnlyList<CutSegment> cutSegments)
     {
-        if (!ENABLE_BOUNDARY_DIAGNOSTIC_LOGS ||
-            existingSegmentIndex < 0 ||
+        if (existingSegmentIndex < 0 ||
             existingSegmentIndex >= cutSegments.Count ||
             duplicateSegmentIndex < 0 ||
             duplicateSegmentIndex >= cutSegments.Count)
@@ -3553,21 +3574,42 @@ public sealed class MeshPlaneSplitter
 
     private readonly struct VertexData
     {
+        private const int NO_SOURCE_VERTEX_INDEX = -1;
+
         public Vector3 Position { get; }
         public Vector3 Normal { get; }
         public Vector2 Uv { get; }
         public Vector4 Tangent { get; }
+        public int SourceVertexIndex { get; }
+        public bool HasSourceVertexIndex =>
+            SourceVertexIndex != NO_SOURCE_VERTEX_INDEX;
 
         public VertexData(
             Vector3 position,
             Vector3 normal,
             Vector2 uv,
             Vector4 tangent)
+            : this(
+                position,
+                normal,
+                uv,
+                tangent,
+                NO_SOURCE_VERTEX_INDEX)
+        {
+        }
+
+        public VertexData(
+            Vector3 position,
+            Vector3 normal,
+            Vector2 uv,
+            Vector4 tangent,
+            int sourceVertexIndex)
         {
             Position = position;
             Normal = normal;
             Uv = uv;
             Tangent = tangent;
+            SourceVertexIndex = sourceVertexIndex;
         }
 
         public static VertexData Lerp(
@@ -3854,6 +3896,12 @@ public sealed class MeshPlaneSplitter
         private readonly List<List<int>>
             trianglesBySubMesh;
 
+        // 元Mesh由来の頂点だけを再利用する。位置一致では統合せず、
+        // UV seam / hard edgeとして分離された別Source Vertex Indexは維持する。
+        private readonly Dictionary<int, int>
+            outputVertexIndexBySourceVertexIndex =
+                new Dictionary<int, int>();
+
         private readonly bool hasTangents;
 
         public int OriginalTriangleCount
@@ -3998,6 +4046,14 @@ public sealed class MeshPlaneSplitter
         private int AddVertex(
             VertexData vertex)
         {
+            if (vertex.HasSourceVertexIndex &&
+                outputVertexIndexBySourceVertexIndex.TryGetValue(
+                    vertex.SourceVertexIndex,
+                    out int existingIndex))
+            {
+                return existingIndex;
+            }
+
             int index =
                 vertices.Count;
 
@@ -4014,6 +4070,13 @@ public sealed class MeshPlaneSplitter
             {
                 tangents.Add(
                     vertex.Tangent);
+            }
+
+            if (vertex.HasSourceVertexIndex)
+            {
+                outputVertexIndexBySourceVertexIndex.Add(
+                    vertex.SourceVertexIndex,
+                    index);
             }
 
             return index;

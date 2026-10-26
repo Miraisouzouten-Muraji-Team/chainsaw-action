@@ -284,7 +284,8 @@ public sealed class EnemyCutPieceBurst : MonoBehaviour
     /// <remarks>
     /// Rigidbody全体のlinearVelocityを倍率変更すると、Physics.gravityやCollider衝突によって
     /// 生じた速度まで弱めてしまう。そこでImpulse / Massで求めた初期飛散速度成分を別管理し、
-    /// 前回倍率との差分だけをForceMode.VelocityChangeで打ち消す。
+    /// 前回倍率との差分を減速量として使用する。現在速度を初期飛散方向へ射影し、
+    /// 今回の減速で残速を使い切る場合は適用せずPhysicsへ任せることで、衝突後の停止や反射と競合しない。
     /// </remarks>
     private void UpdateBurstVelocityDecay()
     {
@@ -340,9 +341,9 @@ public sealed class EnemyCutPieceBurst : MonoBehaviour
                 multiplierDelta,
                 0f))
         {
-            for (int i = 0;
-                 i < decayingPieceRigidbodies.Count;
-                 i++)
+            for (int i = decayingPieceRigidbodies.Count - 1;
+                 i >= 0;
+                 i--)
             {
                 Rigidbody pieceRigidbody =
                     decayingPieceRigidbodies[i];
@@ -353,14 +354,72 @@ public sealed class EnemyCutPieceBurst : MonoBehaviour
                     continue;
                 }
 
+                Vector3 initialBurstVelocityChange =
+                    initialBurstVelocityChanges[i];
+
+                if (initialBurstVelocityChange.sqrMagnitude <=
+                    DIRECTION_EPSILON_SQR)
+                {
+                    decayingPieceRigidbodies.RemoveAt(i);
+                    initialBurstVelocityChanges.RemoveAt(i);
+                    continue;
+                }
+
+                float initialBurstSpeed =
+                    initialBurstVelocityChange.magnitude;
+
+                Vector3 initialBurstDirection =
+                    initialBurstVelocityChange /
+                    initialBurstSpeed;
+
+                float currentBurstDirectionSpeed =
+                    Vector3.Dot(
+                        pieceRigidbody.linearVelocity,
+                        initialBurstDirection);
+
+                // 衝突などですでに停止・反転しているPieceへ減速を追加すると、
+                // 飛散処理自身が逆向き速度を作るため、この時点で減衰対象から外す。
+                if (currentBurstDirectionSpeed <= 0f)
+                {
+                    decayingPieceRigidbodies.RemoveAt(i);
+                    initialBurstVelocityChanges.RemoveAt(i);
+                    continue;
+                }
+
+                float requestedDecelerationSpeed =
+                    initialBurstSpeed *
+                    -multiplierDelta;
+
+                if (requestedDecelerationSpeed <= 0f)
+                {
+                    continue;
+                }
+
+                // 現在残っている飛散方向速度を今回の減衰だけで使い切る状況では、
+                // VelocityChangeを適用しない。衝突・摩擦などでPhysics側がすでに
+                // 速度を落としている可能性があるため、以降は通常のPhysicsへ任せる。
+                if (requestedDecelerationSpeed >=
+                    currentBurstDirectionSpeed)
+                {
+                    decayingPieceRigidbodies.RemoveAt(i);
+                    initialBurstVelocityChanges.RemoveAt(i);
+                    continue;
+                }
+
                 Vector3 burstVelocityChange =
-                    initialBurstVelocityChanges[i] *
-                    multiplierDelta;
+                    -initialBurstDirection *
+                    requestedDecelerationSpeed;
 
                 pieceRigidbody.AddForce(
                     burstVelocityChange,
                     ForceMode.VelocityChange);
             }
+        }
+
+        if (decayingPieceRigidbodies.Count == 0)
+        {
+            ResetBurstVelocityDecayState();
+            return;
         }
 
         previousBurstVelocityMultiplier =

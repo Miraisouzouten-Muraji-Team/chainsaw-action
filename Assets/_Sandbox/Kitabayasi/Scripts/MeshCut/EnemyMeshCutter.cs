@@ -3,7 +3,7 @@ using UnityEngine;
 
 /// <summary>
 /// Enemy死亡時に切断対象Meshを取得し、
-/// チェンソー軌跡で2分割したMeshを物理切断片として表示する。
+/// チェンソー軌跡で分割したConnected Pieceを物理切断片として表示する。
 /// </summary>
 /// <remarks>
 /// SkinnedMeshRendererの場合は死亡時の現在姿勢をBakeしてから切断する。
@@ -57,7 +57,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
     [Tooltip(
         "通常攻撃死亡用Piece GameObjectを死亡前に準備する個数。" +
-        "通常攻撃はMeshPlaneSplitterが生成した2Meshをそのまま使用するため、基本は2を設定する。" +
+        "Connected Componentにより最終Piece数はモデルと切断位置で変化する。" +
         "不足分だけ死亡時に従来方式で追加生成する。")]
     [SerializeField]
     [Min(0)]
@@ -98,7 +98,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     [Header("診断ログ")]
 
     [Tooltip(
-        "Mesh分割死亡演出の入力軌跡、切断対象Mesh、Processor結果、最終2Piece生成までを段階的にConsoleへ出力する。" +
+        "Mesh分割死亡演出の入力軌跡、切断対象Mesh、Processor結果、最終Connected Piece生成までを段階的にConsoleへ出力する。" +
         "原因特定後は無効化してよい。")]
     [SerializeField]
     private bool enableDiagnosticLogs = false;
@@ -155,7 +155,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     /// 死亡させたチェンソー攻撃が保持している確定済み軌跡。
     /// </param>
     /// <returns>
-    /// 2つの物理切断片生成と表示切り替えまで成功した場合はtrue。
+    /// 2個以上の物理切断片生成と表示切り替えまで成功した場合はtrue。
     /// </returns>
     public bool TryCut(ChainsawAttackTrajectory trajectory)
     {
@@ -286,19 +286,12 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 cutRangeMaximumNormalized,
                 cutSurfaceUvScale,
                 ShouldRunDiagnostics,
-                out Mesh firstPieceMesh,
-                out Mesh secondPieceMesh,
+                out List<Mesh> finalPieceMeshes,
                 out failureReason);
 
             if (!succeeded)
             {
-                // MeshPlaneSplitterが途中までRuntime Meshを生成した状態で失敗しても、
-                // EnemyMeshCutter側へ所有権が移らないMeshを残さない。
-                DestroyRuntimeMesh(
-                    firstPieceMesh);
-
-                DestroyRuntimeMesh(
-                    secondPieceMesh);
+                DestroyRuntimeMeshes(finalPieceMeshes);
 
                 if (ShouldRunDiagnostics)
                 {
@@ -312,17 +305,13 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 return false;
             }
 
-            if (firstPieceMesh == null ||
-                secondPieceMesh == null)
+            if (finalPieceMeshes == null ||
+                finalPieceMeshes.Count < 2)
             {
-                DestroyRuntimeMesh(
-                    firstPieceMesh);
-
-                DestroyRuntimeMesh(
-                    secondPieceMesh);
+                DestroyRuntimeMeshes(finalPieceMeshes);
 
                 failureReason =
-                    "MeshPlaneSplitterの成功後に両側のMeshを取得できませんでした。";
+                    "MeshPlaneSplitterの成功後に2個以上の最終Connected Pieceを取得できませんでした。";
 
                 if (ShouldRunDiagnostics)
                 {
@@ -335,28 +324,13 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 return false;
             }
 
-            if (ShouldRunDiagnostics)
-            {
-                LogDiagnostic(
-                    "Cutter-04 Processor",
-                    "Processorによる切断面両側のMesh生成に成功しました。" +
-                    $" FirstSide={BuildMeshSummary(firstPieceMesh)} /" +
-                    $" SecondSide={BuildMeshSummary(secondPieceMesh)}");
-            }
-
-            // 通常攻撃ではPlane分割後の2Meshを完成品として扱う。
-            // Connected Componentへ再入力しないため、この時点でCutterが所有権を引き継ぐ。
-            runtimePieceMeshes.Add(
-                firstPieceMesh);
-
-            runtimePieceMeshes.Add(
-                secondPieceMesh);
+            runtimePieceMeshes.AddRange(finalPieceMeshes);
 
             if (ShouldRunDiagnostics)
             {
                 LogDiagnostic(
                     "Cutter-05 FinalPieces",
-                    "Connected Component解析を行わず、MeshPlaneSplitterが生成した2Meshを直接Pieceとして使用します。");
+                    $"中間First / Second Meshを生成せず、Connected Component確定後の最終Pieceを{finalPieceMeshes.Count}個取得しました。");
             }
 
             Material[] pieceMaterials =
@@ -364,16 +338,15 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
             ResolvePlayerCollidersForPieceCollision();
 
-            const int pieceCount = 2;
+            int pieceCount =
+                finalPieceMeshes.Count;
 
             for (int pieceIndex = 0;
                  pieceIndex < pieceCount;
                  pieceIndex++)
             {
                 Mesh pieceMesh =
-                    pieceIndex == 0
-                        ? firstPieceMesh
-                        : secondPieceMesh;
+                    finalPieceMeshes[pieceIndex];
 
                 GameObject pieceObject =
                     GetOrCreatePieceObject(

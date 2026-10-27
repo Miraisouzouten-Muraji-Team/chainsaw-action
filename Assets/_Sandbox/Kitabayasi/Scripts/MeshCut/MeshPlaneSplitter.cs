@@ -27,6 +27,9 @@ public sealed class MeshPlaneSplitter
     private const float NEARBY_BOUNDARY_ENDPOINT_SEARCH_SCALE = 4.0f;
     private const float SOURCE_SPLIT_VERTEX_MATCH_EPSILON_SCALE = 0.1f;
 
+    private readonly MeshConnectedComponentSplitter connectedComponentSplitter =
+        new MeshConnectedComponentSplitter();
+
     /// <summary>
     /// 指定PlaneでMeshを分割する。
     /// </summary>
@@ -85,8 +88,10 @@ public sealed class MeshPlaneSplitter
             secondPieceMeshName,
             cutBoundaryValidator,
             enableDiagnostics,
+            false,
             out firstPieceMesh,
             out secondPieceMesh,
+            out _,
             out failureReason);
     }
 
@@ -126,9 +131,60 @@ public sealed class MeshPlaneSplitter
             secondPieceMeshName,
             cutBoundaryValidator,
             enableDiagnostics,
+            false,
             out firstPieceMesh,
             out secondPieceMesh,
+            out _,
             out failureReason);
+    }
+
+    /// <summary>
+    /// Plane分割結果を中間Unity Meshへ確定せず、連結成分単位の最終Meshを直接生成する。
+    /// </summary>
+    /// <remarks>
+    /// 通常攻撃死亡経路専用。Plane分割中に構築した頂点属性とTriangle indexを
+    /// MeshConnectedComponentSplitterへ直接渡し、First / Secondの中間Mesh読戻しを発生させない。
+    /// </remarks>
+    internal bool TrySplitConnectedPieces(
+        Mesh sourceMesh,
+        Plane cutPlane,
+        float cutSurfaceUvScale,
+        Vector3[] sourceVertices,
+        IReadOnlyList<int[]> sourceTrianglesBySubMesh,
+        float[] sourceVertexPlaneDistances,
+        IReadOnlyList<byte[]> triangleClassificationsBySubMesh,
+        string firstSideMeshNamePrefix,
+        string secondSideMeshNamePrefix,
+        Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
+        bool enableDiagnostics,
+        out List<Mesh> pieceMeshes,
+        out string failureReason)
+    {
+        bool succeeded =
+            TrySplitInternal(
+                sourceMesh,
+                cutPlane,
+                cutSurfaceUvScale,
+                sourceVertices,
+                sourceTrianglesBySubMesh,
+                sourceVertexPlaneDistances,
+                triangleClassificationsBySubMesh,
+                firstSideMeshNamePrefix,
+                secondSideMeshNamePrefix,
+                cutBoundaryValidator,
+                enableDiagnostics,
+                true,
+                out _,
+                out _,
+                out pieceMeshes,
+                out failureReason);
+
+        if (!succeeded && pieceMeshes == null)
+        {
+            pieceMeshes = new List<Mesh>();
+        }
+
+        return succeeded;
     }
 
     private bool TrySplitInternal(
@@ -143,12 +199,15 @@ public sealed class MeshPlaneSplitter
         string secondPieceMeshName,
         Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
         bool enableDiagnostics,
+        bool splitConnectedComponents,
         out Mesh firstPieceMesh,
         out Mesh secondPieceMesh,
+        out List<Mesh> connectedPieceMeshes,
         out string failureReason)
     {
         firstPieceMesh = null;
         secondPieceMesh = null;
+        connectedPieceMeshes = null;
 
 #if !UNITY_EDITOR && !DEVELOPMENT_BUILD
         enableDiagnostics = false;
@@ -178,8 +237,16 @@ public sealed class MeshPlaneSplitter
                 triangleClassificationsBySubMesh,
                 out failureReason))
         {
-            // キャッシュ構成が壊れている場合は誤ったMeshを生成せず、
-            // 従来経路へ戻してSource Meshから通常どおり再走査する。
+            if (splitConnectedComponents)
+            {
+                failureReason =
+                    "通常攻撃の事前検証済みTriangle情報が不正なため、" +
+                    "Source Meshの再走査へフォールバックせず分割を中止します。 " +
+                    failureReason;
+                return false;
+            }
+
+            // 従来の2Mesh分割経路では互換性を維持し、キャッシュ不整合時のみ再走査へ戻す。
             sourceVertices = null;
             sourceTrianglesBySubMesh = null;
             sourceVertexPlaneDistances = null;
@@ -203,8 +270,10 @@ public sealed class MeshPlaneSplitter
             secondPieceMeshName,
             cutBoundaryValidator,
             enableDiagnostics,
+            splitConnectedComponents,
             out firstPieceMesh,
             out secondPieceMesh,
+            out connectedPieceMeshes,
             out failureReason);
     }
 
@@ -347,7 +416,7 @@ public sealed class MeshPlaneSplitter
                IsFinite(value.z);
     }
 
-    private static bool TrySplitMesh(
+    private bool TrySplitMesh(
         Mesh sourceMesh,
         Plane cutPlane,
         float cutSurfaceUvScale,
@@ -360,12 +429,15 @@ public sealed class MeshPlaneSplitter
         string secondPieceMeshName,
         Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
         bool enableDiagnostics,
+        bool splitConnectedComponents,
         out Mesh firstPieceMesh,
         out Mesh secondPieceMesh,
+        out List<Mesh> connectedPieceMeshes,
         out string failureReason)
     {
         firstPieceMesh = null;
         secondPieceMesh = null;
+        connectedPieceMeshes = null;
 
         bool useCachedTriangleValidation =
             cachedSourceVertices != null;
@@ -816,6 +888,68 @@ public sealed class MeshPlaneSplitter
             return false;
         }
 
+        if (splitConnectedComponents)
+        {
+            if (!connectedComponentSplitter.TrySplit(
+                    firstBuilder.Vertices,
+                    firstBuilder.Normals,
+                    firstBuilder.Uv,
+                    firstBuilder.Tangents,
+                    firstBuilder.HasTangents,
+                    firstBuilder.TrianglesBySubMesh,
+                    firstBuilder.BuilderBounds,
+                    firstPieceMeshName,
+                    out List<Mesh> firstSideComponents,
+                    out string firstSideFailureReason))
+            {
+                failureReason =
+                    "Positive側のConnected Component判定に失敗しました。" +
+                    $" {firstSideFailureReason}";
+                return false;
+            }
+
+            if (!connectedComponentSplitter.TrySplit(
+                    secondBuilder.Vertices,
+                    secondBuilder.Normals,
+                    secondBuilder.Uv,
+                    secondBuilder.Tangents,
+                    secondBuilder.HasTangents,
+                    secondBuilder.TrianglesBySubMesh,
+                    secondBuilder.BuilderBounds,
+                    secondPieceMeshName,
+                    out List<Mesh> secondSideComponents,
+                    out string secondSideFailureReason))
+            {
+                DestroyMeshes(firstSideComponents);
+
+                failureReason =
+                    "Negative側のConnected Component判定に失敗しました。" +
+                    $" {secondSideFailureReason}";
+                return false;
+            }
+
+            connectedPieceMeshes =
+                new List<Mesh>(
+                    firstSideComponents.Count +
+                    secondSideComponents.Count);
+
+            connectedPieceMeshes.AddRange(firstSideComponents);
+            connectedPieceMeshes.AddRange(secondSideComponents);
+
+            if (connectedPieceMeshes.Count < 2)
+            {
+                DestroyMeshes(connectedPieceMeshes);
+                connectedPieceMeshes.Clear();
+
+                failureReason =
+                    "Connected Component確定後に2個以上の最終Pieceを生成できませんでした。";
+                return false;
+            }
+
+            failureReason = null;
+            return true;
+        }
+
         firstPieceMesh =
             firstBuilder.BuildMesh(firstPieceMeshName);
 
@@ -832,6 +966,36 @@ public sealed class MeshPlaneSplitter
 
         failureReason = null;
         return true;
+    }
+
+    private static void DestroyMeshes(
+        IReadOnlyList<Mesh> meshes)
+    {
+        if (meshes == null)
+        {
+            return;
+        }
+
+        for (int meshIndex = 0;
+             meshIndex < meshes.Count;
+             meshIndex++)
+        {
+            Mesh mesh = meshes[meshIndex];
+
+            if (mesh == null)
+            {
+                continue;
+            }
+
+            if (Application.isPlaying)
+            {
+                UnityEngine.Object.Destroy(mesh);
+            }
+            else
+            {
+                UnityEngine.Object.DestroyImmediate(mesh);
+            }
+        }
     }
 
 
@@ -4145,11 +4309,28 @@ public sealed class MeshPlaneSplitter
 
         private readonly bool hasTangents;
 
+        private bool hasBounds;
+        private Vector3 minimumPosition;
+        private Vector3 maximumPosition;
+
         public int OriginalTriangleCount
         {
             get;
             private set;
         }
+
+        public IReadOnlyList<Vector3> Vertices => vertices;
+        public IReadOnlyList<Vector3> Normals => normals;
+        public IReadOnlyList<Vector2> Uv => uv;
+        public IReadOnlyList<Vector4> Tangents => tangents;
+        public IReadOnlyList<List<int>> TrianglesBySubMesh => trianglesBySubMesh;
+        public bool HasTangents => hasTangents;
+        public Bounds BuilderBounds =>
+            hasBounds
+                ? new Bounds(
+                    (minimumPosition + maximumPosition) * 0.5f,
+                    maximumPosition - minimumPosition)
+                : default;
 
         public PieceMeshBuilder(
             int subMeshCount,
@@ -4279,7 +4460,7 @@ public sealed class MeshPlaneSplitter
                     false);
             }
 
-            mesh.RecalculateBounds();
+            mesh.bounds = BuilderBounds;
 
             return mesh;
         }
@@ -4313,6 +4494,8 @@ public sealed class MeshPlaneSplitter
                     vertex.Tangent);
             }
 
+            UpdateBounds(vertex.Position);
+
             if (vertex.HasSourceVertexIndex)
             {
                 outputVertexIndexBySourceVertexIndex.Add(
@@ -4321,6 +4504,23 @@ public sealed class MeshPlaneSplitter
             }
 
             return index;
+        }
+
+        private void UpdateBounds(Vector3 position)
+        {
+            if (!hasBounds)
+            {
+                minimumPosition = position;
+                maximumPosition = position;
+                hasBounds = true;
+                return;
+            }
+
+            minimumPosition =
+                Vector3.Min(minimumPosition, position);
+
+            maximumPosition =
+                Vector3.Max(maximumPosition, position);
         }
     }
 }

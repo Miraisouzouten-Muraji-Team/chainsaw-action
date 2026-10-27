@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 /// <summary>
-/// 1つのMeshに含まれる、幾何学的につながったTriangle群を個別Meshへ分離する。
+/// 1つのMeshまたはMesh化前のTriangle集合に含まれる、幾何学的につながったTriangle群を個別Meshへ分離する。
 /// </summary>
 /// <remarks>
 /// UV seam等で同じ位置の頂点が別indexになっていても連結判定できるよう、
@@ -35,47 +35,182 @@ public sealed class MeshConnectedComponentSplitter
                 out Vector2[] uv,
                 out Vector4[] tangents,
                 out bool hasTangents,
-                out List<TriangleRecord> triangles,
+                out List<List<int>> trianglesBySubMesh,
+                out int triangleCount,
                 out failureReason))
         {
             return false;
         }
 
-        float positionEpsilon = CalculatePositionEpsilon(sourceMesh.bounds);
-        int[] connectedVertexIds = BuildConnectedVertexIds(vertices, positionEpsilon);
+        return TrySplitReadData(
+            sourceMesh.name,
+            sourceMesh.bounds,
+            vertices,
+            normals,
+            uv,
+            tangents,
+            hasTangents,
+            trianglesBySubMesh,
+            triangleCount,
+            out componentMeshes,
+            out failureReason);
+    }
 
-        var parent = new int[triangles.Count];
-        var rank = new byte[triangles.Count];
-        var edgeOwners = new Dictionary<EdgeKey, int>(triangles.Count * 2);
+    /// <summary>
+    /// Unity Meshへ確定する前の分割作業バッファから、連結成分だけを最終Mesh化する。
+    /// </summary>
+    /// <remarks>
+    /// MeshPlaneSplitterが構築済みの頂点属性、Triangle index、Boundsを直接受け取り、
+    /// 中間Mesh生成・TriangleRecordへの全コピー・Bounds算出用の頂点再走査を行わない。
+    /// </remarks>
+    internal bool TrySplit(
+        IReadOnlyList<Vector3> sourceVertices,
+        IReadOnlyList<Vector3> sourceNormals,
+        IReadOnlyList<Vector2> sourceUv,
+        IReadOnlyList<Vector4> sourceTangents,
+        bool hasTangents,
+        IReadOnlyList<List<int>> sourceTrianglesBySubMesh,
+        Bounds sourceBounds,
+        string meshNamePrefix,
+        out List<Mesh> componentMeshes,
+        out string failureReason)
+    {
+        componentMeshes = new List<Mesh>();
+
+        if (!TryValidateWorkingData(
+                sourceVertices,
+                sourceNormals,
+                sourceUv,
+                sourceTangents,
+                hasTangents,
+                sourceTrianglesBySubMesh,
+                out int triangleCount,
+                out failureReason))
+        {
+            return false;
+        }
+
+        return TrySplitReadData(
+            meshNamePrefix,
+            sourceBounds,
+            sourceVertices,
+            sourceNormals,
+            sourceUv,
+            sourceTangents,
+            hasTangents,
+            sourceTrianglesBySubMesh,
+            triangleCount,
+            out componentMeshes,
+            out failureReason);
+    }
+
+    private static bool TrySplitReadData(
+        string meshNamePrefix,
+        Bounds sourceBounds,
+        IReadOnlyList<Vector3> vertices,
+        IReadOnlyList<Vector3> normals,
+        IReadOnlyList<Vector2> uv,
+        IReadOnlyList<Vector4> tangents,
+        bool hasTangents,
+        IReadOnlyList<List<int>> trianglesBySubMesh,
+        int triangleCount,
+        out List<Mesh> componentMeshes,
+        out string failureReason)
+    {
+        componentMeshes = new List<Mesh>();
+
+        float positionEpsilon =
+            CalculatePositionEpsilon(sourceBounds);
+
+        int[] connectedVertexIds =
+            BuildConnectedVertexIds(vertices, positionEpsilon);
+
+        var parent = new int[triangleCount];
+        var rank = new byte[triangleCount];
+        var edgeOwners =
+            new Dictionary<EdgeKey, int>(triangleCount * 2);
 
         for (int i = 0; i < parent.Length; i++)
         {
             parent[i] = i;
         }
 
-        for (int triangleIndex = 0; triangleIndex < triangles.Count; triangleIndex++)
-        {
-            TriangleRecord triangle = triangles[triangleIndex];
-            int first = connectedVertexIds[triangle.FirstVertexIndex];
-            int second = connectedVertexIds[triangle.SecondVertexIndex];
-            int third = connectedVertexIds[triangle.ThirdVertexIndex];
+        int[] firstTriangleIndexBySubMesh =
+            BuildFirstTriangleIndicesBySubMesh(trianglesBySubMesh);
 
-            RegisterSharedEdge(first, second, triangleIndex, edgeOwners, parent, rank);
-            RegisterSharedEdge(second, third, triangleIndex, edgeOwners, parent, rank);
-            RegisterSharedEdge(third, first, triangleIndex, edgeOwners, parent, rank);
+        int triangleIndex = 0;
+
+        for (int subMeshIndex = 0;
+             subMeshIndex < trianglesBySubMesh.Count;
+             subMeshIndex++)
+        {
+            IReadOnlyList<int> subMeshTriangles =
+                trianglesBySubMesh[subMeshIndex];
+
+            for (int offset = 0;
+                 offset < subMeshTriangles.Count;
+                 offset += 3)
+            {
+                int first =
+                    connectedVertexIds[subMeshTriangles[offset]];
+
+                int second =
+                    connectedVertexIds[subMeshTriangles[offset + 1]];
+
+                int third =
+                    connectedVertexIds[subMeshTriangles[offset + 2]];
+
+                RegisterSharedEdge(
+                    first,
+                    second,
+                    triangleIndex,
+                    edgeOwners,
+                    parent,
+                    rank);
+
+                RegisterSharedEdge(
+                    second,
+                    third,
+                    triangleIndex,
+                    edgeOwners,
+                    parent,
+                    rank);
+
+                RegisterSharedEdge(
+                    third,
+                    first,
+                    triangleIndex,
+                    edgeOwners,
+                    parent,
+                    rank);
+
+                triangleIndex++;
+            }
         }
 
-        var triangleIndicesByRoot = new Dictionary<int, List<int>>();
-        var componentRoots = new List<int>();
+        var triangleIndicesByRoot =
+            new Dictionary<int, List<int>>();
 
-        for (int triangleIndex = 0; triangleIndex < triangles.Count; triangleIndex++)
+        var componentRoots =
+            new List<int>();
+
+        for (triangleIndex = 0;
+             triangleIndex < triangleCount;
+             triangleIndex++)
         {
-            int root = FindRoot(parent, triangleIndex);
+            int root =
+                FindRoot(parent, triangleIndex);
 
-            if (!triangleIndicesByRoot.TryGetValue(root, out List<int> componentTriangleIndices))
+            if (!triangleIndicesByRoot.TryGetValue(
+                    root,
+                    out List<int> componentTriangleIndices))
             {
-                componentTriangleIndices = new List<int>();
-                triangleIndicesByRoot.Add(root, componentTriangleIndices);
+                componentTriangleIndices =
+                    new List<int>();
+
+                triangleIndicesByRoot.Add(
+                    root,
+                    componentTriangleIndices);
 
                 // Triangle走査順を保持してComponent名と生成順を決定的にする。
                 componentRoots.Add(root);
@@ -84,24 +219,31 @@ public sealed class MeshConnectedComponentSplitter
             componentTriangleIndices.Add(triangleIndex);
         }
 
-        for (int componentIndex = 0; componentIndex < componentRoots.Count; componentIndex++)
+        for (int componentIndex = 0;
+             componentIndex < componentRoots.Count;
+             componentIndex++)
         {
-            Mesh componentMesh = BuildComponentMesh(
-                sourceMesh,
-                componentIndex,
-                triangleIndicesByRoot[componentRoots[componentIndex]],
-                triangles,
-                vertices,
-                normals,
-                uv,
-                tangents,
-                hasTangents);
+            Mesh componentMesh =
+                BuildComponentMesh(
+                    meshNamePrefix,
+                    componentIndex,
+                    triangleIndicesByRoot[
+                        componentRoots[componentIndex]],
+                    trianglesBySubMesh,
+                    firstTriangleIndexBySubMesh,
+                    vertices,
+                    normals,
+                    uv,
+                    tangents,
+                    hasTangents);
 
             if (componentMesh == null)
             {
                 DestroyMeshes(componentMeshes);
                 componentMeshes.Clear();
-                failureReason = "連結成分から有効なMeshを生成できませんでした。";
+
+                failureReason =
+                    "連結成分から有効なMeshを生成できませんでした。";
                 return false;
             }
 
@@ -110,7 +252,8 @@ public sealed class MeshConnectedComponentSplitter
 
         if (componentMeshes.Count == 0)
         {
-            failureReason = "連結成分が1つも検出されませんでした。";
+            failureReason =
+                "連結成分が1つも検出されませんでした。";
             return false;
         }
 
@@ -125,7 +268,8 @@ public sealed class MeshConnectedComponentSplitter
         out Vector2[] uv,
         out Vector4[] tangents,
         out bool hasTangents,
-        out List<TriangleRecord> triangles,
+        out List<List<int>> trianglesBySubMesh,
+        out int triangleCount,
         out string failureReason)
     {
         vertices = null;
@@ -133,7 +277,8 @@ public sealed class MeshConnectedComponentSplitter
         uv = null;
         tangents = null;
         hasTangents = false;
-        triangles = null;
+        trianglesBySubMesh = null;
+        triangleCount = 0;
 
         if (sourceMesh == null)
         {
@@ -147,9 +292,11 @@ public sealed class MeshConnectedComponentSplitter
             return false;
         }
 
-        if (sourceMesh.vertexCount == 0 || sourceMesh.subMeshCount == 0)
+        if (sourceMesh.vertexCount == 0 ||
+            sourceMesh.subMeshCount == 0)
         {
-            failureReason = "分離対象Meshに頂点またはSubMeshがありません。";
+            failureReason =
+                "分離対象Meshに頂点またはSubMeshがありません。";
             return false;
         }
 
@@ -160,42 +307,54 @@ public sealed class MeshConnectedComponentSplitter
 
         if (normals.Length != vertices.Length)
         {
-            failureReason = "分離対象Meshの頂点数とNormal数が一致していません。";
+            failureReason =
+                "分離対象Meshの頂点数とNormal数が一致していません。";
             return false;
         }
 
         if (uv.Length != vertices.Length)
         {
-            failureReason = "分離対象Meshの頂点数とUV数が一致していません。";
+            failureReason =
+                "分離対象Meshの頂点数とUV数が一致していません。";
             return false;
         }
 
-        hasTangents = tangents.Length == vertices.Length;
-        triangles = new List<TriangleRecord>();
+        hasTangents =
+            tangents.Length == vertices.Length;
 
-        for (int subMeshIndex = 0; subMeshIndex < sourceMesh.subMeshCount; subMeshIndex++)
+        trianglesBySubMesh =
+            new List<List<int>>(sourceMesh.subMeshCount);
+
+        for (int subMeshIndex = 0;
+             subMeshIndex < sourceMesh.subMeshCount;
+             subMeshIndex++)
         {
-            if (sourceMesh.GetTopology(subMeshIndex) != MeshTopology.Triangles)
+            if (sourceMesh.GetTopology(subMeshIndex) !=
+                MeshTopology.Triangles)
             {
-                failureReason = $"SubMesh {subMeshIndex} がTriangle topologyではありません。";
+                failureReason =
+                    $"SubMesh {subMeshIndex} がTriangle topologyではありません。";
                 return false;
             }
 
-            int[] subMeshTriangles = sourceMesh.GetTriangles(subMeshIndex);
+            var subMeshTriangles = new List<int>();
+            sourceMesh.GetTriangles(subMeshTriangles, subMeshIndex);
 
-            for (int offset = 0; offset < subMeshTriangles.Length; offset += 3)
+            if (subMeshTriangles.Count % 3 != 0)
             {
-                triangles.Add(new TriangleRecord(
-                    subMeshIndex,
-                    subMeshTriangles[offset],
-                    subMeshTriangles[offset + 1],
-                    subMeshTriangles[offset + 2]));
+                failureReason =
+                    $"SubMesh {subMeshIndex} のTriangle index数が不正です。";
+                return false;
             }
+
+            trianglesBySubMesh.Add(subMeshTriangles);
+            triangleCount += subMeshTriangles.Count / 3;
         }
 
-        if (triangles.Count == 0)
+        if (triangleCount == 0)
         {
-            failureReason = "分離対象MeshにTriangleがありません。";
+            failureReason =
+                "分離対象MeshにTriangleがありません。";
             return false;
         }
 
@@ -203,12 +362,129 @@ public sealed class MeshConnectedComponentSplitter
         return true;
     }
 
+    private static bool TryValidateWorkingData(
+        IReadOnlyList<Vector3> sourceVertices,
+        IReadOnlyList<Vector3> sourceNormals,
+        IReadOnlyList<Vector2> sourceUv,
+        IReadOnlyList<Vector4> sourceTangents,
+        bool hasTangents,
+        IReadOnlyList<List<int>> sourceTrianglesBySubMesh,
+        out int triangleCount,
+        out string failureReason)
+    {
+        triangleCount = 0;
+
+        if (sourceVertices == null ||
+            sourceVertices.Count == 0 ||
+            sourceNormals == null ||
+            sourceNormals.Count != sourceVertices.Count ||
+            sourceUv == null ||
+            sourceUv.Count != sourceVertices.Count ||
+            sourceTrianglesBySubMesh == null ||
+            sourceTrianglesBySubMesh.Count == 0)
+        {
+            failureReason =
+                "連結成分判定用の分割作業データが不正です。";
+            return false;
+        }
+
+        if (hasTangents &&
+            (sourceTangents == null ||
+             sourceTangents.Count != sourceVertices.Count))
+        {
+            failureReason =
+                "連結成分判定用のTangent数が頂点数と一致していません。";
+            return false;
+        }
+
+        for (int subMeshIndex = 0;
+             subMeshIndex < sourceTrianglesBySubMesh.Count;
+             subMeshIndex++)
+        {
+            IReadOnlyList<int> subMeshTriangles =
+                sourceTrianglesBySubMesh[subMeshIndex];
+
+            if (subMeshTriangles == null ||
+                subMeshTriangles.Count % 3 != 0)
+            {
+                failureReason =
+                    $"SubMesh {subMeshIndex} の作業Triangle index数が不正です。";
+                return false;
+            }
+
+            for (int offset = 0;
+                 offset < subMeshTriangles.Count;
+                 offset += 3)
+            {
+                if (!IsValidVertexIndex(
+                        subMeshTriangles[offset],
+                        sourceVertices.Count) ||
+                    !IsValidVertexIndex(
+                        subMeshTriangles[offset + 1],
+                        sourceVertices.Count) ||
+                    !IsValidVertexIndex(
+                        subMeshTriangles[offset + 2],
+                        sourceVertices.Count))
+                {
+                    failureReason =
+                        $"SubMesh {subMeshIndex} の作業Triangleに範囲外の頂点indexがあります。";
+                    return false;
+                }
+            }
+
+            triangleCount += subMeshTriangles.Count / 3;
+        }
+
+        if (triangleCount == 0)
+        {
+            failureReason =
+                "連結成分判定用のTriangleがありません。";
+            return false;
+        }
+
+        failureReason = null;
+        return true;
+    }
+
+    private static int[] BuildFirstTriangleIndicesBySubMesh(
+        IReadOnlyList<List<int>> trianglesBySubMesh)
+    {
+        var firstTriangleIndexBySubMesh =
+            new int[trianglesBySubMesh.Count + 1];
+
+        int triangleIndex = 0;
+
+        for (int subMeshIndex = 0;
+             subMeshIndex < trianglesBySubMesh.Count;
+             subMeshIndex++)
+        {
+            firstTriangleIndexBySubMesh[subMeshIndex] =
+                triangleIndex;
+
+            triangleIndex +=
+                trianglesBySubMesh[subMeshIndex].Count / 3;
+        }
+
+        firstTriangleIndexBySubMesh[trianglesBySubMesh.Count] =
+            triangleIndex;
+
+        return firstTriangleIndexBySubMesh;
+    }
+
+    private static bool IsValidVertexIndex(
+        int vertexIndex,
+        int vertexCount)
+    {
+        return vertexIndex >= 0 &&
+               vertexIndex < vertexCount;
+    }
+
     /// <summary>
     /// 同一位置とみなせる頂点へ共通IDを割り当てる。
     /// </summary>
     /// <remarks>
-    /// MeshPlaneSplitterの出力はTriangleごとに頂点が複製されるため、
-    /// index一致では連結を判定できない。隣接セルも確認して許容距離内の頂点だけをまとめる。
+    /// UV seam / hard edgeや切断で生成された頂点は同じ位置でも別indexになり得るため、
+    /// index一致だけでは連結を判定しない。隣接セルも確認して許容距離内の頂点だけをまとめる。
     /// </remarks>
     private static int[] BuildConnectedVertexIds(
         IReadOnlyList<Vector3> vertices,
@@ -303,81 +579,132 @@ public sealed class MeshConnectedComponentSplitter
     }
 
     private static Mesh BuildComponentMesh(
-        Mesh sourceMesh,
+        string meshNamePrefix,
         int componentIndex,
         IReadOnlyList<int> componentTriangleIndices,
-        IReadOnlyList<TriangleRecord> triangles,
+        IReadOnlyList<List<int>> sourceTrianglesBySubMesh,
+        IReadOnlyList<int> firstTriangleIndexBySubMesh,
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<Vector3> sourceNormals,
         IReadOnlyList<Vector2> sourceUv,
         IReadOnlyList<Vector4> sourceTangents,
         bool hasTangents)
     {
-        if (componentTriangleIndices == null || componentTriangleIndices.Count == 0)
+        if (componentTriangleIndices == null ||
+            componentTriangleIndices.Count == 0)
         {
             return null;
         }
 
-        int vertexCapacity = componentTriangleIndices.Count * 3;
+        int vertexCapacity =
+            Math.Min(
+                sourceVertices.Count,
+                componentTriangleIndices.Count * 3);
+
         var vertices = new List<Vector3>(vertexCapacity);
         var normals = new List<Vector3>(vertexCapacity);
         var uv = new List<Vector2>(vertexCapacity);
-        List<Vector4> tangents = hasTangents ? new List<Vector4>(vertexCapacity) : null;
-        var trianglesBySubMesh = new List<List<int>>(sourceMesh.subMeshCount);
+        List<Vector4> tangents =
+            hasTangents
+                ? new List<Vector4>(vertexCapacity)
+                : null;
 
-        for (int subMeshIndex = 0; subMeshIndex < sourceMesh.subMeshCount; subMeshIndex++)
+        var trianglesBySubMesh =
+            new List<List<int>>(sourceTrianglesBySubMesh.Count);
+
+        var destinationVertexIndexBySourceVertexIndex =
+            new Dictionary<int, int>(vertexCapacity);
+
+        for (int subMeshIndex = 0;
+             subMeshIndex < sourceTrianglesBySubMesh.Count;
+             subMeshIndex++)
         {
             trianglesBySubMesh.Add(new List<int>());
         }
 
-        for (int i = 0; i < componentTriangleIndices.Count; i++)
+        bool hasBounds = false;
+        Vector3 minimum = default;
+        Vector3 maximum = default;
+
+        for (int i = 0;
+             i < componentTriangleIndices.Count;
+             i++)
         {
-            TriangleRecord triangle = triangles[componentTriangleIndices[i]];
-            List<int> destinationTriangles = trianglesBySubMesh[triangle.SubMeshIndex];
+            int triangleIndex =
+                componentTriangleIndices[i];
 
-            AddVertex(
-                triangle.FirstVertexIndex,
-                sourceVertices,
-                sourceNormals,
-                sourceUv,
-                sourceTangents,
-                hasTangents,
-                vertices,
-                normals,
-                uv,
-                tangents,
-                destinationTriangles);
+            ResolveTriangleLocation(
+                triangleIndex,
+                firstTriangleIndexBySubMesh,
+                out int subMeshIndex,
+                out int triangleOffset);
 
-            AddVertex(
-                triangle.SecondVertexIndex,
-                sourceVertices,
-                sourceNormals,
-                sourceUv,
-                sourceTangents,
-                hasTangents,
-                vertices,
-                normals,
-                uv,
-                tangents,
-                destinationTriangles);
+            IReadOnlyList<int> sourceTriangles =
+                sourceTrianglesBySubMesh[subMeshIndex];
 
-            AddVertex(
-                triangle.ThirdVertexIndex,
-                sourceVertices,
-                sourceNormals,
-                sourceUv,
-                sourceTangents,
-                hasTangents,
-                vertices,
-                normals,
-                uv,
-                tangents,
-                destinationTriangles);
+            List<int> destinationTriangles =
+                trianglesBySubMesh[subMeshIndex];
+
+            destinationTriangles.Add(
+                GetOrAddVertex(
+                    sourceTriangles[triangleOffset],
+                    sourceVertices,
+                    sourceNormals,
+                    sourceUv,
+                    sourceTangents,
+                    hasTangents,
+                    destinationVertexIndexBySourceVertexIndex,
+                    vertices,
+                    normals,
+                    uv,
+                    tangents,
+                    ref hasBounds,
+                    ref minimum,
+                    ref maximum));
+
+            destinationTriangles.Add(
+                GetOrAddVertex(
+                    sourceTriangles[triangleOffset + 1],
+                    sourceVertices,
+                    sourceNormals,
+                    sourceUv,
+                    sourceTangents,
+                    hasTangents,
+                    destinationVertexIndexBySourceVertexIndex,
+                    vertices,
+                    normals,
+                    uv,
+                    tangents,
+                    ref hasBounds,
+                    ref minimum,
+                    ref maximum));
+
+            destinationTriangles.Add(
+                GetOrAddVertex(
+                    sourceTriangles[triangleOffset + 2],
+                    sourceVertices,
+                    sourceNormals,
+                    sourceUv,
+                    sourceTangents,
+                    hasTangents,
+                    destinationVertexIndexBySourceVertexIndex,
+                    vertices,
+                    normals,
+                    uv,
+                    tangents,
+                    ref hasBounds,
+                    ref minimum,
+                    ref maximum));
+        }
+
+        if (!hasBounds)
+        {
+            return null;
         }
 
         var mesh = new Mesh
         {
-            name = $"{sourceMesh.name}_Component_{componentIndex:D2}",
+            name = $"{meshNamePrefix}_Component_{componentIndex:D2}",
             indexFormat = vertices.Count > ushort.MaxValue
                 ? IndexFormat.UInt32
                 : IndexFormat.UInt16
@@ -392,42 +719,123 @@ public sealed class MeshConnectedComponentSplitter
             mesh.SetTangents(tangents);
         }
 
-        mesh.subMeshCount = sourceMesh.subMeshCount;
+        mesh.subMeshCount = sourceTrianglesBySubMesh.Count;
 
-        for (int subMeshIndex = 0; subMeshIndex < trianglesBySubMesh.Count; subMeshIndex++)
+        for (int subMeshIndex = 0;
+             subMeshIndex < trianglesBySubMesh.Count;
+             subMeshIndex++)
         {
-            mesh.SetTriangles(trianglesBySubMesh[subMeshIndex], subMeshIndex, false);
+            mesh.SetTriangles(
+                trianglesBySubMesh[subMeshIndex],
+                subMeshIndex,
+                false);
         }
 
-        mesh.RecalculateBounds();
+        mesh.bounds =
+            new Bounds(
+                (minimum + maximum) * 0.5f,
+                maximum - minimum);
+
         return mesh;
     }
 
-    private static void AddVertex(
+    private static int GetOrAddVertex(
         int sourceVertexIndex,
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<Vector3> sourceNormals,
         IReadOnlyList<Vector2> sourceUv,
         IReadOnlyList<Vector4> sourceTangents,
         bool hasTangents,
+        Dictionary<int, int> destinationVertexIndexBySourceVertexIndex,
         List<Vector3> destinationVertices,
         List<Vector3> destinationNormals,
         List<Vector2> destinationUv,
         List<Vector4> destinationTangents,
-        List<int> destinationTriangles)
+        ref bool hasBounds,
+        ref Vector3 minimum,
+        ref Vector3 maximum)
     {
-        int destinationVertexIndex = destinationVertices.Count;
+        if (destinationVertexIndexBySourceVertexIndex.TryGetValue(
+                sourceVertexIndex,
+                out int destinationVertexIndex))
+        {
+            return destinationVertexIndex;
+        }
 
-        destinationVertices.Add(sourceVertices[sourceVertexIndex]);
+        destinationVertexIndex =
+            destinationVertices.Count;
+
+        Vector3 position =
+            sourceVertices[sourceVertexIndex];
+
+        destinationVertices.Add(position);
         destinationNormals.Add(sourceNormals[sourceVertexIndex]);
         destinationUv.Add(sourceUv[sourceVertexIndex]);
 
         if (hasTangents)
         {
-            destinationTangents.Add(sourceTangents[sourceVertexIndex]);
+            destinationTangents.Add(
+                sourceTangents[sourceVertexIndex]);
         }
 
-        destinationTriangles.Add(destinationVertexIndex);
+        destinationVertexIndexBySourceVertexIndex.Add(
+            sourceVertexIndex,
+            destinationVertexIndex);
+
+        if (!hasBounds)
+        {
+            minimum = position;
+            maximum = position;
+            hasBounds = true;
+        }
+        else
+        {
+            minimum = Vector3.Min(minimum, position);
+            maximum = Vector3.Max(maximum, position);
+        }
+
+        return destinationVertexIndex;
+    }
+
+    private static void ResolveTriangleLocation(
+        int triangleIndex,
+        IReadOnlyList<int> firstTriangleIndexBySubMesh,
+        out int subMeshIndex,
+        out int triangleOffset)
+    {
+        int low = 0;
+        int high = firstTriangleIndexBySubMesh.Count - 2;
+
+        while (low <= high)
+        {
+            int middle = low + ((high - low) / 2);
+            int firstTriangleIndex =
+                firstTriangleIndexBySubMesh[middle];
+            int nextSubMeshFirstTriangleIndex =
+                firstTriangleIndexBySubMesh[middle + 1];
+
+            if (triangleIndex < firstTriangleIndex)
+            {
+                high = middle - 1;
+                continue;
+            }
+
+            if (triangleIndex >= nextSubMeshFirstTriangleIndex)
+            {
+                low = middle + 1;
+                continue;
+            }
+
+            subMeshIndex = middle;
+            triangleOffset =
+                (triangleIndex - firstTriangleIndex) * 3;
+            return;
+        }
+
+        throw new ArgumentOutOfRangeException(
+            nameof(triangleIndex),
+            triangleIndex,
+            "Triangle indexからSubMeshを解決できませんでした。");
     }
 
     private static float CalculatePositionEpsilon(Bounds bounds)
@@ -506,26 +914,6 @@ public sealed class MeshConnectedComponentSplitter
                 UnityEngine.Object.DestroyImmediate(mesh);
             }
         }
-    }
-
-    private readonly struct TriangleRecord
-    {
-        public TriangleRecord(
-            int subMeshIndex,
-            int firstVertexIndex,
-            int secondVertexIndex,
-            int thirdVertexIndex)
-        {
-            SubMeshIndex = subMeshIndex;
-            FirstVertexIndex = firstVertexIndex;
-            SecondVertexIndex = secondVertexIndex;
-            ThirdVertexIndex = thirdVertexIndex;
-        }
-
-        public int SubMeshIndex { get; }
-        public int FirstVertexIndex { get; }
-        public int SecondVertexIndex { get; }
-        public int ThirdVertexIndex { get; }
     }
 
     private readonly struct PositionCellKey : IEquatable<PositionCellKey>

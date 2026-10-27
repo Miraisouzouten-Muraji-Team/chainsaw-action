@@ -17,7 +17,7 @@ public sealed class ChainsawMeshCutProcessor
         new MeshPlaneSplitter();
 
     /// <summary>
-    /// Bake済みMeshをチェンソー軌跡由来のPlaneで2つへ分割する。
+    /// Bake済みMeshをチェンソー軌跡由来のPlaneで分割し、Connected Piece単位の最終Meshを生成する。
     /// </summary>
     public bool TryCut(
         Mesh sourceMesh,
@@ -30,12 +30,10 @@ public sealed class ChainsawMeshCutProcessor
         float cutRangeMaximumNormalized,
         float cutSurfaceUvScale,
         bool enableDiagnostics,
-        out Mesh firstPieceMesh,
-        out Mesh secondPieceMesh,
+        out List<Mesh> pieceMeshes,
         out string failureReason)
     {
-        firstPieceMesh = null;
-        secondPieceMesh = null;
+        pieceMeshes = new List<Mesh>();
         failureReason = null;
 
 #if !UNITY_EDITOR && !DEVELOPMENT_BUILD
@@ -116,7 +114,7 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
-        if (!meshPlaneSplitter.TrySplit(
+        if (!meshPlaneSplitter.TrySplitConnectedPieces(
                 sourceMesh,
                 correctedCutPlane,
                 cutSurfaceUvScale,
@@ -142,8 +140,7 @@ public sealed class ChainsawMeshCutProcessor
                         : boundaryFailureReason;
                 },
                 enableDiagnostics,
-                out firstPieceMesh,
-                out secondPieceMesh,
+                out pieceMeshes,
                 out failureReason))
         {
             return false;

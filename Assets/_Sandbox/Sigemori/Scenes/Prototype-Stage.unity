@@ -1164,8 +1164,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c15f0994c412d1a4eb9064f8117b61ca, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawDiggingParticles
-  chainsawDigging: {fileID: 922261330}
-  playerController: {fileID: 922261333}
+  chainsawDigging: {fileID: 0}
+  playerController: {fileID: 0}
   particlePrefab: {fileID: 6738715962970879416, guid: 433900216c058ea4aa41a048804046dc, type: 3}
   emissionPoint: {fileID: 566811192}
   floorAngle: 135
@@ -1184,79 +1184,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7e624b05775fca847a22140969b8b248, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawRotation
-  minSpeed: 5
-  maxSpeed: 50
-  diggingMaxSpeed: 35
-  accelerationTime: 2
-  decelerationTime: 2.5
-  accelerationCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 0.5
-      value: 0.5
-      inSlope: 3
-      outSlope: 3
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  decelerationCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 0.47221678
-      value: 0.31269532
-      inSlope: 1.9540911
-      outSlope: 1.9540911
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.09116605
-      outWeight: 1
-    - serializedVersion: 3
-      time: 0.7041931
-      value: 0.9904785
-      inSlope: 4.213732
-      outSlope: 4.213732
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0.077947706
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  minPitch: 0.8
-  maxPitch: 1.8
+  accelerationParameter: {fileID: 0}
 --- !u!1 &566811191
 GameObject:
   m_ObjectHideFlags: 0
@@ -2712,6 +2640,8 @@ MonoBehaviour:
   ceilingDiggingState: 
   enemyDiggingState: 
   jumpState: 
+  doubleJumpState: Base Layer.DoubleJump
+  wallJumpState: Base Layer.WallJump
 --- !u!114 &922261333
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5278,17 +5208,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawAttack
   hitBox: {fileID: 1630477597}
+  slashKnockbackPriorityDuration: 0.15
   hitParticle: {fileID: 6176228616533195752, guid: 8b653b8ed8f598c42baa0eca3fd64bea, type: 3}
   cameraShake: {fileID: 0}
   duration: 0.05
-  magnitude: 0.05
   hitStopSystem: {fileID: 0}
-  trajectoryRecorder: {fileID: 0}
-  diggingHitStopTime: 0
-  shakeOnDigging: 0
-  bladeTrajectoryRecorder: {fileID: 552562833}
-  enableTrajectoryDebugLog: 1
-  sampleLogInterval: 10
 --- !u!64 &1630477597
 MeshCollider:
   m_ObjectHideFlags: 0

@@ -16,6 +16,10 @@ public sealed class MeshPlaneSplitter
     private const float MIN_GEOMETRY_EPSILON = 0.000001f;
     private const float MIN_DIRECTION_SQR_MAGNITUDE = 0.00000001f;
 
+    internal const byte TRIANGLE_CLASSIFICATION_POSITIVE = 1;
+    internal const byte TRIANGLE_CLASSIFICATION_NEGATIVE = 2;
+    internal const byte TRIANGLE_CLASSIFICATION_INTERSECTING = 3;
+
     private const int MAX_BOUNDARY_DIAGNOSTIC_NODE_DETAILS = 20;
     private const int MAX_DEGENERATE_SEGMENT_DIAGNOSTIC_DETAILS = 30;
     private const int MAX_NEARBY_ENDPOINT_DIAGNOSTIC_DETAILS = 20;
@@ -69,6 +73,80 @@ public sealed class MeshPlaneSplitter
         out Mesh secondPieceMesh,
         out string failureReason)
     {
+        return TrySplitInternal(
+            sourceMesh,
+            cutPlane,
+            cutSurfaceUvScale,
+            null,
+            null,
+            null,
+            null,
+            firstPieceMeshName,
+            secondPieceMeshName,
+            cutBoundaryValidator,
+            enableDiagnostics,
+            out firstPieceMesh,
+            out secondPieceMesh,
+            out failureReason);
+    }
+
+    /// <summary>
+    /// 事前に同じPlaneで検証済みのTriangle情報を再利用してMeshを分割する。
+    /// </summary>
+    /// <remarks>
+    /// 通常攻撃のCut Plane検証で確定済みの頂点距離とTriangle分類を再利用し、
+    /// 採用Planeに対するGetTriangles・Plane距離計算・Triangle再分類を繰り返さない。
+    /// Mesh構築、頂点属性補間、切断面生成は従来どおりこのクラスが担当する。
+    /// </remarks>
+    internal bool TrySplit(
+        Mesh sourceMesh,
+        Plane cutPlane,
+        float cutSurfaceUvScale,
+        Vector3[] sourceVertices,
+        IReadOnlyList<int[]> sourceTrianglesBySubMesh,
+        float[] sourceVertexPlaneDistances,
+        IReadOnlyList<byte[]> triangleClassificationsBySubMesh,
+        string firstPieceMeshName,
+        string secondPieceMeshName,
+        Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
+        bool enableDiagnostics,
+        out Mesh firstPieceMesh,
+        out Mesh secondPieceMesh,
+        out string failureReason)
+    {
+        return TrySplitInternal(
+            sourceMesh,
+            cutPlane,
+            cutSurfaceUvScale,
+            sourceVertices,
+            sourceTrianglesBySubMesh,
+            sourceVertexPlaneDistances,
+            triangleClassificationsBySubMesh,
+            firstPieceMeshName,
+            secondPieceMeshName,
+            cutBoundaryValidator,
+            enableDiagnostics,
+            out firstPieceMesh,
+            out secondPieceMesh,
+            out failureReason);
+    }
+
+    private bool TrySplitInternal(
+        Mesh sourceMesh,
+        Plane cutPlane,
+        float cutSurfaceUvScale,
+        Vector3[] sourceVertices,
+        IReadOnlyList<int[]> sourceTrianglesBySubMesh,
+        float[] sourceVertexPlaneDistances,
+        IReadOnlyList<byte[]> triangleClassificationsBySubMesh,
+        string firstPieceMeshName,
+        string secondPieceMeshName,
+        Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
+        bool enableDiagnostics,
+        out Mesh firstPieceMesh,
+        out Mesh secondPieceMesh,
+        out string failureReason)
+    {
         firstPieceMesh = null;
         secondPieceMesh = null;
 
@@ -85,6 +163,30 @@ public sealed class MeshPlaneSplitter
             return false;
         }
 
+        bool hasCachedTriangleValidation =
+            sourceVertices != null ||
+            sourceTrianglesBySubMesh != null ||
+            sourceVertexPlaneDistances != null ||
+            triangleClassificationsBySubMesh != null;
+
+        if (hasCachedTriangleValidation &&
+            !ValidateCachedTriangleValidation(
+                sourceMesh,
+                sourceVertices,
+                sourceTrianglesBySubMesh,
+                sourceVertexPlaneDistances,
+                triangleClassificationsBySubMesh,
+                out failureReason))
+        {
+            // キャッシュ構成が壊れている場合は誤ったMeshを生成せず、
+            // 従来経路へ戻してSource Meshから通常どおり再走査する。
+            sourceVertices = null;
+            sourceTrianglesBySubMesh = null;
+            sourceVertexPlaneDistances = null;
+            triangleClassificationsBySubMesh = null;
+            failureReason = null;
+        }
+
         float geometryEpsilon =
             CalculateGeometryEpsilon(sourceMesh.bounds);
 
@@ -93,6 +195,10 @@ public sealed class MeshPlaneSplitter
             cutPlane,
             cutSurfaceUvScale,
             geometryEpsilon,
+            sourceVertices,
+            sourceTrianglesBySubMesh,
+            sourceVertexPlaneDistances,
+            triangleClassificationsBySubMesh,
             firstPieceMeshName,
             secondPieceMeshName,
             cutBoundaryValidator,
@@ -107,6 +213,83 @@ public sealed class MeshPlaneSplitter
         return Mathf.Max(
             bounds.size.magnitude * GEOMETRY_EPSILON_RATIO,
             MIN_GEOMETRY_EPSILON);
+    }
+
+    internal static byte ClassifyTriangle(
+        float distanceA,
+        float distanceB,
+        float distanceC,
+        float geometryEpsilon)
+    {
+        bool hasPositiveVertex =
+            distanceA > geometryEpsilon ||
+            distanceB > geometryEpsilon ||
+            distanceC > geometryEpsilon;
+
+        bool hasNegativeVertex =
+            distanceA < -geometryEpsilon ||
+            distanceB < -geometryEpsilon ||
+            distanceC < -geometryEpsilon;
+
+        // 従来処理と同じ優先順で、Plane上だけのTriangleはPositive側へ残す。
+        if (!hasNegativeVertex)
+        {
+            return TRIANGLE_CLASSIFICATION_POSITIVE;
+        }
+
+        if (!hasPositiveVertex)
+        {
+            return TRIANGLE_CLASSIFICATION_NEGATIVE;
+        }
+
+        return TRIANGLE_CLASSIFICATION_INTERSECTING;
+    }
+
+    private static bool ValidateCachedTriangleValidation(
+        Mesh sourceMesh,
+        Vector3[] sourceVertices,
+        IReadOnlyList<int[]> sourceTrianglesBySubMesh,
+        float[] sourceVertexPlaneDistances,
+        IReadOnlyList<byte[]> triangleClassificationsBySubMesh,
+        out string failureReason)
+    {
+        if (sourceVertices == null ||
+            sourceVertices.Length != sourceMesh.vertexCount ||
+            sourceVertexPlaneDistances == null ||
+            sourceVertexPlaneDistances.Length != sourceVertices.Length ||
+            sourceTrianglesBySubMesh == null ||
+            sourceTrianglesBySubMesh.Count != sourceMesh.subMeshCount ||
+            triangleClassificationsBySubMesh == null ||
+            triangleClassificationsBySubMesh.Count != sourceMesh.subMeshCount)
+        {
+            failureReason =
+                "事前検証済みTriangle情報がSource Meshの構成と一致していません。";
+            return false;
+        }
+
+        for (int subMeshIndex = 0;
+             subMeshIndex < sourceMesh.subMeshCount;
+             subMeshIndex++)
+        {
+            int[] triangles =
+                sourceTrianglesBySubMesh[subMeshIndex];
+
+            byte[] triangleClassifications =
+                triangleClassificationsBySubMesh[subMeshIndex];
+
+            if (triangles == null ||
+                triangles.Length % 3 != 0 ||
+                triangleClassifications == null ||
+                triangleClassifications.Length != triangles.Length / 3)
+            {
+                failureReason =
+                    $"SubMesh {subMeshIndex} の事前検証済みTriangle情報が不正です。";
+                return false;
+            }
+        }
+
+        failureReason = null;
+        return true;
     }
 
     private static bool ValidateInputs(
@@ -169,6 +352,10 @@ public sealed class MeshPlaneSplitter
         Plane cutPlane,
         float cutSurfaceUvScale,
         float geometryEpsilon,
+        Vector3[] cachedSourceVertices,
+        IReadOnlyList<int[]> cachedSourceTrianglesBySubMesh,
+        float[] cachedSourceVertexPlaneDistances,
+        IReadOnlyList<byte[]> cachedTriangleClassificationsBySubMesh,
         string firstPieceMeshName,
         string secondPieceMeshName,
         Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
@@ -180,7 +367,14 @@ public sealed class MeshPlaneSplitter
         firstPieceMesh = null;
         secondPieceMesh = null;
 
-        Vector3[] sourceVertices = sourceMesh.vertices;
+        bool useCachedTriangleValidation =
+            cachedSourceVertices != null;
+
+        Vector3[] sourceVertices =
+            useCachedTriangleValidation
+                ? cachedSourceVertices
+                : sourceMesh.vertices;
+
         Vector3[] sourceNormals = sourceMesh.normals;
         Vector2[] sourceUv = sourceMesh.uv;
         Vector4[] sourceTangents = sourceMesh.tangents;
@@ -248,13 +442,27 @@ public sealed class MeshPlaneSplitter
                 return false;
             }
 
-            // Arrayを返すGetTrianglesではなく、同じListへ書き込むoverloadを使う。
-            // SubMeshごとのindex配列生成を避けつつ、既存と同じapplyBaseVertex=trueの挙動を維持する。
-            sourceMesh.GetTriangles(
-                triangleIndices,
-                subMeshIndex);
+            IReadOnlyList<int> sourceTriangleIndices;
 
-            if (triangleIndices.Count % 3 != 0)
+            if (useCachedTriangleValidation)
+            {
+                // Cut Plane検証で取得済みのSubMesh index配列をそのまま使い、
+                // 採用Planeの分割開始時にGetTrianglesを再実行しない。
+                sourceTriangleIndices =
+                    cachedSourceTrianglesBySubMesh[subMeshIndex];
+            }
+            else
+            {
+                // 通常経路では同じListへ書き込み、SubMeshごとの配列Allocationを避ける。
+                sourceMesh.GetTriangles(
+                    triangleIndices,
+                    subMeshIndex);
+
+                sourceTriangleIndices =
+                    triangleIndices;
+            }
+
+            if (sourceTriangleIndices.Count % 3 != 0)
             {
                 failureReason =
                     $"SubMesh {subMeshIndex} のTriangle index数が不正です。";
@@ -262,12 +470,12 @@ public sealed class MeshPlaneSplitter
             }
 
             for (int triangleIndex = 0;
-                 triangleIndex < triangleIndices.Count;
+                 triangleIndex < sourceTriangleIndices.Count;
                  triangleIndex += 3)
             {
-                int indexA = triangleIndices[triangleIndex];
-                int indexB = triangleIndices[triangleIndex + 1];
-                int indexC = triangleIndices[triangleIndex + 2];
+                int indexA = sourceTriangleIndices[triangleIndex];
+                int indexB = sourceTriangleIndices[triangleIndex + 1];
+                int indexC = sourceTriangleIndices[triangleIndex + 2];
 
                 if (!IsValidVertexIndex(indexA, sourceVertices.Length) ||
                     !IsValidVertexIndex(indexB, sourceVertices.Length) ||
@@ -308,38 +516,62 @@ public sealed class MeshPlaneSplitter
                         hasUv,
                         hasTangents);
 
-                float distanceA =
-                    cutPlane.GetDistanceToPoint(
-                        vertexA.Position);
+                float distanceA;
+                float distanceB;
+                float distanceC;
+                byte triangleClassification;
 
-                float distanceB =
-                    cutPlane.GetDistanceToPoint(
-                        vertexB.Position);
+                if (useCachedTriangleValidation)
+                {
+                    // Cut Plane検証時と同じ距離・分類を使う。
+                    // ここではGetDistanceToPointとPositive/Negative判定を再実行しない。
+                    distanceA =
+                        cachedSourceVertexPlaneDistances[indexA];
 
-                float distanceC =
-                    cutPlane.GetDistanceToPoint(
-                        vertexC.Position);
+                    distanceB =
+                        cachedSourceVertexPlaneDistances[indexB];
+
+                    distanceC =
+                        cachedSourceVertexPlaneDistances[indexC];
+
+                    triangleClassification =
+                        cachedTriangleClassificationsBySubMesh
+                            [subMeshIndex]
+                            [triangleIndex / 3];
+                }
+                else
+                {
+                    distanceA =
+                        cutPlane.GetDistanceToPoint(
+                            vertexA.Position);
+
+                    distanceB =
+                        cutPlane.GetDistanceToPoint(
+                            vertexB.Position);
+
+                    distanceC =
+                        cutPlane.GetDistanceToPoint(
+                            vertexC.Position);
+
+                    triangleClassification =
+                        ClassifyTriangle(
+                            distanceA,
+                            distanceB,
+                            distanceC,
+                            geometryEpsilon);
+                }
 
                 if (!IsFinite(distanceA) ||
                     !IsFinite(distanceB) ||
                     !IsFinite(distanceC))
                 {
                     failureReason =
-                        "PlaneとTriangleの距離計算でNaN / Infinityを検出しました。";
+                        "PlaneとTriangleの距離計算結果にNaN / Infinityを検出しました。";
                     return false;
                 }
 
-                bool hasPositiveVertex =
-                    distanceA > geometryEpsilon ||
-                    distanceB > geometryEpsilon ||
-                    distanceC > geometryEpsilon;
-
-                bool hasNegativeVertex =
-                    distanceA < -geometryEpsilon ||
-                    distanceB < -geometryEpsilon ||
-                    distanceC < -geometryEpsilon;
-
-                if (!hasNegativeVertex)
+                if (triangleClassification ==
+                    TRIANGLE_CLASSIFICATION_POSITIVE)
                 {
                     if (enableDiagnostics)
                     {
@@ -356,7 +588,8 @@ public sealed class MeshPlaneSplitter
                     continue;
                 }
 
-                if (!hasPositiveVertex)
+                if (triangleClassification ==
+                    TRIANGLE_CLASSIFICATION_NEGATIVE)
                 {
                     if (enableDiagnostics)
                     {
@@ -371,6 +604,14 @@ public sealed class MeshPlaneSplitter
                         false);
 
                     continue;
+                }
+
+                if (triangleClassification !=
+                    TRIANGLE_CLASSIFICATION_INTERSECTING)
+                {
+                    failureReason =
+                        "Triangle分類結果に未定義値が含まれています。";
+                    return false;
                 }
 
                 if (enableDiagnostics)

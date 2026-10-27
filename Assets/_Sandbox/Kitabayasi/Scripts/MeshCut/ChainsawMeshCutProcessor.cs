@@ -67,6 +67,13 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
+        List<byte[]> triangleClassificationsBySubMesh =
+            CreateTriangleClassificationBuffers(
+                sourceTrianglesBySubMesh);
+
+        var sourceVertexPlaneDistances =
+            new float[sourceVertices.Length];
+
         float geometryEpsilon =
             MeshPlaneSplitter.CalculateGeometryEpsilon(sourceMesh.bounds);
 
@@ -88,6 +95,8 @@ public sealed class ChainsawMeshCutProcessor
         if (!TryCreateCutPlane(
                 sourceVertices,
                 sourceTrianglesBySubMesh,
+                sourceVertexPlaneDistances,
+                triangleClassificationsBySubMesh,
                 localTipPositions,
                 localRootPositions,
                 cutDirectionSampleCount,
@@ -111,6 +120,10 @@ public sealed class ChainsawMeshCutProcessor
                 sourceMesh,
                 correctedCutPlane,
                 cutSurfaceUvScale,
+                sourceVertices,
+                sourceTrianglesBySubMesh,
+                sourceVertexPlaneDistances,
+                triangleClassificationsBySubMesh,
                 "EnemyCut_FirstPiece",
                 "EnemyCut_SecondPiece",
                 cutBoundaryPoints =>
@@ -243,6 +256,13 @@ public sealed class ChainsawMeshCutProcessor
             int[] triangles =
                 sourceMesh.GetTriangles(subMeshIndex);
 
+            if (triangles.Length % 3 != 0)
+            {
+                failureReason =
+                    $"SubMesh {subMeshIndex} のTriangle index数が不正です。";
+                return false;
+            }
+
             for (int triangleIndex = 0;
                  triangleIndex < triangles.Length;
                  triangleIndex++)
@@ -265,9 +285,30 @@ public sealed class ChainsawMeshCutProcessor
     }
 
 
+    private static List<byte[]> CreateTriangleClassificationBuffers(
+        IReadOnlyList<int[]> sourceTrianglesBySubMesh)
+    {
+        var result =
+            new List<byte[]>(sourceTrianglesBySubMesh.Count);
+
+        for (int subMeshIndex = 0;
+             subMeshIndex < sourceTrianglesBySubMesh.Count;
+             subMeshIndex++)
+        {
+            result.Add(
+                new byte[
+                    sourceTrianglesBySubMesh[subMeshIndex].Length / 3]);
+        }
+
+        return result;
+    }
+
+
     private bool TryCreateCutPlane(
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<int[]> sourceTrianglesBySubMesh,
+        float[] sourceVertexPlaneDistances,
+        IReadOnlyList<byte[]> triangleClassificationsBySubMesh,
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
         int cutDirectionSampleCount,
@@ -288,6 +329,10 @@ public sealed class ChainsawMeshCutProcessor
 
         string lastTrajectoryCandidateFailure = null;
         int sampleCount = localTipPositions.Count;
+
+        // Plane候補ごとにListを生成せず、軌跡候補とFallback候補で同じ領域を再利用する。
+        var intersectionPointBuffer =
+            new List<Vector3>(3);
 
         // Bake済み軌跡の後半だけに固定せず、軌跡全体から順に候補を探す。
         // Cut Rangeは最終的な切断境界のハード制約なので、範囲外までMeshを横切るPlaneは採用しない。
@@ -337,6 +382,8 @@ public sealed class ChainsawMeshCutProcessor
             if (!TryValidateCutPlaneWithinRange(
                     sourceVertices,
                     sourceTrianglesBySubMesh,
+                    sourceVertexPlaneDistances,
+                    triangleClassificationsBySubMesh,
                     candidatePlane,
                     sourceToCutRangeSpace,
                     cutRangeAxis,
@@ -344,6 +391,7 @@ public sealed class ChainsawMeshCutProcessor
                     cutRangeMaximum,
                     geometryEpsilon,
                     cutRangeGeometryEpsilon,
+                    intersectionPointBuffer,
                     out float intersectionMinimum,
                     out float intersectionMaximum,
                     out int intersectionSegmentCount,
@@ -387,6 +435,8 @@ public sealed class ChainsawMeshCutProcessor
         if (TryCreateAxisAlignedFallbackCutPlane(
                 sourceVertices,
                 sourceTrianglesBySubMesh,
+                sourceVertexPlaneDistances,
+                triangleClassificationsBySubMesh,
                 localTipPositions,
                 localRootPositions,
                 sourceToCutRangeSpace,
@@ -398,6 +448,7 @@ public sealed class ChainsawMeshCutProcessor
                 cutRangeMaximum,
                 geometryEpsilon,
                 cutRangeGeometryEpsilon,
+                intersectionPointBuffer,
                 enableDiagnostics,
                 out correctedCutPlane,
                 out failureReason))
@@ -684,6 +735,8 @@ public sealed class ChainsawMeshCutProcessor
     private static bool TryValidateCutPlaneWithinRange(
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<int[]> sourceTrianglesBySubMesh,
+        float[] sourceVertexPlaneDistances,
+        IReadOnlyList<byte[]> triangleClassificationsBySubMesh,
         Plane cutPlane,
         Matrix4x4 sourceToCutRangeSpace,
         MeshCutRangeAxis cutRangeAxis,
@@ -691,6 +744,7 @@ public sealed class ChainsawMeshCutProcessor
         float cutRangeMaximum,
         float geometryEpsilon,
         float cutRangeGeometryEpsilon,
+        List<Vector3> intersectionPointBuffer,
         out float intersectionMinimum,
         out float intersectionMaximum,
         out int intersectionSegmentCount,
@@ -705,6 +759,18 @@ public sealed class ChainsawMeshCutProcessor
         intersectionSegmentCount =
             0;
 
+        if (sourceVertexPlaneDistances == null ||
+            sourceVertexPlaneDistances.Length != sourceVertices.Count ||
+            triangleClassificationsBySubMesh == null ||
+            triangleClassificationsBySubMesh.Count !=
+                sourceTrianglesBySubMesh.Count ||
+            intersectionPointBuffer == null)
+        {
+            failureReason =
+                "Cut Plane検証結果の作業バッファ構成がSource Meshと一致していません。";
+            return false;
+        }
+
         float allowedMinimum =
             cutRangeMinimum -
             cutRangeGeometryEpsilon;
@@ -713,12 +779,27 @@ public sealed class ChainsawMeshCutProcessor
             cutRangeMaximum +
             cutRangeGeometryEpsilon;
 
+        // Triangleごとの配列やListは作らず、候補間で同じ作業領域を使い回す。
+        // 採用候補については、この距離と分類結果をMeshPlaneSplitterへそのまま渡す。
+
         for (int subMeshIndex = 0;
              subMeshIndex < sourceTrianglesBySubMesh.Count;
              subMeshIndex++)
         {
             int[] triangles =
                 sourceTrianglesBySubMesh[subMeshIndex];
+
+            byte[] triangleClassifications =
+                triangleClassificationsBySubMesh[subMeshIndex];
+
+            if (triangleClassifications == null ||
+                triangleClassifications.Length !=
+                    triangles.Length / 3)
+            {
+                failureReason =
+                    $"SubMesh {subMeshIndex} のTriangle分類バッファ数が一致していません。";
+                return false;
+            }
 
             for (int triangleIndex = 0;
                  triangleIndex + 2 < triangles.Length;
@@ -733,59 +814,77 @@ public sealed class ChainsawMeshCutProcessor
                 int indexC =
                     triangles[triangleIndex + 2];
 
-                Vector3[] trianglePositions =
-                {
-                    sourceVertices[indexA],
-                    sourceVertices[indexB],
-                    sourceVertices[indexC]
-                };
+                Vector3 positionA =
+                    sourceVertices[indexA];
 
-                float[] distances =
-                {
-                    cutPlane.GetDistanceToPoint(
-                        trianglePositions[0]),
-                    cutPlane.GetDistanceToPoint(
-                        trianglePositions[1]),
-                    cutPlane.GetDistanceToPoint(
-                        trianglePositions[2])
-                };
+                Vector3 positionB =
+                    sourceVertices[indexB];
 
-                if (!IsFinite(distances[0]) ||
-                    !IsFinite(distances[1]) ||
-                    !IsFinite(distances[2]))
+                Vector3 positionC =
+                    sourceVertices[indexC];
+
+                float distanceA =
+                    cutPlane.GetDistanceToPoint(positionA);
+
+                float distanceB =
+                    cutPlane.GetDistanceToPoint(positionB);
+
+                float distanceC =
+                    cutPlane.GetDistanceToPoint(positionC);
+
+                if (!IsFinite(distanceA) ||
+                    !IsFinite(distanceB) ||
+                    !IsFinite(distanceC))
                 {
                     failureReason =
                         "Cut Range検証中のPlane距離計算でNaN / Infinityを検出しました。";
                     return false;
                 }
 
-                bool hasPositiveVertex =
-                    distances[0] > geometryEpsilon ||
-                    distances[1] > geometryEpsilon ||
-                    distances[2] > geometryEpsilon;
+                // 同一頂点が複数Triangleに属していても値は同じなので、
+                // 最後に書かれた値を採用候補の分割処理で再利用できる。
+                // このSigned Distanceがあれば、交差Edge判定と
+                // t = dA / (dA - dB) による交点補間率も同じ値から再現できる。
+                sourceVertexPlaneDistances[indexA] =
+                    distanceA;
 
-                bool hasNegativeVertex =
-                    distances[0] < -geometryEpsilon ||
-                    distances[1] < -geometryEpsilon ||
-                    distances[2] < -geometryEpsilon;
+                sourceVertexPlaneDistances[indexB] =
+                    distanceB;
 
-                if (!hasPositiveVertex ||
-                    !hasNegativeVertex)
+                sourceVertexPlaneDistances[indexC] =
+                    distanceC;
+
+                byte triangleClassification =
+                    MeshPlaneSplitter.ClassifyTriangle(
+                        distanceA,
+                        distanceB,
+                        distanceC,
+                        geometryEpsilon);
+
+                triangleClassifications[triangleIndex / 3] =
+                    triangleClassification;
+
+                if (triangleClassification !=
+                    MeshPlaneSplitter.TRIANGLE_CLASSIFICATION_INTERSECTING)
                 {
                     continue;
                 }
 
                 if (!TryGetTrianglePlaneIntersectionPoints(
-                        trianglePositions,
-                        distances,
+                        positionA,
+                        positionB,
+                        positionC,
+                        distanceA,
+                        distanceB,
+                        distanceC,
                         geometryEpsilon,
-                        out List<Vector3> intersectionPoints,
+                        intersectionPointBuffer,
                         out failureReason))
                 {
                     return false;
                 }
 
-                if (intersectionPoints.Count < 2)
+                if (intersectionPointBuffer.Count < 2)
                 {
                     continue;
                 }
@@ -793,12 +892,12 @@ public sealed class ChainsawMeshCutProcessor
                 intersectionSegmentCount++;
 
                 for (int pointIndex = 0;
-                     pointIndex < intersectionPoints.Count;
+                     pointIndex < intersectionPointBuffer.Count;
                      pointIndex++)
                 {
                     Vector3 pointInCutRangeSpace =
                         sourceToCutRangeSpace.MultiplyPoint3x4(
-                            intersectionPoints[pointIndex]);
+                            intersectionPointBuffer[pointIndex]);
 
                     if (!IsFinite(
                             pointInCutRangeSpace))
@@ -851,89 +950,114 @@ public sealed class ChainsawMeshCutProcessor
     }
 
     private static bool TryGetTrianglePlaneIntersectionPoints(
-        IReadOnlyList<Vector3> trianglePositions,
-        IReadOnlyList<float> distances,
+        Vector3 positionA,
+        Vector3 positionB,
+        Vector3 positionC,
+        float distanceA,
+        float distanceB,
+        float distanceC,
         float geometryEpsilon,
-        out List<Vector3> intersectionPoints,
+        List<Vector3> intersectionPoints,
         out string failureReason)
     {
-        intersectionPoints =
-            new List<Vector3>(3);
+        intersectionPoints.Clear();
 
-        for (int i = 0;
-             i < trianglePositions.Count;
-             i++)
+        if (!TryAddTrianglePlaneIntersectionPoint(
+                positionA,
+                positionB,
+                distanceA,
+                distanceB,
+                geometryEpsilon,
+                intersectionPoints,
+                out failureReason) ||
+            !TryAddTrianglePlaneIntersectionPoint(
+                positionB,
+                positionC,
+                distanceB,
+                distanceC,
+                geometryEpsilon,
+                intersectionPoints,
+                out failureReason) ||
+            !TryAddTrianglePlaneIntersectionPoint(
+                positionC,
+                positionA,
+                distanceC,
+                distanceA,
+                geometryEpsilon,
+                intersectionPoints,
+                out failureReason))
         {
-            int nextIndex =
-                (i + 1) % trianglePositions.Count;
+            return false;
+        }
 
-            Vector3 currentPosition =
-                trianglePositions[i];
+        failureReason = null;
+        return true;
+    }
 
-            Vector3 nextPosition =
-                trianglePositions[nextIndex];
-
-            float currentDistance =
-                distances[i];
-
-            float nextDistance =
-                distances[nextIndex];
-
-            if (Mathf.Abs(currentDistance) <=
-                geometryEpsilon)
-            {
-                AddDistinctIntersectionPoint(
-                    intersectionPoints,
-                    currentPosition,
-                    geometryEpsilon);
-            }
-
-            bool crossesPlane =
-                (currentDistance > geometryEpsilon &&
-                 nextDistance < -geometryEpsilon) ||
-                (currentDistance < -geometryEpsilon &&
-                 nextDistance > geometryEpsilon);
-
-            if (!crossesPlane)
-            {
-                continue;
-            }
-
-            float denominator =
-                currentDistance - nextDistance;
-
-            if (Mathf.Abs(denominator) <=
-                Mathf.Epsilon)
-            {
-                failureReason =
-                    "TriangleとPlaneの交点補間に必要な距離差が0になりました。";
-                return false;
-            }
-
-            float interpolation =
-                Mathf.Clamp01(
-                    currentDistance /
-                    denominator);
-
-            Vector3 intersectionPoint =
-                Vector3.Lerp(
-                    currentPosition,
-                    nextPosition,
-                    interpolation);
-
-            if (!IsFinite(
-                    intersectionPoint))
-            {
-                failureReason =
-                    "TriangleとPlaneの交点計算でNaN / Infinityを検出しました。";
-                return false;
-            }
-
+    private static bool TryAddTrianglePlaneIntersectionPoint(
+        Vector3 currentPosition,
+        Vector3 nextPosition,
+        float currentDistance,
+        float nextDistance,
+        float geometryEpsilon,
+        List<Vector3> intersectionPoints,
+        out string failureReason)
+    {
+        if (Mathf.Abs(currentDistance) <=
+            geometryEpsilon)
+        {
             AddDistinctIntersectionPoint(
                 intersectionPoints,
-                intersectionPoint,
+                currentPosition,
                 geometryEpsilon);
         }
+
+        bool crossesPlane =
+            (currentDistance > geometryEpsilon &&
+             nextDistance < -geometryEpsilon) ||
+            (currentDistance < -geometryEpsilon &&
+             nextDistance > geometryEpsilon);
+
+        if (!crossesPlane)
+        {
+            failureReason = null;
+            return true;
+        }
+
+        float denominator =
+            currentDistance - nextDistance;
+
+        if (Mathf.Abs(denominator) <=
+            Mathf.Epsilon)
+        {
+            failureReason =
+                "TriangleとPlaneの交点補間に必要な距離差が0になりました。";
+            return false;
+        }
+
+        float interpolation =
+            Mathf.Clamp01(
+                currentDistance /
+                denominator);
+
+        Vector3 intersectionPoint =
+            Vector3.Lerp(
+                currentPosition,
+                nextPosition,
+                interpolation);
+
+        if (!IsFinite(
+                intersectionPoint))
+        {
+            failureReason =
+                "TriangleとPlaneの交点計算でNaN / Infinityを検出しました。";
+            return false;
+        }
+
+        AddDistinctIntersectionPoint(
+            intersectionPoints,
+            intersectionPoint,
+            geometryEpsilon);
 
         failureReason = null;
         return true;
@@ -964,6 +1088,8 @@ public sealed class ChainsawMeshCutProcessor
     private static bool TryCreateAxisAlignedFallbackCutPlane(
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<int[]> sourceTrianglesBySubMesh,
+        float[] sourceVertexPlaneDistances,
+        IReadOnlyList<byte[]> triangleClassificationsBySubMesh,
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
         Matrix4x4 sourceToCutRangeSpace,
@@ -975,6 +1101,7 @@ public sealed class ChainsawMeshCutProcessor
         float cutRangeMaximum,
         float geometryEpsilon,
         float cutRangeGeometryEpsilon,
+        List<Vector3> intersectionPointBuffer,
         bool enableDiagnostics,
         out Plane fallbackCutPlane,
         out string failureReason)
@@ -1064,6 +1191,8 @@ public sealed class ChainsawMeshCutProcessor
             if (!TryValidateCutPlaneWithinRange(
                     sourceVertices,
                     sourceTrianglesBySubMesh,
+                    sourceVertexPlaneDistances,
+                    triangleClassificationsBySubMesh,
                     planeInSourceSpace,
                     sourceToCutRangeSpace,
                     cutRangeAxis,
@@ -1071,6 +1200,7 @@ public sealed class ChainsawMeshCutProcessor
                     cutRangeMaximum,
                     geometryEpsilon,
                     cutRangeGeometryEpsilon,
+                    intersectionPointBuffer,
                     out float intersectionMinimum,
                     out float intersectionMaximum,
                     out int intersectionSegmentCount,

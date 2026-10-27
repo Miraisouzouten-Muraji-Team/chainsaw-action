@@ -94239,6 +94239,11 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1076788612}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!20 &1082406077 stripped
+Camera:
+  m_CorrespondingSourceObject: {fileID: 6607921360783841346, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1085411599
 GameObject:
   m_ObjectHideFlags: 0
@@ -217932,9 +217937,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a55c5b60857f2764d9eab0f8f3b750ef, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RuntimeDebugVisualizer
+  drawMode: 0
+  projectionCamera: {fileID: 1082406077}
+  lineWidth: 2
+  useCustomOutputRect: 0
+  outputRect:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
   settings: {fileID: 11400000, guid: 14a355d329a8ca143a64c66c122565e0, type: 2}
   group: Player
-  forceVisible: 1
+  forceVisible: 0
   displayStatus: 
   color: {r: 0, g: 1, b: 0, a: 1}
   targets:

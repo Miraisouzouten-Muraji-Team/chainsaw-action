@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.SceneManagement;
 
 [DisallowMultipleComponent]
 public sealed class RuntimeDebugVisualizer : MonoBehaviour
@@ -11,6 +12,8 @@ public sealed class RuntimeDebugVisualizer : MonoBehaviour
     public DrawMode drawMode = DrawMode.ScreenOverlay;
     [Tooltip("キャラを実際に描画しているCamera。未指定ならCamera.main。合成専用Cameraではなく元の3D Cameraを指定。")]
     public Camera projectionCamera;
+    [Tooltip("シーン移動後の再取得用。元のCameraと名前が異なる場合に指定。同名候補が複数ある場合は各シーンでProjection Cameraを直接指定してください。")]
+    public string projectionCameraName;
     [Range(1f, 8f)] public float lineWidth = 2f;
     [Tooltip("合成画像が全画面以外に配置される場合にON。")]
     public bool useCustomOutputRect;
@@ -45,7 +48,83 @@ public sealed class RuntimeDebugVisualizer : MonoBehaviour
     private Mesh mesh;
     private MeshRenderer meshRenderer;
     private bool readyToDraw;
+    private string rememberedCameraName;
+    private string rememberedCameraPath;
+    private Camera rememberedCamera;
+    private bool hadExplicitCamera;
+    private float nextCameraSearch;
     private int Steps => Mathf.Clamp(segments, 8, 64);
+
+    private void OnEnable()
+    {
+        RememberCamera();
+        nextCameraSearch = 0f;
+        SceneManager.sceneLoaded += OnSceneLoaded;
+        SceneManager.activeSceneChanged += OnActiveSceneChanged;
+    }
+
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        readyToDraw = false;
+        nextCameraSearch = 0f;
+    }
+
+    private void OnActiveSceneChanged(Scene previous, Scene current)
+    {
+        readyToDraw = false;
+        nextCameraSearch = 0f;
+    }
+
+    private void RememberCamera()
+    {
+        if (projectionCamera == null || ReferenceEquals(projectionCamera, rememberedCamera)) return;
+        rememberedCamera = projectionCamera;
+        hadExplicitCamera = true;
+        rememberedCameraName = projectionCamera.name;
+        rememberedCameraPath = CameraPath(projectionCamera.transform);
+    }
+
+    private static string CameraPath(Transform target)
+    {
+        string path = target.name;
+        while (target.parent != null)
+        {
+            target = target.parent;
+            path = target.name + "/" + path;
+        }
+        return path;
+    }
+
+    private Camera ResolveCamera()
+    {
+        if (projectionCamera != null)
+        {
+            RememberCamera();
+            return projectionCamera.isActiveAndEnabled ? projectionCamera : null;
+        }
+        string wantedName = string.IsNullOrEmpty(projectionCameraName)
+            ? rememberedCameraName : projectionCameraName;
+        if (!hadExplicitCamera && string.IsNullOrEmpty(wantedName)) return Camera.main;
+        if (Time.unscaledTime < nextCameraSearch) return null;
+        nextCameraSearch = Time.unscaledTime + 0.5f;
+
+        // 合成用MainCameraへの誤接続を避け、元の3D Cameraを再取得する。
+        Camera byPath = null, byName = null;
+        int pathCount = 0, nameCount = 0;
+        foreach (Camera candidate in FindObjectsByType<Camera>(FindObjectsSortMode.None))
+        {
+            if (!candidate.isActiveAndEnabled || !candidate.gameObject.scene.IsValid()) continue;
+            if (candidate.name != wantedName) continue;
+            byName = candidate;
+            nameCount++;
+            if (CameraPath(candidate.transform) != rememberedCameraPath) continue;
+            byPath = candidate;
+            pathCount++;
+        }
+        projectionCamera = pathCount == 1 ? byPath : nameCount == 1 ? byName : null;
+        RememberCamera();
+        return projectionCamera;
+    }
 
     private void LateUpdate()
     {
@@ -77,7 +156,7 @@ public sealed class RuntimeDebugVisualizer : MonoBehaviour
             }
         if (drawMode == DrawMode.ScreenOverlay)
         {
-            Camera camera = projectionCamera != null ? projectionCamera : Camera.main;
+            Camera camera = ResolveCamera();
             readyToDraw = camera != null && vertices.Count > 0 && color.a > 0f;
             displayStatus = camera == null ? "Assign Projection Camera (the actual 3D render camera)."
                 : vertices.Count == 0 ? "No lines: check Targets and enabled Colliders."
@@ -103,7 +182,7 @@ public sealed class RuntimeDebugVisualizer : MonoBehaviour
         if (!isActiveAndEnabled || drawMode != DrawMode.ScreenOverlay ||
             !readyToDraw || Event.current.type != EventType.Repaint ||
             (!forceVisible && !RuntimeDebugMenu.IsGroupVisible(group))) return;
-        Camera camera = projectionCamera != null ? projectionCamera : Camera.main;
+        Camera camera = ResolveCamera();
         if (camera == null || camera.targetDisplay != 0) return;
 
         Rect normalized = useCustomOutputRect ? outputRect
@@ -192,6 +271,7 @@ public sealed class RuntimeDebugVisualizer : MonoBehaviour
 
     private void CreateDrawing()
     {
+        if (mesh != null) Destroy(mesh);
         // 頂点はワールド座標。親のScale/回転を二重適用しない。
         drawing = new GameObject("Runtime Debug Lines");
         drawing.hideFlags = HideFlags.DontSave;
@@ -288,7 +368,13 @@ public sealed class RuntimeDebugVisualizer : MonoBehaviour
         else Box(target.bounds.center, target.bounds.size, Matrix4x4.identity);
     }
 
-    private void OnDisable() { readyToDraw = false; if (drawing != null) drawing.SetActive(false); }
+    private void OnDisable()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+        SceneManager.activeSceneChanged -= OnActiveSceneChanged;
+        readyToDraw = false;
+        if (drawing != null) drawing.SetActive(false);
+    }
     private void OnDestroy()
     {
         if (drawing != null) Destroy(drawing);

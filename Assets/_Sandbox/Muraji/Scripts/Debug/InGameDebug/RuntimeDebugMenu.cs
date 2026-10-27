@@ -14,7 +14,8 @@ public sealed class RuntimeDebugMenu : MonoBehaviour
     public Vector3 spawnOffset = Vector3.zero;
     [Min(1)] public int maximumSpawnedEnemies = 50;
     private readonly List<GameObject> spawned = new List<GameObject>();
-    private readonly HashSet<string> visibleGroups = new HashSet<string>();
+    // シーン内オブジェクトの寿命とは分け、プレイセッション中は選択を保持する。
+    private static readonly HashSet<string> visibleGroups = new HashSet<string>();
     private static RuntimeDebugMenu instance;
     private bool opened, loading, showFPS;
     private float elapsed, fps, milliseconds;
@@ -26,22 +27,35 @@ public sealed class RuntimeDebugMenu : MonoBehaviour
 
     public static bool IsGroupVisible(string group)
     {
-        return instance != null && instance.isActiveAndEnabled &&
-            instance.visibleGroups.Contains(group ?? "");
+        return visibleGroups.Contains(group ?? "");
+    }
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetSession()
+    {
+        instance = null;
+        visibleGroups.Clear();
     }
 
     private void Awake()
     {
         if (settings == null || (!Application.isEditor && !Debug.isDebugBuild && !settings.allowReleaseBuild))
         { enabled = false; return; }
-        if (instance != null && instance != this)
-        { enabled = false; return; }
-        instance = this;
         showFPS = settings.showFPS;
+    }
+
+    private void OnEnable()
+    {
+        if (settings == null || (!Application.isEditor && !Debug.isDebugBuild && !settings.allowReleaseBuild))
+        { enabled = false; return; }
+        if (instance == null) instance = this;
     }
 
     private void Update()
     {
+        // Additiveロード等で複数存在しても、旧メニュー消滅後に引き継げる。
+        if (instance == null || !instance.isActiveAndEnabled) instance = this;
+        if (instance != this) return;
         bool toggle = false;
 #if ENABLE_INPUT_SYSTEM
         toggle = Keyboard.current != null && Keyboard.current.f1Key.wasPressedThisFrame;
@@ -79,7 +93,7 @@ public sealed class RuntimeDebugMenu : MonoBehaviour
 
     private void OnGUI()
     {
-        if (settings == null) return;
+        if (settings == null || instance != this) return;
         if (showFPS) GUI.Box(new Rect(12, 12, 240, 28), $"FPS {fps:F1} / {milliseconds:F2} ms");
         if (GUI.Button(new Rect(12, 44, 160, 30), "Debug [F1]")) SetOpen(!opened);
         if (!opened) return;
@@ -147,7 +161,16 @@ public sealed class RuntimeDebugMenu : MonoBehaviour
         {
             var operation = SceneManager.LoadSceneAsync(index, LoadSceneMode.Single);
             if (operation == null) { loading = false; message = "Scene load failed."; }
-            else message = "Loading...";
+            else
+            {
+                message = "Loading...";
+                operation.completed += _ =>
+                {
+                    if (this == null) return;
+                    loading = false;
+                    message = "";
+                };
+            }
         }
         catch (System.Exception exception)
         { loading = false; message = exception.Message; Debug.LogException(exception, this); }

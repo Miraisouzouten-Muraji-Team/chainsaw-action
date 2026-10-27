@@ -672,6 +672,7 @@ GameObject:
   - component: {fileID: 1303292913223040906}
   - component: {fileID: 4747396505095716884}
   - component: {fileID: 6148335908670107360}
+  - component: {fileID: 2404748746792227731}
   m_Layer: 0
   m_Name: Mid_Collider
   m_TagString: Player
@@ -759,13 +760,34 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAttackHitReceiver
   playerController: {fileID: 4996046773718306232}
   damageScreenEffect: {fileID: 3635029334484836176}
+  damageMaterialFlash: {fileID: 2404748746792227731}
   hurtDuration: 0.4
   damageInvulnerabilityDuration: 2
+  damageCameraShake: {fileID: 0}
+  damageShakeDuration: 0.15
+  damageShakeMagnitude: 0.1
   flashModelRoot: {fileID: 4814178263090608376}
   flashRenderers: []
   flashMaterial: {fileID: 2100000, guid: e7276798a66027b429efebfb3e455121, type: 2}
   flashInterval: 0.08
   damageInvulnerabilityRemaining: 0
+--- !u!114 &2404748746792227731
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6424377131486399024}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1743c38f8d344cc4eb3559b3f488c544, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerDamageMaterialFlash
+  defaultFlashDuration: 0.5
+  flashModelRoot: {fileID: 4814178263090608376}
+  flashRenderers: []
+  flashMaterial: {fileID: 2100000, guid: e7276798a66027b429efebfb3e455121, type: 2}
+  flashInterval: 0.08
 --- !u!1 &7542431373430556866
 GameObject:
   m_ObjectHideFlags: 0
@@ -785,7 +807,7 @@ GameObject:
   - component: {fileID: 3660739945894550427}
   - component: {fileID: 1203193980578457020}
   - component: {fileID: 3327013363795973915}
-  - component: {fileID: 8389033391408883672}
+  - component: {fileID: 3846418490811467109}
   m_Layer: 0
   m_Name: Player 1
   m_TagString: Player
@@ -858,6 +880,7 @@ MonoBehaviour:
   playerParameter: {fileID: 11400000, guid: 95f83e18d5c42904aa49a97890997239, type: 2}
   chainsawDigging: {fileID: 4166513584750343507}
   chainsawAccelerator: {fileID: 3199202209234272052}
+  chainsawAudioSource: {fileID: 0}
   directWallSpeedDivisor: 5
   groundCheckTransform: {fileID: 4866853695070243676}
   isGroundedByRay: 0
@@ -1058,7 +1081,7 @@ MonoBehaviour:
   afterimageLayer: 0
   isEvading: 0
   visibleAfterimages: 0
---- !u!114 &8389033391408883672
+--- !u!114 &3846418490811467109
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -1067,28 +1090,34 @@ MonoBehaviour:
   m_GameObject: {fileID: 7542431373430556866}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d00b1a16c2aea8249bdf0ecabc1e976e, type: 3}
+  m_Script: {fileID: 11500000, guid: a55c5b60857f2764d9eab0f8f3b750ef, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::MotionBoxColliderController
-  targetAnimator: {fileID: 5021086023488833488}
-  animatorLayer: 0
-  motionShapes:
-  - stateFullPath: Base Layer.Digging
-    colliders:
-    - targetCollider: {fileID: 176536951397435224}
-      size: {x: 0.00662587, y: 0.017, z: 0.00703343}
-      center: {x: 0.00030876, y: 0.0037587, z: 0}
-  - stateFullPath: Base Layer.Slash1
-    colliders:
-    - targetCollider: {fileID: 176536951397435224}
-      size: {x: 0.00662587, y: 0.01814037, z: 0.00703343}
-      center: {x: 0.00030876, y: 0.00357478, z: 0}
-  - stateFullPath: Base Layer.Slash2
-    colliders:
-    - targetCollider: {fileID: 176536951397435224}
-      size: {x: 0.00662587, y: 0.01814037, z: 0.00703343}
-      center: {x: 0.00030876, y: 0.00357478, z: 0}
-  cancelRestoreDuration: 0.5
+  m_EditorClassIdentifier: Assembly-CSharp::RuntimeDebugVisualizer
+  drawMode: 0
+  projectionCamera: {fileID: 0}
+  projectionCameraName: 
+  lineWidth: 2
+  useCustomOutputRect: 0
+  outputRect:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+  settings: {fileID: 11400000, guid: 14a355d329a8ca143a64c66c122565e0, type: 2}
+  group: Sensor
+  forceVisible: 0
+  displayStatus: 
+  color: {r: 0, g: 1, b: 0, a: 1}
+  targets:
+  - {fileID: 5058997163971843460}
+  - {fileID: 4772834441811289834}
+  - {fileID: 677008586421502810}
+  - {fileID: 176536951397435224}
+  - {fileID: 6651475171482002204}
+  rays: []
+  segments: 24
+  drawingLayer: 0
 --- !u!1 &7674304533746313249
 GameObject:
   m_ObjectHideFlags: 0

@@ -2243,6 +2243,38 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 2292058601784843701}
     m_Modifications:
+    - target: {fileID: 3846418490811467109, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
+      propertyPath: group
+      value: Player
+      objectReference: {fileID: 0}
+    - target: {fileID: 3846418490811467109, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
+      propertyPath: settings
+      value: 
+      objectReference: {fileID: 11400000, guid: 14a355d329a8ca143a64c66c122565e0, type: 2}
+    - target: {fileID: 3846418490811467109, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
+      propertyPath: forceVisible
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3846418490811467109, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
+      propertyPath: rays.Array.size
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3846418490811467109, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
+      propertyPath: projectionCamera
+      value: 
+      objectReference: {fileID: 6607921360783841346}
+    - target: {fileID: 3846418490811467109, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
+      propertyPath: projectionCameraName
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 3846418490811467109, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
+      propertyPath: rays.Array.data[0].origin
+      value: 
+      objectReference: {fileID: 4506521658296613099}
+    - target: {fileID: 3846418490811467109, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
+      propertyPath: rays.Array.data[0].localDirection
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 4814178263090608376, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -2291,6 +2323,10 @@ PrefabInstance:
       propertyPath: directWallSpeedDivisor
       value: 5
       objectReference: {fileID: 0}
+    - target: {fileID: 6148335908670107360, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
+      propertyPath: damageCameraShake
+      value: 
+      objectReference: {fileID: 2791087658966089985}
     - target: {fileID: 7542431373430556866, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
       propertyPath: m_Name
       value: Player 1
@@ -2325,6 +2361,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a98080f99fe6d7d478157f08d4acecd1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SensorChainsawDigging
+--- !u!4 &4506521658296613099 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1162227215480868851, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}
+  m_PrefabInstance: {fileID: 3362903510685906712}
+  m_PrefabAsset: {fileID: 0}
 --- !u!114 &7781913388005702304 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 4996046773718306232, guid: f6e059974b8cd3c4187f671a7b892c0f, type: 3}

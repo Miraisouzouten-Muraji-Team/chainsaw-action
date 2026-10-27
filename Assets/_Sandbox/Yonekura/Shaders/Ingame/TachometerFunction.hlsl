@@ -1,7 +1,7 @@
-#ifndef GLOW_ARC_FUNCTION_INCLUDED
-#define GLOW_ARC_FUNCTION_INCLUDED
+#ifndef TACHOMETER_FUNCTION_INCLUDED
+#define TACHOMETER_FUNCTION_INCLUDED
 
-void GlowArc_float(
+void TachometerFunction_float(
     float2 UV,
     float StartAngle,
     float EndAngle,

@@ -4,7 +4,7 @@ using UnityEngine;
 /// <summary>
 /// GlowArcGraphicのInspector表示をカスタマイズする。
 /// </summary>
-[CustomEditor(typeof(GlowArcGraphic))]
+[CustomEditor(typeof(TachometerGraphic))]
 public class GlowArcGraphicEditor : Editor
 {
     // GlowArcGraphicのシリアライズされた設定項目

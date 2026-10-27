@@ -3,13 +3,17 @@ using UnityEngine;
 /// <summary>
 /// HPゲージの表示とダメージアニメーションを管理するクラス。
 /// </summary>
-public class ArcHPBarController : MonoBehaviour
+public class HPBarController : MonoBehaviour
 {
     [Header("ゲージの参照")]
     [SerializeField] private HPBarGraphic hpBar;
 
     [Header("アニメーション設定")]
-    [SerializeField] private float damageFadeDuration = 1.8f;
+    [Tooltip("赤いダメージゲージが減り始めるまでの待機時間（秒）")]
+    [SerializeField, Min(0f)] private float damageFadeDelay = 1.0f;
+
+    [Tooltip("赤いダメージゲージが減る速度。1秒あたりのHP割合")]
+    [SerializeField, Min(0.001f)] private float damageFadeSpeed = 0.25f;
 
     [Header("HP管理")]
     [SerializeField] private PlayerHealth playerHealth;
@@ -24,11 +28,12 @@ public class ArcHPBarController : MonoBehaviour
     private float previousHP = -1f;
     private float previousMaxHP = -1f;
 
-    // アニメーション開始時のダメージゲージの位置
+    // ダメージを受けたときのダメージゲージの位置
     private float damageStartRatio = 1f;
 
-    // アニメーションの経過時間
-    private float damageElapsed = 0f;
+    // ダメージゲージの待機時間と状態
+    private float damageDelayElapsed = 0f;
+    private bool isDamageDelayWaiting = false;
 
     private void Start()
     {
@@ -69,22 +74,31 @@ public class ArcHPBarController : MonoBehaviour
         // ダメージゲージが現在HP以下ならアニメーション不要
         if (damageEndRatio <= currentRatio)
         {
+            isDamageDelayWaiting = false;
             return;
         }
 
-        damageElapsed += Time.deltaTime;
+        // 待機時間中は赤いゲージの位置を維持する
+        if (isDamageDelayWaiting)
+        {
+            damageDelayElapsed += Time.deltaTime;
 
-        // アニメーション時間が0以下にならないようにする
-        float duration = Mathf.Max(0.01f, damageFadeDuration);
+            if (damageDelayElapsed < damageFadeDelay)
+            {
+                return;
+            }
 
-        // 経過時間からアニメーションの進行度を計算
-        float t = Mathf.Clamp01(damageElapsed / duration);
+            // 待機時間が終わったらアニメーションを開始
+            isDamageDelayWaiting = false;
+        }
 
-        // ダメージゲージを現在HPの位置まで徐々に移動
-        damageEndRatio = Mathf.Lerp(
-            damageStartRatio,
+        // 赤いゲージを一定速度で現在HPの位置まで移動
+        float speed = Mathf.Max(0.001f, damageFadeSpeed);
+
+        damageEndRatio = Mathf.MoveTowards(
+            damageEndRatio,
             currentRatio,
-            t);
+            speed * Time.deltaTime);
 
         UpdateBars();
     }
@@ -102,6 +116,7 @@ public class ArcHPBarController : MonoBehaviour
             currentRatio = 0f;
             damageEndRatio = 0f;
             damageStartRatio = 0f;
+            isDamageDelayWaiting = false;
 
             UpdateBars();
             return;
@@ -117,6 +132,7 @@ public class ArcHPBarController : MonoBehaviour
             currentRatio = newRatio;
             damageEndRatio = newRatio;
             damageStartRatio = newRatio;
+            isDamageDelayWaiting = false;
         }
         else if (newHP < previousHP)
         {
@@ -127,7 +143,10 @@ public class ArcHPBarController : MonoBehaviour
                 currentRatio);
 
             damageEndRatio = damageStartRatio;
-            damageElapsed = 0f;
+
+            // 赤いゲージの待機時間を最初から数え直す
+            damageDelayElapsed = 0f;
+            isDamageDelayWaiting = damageFadeDelay > 0f;
 
             // HPゲージを新しいHPの位置へ更新
             currentRatio = newRatio;
@@ -138,6 +157,7 @@ public class ArcHPBarController : MonoBehaviour
             currentRatio = newRatio;
             damageEndRatio = newRatio;
             damageStartRatio = newRatio;
+            isDamageDelayWaiting = false;
         }
 
         // 次回のHP変更判定に使う値を保存

@@ -127438,6 +127438,10 @@ PrefabInstance:
       propertyPath: m_LocalPosition.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 6539432820988301504, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 6567462206254574459, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.z
       value: 0
@@ -127477,7 +127481,7 @@ PrefabInstance:
     - target: {fileID: 7122561860674349961, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Avatar
       value: 
-      objectReference: {fileID: 9000000, guid: 11839c23749655143a04a429ffbd0680, type: 3}
+      objectReference: {fileID: 9000000, guid: 0bf444362c36a8741b6da6b485ec0d4a, type: 3}
     - target: {fileID: 7146252939418605793, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.z
       value: 0
@@ -127562,7 +127566,8 @@ PrefabInstance:
       propertyPath: damageInvulnerabilityDuration
       value: 1
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: 6539432820988301504, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
     m_RemovedGameObjects:
     - {fileID: 5916899002718554068, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
     - {fileID: 8431754154447426498, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
@@ -217922,7 +217927,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1994472484}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a55c5b60857f2764d9eab0f8f3b750ef, type: 3}
   m_Name: 

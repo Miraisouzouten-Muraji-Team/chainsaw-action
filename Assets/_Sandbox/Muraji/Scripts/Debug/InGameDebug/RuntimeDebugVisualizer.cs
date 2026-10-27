@@ -6,6 +6,17 @@ using UnityEngine.Rendering;
 [DisallowMultipleComponent]
 public sealed class RuntimeDebugVisualizer : MonoBehaviour
 {
+    public enum DrawMode { ScreenOverlay, WorldMesh }
+    [Header("描画方式")]
+    public DrawMode drawMode = DrawMode.ScreenOverlay;
+    [Tooltip("キャラを実際に描画しているCamera。未指定ならCamera.main。合成専用Cameraではなく元の3D Cameraを指定。")]
+    public Camera projectionCamera;
+    [Range(1f, 8f)] public float lineWidth = 2f;
+    [Tooltip("合成画像が全画面以外に配置される場合にON。")]
+    public bool useCustomOutputRect;
+    [Tooltip("最終画面上の配置。左上原点、0～1の正規化座標。通常は(0,0,1,1)。")]
+    public Rect outputRect = new Rect(0, 0, 1, 1);
+
     public RuntimeDebugSettings settings;
     public string group = "Sensor";
     [Tooltip("ONでメニューのグループ切替を無視して表示。表示確認用。")]
@@ -33,14 +44,16 @@ public sealed class RuntimeDebugVisualizer : MonoBehaviour
     private GameObject drawing;
     private Mesh mesh;
     private MeshRenderer meshRenderer;
+    private bool readyToDraw;
     private int Steps => Mathf.Clamp(segments, 8, 64);
 
     private void LateUpdate()
     {
+        readyToDraw = false;
         string reason = null;
-        if (settings == null) reason = "Settings is missing.";
-        else if (settings.lineMaterial == null) reason = "Line Material is missing.";
-        else if (!settings.lineMaterial.shader.isSupported) reason = "Line Material shader is unsupported.";
+        if (drawMode == DrawMode.WorldMesh && settings == null) reason = "Settings is missing.";
+        else if (drawMode == DrawMode.WorldMesh && settings.lineMaterial == null) reason = "Line Material is missing.";
+        else if (drawMode == DrawMode.WorldMesh && !settings.lineMaterial.shader.isSupported) reason = "Line Material shader is unsupported.";
         else if (!forceVisible && !RuntimeDebugMenu.IsGroupVisible(group))
             reason = "Group is OFF or menu is inactive. Enable group or Force Visible.";
         if (reason != null)
@@ -49,10 +62,7 @@ public sealed class RuntimeDebugVisualizer : MonoBehaviour
             if (drawing != null) drawing.SetActive(false);
             return;
         }
-        if (drawing == null) CreateDrawing();
-        drawing.SetActive(true);
-        drawing.layer = drawingLayer;
-        meshRenderer.sharedMaterial = settings.lineMaterial;
+        if (drawing != null) drawing.SetActive(drawMode == DrawMode.WorldMesh);
         vertices.Clear(); colors.Clear(); indices.Clear();
         if (targets != null)
             foreach (var target in targets)
@@ -65,6 +75,20 @@ public sealed class RuntimeDebugVisualizer : MonoBehaviour
                 Vector3 direction = ray.localDirection ? ray.origin.TransformDirection(ray.direction) : ray.direction;
                 Line(ray.origin.position, ray.origin.position + direction.normalized * Mathf.Max(0, ray.length));
             }
+        if (drawMode == DrawMode.ScreenOverlay)
+        {
+            Camera camera = projectionCamera != null ? projectionCamera : Camera.main;
+            readyToDraw = camera != null && vertices.Count > 0 && color.a > 0f;
+            displayStatus = camera == null ? "Assign Projection Camera (the actual 3D render camera)."
+                : vertices.Count == 0 ? "No lines: check Targets and enabled Colliders."
+                : color.a <= 0f ? "Color alpha is zero."
+                : $"Screen overlay: {vertices.Count / 2} lines, Camera={camera.name}. No Shader/Layer filtering.";
+            return;
+        }
+        if (drawing == null) CreateDrawing();
+        drawing.SetActive(true);
+        drawing.layer = drawingLayer;
+        meshRenderer.sharedMaterial = settings.lineMaterial;
         mesh.Clear();
         mesh.SetVertices(vertices); mesh.SetColors(colors);
         mesh.SetIndices(indices, MeshTopology.Lines, 0);
@@ -72,6 +96,98 @@ public sealed class RuntimeDebugVisualizer : MonoBehaviour
         displayStatus = vertices.Count == 0
             ? "No lines: assign Targets/Rays; check Collider enabled and active."
             : $"Drawing {vertices.Count / 2} lines. If invisible: check Color alpha and camera Culling Mask.";
+    }
+
+    private void OnGUI()
+    {
+        if (!isActiveAndEnabled || drawMode != DrawMode.ScreenOverlay ||
+            !readyToDraw || Event.current.type != EventType.Repaint ||
+            (!forceVisible && !RuntimeDebugMenu.IsGroupVisible(group))) return;
+        Camera camera = projectionCamera != null ? projectionCamera : Camera.main;
+        if (camera == null || camera.targetDisplay != 0) return;
+
+        Rect normalized = useCustomOutputRect ? outputRect
+            : camera.targetTexture != null ? new Rect(0, 0, 1, 1)
+            : new Rect(camera.rect.x, 1f - camera.rect.yMax, camera.rect.width, camera.rect.height);
+        Rect area = new Rect(normalized.x * Screen.width, normalized.y * Screen.height,
+            normalized.width * Screen.width, normalized.height * Screen.height);
+        if (area.width <= 0 || area.height <= 0) return;
+        Matrix4x4 oldMatrix = GUI.matrix;
+        Color oldColor = GUI.color;
+        int oldDepth = GUI.depth;
+        try
+        {
+            GUI.matrix = Matrix4x4.identity;
+            GUI.color = color;
+            GUI.depth = 100; // 通常のGUIメニューの背面に描く。
+            GUI.BeginGroup(area);
+            try
+            {
+                for (int i = 0; i + 1 < vertices.Count; i += 2)
+                {
+                    Vector3 a = vertices[i], b = vertices[i + 1];
+                    if (!ClipDepth(camera, ref a, ref b)) continue;
+                    Vector3 va = camera.WorldToViewportPoint(a);
+                    Vector3 vb = camera.WorldToViewportPoint(b);
+                    Vector2 from = new Vector2(va.x * area.width, (1f - va.y) * area.height);
+                    Vector2 to = new Vector2(vb.x * area.width, (1f - vb.y) * area.height);
+                    if (!Finite(from) || !Finite(to) ||
+                        !ClipScreen(ref from, ref to, area.width, area.height)) continue;
+                    Vector2 delta = to - from;
+                    float length = delta.magnitude;
+                    if (length < 0.01f) continue;
+                    Matrix4x4 beforeLine = GUI.matrix;
+                    GUIUtility.RotateAroundPivot(Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg, from);
+                    GUI.DrawTexture(new Rect(from.x, from.y - lineWidth * 0.5f,
+                        length, lineWidth), Texture2D.whiteTexture);
+                    GUI.matrix = beforeLine;
+                }
+            }
+            finally { GUI.EndGroup(); }
+        }
+        finally { GUI.matrix = oldMatrix; GUI.color = oldColor; GUI.depth = oldDepth; }
+    }
+
+    private static bool Finite(Vector2 p)
+    {
+        return !float.IsNaN(p.x) && !float.IsNaN(p.y) &&
+            !float.IsInfinity(p.x) && !float.IsInfinity(p.y);
+    }
+
+    // カメラ背後の端点を直接投影せず、near/farの範囲へ線分を切り詰める。
+    private static bool ClipDepth(Camera camera, ref Vector3 a, ref Vector3 b)
+    {
+        Vector3 origin = camera.transform.position, forward = camera.transform.forward;
+        float za = Vector3.Dot(a - origin, forward), zb = Vector3.Dot(b - origin, forward);
+        float t0 = 0, t1 = 1;
+        float near = Mathf.Max(0.0001f, camera.nearClipPlane);
+        if (!ClipBoundary(-(zb - za), za - near, ref t0, ref t1) ||
+            !ClipBoundary(zb - za, camera.farClipPlane - za, ref t0, ref t1)) return false;
+        Vector3 start = a, delta = b - a;
+        a = start + delta * t0; b = start + delta * t1;
+        return true;
+    }
+
+    private static bool ClipScreen(ref Vector2 a, ref Vector2 b, float width, float height)
+    {
+        Vector2 delta = b - a;
+        float t0 = 0, t1 = 1;
+        if (!ClipBoundary(-delta.x, a.x, ref t0, ref t1) ||
+            !ClipBoundary(delta.x, width - a.x, ref t0, ref t1) ||
+            !ClipBoundary(-delta.y, a.y, ref t0, ref t1) ||
+            !ClipBoundary(delta.y, height - a.y, ref t0, ref t1)) return false;
+        Vector2 start = a;
+        a = start + delta * t0; b = start + delta * t1;
+        return true;
+    }
+
+    private static bool ClipBoundary(float p, float q, ref float t0, ref float t1)
+    {
+        if (Mathf.Abs(p) < 0.000001f) return q >= 0;
+        float t = q / p;
+        if (p < 0) { if (t > t1) return false; t0 = Mathf.Max(t0, t); }
+        else { if (t < t0) return false; t1 = Mathf.Min(t1, t); }
+        return true;
     }
 
     private void CreateDrawing()
@@ -172,7 +288,7 @@ public sealed class RuntimeDebugVisualizer : MonoBehaviour
         else Box(target.bounds.center, target.bounds.size, Matrix4x4.identity);
     }
 
-    private void OnDisable() { if (drawing != null) drawing.SetActive(false); }
+    private void OnDisable() { readyToDraw = false; if (drawing != null) drawing.SetActive(false); }
     private void OnDestroy()
     {
         if (drawing != null) Destroy(drawing);

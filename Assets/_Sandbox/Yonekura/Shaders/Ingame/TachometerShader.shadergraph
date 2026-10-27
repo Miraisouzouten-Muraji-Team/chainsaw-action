@@ -891,15 +891,15 @@
     "m_Group": {
         "m_Id": ""
     },
-    "m_Name": "GlowArc (Custom Function)",
+    "m_Name": "TachometerFunction (Custom Function)",
     "m_DrawState": {
         "m_Expanded": true,
         "m_Position": {
             "serializedVersion": "2",
-            "x": -1023.0,
-            "y": 232.99989318847657,
-            "width": 204.0,
-            "height": 166.00010681152345
+            "x": -1023.0000610351563,
+            "y": 234.00001525878907,
+            "width": 271.0,
+            "height": 166.00001525878907
         }
     },
     "m_Slots": [
@@ -934,7 +934,7 @@
         "m_SerializableColors": []
     },
     "m_SourceType": 0,
-    "m_FunctionName": "GlowArc",
+    "m_FunctionName": "TachometerFunction",
     "m_FunctionSource": "d228583dbf849e247aca95ec58b7c7fe",
     "m_FunctionSourceUsePragmas": true,
     "m_FunctionBody": "Enter function body here..."

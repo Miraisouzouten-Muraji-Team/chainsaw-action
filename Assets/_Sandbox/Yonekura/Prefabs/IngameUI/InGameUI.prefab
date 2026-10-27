@@ -17,7 +17,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &2900964984625045051
 RectTransform:
   m_ObjectHideFlags: 0
@@ -87,7 +87,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &4710941721496370909
 RectTransform:
   m_ObjectHideFlags: 0
@@ -493,7 +493,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &9151226342491523652
 RectTransform:
   m_ObjectHideFlags: 0
@@ -556,7 +556,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2605141311250884308}
   - component: {fileID: 5640455527536470789}
-  - component: {fileID: 7213377822247723512}
+  - component: {fileID: 1921473979906192825}
   - component: {fileID: 4367700636026101507}
   m_Layer: 5
   m_Name: PlayerHPBar
@@ -595,7 +595,7 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7425574796370137000}
   m_CullTransparentMesh: 1
---- !u!114 &7213377822247723512
+--- !u!114 &1921473979906192825
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -604,9 +604,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 7425574796370137000}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Script: {fileID: 11500000, guid: 16fe9b8d1be834d4699bb2afb972d8d8, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
+  m_EditorClassIdentifier: Assembly-CSharp::HPBarGraphic
   m_Material: {fileID: 0}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 1
@@ -615,16 +615,11 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 0}
-  m_Type: 0
-  m_PreserveAspect: 0
-  m_FillCenter: 1
-  m_FillMethod: 4
-  m_FillAmount: 1
-  m_FillClockwise: 1
-  m_FillOrigin: 0
-  m_UseSpriteMesh: 0
-  m_PixelsPerUnitMultiplier: 1
+  backgroundColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
+  angleA: 60
+  angleB: 120
+  hpColor: {r: 0, g: 1, b: 1, a: 1}
+  damageColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!114 &4367700636026101507
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -637,10 +632,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6f9da243474f7ec40acd8561592ffa8e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ArcHPBarController
-  background: {fileID: 8431189060655188105}
-  greenBar: {fileID: 3872511334065714988}
-  damageBar: {fileID: 8475958123659260488}
-  damageFadeDuration: 1.8
+  hpBar: {fileID: 0}
+  damageFadeDelay: 1
+  damageFadeSpeed: 0.25
   playerHealth: {fileID: 0}
 --- !u!1 &8126646113746883317
 GameObject:
@@ -659,7 +653,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &3025922565269481995
 RectTransform:
   m_ObjectHideFlags: 0
@@ -707,13 +701,21 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  accelerator: {fileID: 0}
-  arcSprite: {fileID: -6176983351481470932, guid: 79414fd10d567724093af2d8f4cc822b, type: 3}
+  arcMaterial: {fileID: 0}
   startAngle: 130
   endAngle: 0
-  minSpeedRatio: 0
-  maxSpeedRatio: 1
-  segments: 100
+  thickness: 0.08
+  colorStops:
+  - position: 0
+    color: {r: 0, g: 0, b: 1, a: 1}
+    gradientFromPrevious: 0
+    gradientWidth: 0.03
+  - position: 0.8
+    color: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+    gradientFromPrevious: 0
+    gradientWidth: 0.03
+  accelerator: {fileID: 0}
+  needle: {fileID: 0}
 --- !u!1 &8460596511972562331
 GameObject:
   m_ObjectHideFlags: 0
@@ -731,7 +733,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &260706519688269620
 RectTransform:
   m_ObjectHideFlags: 0
@@ -971,7 +973,7 @@ GameObject:
   m_Component:
   - component: {fileID: 5032114395671846577}
   - component: {fileID: 8886397930443777582}
-  - component: {fileID: 47293249049985415}
+  - component: {fileID: 3182560098870031055}
   m_Layer: 5
   m_Name: MeterBackground
   m_TagString: Untagged
@@ -1006,7 +1008,7 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 8891786509296092532}
   m_CullTransparentMesh: 1
---- !u!114 &47293249049985415
+--- !u!114 &3182560098870031055
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -1015,27 +1017,32 @@ MonoBehaviour:
   m_GameObject: {fileID: 8891786509296092532}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Script: {fileID: 11500000, guid: 6e1d3a5c220a72c49b6834679f93082b, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
+  m_EditorClassIdentifier: Assembly-CSharp::TachometerGraphic
   m_Material: {fileID: 0}
-  m_Color: {r: 0.7894972, g: 0.56545925, b: 0.9150943, a: 1}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: -3917123054719525106, guid: 64c805a08c8f71f4c9a6c23ac3d46b51, type: 3}
-  m_Type: 0
-  m_PreserveAspect: 0
-  m_FillCenter: 1
-  m_FillMethod: 4
-  m_FillAmount: 1
-  m_FillClockwise: 1
-  m_FillOrigin: 0
-  m_UseSpriteMesh: 0
-  m_PixelsPerUnitMultiplier: 1
+  arcMaterial: {fileID: 0}
+  startAngle: 130
+  endAngle: 0
+  thickness: 0.08
+  colorStops:
+  - position: 0
+    color: {r: 0, g: 0, b: 1, a: 1}
+    gradientFromPrevious: 0
+    gradientWidth: 0.03
+  - position: 0.8
+    color: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+    gradientFromPrevious: 0
+    gradientWidth: 0.03
+  accelerator: {fileID: 0}
+  needle: {fileID: 0}
 --- !u!1 &9171040630928158099
 GameObject:
   m_ObjectHideFlags: 0
@@ -1053,7 +1060,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &7679694621073361674
 RectTransform:
   m_ObjectHideFlags: 0

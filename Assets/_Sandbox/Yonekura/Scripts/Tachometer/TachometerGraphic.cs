@@ -8,7 +8,7 @@ using UnityEngine.UI;
 /// </summary>
 [ExecuteAlways]
 [RequireComponent(typeof(CanvasRenderer))]
-public class GlowArcGraphic : MaskableGraphic
+public class TachometerGraphic : MaskableGraphic
 {
     /// <summary>
     /// 円弧の色とグラデーションの設定。

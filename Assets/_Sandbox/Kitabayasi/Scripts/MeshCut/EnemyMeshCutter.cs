@@ -3,14 +3,15 @@ using UnityEngine;
 
 /// <summary>
 /// Enemy死亡時に切断対象Meshを取得し、
-/// チェンソー軌跡で切断した後、連結成分ごとの物理切断片へ分離して表示する。
+/// チェンソー軌跡で2分割したMeshを物理切断片として表示する。
 /// </summary>
 /// <remarks>
 /// SkinnedMeshRendererの場合は死亡時の現在姿勢をBakeしてから切断する。
 /// MeshFilter + MeshRendererの場合はMeshFilterのMeshを切断する。
 ///
 /// HP計算、死亡判定、攻撃受信、チェンソー軌跡記録、
-/// Triangle分割アルゴリズム、切断片への飛散速度・方向付与は担当しない。
+/// Triangle分割アルゴリズム、Connected Componentによる追加分離、
+/// 切断片への飛散速度・方向付与は担当しない。
 /// </remarks>
 public sealed class EnemyMeshCutter : MonoBehaviour
 {
@@ -56,7 +57,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
     [Tooltip(
         "通常攻撃死亡用Piece GameObjectを死亡前に準備する個数。" +
-        "実際のPiece数は連結成分分離で変化するため、Profiler・ログで確認した個数を設定する。" +
+        "通常攻撃はMeshPlaneSplitterが生成した2Meshをそのまま使用するため、基本は2を設定する。" +
         "不足分だけ死亡時に従来方式で追加生成する。")]
     [SerializeField]
     [Min(0)]
@@ -97,16 +98,13 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     [Header("診断ログ")]
 
     [Tooltip(
-        "Mesh分割死亡演出の入力軌跡、切断対象Mesh、Processor結果、連結成分分離、生成片までを段階的にConsoleへ出力する。" +
+        "Mesh分割死亡演出の入力軌跡、切断対象Mesh、Processor結果、最終2Piece生成までを段階的にConsoleへ出力する。" +
         "原因特定後は無効化してよい。")]
     [SerializeField]
     private bool enableDiagnosticLogs = false;
 
     private readonly ChainsawMeshCutProcessor cutProcessor =
         new ChainsawMeshCutProcessor();
-
-    private readonly MeshConnectedComponentSplitter connectedComponentSplitter =
-        new MeshConnectedComponentSplitter();
 
     private readonly List<Mesh> runtimePieceMeshes =
         new List<Mesh>();
@@ -157,7 +155,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     /// 死亡させたチェンソー攻撃が保持している確定済み軌跡。
     /// </param>
     /// <returns>
-    /// 1つ以上の物理切断片生成と表示切り替えまで成功した場合はtrue。
+    /// 2つの物理切断片生成と表示切り替えまで成功した場合はtrue。
     /// </returns>
     public bool TryCut(ChainsawAttackTrajectory trajectory)
     {
@@ -294,12 +292,43 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
             if (!succeeded)
             {
+                // MeshPlaneSplitterが途中までRuntime Meshを生成した状態で失敗しても、
+                // EnemyMeshCutter側へ所有権が移らないMeshを残さない。
+                DestroyRuntimeMesh(
+                    firstPieceMesh);
+
+                DestroyRuntimeMesh(
+                    secondPieceMesh);
+
                 if (ShouldRunDiagnostics)
                 {
                     LogDiagnosticWarning(
                         "Cutter-04 Processor",
                         "ChainsawMeshCutProcessor内で停止しました。" +
                         $" failureReason={failureReason}");
+                }
+
+                LogCutFailure(failureReason);
+                return false;
+            }
+
+            if (firstPieceMesh == null ||
+                secondPieceMesh == null)
+            {
+                DestroyRuntimeMesh(
+                    firstPieceMesh);
+
+                DestroyRuntimeMesh(
+                    secondPieceMesh);
+
+                failureReason =
+                    "MeshPlaneSplitterの成功後に両側のMeshを取得できませんでした。";
+
+                if (ShouldRunDiagnostics)
+                {
+                    LogDiagnosticWarning(
+                        "Cutter-04 Processor",
+                        failureReason);
                 }
 
                 LogCutFailure(failureReason);
@@ -315,28 +344,19 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                     $" SecondSide={BuildMeshSummary(secondPieceMesh)}");
             }
 
-            if (!TrySplitConnectedComponents(
-                    firstPieceMesh,
-                    secondPieceMesh,
-                    out List<Mesh> splitPieceMeshes,
-                    out failureReason))
-            {
-                if (ShouldRunDiagnostics)
-                {
-                    LogDiagnosticWarning(
-                        "Cutter-05 ConnectedComponents",
-                        $"連結成分の分離で停止しました。{failureReason}");
-                }
+            // 通常攻撃ではPlane分割後の2Meshを完成品として扱う。
+            // Connected Componentへ再入力しないため、この時点でCutterが所有権を引き継ぐ。
+            runtimePieceMeshes.Add(
+                firstPieceMesh);
 
-                LogCutFailure(failureReason);
-                return false;
-            }
+            runtimePieceMeshes.Add(
+                secondPieceMesh);
 
             if (ShouldRunDiagnostics)
             {
                 LogDiagnostic(
-                    "Cutter-05 ConnectedComponents",
-                    $"連結成分を{splitPieceMeshes.Count}個の独立Meshへ分離しました。");
+                    "Cutter-05 FinalPieces",
+                    "Connected Component解析を行わず、MeshPlaneSplitterが生成した2Meshを直接Pieceとして使用します。");
             }
 
             Material[] pieceMaterials =
@@ -344,15 +364,16 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
             ResolvePlayerCollidersForPieceCollision();
 
+            const int pieceCount = 2;
+
             for (int pieceIndex = 0;
-                 pieceIndex < splitPieceMeshes.Count;
+                 pieceIndex < pieceCount;
                  pieceIndex++)
             {
                 Mesh pieceMesh =
-                    splitPieceMeshes[pieceIndex];
-
-                runtimePieceMeshes.Add(
-                    pieceMesh);
+                    pieceIndex == 0
+                        ? firstPieceMesh
+                        : secondPieceMesh;
 
                 GameObject pieceObject =
                     GetOrCreatePieceObject(
@@ -444,69 +465,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         }
 
         return destination.Count > 0;
-    }
-
-    /// <summary>
-    /// Processorが生成した切断面両側のMeshを、連結成分単位の独立Meshへ分離する。
-    /// </summary>
-    private bool TrySplitConnectedComponents(
-        Mesh firstSideMesh,
-        Mesh secondSideMesh,
-        out List<Mesh> splitPieceMeshes,
-        out string failureReason)
-    {
-        splitPieceMeshes =
-            new List<Mesh>();
-
-        try
-        {
-            if (!connectedComponentSplitter.TrySplit(
-                    firstSideMesh,
-                    out List<Mesh> firstSideComponents,
-                    out failureReason))
-            {
-                return false;
-            }
-
-            splitPieceMeshes.AddRange(
-                firstSideComponents);
-
-            if (!connectedComponentSplitter.TrySplit(
-                    secondSideMesh,
-                    out List<Mesh> secondSideComponents,
-                    out failureReason))
-            {
-                DestroyRuntimeMeshes(
-                    splitPieceMeshes);
-
-                splitPieceMeshes.Clear();
-                return false;
-            }
-
-            splitPieceMeshes.AddRange(
-                secondSideComponents);
-
-            if (splitPieceMeshes.Count == 0)
-            {
-                failureReason =
-                    "連結成分分離後の切断片がありません。";
-
-                return false;
-            }
-
-            failureReason = null;
-            return true;
-        }
-        finally
-        {
-            // Processorの2側Meshは連結成分Meshへコピー済みなので、
-            // 最終的な表示・物理片としては保持しない。
-            DestroyRuntimeMesh(
-                firstSideMesh);
-
-            DestroyRuntimeMesh(
-                secondSideMesh);
-        }
     }
 
     /// <summary>

@@ -298,9 +298,10 @@ MonoBehaviour:
         - {fileID: 11400000, guid: e2dc96d5bbd2d8746a2fe4f25ccf2bae, type: 2}
         - {fileID: 11400000, guid: 61602f79a95b44545aeaaa498e3d0c4b, type: 2}
         - {fileID: 11400000, guid: 51cf14bc037d2294990288d016e884dc, type: 2}
-        enableMeshCutDiagnosticLogs: 1
-        enableTrajectoryCoordinateValidation: 1
-        drawReconstructedTrajectory: 1
+        diggingAttackData: {fileID: 0}
+        enableMeshCutDiagnosticLogs: 0
+        enableTrajectoryCoordinateValidation: 0
+        drawReconstructedTrajectory: 0
         reconstructedTrajectoryDrawDuration: 10
     - rid: 2559746894314340428
       type: {class: OldDroneEnemySearchStrategy, ns: , asm: Assembly-CSharp}
@@ -343,13 +344,17 @@ MonoBehaviour:
   targetSkinnedMeshRenderer: {fileID: 0}
   targetMeshFilter: {fileID: 7221807125957005229}
   cutSurfaceMaterial: {fileID: 2100000, guid: 37406dd2378320f469ad8b012b3e22d9, type: 2}
+  densityScale: 1
+  minimumPieceMass: 0.1
+  maximumPieceMass: 10
+  preGeneratedPieceCount: 0
   cutDirectionSampleCount: 4
   cutRangeAxis: 1
   cutRangeMinimumNormalized: 0.2
   cutRangeMaximumNormalized: 0.8
   cutSurfaceUvScale: 1
   showCutRangeGizmo: 1
-  enableDiagnosticLogs: 1
+  enableDiagnosticLogs: 0
 --- !u!114 &1884898946840475389
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -362,8 +367,34 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e30ac8f3642ae644aaef5e508071758b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyCutPieceBurst
-  burstDistance: 1.5
-  burstDuration: 0.2
+  burstImpulse: 8
+  burstVelocityDecayDuration: 0.8
+  burstVelocityDecayCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  minimumTorqueImpulse: 0.1
+  maximumTorqueImpulse: 0.4
 --- !u!114 &1252833059687128332
 MonoBehaviour:
   m_ObjectHideFlags: 0

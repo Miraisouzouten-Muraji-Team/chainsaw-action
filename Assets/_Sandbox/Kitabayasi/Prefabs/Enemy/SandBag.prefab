@@ -266,9 +266,9 @@ MonoBehaviour:
         - {fileID: 11400000, guid: 61602f79a95b44545aeaaa498e3d0c4b, type: 2}
         - {fileID: 11400000, guid: 51cf14bc037d2294990288d016e884dc, type: 2}
         diggingAttackData: {fileID: 0}
-        enableMeshCutDiagnosticLogs: 1
-        enableTrajectoryCoordinateValidation: 1
-        drawReconstructedTrajectory: 1
+        enableMeshCutDiagnosticLogs: 0
+        enableTrajectoryCoordinateValidation: 0
+        drawReconstructedTrajectory: 0
         reconstructedTrajectoryDrawDuration: 10
 --- !u!114 &919356987011142868
 MonoBehaviour:
@@ -322,7 +322,7 @@ MonoBehaviour:
   cutRangeMaximumNormalized: 0.636
   cutSurfaceUvScale: 1
   showCutRangeGizmo: 1
-  enableDiagnosticLogs: 1
+  enableDiagnosticLogs: 0
 --- !u!114 &1985181436109670491
 MonoBehaviour:
   m_ObjectHideFlags: 0

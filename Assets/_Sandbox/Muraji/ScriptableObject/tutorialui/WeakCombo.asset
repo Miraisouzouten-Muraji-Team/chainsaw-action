@@ -1,0 +1,37 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e3899f69d9f93a14f895ecb2a5b8f7cd, type: 3}
+  m_Name: WeakCombo
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialDefinition
+  mode: 0
+  fadeSeconds: 0.5
+  pages:
+  - title: "\u5F31\u653B\u6483"
+    description: "X\u30DC\u30BF\u30F3\u30923\u56DE\u62BC\u3059\u3068\u30013\u9023\u7D9A\u3067\u653B\u6483\u3057\u307E\u3059\u3002"
+    demo: 10
+    buttonLabel: X
+    thirdPress: 0.61
+    demoMaxRPM: 50
+    demoMinRPM: 5
+    demoBonusThreshold: 40
+    demoAfterBonusRPM: 35
+    demoBonusTravelDuration: 0.04
+    demoKnockback: {x: 0.18, y: 0.1}
+    illustration: {fileID: 0}
+    animationFrames: []
+    alternateAnimationFrames: []
+    triggerPressDuration: 0.08
+    cycleSeconds: 3
+    firstPress: 0.15
+    secondPress: 0.38
+    landing: 0.75
+    customRelease: 0.7

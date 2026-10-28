@@ -5,6 +5,7 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GBufferInput.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+#include "Assets/_Sandbox/Akane/Rendering/Shaders/Includes/DeferredCelLighting.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/DynamicScaling.hlsl"
 
 struct Attributes
@@ -317,7 +318,7 @@ half4 DeferredShading(Varyings input) : SV_Target
         bool materialSpecularHighlightsOff = (gBufferData.materialFlags & kMaterialFlagSpecularHighlightsOff);
         #endif
         BRDFData brdfData = GBufferDataToBRDFData(gBufferData);
-        color = LightingPhysicallyBased(brdfData, unityLight, inputData.normalWS, inputData.viewDirectionWS, materialSpecularHighlightsOff);
+        color = LightingCelDeferred(brdfData, unityLight, inputData.normalWS, inputData.viewDirectionWS, materialSpecularHighlightsOff);
     #elif defined(_SIMPLELIT)
         SurfaceData surfaceData = GBufferDataToSurfaceData(gBufferData);
         half3 attenuatedLightColor = unityLight.color * (unityLight.distanceAttenuation * unityLight.shadowAttenuation);

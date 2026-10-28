@@ -5,6 +5,7 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GBufferInput.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+#include "Assets/_Sandbox/Akane/Rendering/Shaders/Includes/DeferredCelLighting.hlsl"
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/DynamicScaling.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RealtimeLights.hlsl"
 
@@ -76,7 +77,7 @@ half3 DeferredLightContribution(Light light, InputData inputData, GBufferData gB
         #endif
 
         BRDFData brdfData = GBufferDataToBRDFData(gBufferData);
-        return half3(LightingPhysicallyBased(brdfData, light, inputData.normalWS, inputData.viewDirectionWS, materialSpecularHighlightsOff));
+        return LightingCelDeferred(brdfData, light, inputData.normalWS, inputData.viewDirectionWS, materialSpecularHighlightsOff);
     }
     #endif
 

@@ -15,6 +15,8 @@ public sealed class PlayerGroundProbe
     private readonly PlayerParameter settings;
     private readonly Dictionary<Collider, List<ContactPoint>> contacts =
         new Dictionary<Collider, List<ContactPoint>>();
+    // 各地形の接触が最後に物理エンジンから届いた時刻を保存する。
+    private readonly Dictionary<Collider, double> contactTimes = new Dictionary<Collider, double>();
     private readonly List<Collider> invalidContacts = new List<Collider>();
 
     private readonly List<Collider> bodyColliders = new List<Collider>();
@@ -47,6 +49,7 @@ public sealed class PlayerGroundProbe
             contacts.Add(target, points);
         }
 
+        contactTimes[target] = Time.fixedTimeAsDouble;
         points.Clear();
         for (int index = 0; index < collision.contactCount; index++)
             points.Add(collision.GetContact(index));
@@ -55,13 +58,16 @@ public sealed class PlayerGroundProbe
     // 接触が終了した地形の記録を解除する。
     public void RemoveContact(Collider target)
     {
-        if (target != null) contacts.Remove(target);
+        if (target == null) return;
+        contacts.Remove(target);
+        contactTimes.Remove(target);
     }
 
     // 無効化時などに接地状態と接触記録をすべて解除する。
     public void Clear()
     {
         contacts.Clear();
+        contactTimes.Clear();
         invalidContacts.Clear();
         ResetSupport();
     }
@@ -119,12 +125,21 @@ public sealed class PlayerGroundProbe
                 // 歩行用の接触採用は従来どおりにする。
                 // 本体との距離による追加制限は、後段のHasJumpSupportだけに適用する。
 
+                // 歩行用に選ばれなかった面も、現在の本体を支えていればジャンプを許可する。
+                if (Vector3.Dot(velocity, normal) <= SEPARATION_SPEED &&
+                    IsCurrentPhysicalSupport(pair.Key, point))
+                    HasJumpSupport = true;
+
                 ConsiderSupport(pair.Key, point.point, normal, direction, previousCollider,
                     "物理接触", ref bestRise, ref bestDistance);
             }
         }
 
-        foreach (Collider target in invalidContacts) contacts.Remove(target);
+        foreach (Collider target in invalidContacts)
+        {
+            contacts.Remove(target);
+            contactTimes.Remove(target);
+        }
 
         // 実接触がない初期フレームや物理停止中は、既存の3本Rayを補助にする。
         if (!IsGrounded)
@@ -133,7 +148,9 @@ public sealed class PlayerGroundProbe
 
         // 現在の接触・足元Rayを、本体Colliderの実際の形状でも確認する。
         // この後の下り追従・前方の斜面への先読みでは、ジャンプ許可を新規に作らない。
-        HasJumpSupport = IsGrounded && IsBodyNearSupport(support.Collider, support.Point);
+        HasJumpSupport = HasJumpSupport ||
+            (IsGrounded && HasCurrentFloorSupport(support.Collider, support.Normal, velocity)) ||
+            HasNearbyFloorSupport(terrainLayers, velocity);
 
         // 下りの追従は直前まで接地していた場合だけ。空中から地面を吸い上げない。
         if (!IsGrounded && continuing && settings.slopeGroundSnapDistance > 0f &&
@@ -235,6 +252,103 @@ public sealed class PlayerGroundProbe
             Vector3 closestPoint = bodyCollider.ClosestPoint(point);
             if ((closestPoint - point).sqrMagnitude <= tolerance * tolerance)
                 return true;
+        }
+
+        return false;
+    }
+
+    // 新しい物理接触は追加Rayや接触点との距離で否定せず、その接触自体を支持とする。
+    // 移動中の古い履歴は採用しない。睡眠中は接触通知が省略されるため静止接触を維持する。
+    private bool IsCurrentPhysicalSupport(Collider target, ContactPoint point)
+    {
+        Collider playerCollider = point.thisCollider;
+        if (playerCollider == null || !playerCollider.enabled || playerCollider.isTrigger ||
+            !playerCollider.gameObject.activeInHierarchy || playerCollider.attachedRigidbody != body)
+            return false;
+
+        if (!contactTimes.TryGetValue(target, out double lastContactTime))
+            return false;
+
+        double age = Time.fixedTimeAsDouble - lastContactTime;
+        return body.IsSleeping() ||
+            (age >= 0d && age <= Time.fixedDeltaTime * 1.5d);
+    }
+
+    // 保存済み接触点ではなく、現在の身体の中心から地形面を取り直す。
+    // 斜面に沿って移動しても過去の接触点との横ずれで初段を失わないようにする。
+    private bool HasCurrentFloorSupport(Collider target, Vector3 normal, Vector3 velocity)
+    {
+        if (target == null || Vector3.Dot(velocity, normal) > SEPARATION_SPEED)
+            return false;
+
+        foreach (Collider bodyCollider in bodyColliders)
+        {
+            if (bodyCollider == null || !bodyCollider.enabled ||
+                !bodyCollider.gameObject.activeInHierarchy || bodyCollider.isTrigger ||
+                bodyCollider.attachedRigidbody != body)
+                continue;
+
+            bool supportedShape = bodyCollider is BoxCollider ||
+                bodyCollider is SphereCollider || bodyCollider is CapsuleCollider ||
+                (bodyCollider is MeshCollider mesh && mesh.convex);
+            if (!supportedShape) continue;
+
+            float tolerance = Mathf.Max(CONTACT_POINT_TOLERANCE,
+                bodyCollider.contactOffset + target.contactOffset);
+            Bounds bounds = bodyCollider.bounds;
+            Ray ray = new Ray(bounds.center, -normal);
+
+            // 地形自身へ照会するため、先読み面が遠くても現在の支持としては採用しない。
+            if (!target.Raycast(ray, out RaycastHit hit, bounds.extents.magnitude + tolerance) ||
+                !TryGetFloorNormal(hit.normal, out Vector3 hitNormal) ||
+                hit.point.y > body.worldCenterOfMass.y ||
+                Vector3.Dot(velocity, hitNormal) > SEPARATION_SPEED)
+                continue;
+
+            Vector3 closestPoint = bodyCollider.ClosestPoint(hit.point);
+            if ((closestPoint - hit.point).sqrMagnitude <= tolerance * tolerance)
+                return true;
+        }
+
+        return false;
+    }
+
+    // 古い接触点や足元Rayの位置に依存せず、現在の本体直下に支持面があるか確認する。
+    // 長い斜面追従距離は使わず、Colliderの接触余白までに限定する。
+    private bool HasNearbyFloorSupport(int layers, Vector3 velocity)
+    {
+        float bodyOffset = 0f;
+        foreach (Collider bodyCollider in bodyColliders)
+        {
+            if (bodyCollider == null || !bodyCollider.enabled ||
+                !bodyCollider.gameObject.activeInHierarchy || bodyCollider.isTrigger ||
+                bodyCollider.attachedRigidbody != body)
+                continue;
+
+            bodyOffset = Mathf.Max(bodyOffset, bodyCollider.contactOffset);
+        }
+
+        // 探索後も相手側の実際のcontactOffsetで距離を検証する。
+        float searchDistance = Mathf.Max(CONTACT_POINT_TOLERANCE,
+            bodyOffset + Physics.defaultContactOffset);
+        foreach (RaycastHit hit in body.SweepTestAll(
+            Vector3.down, searchDistance, QueryTriggerInteraction.Ignore))
+        {
+            if (!IsTerrain(hit.collider, layers) || hit.distance < 0f ||
+                !TryGetFloorNormal(hit.normal, out Vector3 normal) ||
+                hit.point.y > body.worldCenterOfMass.y ||
+                Vector3.Dot(velocity, normal) > SEPARATION_SPEED)
+                continue;
+
+            // ジャンプ中に床が近いだけで回数を回復させない。
+            // 斜面に沿う上下移動は、鉛直速度ではなく面から離れる速度で区別する。
+            if (IsBodyNearSupport(hit.collider, hit.point))
+            {
+                // Controller側の接地条件にも、現在位置で確認した支持面を渡す。
+                if (!IsGrounded)
+                    SetSupport(hit.collider, hit.point, normal, "本体直下の支持");
+                return true;
+            }
         }
 
         return false;

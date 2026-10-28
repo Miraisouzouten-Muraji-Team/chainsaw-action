@@ -30,9 +30,9 @@ MonoBehaviour:
     m_Bits: 1
   groundRaySideOffset: 0.4
   groundRayStartHeight: 0.1
-  groundRayDistance: 0.25
+  groundRayDistance: 1
   groundRayNormalThreshold: 0.7
-  groundRayContactTolerance: 0.03
+  groundRayContactTolerance: 0.5
   slopeGroundSnapDistance: 0.1
   slopeGroundStickSpeed: 1
   slopeGroundProbeDistance: 0.2

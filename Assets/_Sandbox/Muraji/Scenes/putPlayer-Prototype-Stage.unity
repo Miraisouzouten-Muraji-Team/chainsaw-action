@@ -6249,7 +6249,8 @@ MonoBehaviour:
     width: 1
     height: 1
   stageOccluders: []
-  stageOccluderRoots: []
+  stageOccluderRoots:
+  - {fileID: 639213164}
 --- !u!65 &144183105
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -55227,7 +55228,7 @@ MonoBehaviour:
   stageOccluders:
   - {fileID: 0}
   stageOccluderRoots:
-  - {fileID: 784945813}
+  - {fileID: 639213164}
 --- !u!65 &615862202
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -71433,11 +71434,6 @@ Transform:
   - {fileID: 1974338203}
   m_Father: {fileID: 110604225}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!4 &784945813 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 8800514902829550360, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
-  m_PrefabInstance: {fileID: 1351245142}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &789966989
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -81696,7 +81692,8 @@ MonoBehaviour:
     width: 1
     height: 1
   stageOccluders: []
-  stageOccluderRoots: []
+  stageOccluderRoots:
+  - {fileID: 639213164}
 --- !u!65 &817826316
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -88216,7 +88213,8 @@ MonoBehaviour:
     width: 1
     height: 1
   stageOccluders: []
-  stageOccluderRoots: []
+  stageOccluderRoots:
+  - {fileID: 639213164}
 --- !u!65 &960668246
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -94754,7 +94752,8 @@ MonoBehaviour:
     width: 1
     height: 1
   stageOccluders: []
-  stageOccluderRoots: []
+  stageOccluderRoots:
+  - {fileID: 639213164}
 --- !u!65 &1096810810
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -111325,7 +111324,8 @@ MonoBehaviour:
     width: 1
     height: 1
   stageOccluders: []
-  stageOccluderRoots: []
+  stageOccluderRoots:
+  - {fileID: 639213164}
 --- !u!65 &1231177305
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -116699,7 +116699,8 @@ MonoBehaviour:
     width: 1
     height: 1
   stageOccluders: []
-  stageOccluderRoots: []
+  stageOccluderRoots:
+  - {fileID: 639213164}
 --- !u!65 &1254435071
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -128031,6 +128032,38 @@ PrefabInstance:
       propertyPath: m_LocalPosition.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 3609346295830887544, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Size.x
+      value: 0.5571661
+      objectReference: {fileID: 0}
+    - target: {fileID: 3609346295830887544, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Size.y
+      value: 0.08033359
+      objectReference: {fileID: 0}
+    - target: {fileID: 3609346295830887544, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Size.z
+      value: 0.55690616
+      objectReference: {fileID: 0}
+    - target: {fileID: 3609346295830887544, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Enabled
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3609346295830887544, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Center.x
+      value: -0.0031046122
+      objectReference: {fileID: 0}
+    - target: {fileID: 3609346295830887544, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Center.y
+      value: 0.12427229
+      objectReference: {fileID: 0}
+    - target: {fileID: 3609346295830887544, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Center.z
+      value: -0.0237104
+      objectReference: {fileID: 0}
+    - target: {fileID: 3609346295830887544, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_IsTrigger
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 3909304469106249479, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.z
       value: 0
@@ -128198,6 +128231,10 @@ PrefabInstance:
     - target: {fileID: 8819875367603587682, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Center.y
       value: -21.477894
+      objectReference: {fileID: 0}
+    - target: {fileID: 8829701663556054117, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: hurtDuration
@@ -128720,7 +128757,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1382867243}
-  - component: {fileID: 1382867242}
   - component: {fileID: 1382867244}
   m_Layer: 0
   m_Name: TutorialPresenter
@@ -128729,18 +128765,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1382867242
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1382867241}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 468df571f99dc5342a3ebc44909dcb66, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPresenter
 --- !u!4 &1382867243
 Transform:
   m_ObjectHideFlags: 0
@@ -170904,7 +170928,8 @@ MonoBehaviour:
     width: 1
     height: 1
   stageOccluders: []
-  stageOccluderRoots: []
+  stageOccluderRoots:
+  - {fileID: 639213164}
 --- !u!65 &1611019049
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -176376,7 +176401,8 @@ MonoBehaviour:
     width: 1
     height: 1
   stageOccluders: []
-  stageOccluderRoots: []
+  stageOccluderRoots:
+  - {fileID: 639213164}
 --- !u!1 &1650823554
 GameObject:
   m_ObjectHideFlags: 0
@@ -240014,7 +240040,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 2081488315}
-  - component: {fileID: 2081488317}
   - component: {fileID: 2081488316}
   m_Layer: 0
   m_Name: TutorialPresenter
@@ -240051,18 +240076,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPresenter
   uiFont: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
---- !u!114 &2081488317
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2081488314}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 468df571f99dc5342a3ebc44909dcb66, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPresenter
 --- !u!1 &2085156841
 GameObject:
   m_ObjectHideFlags: 0

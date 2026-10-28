@@ -2,6 +2,11 @@ using UnityEngine;
 
 public class SensorPlayerController : MonoBehaviour
 {
+    [Header("ジャンプの原因調査")]
+    [Tooltip("ジャンプ入力時の接地・支持・回数と、実行時の上下速度をConsoleへ出力します。調査後はオフにしてください。")]
+    [SerializeField] private bool logJumpDiagnostics = true;
+    private bool traceJumpLaunch;
+
     [Header("プレイヤーの共通設定")]
     [Tooltip("移動・ジャンプ・食い込み・角補正の設定を読み取るPlayerParameterアセットを指定してください。実行中の速度や残り時間はこのアセットへ書き込みません。")]
     [SerializeField] private PlayerParameter playerParameter;
@@ -547,6 +552,7 @@ public class SensorPlayerController : MonoBehaviour
         if (jumpPending)
         {
             jumpPending = false;
+            traceJumpLaunch = logJumpDiagnostics;
             velocity.y = pendingJumpPower;
             jumpsUsed = pendingJumpCount;
             ClearJumpGroundState();
@@ -662,6 +668,12 @@ public class SensorPlayerController : MonoBehaviour
         debugVelocityBeforeWall = velocity;
         debugWallBlocked = ApplyWallMovementBlock(ref velocity);
         debugVelocityAfterWall = velocity;
+        if (traceJumpLaunch)
+        {
+            traceJumpLaunch = false;
+            Debug.Log($"[JumpTrace] 物理反映 frame={Time.frameCount} fixed={Time.fixedTime:F3} " +
+                $"回数={jumpsUsed} 設定初速={pendingJumpPower:F3} 最終速度={velocity}", this);
+        }
         playerRigidbody.linearVelocity = velocity;
 
         playerAnimator.SetSpeed(
@@ -831,6 +843,19 @@ public class SensorPlayerController : MonoBehaviour
         return true;
     }
 
+    // ジャンプ入力時の判定材料を記録する。ジャンプの許可条件や物理設定は変更しない。
+    private void LogJumpDiagnostics(string phaseName, bool grounded, bool coyote)
+    {
+        if (!logJumpDiagnostics) return;
+        string source = groundProbe != null ? groundProbe.Source : "Probeなし";
+        bool support = groundProbe != null && groundProbe.HasJumpSupport;
+        Debug.Log($"[JumpTrace] {phaseName} frame={Time.frameCount} fixed={Time.fixedTime:F3} " +
+            $"接地={isGroundedByRay} 支持={support} 初段接地={grounded} 猶予={coyote} " +
+            $"消費回数={jumpsUsed} 予約回数={pendingJumpCount} 予約={jumpPending} " +
+            $"接地元={source} 速度={playerRigidbody.linearVelocity} " +
+            $"法線={groundNormal} 接地無視残り={Mathf.Max(0f, ignoreGroundUntil - Time.time):F3}", this);
+    }
+
     // 壁ジャンプ、接地・猶予中の初段、二段目の順でジャンプを予約する。
     void Jump()
     {
@@ -907,6 +932,8 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        LogJumpDiagnostics("入力判定", isGrounded, canUseCoyoteTime);
+
         if (isGrounded || canUseCoyoteTime)
         {
             // 猶予中も、通常の初段と同じ強さ・回数でジャンプする。
@@ -928,6 +955,7 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         jumpPending = true;
+        LogJumpDiagnostics("予約確定", isGrounded, canUseCoyoteTime);
 
         // 予約時点で猶予を消費し、初段を連続使用できないようにする。
         lastGroundedTime = float.NegativeInfinity;

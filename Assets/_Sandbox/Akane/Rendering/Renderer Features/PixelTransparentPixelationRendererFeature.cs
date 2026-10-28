@@ -1,38 +1,32 @@
+
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
-using UnityEngine.Rendering.RenderGraphModule.Util;
 using UnityEngine.Rendering.Universal;
 
 namespace Project.Rendering.Pixel
 {
     /// <summary>
-    /// Transparent描画前後の色差分だけを指定解像度でドット化するRenderer Feature。
-    /// Opaqueの解像度と既存Transparentの描画方式は変更しない。
+    /// Transparentを背景から分離して描画し、指定解像度でドット化する。
+    /// GameObject LayerやRendering Layerには依存しない。
     /// </summary>
     public sealed class PixelTransparentPixelationRendererFeature : ScriptableRendererFeature
     {
-        private static readonly int BEFORE_TEX_ID = Shader.PropertyToID("_PixelEffectBeforeTex");
-        private static readonly int AFTER_TEX_ID = Shader.PropertyToID("_PixelEffectAfterTex");
-        private static readonly int DELTA_TEX_ID = Shader.PropertyToID("_PixelEffectDeltaTex");
-        private static readonly int LOW_RES_TEXEL_SIZE_ID = Shader.PropertyToID("_PixelEffectLowResTexelSize");
-        private static readonly int BLIT_SCALE_BIAS_ID = Shader.PropertyToID("_BlitScaleBias");
-        private static readonly int BLIT_MIP_LEVEL_ID = Shader.PropertyToID("_BlitMipLevel");
-
         [Header("Shader")]
         [SerializeField] private Shader _pixelationShader;
 
         [Header("Effect Resolution")]
-        [SerializeField, Min(1)] private int _textureWidth = 320;
-        [SerializeField, Min(1)] private int _textureHeight = 180;
+        [SerializeField, Min(1)] private int _textureWidth = 640;
+        [SerializeField, Min(1)] private int _textureHeight = 360;
 
         private Material _material;
-        private BeforeTransparentPass _beforePass;
-        private AfterTransparentPass _afterPass;
+        private TransparentPixelationPass _pass;
 
         /// <summary>
-        /// 描画PassとMaterialを初期化する。
+        /// Materialと描画Passを初期化する。
+        /// Unity APIを使用するID生成はフィールド初期化時に行わない。
         /// </summary>
         public override void Create()
         {
@@ -42,196 +36,296 @@ namespace Project.Rendering.Pixel
                 ? CoreUtils.CreateEngineMaterial(_pixelationShader)
                 : null;
 
-            _beforePass = new BeforeTransparentPass
+            // ScriptableObjectの型初期化中にShaderTagIdを生成しない。
+            List<ShaderTagId> shaderTags = new()
+            {
+                new ShaderTagId("UniversalForward"),
+                new ShaderTagId("UniversalForwardOnly"),
+                new ShaderTagId("SRPDefaultUnlit"),
+                new ShaderTagId("LightweightForward")
+            };
+
+            // Shader Property IDもCreate内で生成する。
+            int blackTextureId =
+                Shader.PropertyToID("_PixelEffectBlackTex");
+
+            int whiteTextureId =
+                Shader.PropertyToID("_PixelEffectWhiteTex");
+
+            int effectTextureId =
+                Shader.PropertyToID("_PixelEffectDataTex");
+
+            int texelSizeId =
+                Shader.PropertyToID("_PixelEffectTexelSize");
+
+            _pass = new TransparentPixelationPass(
+                _material,
+                shaderTags,
+                blackTextureId,
+                whiteTextureId,
+                effectTextureId,
+                texelSizeId)
             {
                 renderPassEvent = RenderPassEvent.BeforeRenderingTransparents
             };
-
-            _afterPass = new AfterTransparentPass(
-                _material,
-                Mathf.Max(1, _textureWidth),
-                Mathf.Max(1, _textureHeight))
-            {
-                renderPassEvent = RenderPassEvent.AfterRenderingTransparents
-            };
         }
 
         /// <summary>
-        /// Pixel Rendering用Cameraへ描画Passを登録する。
+        /// Pixel Rendering用Game Cameraへ描画Passを登録する。
         /// </summary>
-        public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
+        public override void AddRenderPasses(
+            ScriptableRenderer renderer,
+            ref RenderingData renderingData)
         {
-            if (_material == null || _beforePass == null || _afterPass == null) return;
+            if (_material == null || _pass == null) return;
             if (renderingData.cameraData.cameraType != CameraType.Game) return;
 
             Camera camera = renderingData.cameraData.camera;
-            if (camera == null || camera.TryGetComponent<PixelCaptureViewMarker>(out _)) return;
+            if (camera == null) return;
 
-            // Inspectorで変更した解像度を反映する。
-            _afterPass.SetResolution(
+            // Near / Middle / FarのCapture Cameraには適用しない。
+            if (camera.TryGetComponent<PixelCaptureViewMarker>(out _))
+            {
+                return;
+            }
+
+            _pass.SetResolution(
                 Mathf.Max(1, _textureWidth),
                 Mathf.Max(1, _textureHeight));
 
-            renderer.EnqueuePass(_beforePass);
-            renderer.EnqueuePass(_afterPass);
+            renderer.EnqueuePass(_pass);
         }
 
         /// <summary>
-        /// 生成したMaterialを破棄する。
+        /// Renderer Featureが生成したMaterialを解放する。
         /// </summary>
         protected override void Dispose(bool disposing)
         {
             CoreUtils.Destroy(_material);
             _material = null;
+            _pass = null;
         }
 
         /// <summary>
-        /// Transparent描画前のColorを保存する。
+        /// Transparent描画、低解像度化、最終合成を管理する。
         /// </summary>
-        private sealed class BeforeTransparentPass : ScriptableRenderPass
-        {
-            public BeforeTransparentPass()
-            {
-                requiresIntermediateTexture = true;
-            }
-
-            public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
-            {
-                UniversalResourceData resourceData = frameData.Get<UniversalResourceData>();
-                if (resourceData.isActiveTargetBackBuffer) return;
-
-                TextureHandle source = resourceData.activeColorTexture;
-                if (!source.IsValid()) return;
-
-                TextureDesc descriptor = renderGraph.GetTextureDesc(source);
-                descriptor.name = "PixelEffectBeforeTransparent";
-                descriptor.clearBuffer = false;
-                descriptor.msaaSamples = MSAASamples.None;
-                descriptor.depthBufferBits = DepthBits.None;
-
-                TextureHandle beforeColor = renderGraph.CreateTexture(descriptor);
-
-                renderGraph.AddBlitPass(
-                    source,
-                    beforeColor,
-                    Vector2.one,
-                    Vector2.zero,
-                    passName: "Pixel Effect Save Before Transparent");
-
-                PixelTransparentFrameData transparentData =
-                    frameData.GetOrCreate<PixelTransparentFrameData>();
-
-                transparentData.BeforeColor = beforeColor;
-            }
-        }
-
-        /// <summary>
-        /// Transparent描画後の色差分を指定解像度でドット化する。
-        /// </summary>
-        private sealed class AfterTransparentPass : ScriptableRenderPass
+        private sealed class TransparentPixelationPass : ScriptableRenderPass
         {
             private readonly Material _material;
+            private readonly List<ShaderTagId> _shaderTags;
+
+            private readonly int _blackTextureId;
+            private readonly int _whiteTextureId;
+            private readonly int _effectTextureId;
+            private readonly int _texelSizeId;
 
             private int _textureWidth;
             private int _textureHeight;
 
+            private sealed class DrawPassData
+            {
+                public RendererListHandle RendererList;
+                public Color ClearColor;
+            }
+
             private sealed class ExtractPassData
             {
                 public Material Material;
-                public TextureHandle BeforeColor;
-                public TextureHandle AfterColor;
-                public Vector4 LowResTexelSize;
+                public Vector4 TexelSize;
+                public int TexelSizeId;
             }
 
             private sealed class CompositePassData
             {
                 public Material Material;
-                public TextureHandle BeforeColor;
-                public TextureHandle DeltaColor;
+                public TextureHandle OpaqueColor;
             }
 
-            public AfterTransparentPass(Material material, int textureWidth, int textureHeight)
+            public TransparentPixelationPass(
+                Material material,
+                List<ShaderTagId> shaderTags,
+                int blackTextureId,
+                int whiteTextureId,
+                int effectTextureId,
+                int texelSizeId)
             {
                 _material = material;
-                _textureWidth = textureWidth;
-                _textureHeight = textureHeight;
+                _shaderTags = shaderTags;
+
+                _blackTextureId = blackTextureId;
+                _whiteTextureId = whiteTextureId;
+                _effectTextureId = effectTextureId;
+                _texelSizeId = texelSizeId;
 
                 requiresIntermediateTexture = true;
             }
 
             /// <summary>
-            /// 差分を保存するRenderTextureの解像度を設定する。
+            /// 透明エフェクトのドット化解像度を設定する。
             /// </summary>
-            public void SetResolution(int textureWidth, int textureHeight)
+            public void SetResolution(int width, int height)
             {
-                _textureWidth = Mathf.Max(1, textureWidth);
-                _textureHeight = Mathf.Max(1, textureHeight);
+                _textureWidth = Mathf.Max(1, width);
+                _textureHeight = Mathf.Max(1, height);
             }
 
             /// <summary>
-            /// Render Graphへ差分抽出と最終合成を登録する。
+            /// Render Graphに各描画Passを登録する。
             /// </summary>
-            public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
+            public override void RecordRenderGraph(
+                RenderGraph renderGraph,
+                ContextContainer frameData)
             {
-                if (_material == null || !frameData.Contains<PixelTransparentFrameData>()) return;
+                if (_material == null) return;
 
-                PixelTransparentFrameData transparentData =
-                    frameData.Get<PixelTransparentFrameData>();
+                UniversalResourceData resourceData =
+                    frameData.Get<UniversalResourceData>();
 
-                if (!transparentData.BeforeColor.IsValid()) return;
-
-                UniversalResourceData resourceData = frameData.Get<UniversalResourceData>();
                 if (resourceData.isActiveTargetBackBuffer) return;
 
-                TextureHandle afterColor = resourceData.activeColorTexture;
-                if (!afterColor.IsValid()) return;
+                TextureHandle opaqueColor = resourceData.activeColorTexture;
+                TextureHandle opaqueDepth = resourceData.activeDepthTexture;
 
-                // Inspectorで指定された解像度をそのまま使用する。
-                int width = _textureWidth;
-                int height = _textureHeight;
+                if (!opaqueColor.IsValid() || !opaqueDepth.IsValid()) return;
 
-                // Transparentの差分を保存する低解像度RTを生成する。
-                TextureDesc descriptor = renderGraph.GetTextureDesc(afterColor);
+                UniversalRenderingData renderingData =
+                    frameData.Get<UniversalRenderingData>();
 
-                descriptor.name = "PixelEffectLowResolutionDelta";
-                descriptor.width = width;
-                descriptor.height = height;
-                descriptor.format = GraphicsFormat.R16G16B16A16_SFloat;
-                descriptor.clearBuffer = false;
-                descriptor.msaaSamples = MSAASamples.None;
-                descriptor.depthBufferBits = DepthBits.None;
-                descriptor.filterMode = FilterMode.Point;
+                UniversalCameraData cameraData =
+                    frameData.Get<UniversalCameraData>();
 
-                TextureHandle deltaColor = renderGraph.CreateTexture(descriptor);
+                UniversalLightData lightData =
+                    frameData.Get<UniversalLightData>();
 
-                // Transparent描画前後の差分を指定解像度RTへ書き出す。
+                // GameObject LayerやRendering Layerによる絞り込みは行わない。
+                // Render QueueがTransparentのオブジェクトを対象にする。
+                FilteringSettings filteringSettings = new FilteringSettings(
+                    RenderQueueRange.transparent,
+                    -1);
+
+                DrawingSettings drawingSettings =
+                    RenderingUtils.CreateDrawingSettings(
+                        _shaderTags,
+                        renderingData,
+                        cameraData,
+                        lightData,
+                        SortingCriteria.CommonTransparent);
+
+                RendererListParams rendererListParams = new RendererListParams(
+                    renderingData.cullResults,
+                    drawingSettings,
+                    filteringSettings);
+
+                // 黒背景用と白背景用に独立したRenderer Listを生成する。
+                // 同一RendererListHandleを複数のPassで実行してはいけない。
+                RendererListHandle blackRendererList =
+                    renderGraph.CreateRendererList(rendererListParams);
+
+                RendererListHandle whiteRendererList =
+                    renderGraph.CreateRendererList(rendererListParams);
+
+                if (!blackRendererList.IsValid() || !whiteRendererList.IsValid())
+                {
+                    return;
+                }
+
+                // Depthと同じ解像度で透明物を描画する。
+                TextureDesc fullDescriptor =
+                    renderGraph.GetTextureDesc(opaqueColor);
+
+                fullDescriptor.format = GraphicsFormat.R16G16B16A16_SFloat;
+                fullDescriptor.msaaSamples = MSAASamples.None;
+                fullDescriptor.depthBufferBits = DepthBits.None;
+                fullDescriptor.clearBuffer = false;
+
+                // 黒背景への透明描画先。
+                fullDescriptor.name = "PixelEffectBlack";
+
+                TextureHandle blackColor =
+                    renderGraph.CreateTexture(fullDescriptor);
+
+                // 白背景への透明描画先。
+                fullDescriptor.name = "PixelEffectWhite";
+
+                TextureHandle whiteColor =
+                    renderGraph.CreateTexture(fullDescriptor);
+
+                // 黒背景へTransparentを描画する。
+                AddDrawPass(
+                    renderGraph,
+                    blackRendererList,
+                    opaqueDepth,
+                    blackColor,
+                    Color.black,
+                    _blackTextureId,
+                    "Pixel Effect Draw Black");
+
+                // 白背景へTransparentを描画する。
+                AddDrawPass(
+                    renderGraph,
+                    whiteRendererList,
+                    opaqueDepth,
+                    whiteColor,
+                    Color.white,
+                    _whiteTextureId,
+                    "Pixel Effect Draw White");
+
+                // Color ContributionとTransmittanceの保存先を作成する。
+                TextureDesc effectDescriptor = fullDescriptor;
+
+                effectDescriptor.name = "PixelEffectLowResolution";
+                effectDescriptor.width = _textureWidth;
+                effectDescriptor.height = _textureHeight;
+                effectDescriptor.filterMode = FilterMode.Point;
+
+                TextureHandle effectColor =
+                    renderGraph.CreateTexture(effectDescriptor);
+
+                // 黒背景・白背景の結果を指定解像度へ縮小する。
                 using (var builder = renderGraph.AddRasterRenderPass<ExtractPassData>(
-                    "Pixel Effect Extract Low Resolution Delta",
+                    "Pixel Effect Extract",
                     out var passData))
                 {
                     passData.Material = _material;
-                    passData.BeforeColor = transparentData.BeforeColor;
-                    passData.AfterColor = afterColor;
+                    passData.TexelSize = new Vector4(
+                        1f / _textureWidth,
+                        1f / _textureHeight,
+                        _textureWidth,
+                        _textureHeight);
+                    passData.TexelSizeId = _texelSizeId;
 
-                    passData.LowResTexelSize = new Vector4(
-                        1f / width,
-                        1f / height,
-                        width,
-                        height);
+                    builder.UseTexture(blackColor, AccessFlags.Read);
+                    builder.UseTexture(whiteColor, AccessFlags.Read);
 
-                    builder.UseTexture(passData.BeforeColor, AccessFlags.Read);
-                    builder.UseTexture(passData.AfterColor, AccessFlags.Read);
+                    builder.SetRenderAttachment(
+                        effectColor,
+                        0,
+                        AccessFlags.Write);
 
-                    builder.SetRenderAttachment(deltaColor, 0, AccessFlags.Write);
+                    // 後続の合成Passで参照できるようにする。
+                    builder.SetGlobalTextureAfterPass(
+                        effectColor,
+                        _effectTextureId);
 
-                    builder.SetRenderFunc(static (ExtractPassData data, RasterGraphContext context) =>
+                    builder.AllowGlobalStateModification(true);
+
+                    builder.SetRenderFunc(static (
+                        ExtractPassData data,
+                        RasterGraphContext context) =>
                     {
-                        data.Material.SetTexture(BEFORE_TEX_ID, data.BeforeColor);
-                        data.Material.SetTexture(AFTER_TEX_ID, data.AfterColor);
-                        data.Material.SetVector(LOW_RES_TEXEL_SIZE_ID, data.LowResTexelSize);
-                        data.Material.SetVector(BLIT_SCALE_BIAS_ID, new Vector4(1f, 1f, 0f, 0f));
-                        data.Material.SetFloat(BLIT_MIP_LEVEL_ID, 0f);
+                        // エフェクトの低解像度RTに対応したサンプリング間隔を設定する。
+                        data.Material.SetVector(
+                            data.TexelSizeId,
+                            data.TexelSize);
 
+                        // Blit.hlslのVert関数が使用するUV変換を設定する。
+                        data.Material.SetVector(
+                            "_BlitScaleBias",
+                            new Vector4(1f, 1f, 0f, 0f));
+
+                        data.Material.SetFloat("_BlitMipLevel", 0f);
+
+                        // 入力テクスチャを必要としないフルスクリーン描画。
                         context.cmd.DrawProcedural(
                             Matrix4x4.identity,
                             data.Material,
@@ -242,34 +336,110 @@ namespace Project.Rendering.Pixel
                     });
                 }
 
-                // ドット化した差分を元のOpaque Colorへ合成する。
+                // Opaqueと同じ解像度の最終Colorを作成する。
+                TextureDesc outputDescriptor =
+                    renderGraph.GetTextureDesc(opaqueColor);
+
+                outputDescriptor.name = "PixelEffectComposite";
+                outputDescriptor.clearBuffer = false;
+                outputDescriptor.msaaSamples = MSAASamples.None;
+                outputDescriptor.depthBufferBits = DepthBits.None;
+
+                TextureHandle outputColor =
+                    renderGraph.CreateTexture(outputDescriptor);
+
+                // 元のOpaqueへ低解像度の透明エフェクトを合成する。
                 using (var builder = renderGraph.AddRasterRenderPass<CompositePassData>(
                     "Pixel Effect Composite",
                     out var passData))
                 {
                     passData.Material = _material;
-                    passData.BeforeColor = transparentData.BeforeColor;
-                    passData.DeltaColor = deltaColor;
+                    passData.OpaqueColor = opaqueColor;
 
-                    builder.UseTexture(passData.BeforeColor, AccessFlags.Read);
-                    builder.UseTexture(passData.DeltaColor, AccessFlags.Read);
+                    builder.UseTexture(
+                        opaqueColor,
+                        AccessFlags.Read);
 
-                    builder.SetRenderAttachment(afterColor, 0, AccessFlags.Write);
+                    builder.UseTexture(
+                        effectColor,
+                        AccessFlags.Read);
 
-                    builder.SetRenderFunc(static (CompositePassData data, RasterGraphContext context) =>
+                    builder.SetRenderAttachment(
+                        outputColor,
+                        0,
+                        AccessFlags.Write);
+
+                    builder.SetRenderFunc(static (
+                        CompositePassData data,
+                        RasterGraphContext context) =>
                     {
-                        data.Material.SetTexture(BEFORE_TEX_ID, data.BeforeColor);
-                        data.Material.SetTexture(DELTA_TEX_ID, data.DeltaColor);
-                        data.Material.SetVector(BLIT_SCALE_BIAS_ID, new Vector4(1f, 1f, 0f, 0f));
-                        data.Material.SetFloat(BLIT_MIP_LEVEL_ID, 0f);
-
-                        context.cmd.DrawProcedural(
-                            Matrix4x4.identity,
+                        // _BlitTextureには元のOpaque Colorを設定する。
+                        Blitter.BlitTexture(
+                            context.cmd,
+                            data.OpaqueColor,
+                            new Vector4(1f, 1f, 0f, 0f),
                             data.Material,
-                            1,
-                            MeshTopology.Triangles,
-                            3,
                             1);
+                    });
+                }
+
+                // 後続のURP描画処理が合成後のColorを使用する。
+                resourceData.cameraColor = outputColor;
+            }
+
+            /// <summary>
+            /// 元のMaterialのBlend設定で透明オブジェクトを描画する。
+            /// </summary>
+            private static void AddDrawPass(
+                RenderGraph renderGraph,
+                RendererListHandle rendererList,
+                TextureHandle depth,
+                TextureHandle color,
+                Color clearColor,
+                int globalTextureId,
+                string passName)
+            {
+                using (var builder = renderGraph.AddRasterRenderPass<DrawPassData>(
+                    passName,
+                    out var passData))
+                {
+                    passData.RendererList = rendererList;
+                    passData.ClearColor = clearColor;
+
+                    builder.UseRendererList(rendererList);
+
+                    builder.SetRenderAttachment(
+                        color,
+                        0,
+                        AccessFlags.Write);
+
+                    // 統合後のOpaque Depthを変更せずに参照する。
+                    builder.SetRenderAttachmentDepth(
+                        depth,
+                        AccessFlags.Read);
+
+                    // ライト・影などのグローバルテクスチャを利用可能にする。
+                    builder.UseAllGlobalTextures(true);
+
+                    // 描画したRTを後続のPassから参照できるようにする。
+                    builder.SetGlobalTextureAfterPass(
+                        color,
+                        globalTextureId);
+
+                    builder.AllowGlobalStateModification(true);
+
+                    builder.SetRenderFunc(static (
+                        DrawPassData data,
+                        RasterGraphContext context) =>
+                    {
+                        // Colorのみクリアする。Depthはクリアしない。
+                        context.cmd.ClearRenderTarget(
+                            RTClearFlags.Color,
+                            data.ClearColor,
+                            1f,
+                            0);
+
+                        context.cmd.DrawRendererList(data.RendererList);
                     });
                 }
             }

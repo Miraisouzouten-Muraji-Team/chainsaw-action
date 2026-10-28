@@ -20,11 +20,17 @@ MonoBehaviour:
   jumpForce: 35
   airJumpForce: 37.5
   coyoteTime: 0.1
-  gravityScale: 8
+  gravityScale: 10
   jumpStartGravityMultiplier: 0.7
-  maxFallGravityMultiplier: 1.75
+  maxFallGravityMultiplier: 2
   fallGravityIncreaseTime: 0.9
-  maxFallSpeed: 20
+  maxFallSpeed: 40
+  jumpLaunchImpulse: 7
+  airJumpLaunchImpulse: 5
+  jumpHoldMaxSeconds: 0
+  jumpHoldGravityScale: 0.05
+  jumpReleaseSpeedRatio: 0.9
+  jumpFallGravityScale: 1
   groundRayLayers:
     serializedVersion: 2
     m_Bits: 1
@@ -36,7 +42,7 @@ MonoBehaviour:
   slopeGroundSnapDistance: 0.1
   slopeGroundStickSpeed: 1
   slopeGroundProbeDistance: 0.2
-  wallKnockbackSpeed: 8
+  wallKnockbackSpeed: 0
   wallKnockbackDeceleration: 20
   wallKnockbackUpwardForce: 7
   diggingImpactStunDuration: 0.15

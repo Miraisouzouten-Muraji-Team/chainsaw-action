@@ -52,6 +52,20 @@ public class PlayerParameter : ScriptableObject
     [SerializeField, Min(0.1f)]
     public float maxFallSpeed = 20f;
 
+    [Header("ジャンプの跳び出し・長押し")]
+    [Tooltip("通常ジャンプの初速に追加する上向きの力積です。質量が大きいほど追加速度は小さくなります。0で追加なし。")]
+    [SerializeField, Min(0f)] public float jumpLaunchImpulse = 5f;
+    [Tooltip("二段ジャンプの初速に追加する上向きの力積です。0で追加なし。")]
+    [SerializeField, Min(0f)] public float airJumpLaunchImpulse = 5f;
+    [Tooltip("長押しによる上昇補助を行う最大秒数です。")]
+    [SerializeField, Min(0f)] public float jumpHoldMaxSeconds = 0.2f;
+    [Tooltip("長押し補助中の上昇重力倍率です。小さいほど上へ伸びます。")]
+    [SerializeField, Range(0.05f, 1f)] public float jumpHoldGravityScale = 0.6f;
+    [Tooltip("上昇中にボタンを離した瞬間に残す上下速度の割合です。小さいほど短押しで低く跳びます。")]
+    [SerializeField, Range(0f, 1f)] public float jumpReleaseSpeedRatio = 0.5f;
+    [Tooltip("通常・二段ジャンプ後の落下重力倍率です。1より小さいと落下加速が緩やかになります。")]
+    [SerializeField, Range(0.05f, 1f)] public float jumpFallGravityScale = 0.75f;
+
     [Header("ジャンプ：3本Ray接地判定")]
     [Tooltip("接地を判定する地形レイヤー。Nothingなら食い込み衝突判定の地形レイヤーを使用します。")]
     public LayerMask groundRayLayers;

@@ -26,6 +26,22 @@ MonoBehaviour:
     BlurQuality: 0
     Falloff: 100
     SampleCount: -1
+--- !u!114 &-2936922619579999956
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b5ab390f138ab9f4a8038dabed5fdbbc, type: 3}
+  m_Name: PixelTransparentPixelationRendererFeature
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelTransparentPixelationRendererFeature
+  m_Active: 1
+  _pixelationShader: {fileID: 4800000, guid: 2b5efd115cf27dc42922a568b614c4b9, type: 3}
+  _textureWidth: 640
+  _textureHeight: 360
 --- !u!114 &-41158547223072018
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -67,10 +83,11 @@ MonoBehaviour:
   m_RendererFeatures:
   - {fileID: 2741325399967955328}
   - {fileID: 2482062767438460493}
+  - {fileID: -2936922619579999956}
   - {fileID: -5791863826025335512}
   - {fileID: 8704333894310543206}
   - {fileID: -41158547223072018}
-  m_RendererFeatureMap: 8079d856ed240b264d7664bbef0e72222835536e892a9faf66bfc5308f01cc78ee324cf584c66dff
+  m_RendererFeatureMap: 8079d856ed240b264d7664bbef0e72222cd91f1f70f43dd72835536e892a9faf66bfc5308f01cc78ee324cf584c66dff
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -83,7 +100,7 @@ MonoBehaviour:
     m_Bits: 0
   m_TransparentLayerMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 0
   m_DefaultStencilState:
     overrideStencilState: 0
     stencilReference: 0

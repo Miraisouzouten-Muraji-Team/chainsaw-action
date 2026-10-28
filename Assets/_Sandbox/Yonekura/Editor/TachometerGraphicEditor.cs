@@ -2,12 +2,12 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// GlowArcGraphicのInspector表示をカスタマイズする。
+/// TachometerGraphicのInspector表示をカスタマイズする。
 /// </summary>
 [CustomEditor(typeof(TachometerGraphic))]
-public class GlowArcGraphicEditor : Editor
+public class TachometerGraphicEditor : Editor
 {
-    // GlowArcGraphicのシリアライズされた設定項目
+    // TachometerGraphicのシリアライズされた設定項目
     private SerializedProperty arcMaterial;
     private SerializedProperty startAngle;
     private SerializedProperty endAngle;
@@ -18,7 +18,7 @@ public class GlowArcGraphicEditor : Editor
 
     private void OnEnable()
     {
-        // GlowArcGraphicの各フィールドを取得する
+        // 各フィールドを取得する
         arcMaterial = serializedObject.FindProperty("arcMaterial");
         startAngle = serializedObject.FindProperty("startAngle");
         endAngle = serializedObject.FindProperty("endAngle");
@@ -30,7 +30,6 @@ public class GlowArcGraphicEditor : Editor
 
     public override void OnInspectorGUI()
     {
-        // Inspector上の変更を読み込む
         serializedObject.Update();
 
         // マテリアル設定
@@ -45,16 +44,20 @@ public class GlowArcGraphicEditor : Editor
 
         EditorGUILayout.Space();
 
-        // 色設定リストを表示する
-        EditorGUILayout.PropertyField(
-            colorStops,
-            new GUIContent("Color Stops"),
-            false
-        );
+        // 色設定
+        EditorGUILayout.LabelField("色設定", EditorStyles.boldLabel);
 
-        if (colorStops.isExpanded)
+        if (colorStops == null)
         {
-            EditorGUI.indentLevel++;
+            EditorGUILayout.HelpBox(
+                "colorStopsを取得できませんでした。フィールド名を確認してください。",
+                MessageType.Error
+            );
+        }
+        else
+        {
+            // 色設定は常に展開して表示する
+            colorStops.isExpanded = true;
 
             // Elementの追加・削除を可能にする
             for (int i = 0; i < colorStops.arraySize; i++)
@@ -74,9 +77,7 @@ public class GlowArcGraphicEditor : Editor
                 SerializedProperty gradientWidth =
                     element.FindPropertyRelative("gradientWidth");
 
-                EditorGUILayout.BeginVertical(
-                    EditorStyles.helpBox
-                );
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
                 EditorGUILayout.LabelField(
                     $"Element {i}",
@@ -104,16 +105,17 @@ public class GlowArcGraphicEditor : Editor
                     }
                 }
 
-                // 各Elementを削除する
-                if (GUILayout.Button("Elementを削除"))
-                {
-                    colorStops.DeleteArrayElementAtIndex(i);
-                    EditorGUILayout.EndVertical();
-                    break;
-                }
+                // 削除ボタンが押されたら、配列からElementを削除する
+                bool deleteElement = GUILayout.Button("Elementを削除");
 
                 EditorGUILayout.EndVertical();
                 EditorGUILayout.Space();
+
+                if (deleteElement)
+                {
+                    colorStops.DeleteArrayElementAtIndex(i);
+                    break;
+                }
             }
 
             // Elementを追加する
@@ -130,8 +132,6 @@ public class GlowArcGraphicEditor : Editor
                 newElement.FindPropertyRelative("gradientFromPrevious").boolValue = false;
                 newElement.FindPropertyRelative("gradientWidth").floatValue = 0.03f;
             }
-
-            EditorGUI.indentLevel--;
         }
 
         EditorGUILayout.Space();

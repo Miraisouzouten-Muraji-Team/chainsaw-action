@@ -16,7 +16,7 @@ public class TachometerGraphic : MaskableGraphic
     [Serializable]
     public class ColorStop
     {
-        [Tooltip("この色を適用する位置。0が円弧の開始位置、1が終了位置です。")]
+        [Tooltip("この色を適用する範囲。0が円弧の開始位置、1が終了位置です。")]
         [Range(0f, 1f)]
         public float position;
 
@@ -51,14 +51,14 @@ public class TachometerGraphic : MaskableGraphic
 
     [Header("Tachometer設定")]
     [Tooltip("Tachometerの開始角度。Shader Graph側では真下を0度として時計回りに角度を計算します。")]
-    [SerializeField] private float startAngle = 130f;
+    [SerializeField] private float startAngle = 0f;
 
     [Tooltip("Tachometerの終了角度。開始角度からの描画範囲を決定します。")]
-    [SerializeField] private float endAngle = 0f;
+    [SerializeField] private float endAngle = 250f;
 
     [Tooltip("Tachometerの太さ。値を大きくするとリングが太くなります。")]
     [SerializeField, Range(0.001f, 0.5f)]
-    private float thickness = 0.08f;
+    private float thickness = 0.12f;
 
     [Header("色設定")]
     [Tooltip("Tachometerの色を設定。追加要素で色を増やせ、後から追加したElementほど、指定Positionより左側の色を上書きします。")]
@@ -68,13 +68,13 @@ public class TachometerGraphic : MaskableGraphic
         new ColorStop
         {
             position = 0f,
-            color = Color.blue,
+            color = Color.yellow,
             gradientFromPrevious = false
         },
         new ColorStop
         {
             position = 0.8f,
-            color = Color.yellow,
+            color = Color.blue,
             gradientFromPrevious = false
         }
     };

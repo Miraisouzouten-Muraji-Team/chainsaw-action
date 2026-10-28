@@ -10,7 +10,7 @@ public class AutoRecoveryBarGraphic : BaseBarGraphic
         Shader.PropertyToID("_HPColor");
 
     [InspectorName("Recovery Color")]
-    [SerializeField] private Color recoveryColor = Color.green;
+    [SerializeField] private Color recoveryColor = Color.cyan;
 
     /// <summary>
     /// 回復バー固有の色設定をマテリアルに反映する。

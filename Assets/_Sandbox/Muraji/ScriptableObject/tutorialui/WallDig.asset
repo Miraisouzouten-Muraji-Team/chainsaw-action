@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e3899f69d9f93a14f895ecb2a5b8f7cd, type: 3}
+  m_Name: WallDig
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialDefinition
+  mode: 0
+  fadeSeconds: 0.5
+  pages:
+  - title: "\u58C1\u98DF\u3044\u8FBC\u307F"
+    description: "\u58C1\u969B\u3067ZL\u30921\u56DE\u62BC\u3057\u3066\u98DF\u3044\u8FBC\u307F\u307E\u3059\u3002\u30B8\u30E3\u30F3\u30D7\u304B\u3089\u3082\u98DF\u3044\u8FBC\u3081\u307E\u3059\u3002"
+    demo: 5
+    buttonLabel: ZL
+    illustration: {fileID: 0}
+    animationFrames: []
+    alternateAnimationFrames: []
+    triggerPressDuration: 0.08
+    cycleSeconds: 3
+    firstPress: 0.3
+    secondPress: 0.38
+    landing: 0.75
+    customRelease: 0.7

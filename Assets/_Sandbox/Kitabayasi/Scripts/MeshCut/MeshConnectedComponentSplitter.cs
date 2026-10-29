@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Generic;
 using Unity.Profiling;
 using UnityEngine;
@@ -45,6 +46,60 @@ public sealed class MeshConnectedComponentSplitter
     private const float POSITION_EPSILON_RATIO = 0.00001f;
     private const float MIN_POSITION_EPSILON = 0.000001f;
     private const double POSITION_CELL_SIZE_EPSILON_MULTIPLIER = 2.0;
+
+    // 1体目と2体目以降のBuildComponentMesh Allocation差分を起動時へ移すための調整値。
+    // Enemy頂点数の上限ではなく、Profiler結果に応じてこの1箇所だけを調整する。
+    private const int COMPONENT_MESH_SCRATCH_LIST_WARMUP_CAPACITY = 65536;
+
+    // UnityEngine.Pool.ListPool<T>へ返すとuGUI等の別システムが同じListを取得できるため、
+    // BuildComponentMesh専用のScratch Bufferはこのクラスが所有し続ける。
+    // 現在の呼び出しは同期Main Thread上で完結し、同時・再入実行しないことを前提とする。
+    private static readonly List<Vector3> componentVerticesScratch =
+        new List<Vector3>();
+
+    private static readonly List<Vector3> componentNormalsScratch =
+        new List<Vector3>();
+
+    private static readonly List<Vector2> componentUvScratch =
+        new List<Vector2>();
+
+    private static readonly List<Vector4> componentTangentsScratch =
+        new List<Vector4>();
+
+    private static bool isComponentMeshScratchInUse;
+
+    // SubMesh別Triangle Listは現在のSplitter内で再利用する。
+    // 内側ListまでPool化すると返却責務が複雑になるため、今回のEnemy間Pool化対象には含めない。
+    private readonly List<List<int>> componentTrianglesBySubMesh =
+        new List<List<int>>();
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void WarmUpComponentMeshScratchBuffers()
+    {
+        isComponentMeshScratchInUse = false;
+
+        componentVerticesScratch.Clear();
+        componentNormalsScratch.Clear();
+        componentUvScratch.Clear();
+        componentTangentsScratch.Clear();
+
+        // 初回Enemy死亡フレームへ集中していたBacking Arrayの拡張Allocationを
+        // Scene内MonoBehaviourのAwakeより前へ移し、その後も専用Scratchとして保持する。
+        EnsureWarmupCapacity(componentVerticesScratch);
+        EnsureWarmupCapacity(componentNormalsScratch);
+        EnsureWarmupCapacity(componentUvScratch);
+        EnsureWarmupCapacity(componentTangentsScratch);
+    }
+
+    private static void EnsureWarmupCapacity<T>(List<T> list)
+    {
+        // 既により大きなCapacityまで成長済みの場合は縮小しない。
+        // 現在のUnity/C# API互換範囲ではEnsureCapacityを使わず、同じ目的をCapacityで満たす。
+        if (list.Capacity < COMPONENT_MESH_SCRATCH_LIST_WARMUP_CAPACITY)
+        {
+            list.Capacity = COMPONENT_MESH_SCRATCH_LIST_WARMUP_CAPACITY;
+        }
+    }
 
     /// <summary>
     /// 入力Meshを連結成分単位のMeshへ分離する。
@@ -166,7 +221,7 @@ public sealed class MeshConnectedComponentSplitter
         }
     }
 
-    private static bool TrySplitReadData(
+    private bool TrySplitReadData(
         string meshNamePrefix,
         Bounds sourceBounds,
         IReadOnlyList<Vector3> vertices,
@@ -196,158 +251,301 @@ public sealed class MeshConnectedComponentSplitter
                 BuildConnectedVertexIds(vertices, positionEpsilon);
         }
 
-        int[] parent;
-        byte[] rank;
-        Dictionary<EdgeKey, int> edgeOwners;
-        int[] firstTriangleIndexBySubMesh;
-
-        using (initializeGroupingProfilerMarker.Auto())
-        {
-            parent = new int[triangleCount];
-            rank = new byte[triangleCount];
-            edgeOwners =
-                new Dictionary<EdgeKey, int>(triangleCount * 2);
-
-            for (int i = 0; i < parent.Length; i++)
-            {
-                parent[i] = i;
-            }
-
-            firstTriangleIndexBySubMesh =
-                BuildFirstTriangleIndicesBySubMesh(trianglesBySubMesh);
-        }
-
-        int triangleIndex = 0;
-
-        using (registerEdgesProfilerMarker.Auto())
-        {
-            for (int subMeshIndex = 0;
-                 subMeshIndex < trianglesBySubMesh.Count;
-                 subMeshIndex++)
-            {
-                IReadOnlyList<int> subMeshTriangles =
-                    trianglesBySubMesh[subMeshIndex];
-
-                for (int offset = 0;
-                     offset < subMeshTriangles.Count;
-                     offset += 3)
-                {
-                    int first =
-                        connectedVertexIds[subMeshTriangles[offset]];
-
-                    int second =
-                        connectedVertexIds[subMeshTriangles[offset + 1]];
-
-                    int third =
-                        connectedVertexIds[subMeshTriangles[offset + 2]];
-
-                    RegisterSharedEdge(
-                        first,
-                        second,
-                        triangleIndex,
-                        edgeOwners,
-                        parent,
-                        rank);
-
-                    RegisterSharedEdge(
-                        second,
-                        third,
-                        triangleIndex,
-                        edgeOwners,
-                        parent,
-                        rank);
-
-                    RegisterSharedEdge(
-                        third,
-                        first,
-                        triangleIndex,
-                        edgeOwners,
-                        parent,
-                        rank);
-
-                    triangleIndex++;
-                }
-            }
-        }
-
-        Dictionary<int, List<int>> triangleIndicesByRoot;
-        List<int> componentRoots;
-
-        using (groupRootsProfilerMarker.Auto())
-        {
-            triangleIndicesByRoot =
-                new Dictionary<int, List<int>>();
-
-            componentRoots =
-                new List<int>();
-
-            for (triangleIndex = 0;
-                 triangleIndex < triangleCount;
-                 triangleIndex++)
-            {
-                int root =
-                    FindRoot(parent, triangleIndex);
-
-                if (!triangleIndicesByRoot.TryGetValue(
-                        root,
-                        out List<int> componentTriangleIndices))
-                {
-                    componentTriangleIndices =
-                        new List<int>();
-
-                    triangleIndicesByRoot.Add(
-                        root,
-                        componentTriangleIndices);
-
-                    // Triangle走査順を保持してComponent名と生成順を決定的にする。
-                    componentRoots.Add(root);
-                }
-
-                componentTriangleIndices.Add(triangleIndex);
-            }
-        }
-
-        for (int componentIndex = 0;
-             componentIndex < componentRoots.Count;
-             componentIndex++)
-        {
-            Mesh componentMesh =
-                BuildComponentMesh(
-                    meshNamePrefix,
-                    componentIndex,
-                    triangleIndicesByRoot[
-                        componentRoots[componentIndex]],
-                    trianglesBySubMesh,
-                    firstTriangleIndexBySubMesh,
-                    vertices,
-                    normals,
-                    uv,
-                    tangents,
-                    hasTangents);
-
-            if (componentMesh == null)
-            {
-                DestroyMeshes(componentMeshes);
-                componentMeshes.Clear();
-
-                failureReason =
-                    "連結成分から有効なMeshを生成できませんでした。";
-                return false;
-            }
-
-            componentMeshes.Add(componentMesh);
-        }
-
-        if (componentMeshes.Count == 0)
+        if (!TryCalculateEdgeTableCapacity(
+                triangleCount,
+                out int edgeTableCapacity))
         {
             failureReason =
-                "連結成分が1つも検出されませんでした。";
+                "Connected Component用Edge TableのCapacityを安全に確保できません。";
             return false;
         }
 
-        failureReason = null;
-        return true;
-    
+        int[] parent = null;
+        byte[] rank = null;
+        ulong[] edgeKeys = null;
+        int[] edgeOwnerTriangles = null;
+        byte[] edgeOccupied = null;
+        int[] firstTriangleIndexBySubMesh = null;
+        int[] rootToComponent = null;
+        int[] componentIndexByTriangle = null;
+        int[] componentCounts = null;
+        int[] componentStarts = null;
+        int[] componentWriteCursor = null;
+        int[] groupedTriangleIndices = null;
+        int[] destinationVertexIndexBySourceVertexIndex = null;
+        int[] destinationVertexGenerationBySourceVertexIndex = null;
+        List<Vector3> componentVertices = componentVerticesScratch;
+        List<Vector3> componentNormals = componentNormalsScratch;
+        List<Vector2> componentUv = componentUvScratch;
+        List<Vector4> componentTangents = componentTangentsScratch;
+
+        if (isComponentMeshScratchInUse)
+        {
+            failureReason =
+                "BuildComponentMesh用Scratch Bufferが既に使用中です。" +
+                " MeshConnectedComponentSplitterは同期・非再入呼び出しを前提としています。";
+            return false;
+        }
+
+        isComponentMeshScratchInUse = true;
+
+        try
+        {
+            using (initializeGroupingProfilerMarker.Auto())
+            {
+                // 大きな一時配列をEnemy死亡ごとにnewせず、共有Poolから借りて再利用する。
+                parent = ArrayPool<int>.Shared.Rent(triangleCount);
+                rank = ArrayPool<byte>.Shared.Rent(triangleCount);
+                edgeKeys = ArrayPool<ulong>.Shared.Rent(edgeTableCapacity);
+                edgeOwnerTriangles = ArrayPool<int>.Shared.Rent(edgeTableCapacity);
+                edgeOccupied = ArrayPool<byte>.Shared.Rent(edgeTableCapacity);
+                firstTriangleIndexBySubMesh =
+                    ArrayPool<int>.Shared.Rent(trianglesBySubMesh.Count + 1);
+                rootToComponent = ArrayPool<int>.Shared.Rent(triangleCount);
+                componentIndexByTriangle =
+                    ArrayPool<int>.Shared.Rent(triangleCount);
+                componentCounts = ArrayPool<int>.Shared.Rent(triangleCount);
+                componentStarts = ArrayPool<int>.Shared.Rent(triangleCount);
+                componentWriteCursor =
+                    ArrayPool<int>.Shared.Rent(triangleCount);
+                groupedTriangleIndices =
+                    ArrayPool<int>.Shared.Rent(triangleCount);
+                destinationVertexIndexBySourceVertexIndex =
+                    ArrayPool<int>.Shared.Rent(vertices.Count);
+                destinationVertexGenerationBySourceVertexIndex =
+                    ArrayPool<int>.Shared.Rent(vertices.Count);
+
+                // Pool配列は前回値を保持し得るため、アルゴリズムが初期値に依存する使用範囲だけ初期化する。
+                for (int i = 0; i < triangleCount; i++)
+                {
+                    parent[i] = i;
+                    rank[i] = 0;
+                    rootToComponent[i] = -1;
+                    componentCounts[i] = 0;
+                }
+
+                Array.Clear(edgeOccupied, 0, edgeTableCapacity);
+                Array.Clear(
+                    destinationVertexGenerationBySourceVertexIndex,
+                    0,
+                    vertices.Count);
+
+                FillFirstTriangleIndicesBySubMesh(
+                    trianglesBySubMesh,
+                    firstTriangleIndexBySubMesh);
+            }
+
+            int triangleIndex = 0;
+            int edgeTableMask = edgeTableCapacity - 1;
+
+            using (registerEdgesProfilerMarker.Auto())
+            {
+                for (int subMeshIndex = 0;
+                     subMeshIndex < trianglesBySubMesh.Count;
+                     subMeshIndex++)
+                {
+                    IReadOnlyList<int> subMeshTriangles =
+                        trianglesBySubMesh[subMeshIndex];
+
+                    for (int offset = 0;
+                         offset < subMeshTriangles.Count;
+                         offset += 3)
+                    {
+                        int first =
+                            connectedVertexIds[subMeshTriangles[offset]];
+
+                        int second =
+                            connectedVertexIds[subMeshTriangles[offset + 1]];
+
+                        int third =
+                            connectedVertexIds[subMeshTriangles[offset + 2]];
+
+                        if (!RegisterSharedEdge(
+                                first,
+                                second,
+                                triangleIndex,
+                                edgeKeys,
+                                edgeOwnerTriangles,
+                                edgeOccupied,
+                                edgeTableCapacity,
+                                edgeTableMask,
+                                parent,
+                                rank) ||
+                            !RegisterSharedEdge(
+                                second,
+                                third,
+                                triangleIndex,
+                                edgeKeys,
+                                edgeOwnerTriangles,
+                                edgeOccupied,
+                                edgeTableCapacity,
+                                edgeTableMask,
+                                parent,
+                                rank) ||
+                            !RegisterSharedEdge(
+                                third,
+                                first,
+                                triangleIndex,
+                                edgeKeys,
+                                edgeOwnerTriangles,
+                                edgeOccupied,
+                                edgeTableCapacity,
+                                edgeTableMask,
+                                parent,
+                                rank))
+                        {
+                            failureReason =
+                                "Connected Component用Edge Tableに空きSlotがありません。";
+                            return false;
+                        }
+
+                        triangleIndex++;
+                    }
+                }
+            }
+
+            int componentCount = 0;
+
+            using (groupRootsProfilerMarker.Auto())
+            {
+                for (triangleIndex = 0;
+                     triangleIndex < triangleCount;
+                     triangleIndex++)
+                {
+                    int root =
+                        FindRoot(parent, triangleIndex);
+
+                    int componentIndex =
+                        rootToComponent[root];
+
+                    if (componentIndex < 0)
+                    {
+                        // 旧実装と同じく、Global Triangle Index走査でRootを最初に見つけた順をComponent順にする。
+                        componentIndex = componentCount;
+                        rootToComponent[root] = componentIndex;
+                        componentCount++;
+                    }
+
+                    componentIndexByTriangle[triangleIndex] =
+                        componentIndex;
+                    componentCounts[componentIndex]++;
+                }
+
+                int groupedWriteStart = 0;
+
+                for (int componentIndex = 0;
+                     componentIndex < componentCount;
+                     componentIndex++)
+                {
+                    componentStarts[componentIndex] =
+                        groupedWriteStart;
+                    componentWriteCursor[componentIndex] =
+                        groupedWriteStart;
+                    groupedWriteStart +=
+                        componentCounts[componentIndex];
+                }
+
+                // Global Triangle Index昇順で書き込むことで、各Component内部のTriangle順も旧実装と一致させる。
+                for (triangleIndex = 0;
+                     triangleIndex < triangleCount;
+                     triangleIndex++)
+                {
+                    int componentIndex =
+                        componentIndexByTriangle[triangleIndex];
+
+                    groupedTriangleIndices[
+                        componentWriteCursor[componentIndex]++] =
+                        triangleIndex;
+                }
+            }
+
+            componentMeshes.Capacity = componentCount;
+
+            PrepareComponentMeshScratchBuffers(
+                trianglesBySubMesh.Count,
+                componentVertices,
+                componentNormals,
+                componentUv,
+                componentTangents);
+
+            // Source Vertex Indexは0..Count-1の連続整数なのでHash Dictionaryを使わず直接参照する。
+            // Generation配列によりComponent切替時の全配列初期化を不要にする。
+            for (int componentIndex = 0;
+                 componentIndex < componentCount;
+                 componentIndex++)
+            {
+                Mesh componentMesh =
+                    BuildComponentMesh(
+                        meshNamePrefix,
+                        componentIndex,
+                        groupedTriangleIndices,
+                        componentStarts[componentIndex],
+                        componentCounts[componentIndex],
+                        trianglesBySubMesh,
+                        firstTriangleIndexBySubMesh,
+                        vertices,
+                        normals,
+                        uv,
+                        tangents,
+                        hasTangents,
+                        componentVertices,
+                        componentNormals,
+                        componentUv,
+                        componentTangents,
+                        componentTrianglesBySubMesh,
+                        destinationVertexIndexBySourceVertexIndex,
+                        destinationVertexGenerationBySourceVertexIndex);
+
+                if (componentMesh == null)
+                {
+                    DestroyMeshes(componentMeshes);
+                    componentMeshes.Clear();
+
+                    failureReason =
+                        "連結成分から有効なMeshを生成できませんでした。";
+                    return false;
+                }
+
+                componentMeshes.Add(componentMesh);
+            }
+
+            if (componentMeshes.Count == 0)
+            {
+                failureReason =
+                    "連結成分が1つも検出されませんでした。";
+                return false;
+            }
+
+            failureReason = null;
+            return true;
+        }
+        finally
+        {
+            // Return後の配列を参照しないよう、このメソッドの最後で全Scratch Bufferの所有権をPoolへ返す。
+            ReturnPooledArray(parent);
+            ReturnPooledArray(rank);
+            ReturnPooledArray(edgeKeys);
+            ReturnPooledArray(edgeOwnerTriangles);
+            ReturnPooledArray(edgeOccupied);
+            ReturnPooledArray(firstTriangleIndexBySubMesh);
+            ReturnPooledArray(rootToComponent);
+            ReturnPooledArray(componentIndexByTriangle);
+            ReturnPooledArray(componentCounts);
+            ReturnPooledArray(componentStarts);
+            ReturnPooledArray(componentWriteCursor);
+            ReturnPooledArray(groupedTriangleIndices);
+            ReturnPooledArray(destinationVertexIndexBySourceVertexIndex);
+            ReturnPooledArray(destinationVertexGenerationBySourceVertexIndex);
+
+            // Countだけを破棄し、CapacityとList自体の所有権はSplitter専用Scratchへ残す。
+            // 共有Poolへ返さないため、uGUIや他システムに事前確保済みBacking Arrayを取得されない。
+            componentVertices.Clear();
+            componentNormals.Clear();
+            componentUv.Clear();
+            componentTangents.Clear();
+            isComponentMeshScratchInUse = false;
+        }
+
         }
     }
 
@@ -540,12 +738,10 @@ public sealed class MeshConnectedComponentSplitter
         return true;
     }
 
-    private static int[] BuildFirstTriangleIndicesBySubMesh(
-        IReadOnlyList<List<int>> trianglesBySubMesh)
+    private static void FillFirstTriangleIndicesBySubMesh(
+        IReadOnlyList<List<int>> trianglesBySubMesh,
+        int[] firstTriangleIndexBySubMesh)
     {
-        var firstTriangleIndexBySubMesh =
-            new int[trianglesBySubMesh.Count + 1];
-
         int triangleIndex = 0;
 
         for (int subMeshIndex = 0;
@@ -561,8 +757,6 @@ public sealed class MeshConnectedComponentSplitter
 
         firstTriangleIndexBySubMesh[trianglesBySubMesh.Count] =
             triangleIndex;
-
-        return firstTriangleIndexBySubMesh;
     }
 
     private static bool IsValidVertexIndex(
@@ -773,99 +967,228 @@ public sealed class MeshConnectedComponentSplitter
                 : 0;
     }
 
-    private static void RegisterSharedEdge(
+    private static bool TryCalculateEdgeTableCapacity(
+        int triangleCount,
+        out int capacity)
+    {
+        const int maximumPowerOfTwoCapacity = 1 << 30;
+
+        long maximumRegisteredEdgeCount =
+            (long)triangleCount * 3L;
+
+        // 最大Unique Edge数に対してLoad Factorを2/3以下にし、Linear Probingの探索距離を抑える。
+        long minimumCapacity =
+            maximumRegisteredEdgeCount +
+            ((maximumRegisteredEdgeCount + 1L) / 2L) +
+            1L;
+
+        if (minimumCapacity > maximumPowerOfTwoCapacity)
+        {
+            capacity = 0;
+            return false;
+        }
+
+        int powerOfTwoCapacity = 1;
+
+        while (powerOfTwoCapacity < minimumCapacity)
+        {
+            powerOfTwoCapacity <<= 1;
+        }
+
+        capacity = powerOfTwoCapacity;
+        return true;
+    }
+
+    private static bool RegisterSharedEdge(
         int first,
         int second,
         int triangleIndex,
-        Dictionary<EdgeKey, int> edgeOwners,
+        ulong[] edgeKeys,
+        int[] edgeOwnerTriangles,
+        byte[] edgeOccupied,
+        int edgeTableCapacity,
+        int edgeTableMask,
         int[] parent,
         byte[] rank)
     {
         // 長さ0の辺は別Triangle同士を誤って接続する原因になるため使わない。
         if (first == second)
         {
-            return;
+            return true;
         }
 
-        var edge = new EdgeKey(first, second);
+        ulong edgeKey = PackEdgeKey(first, second);
+        int slotIndex =
+            GetEdgeHashIndex(edgeKey, edgeTableMask);
 
-        if (edgeOwners.TryGetValue(edge, out int ownerTriangleIndex))
+        for (int probeCount = 0;
+             probeCount < edgeTableCapacity;
+             probeCount++)
         {
-            Union(parent, rank, ownerTriangleIndex, triangleIndex);
-            return;
+            if (edgeOccupied[slotIndex] == 0)
+            {
+                edgeOccupied[slotIndex] = 1;
+                edgeKeys[slotIndex] = edgeKey;
+                edgeOwnerTriangles[slotIndex] = triangleIndex;
+                return true;
+            }
+
+            if (edgeKeys[slotIndex] == edgeKey)
+            {
+                // 最初のOwnerを上書きせず、Non-manifold Edgeも従来通り最初のTriangleへUnionする。
+                Union(
+                    parent,
+                    rank,
+                    edgeOwnerTriangles[slotIndex],
+                    triangleIndex);
+                return true;
+            }
+
+            slotIndex =
+                (slotIndex + 1) & edgeTableMask;
         }
 
-        edgeOwners.Add(edge, triangleIndex);
+        return false;
+    }
+
+    private static ulong PackEdgeKey(int first, int second)
+    {
+        uint minimum =
+            (uint)(first < second ? first : second);
+        uint maximum =
+            (uint)(first < second ? second : first);
+
+        return ((ulong)minimum << 32) | maximum;
+    }
+
+    private static int GetEdgeHashIndex(
+        ulong edgeKey,
+        int edgeTableMask)
+    {
+        unchecked
+        {
+            // Packed Vertex IDの上位/下位双方を混ぜ、連番IDでもLinear Probingが偏りにくいHashにする。
+            ulong hash = edgeKey;
+            hash ^= hash >> 33;
+            hash *= 0xff51afd7ed558ccdUL;
+            hash ^= hash >> 33;
+            hash *= 0xc4ceb9fe1a85ec53UL;
+            hash ^= hash >> 33;
+
+            return (int)hash & edgeTableMask;
+        }
+    }
+
+    private void PrepareComponentMeshScratchBuffers(
+        int requiredSubMeshCount,
+        List<Vector3> componentVertices,
+        List<Vector3> componentNormals,
+        List<Vector2> componentUv,
+        List<Vector4> componentTangents)
+    {
+        // 前回利用時の要素を持ち越さず、CapacityだけをEnemy間で再利用する。
+        // 起動時の事前確保を超えた場合だけ、実際に必要な分まで自然成長させる。
+        componentVertices.Clear();
+        componentNormals.Clear();
+        componentUv.Clear();
+        componentTangents.Clear();
+
+        for (int subMeshIndex = 0;
+             subMeshIndex < componentTrianglesBySubMesh.Count;
+             subMeshIndex++)
+        {
+            componentTrianglesBySubMesh[subMeshIndex].Clear();
+        }
+
+        while (componentTrianglesBySubMesh.Count < requiredSubMeshCount)
+        {
+            componentTrianglesBySubMesh.Add(new List<int>());
+        }
+    }
+
+    private static void ReturnPooledArray<T>(T[] array)
+    {
+        if (array != null)
+        {
+            ArrayPool<T>.Shared.Return(array);
+        }
     }
 
     private static Mesh BuildComponentMesh(
         string meshNamePrefix,
         int componentIndex,
-        IReadOnlyList<int> componentTriangleIndices,
+        int[] groupedTriangleIndices,
+        int componentStartIndex,
+        int componentTriangleCount,
         IReadOnlyList<List<int>> sourceTrianglesBySubMesh,
-        IReadOnlyList<int> firstTriangleIndexBySubMesh,
+        int[] firstTriangleIndexBySubMesh,
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<Vector3> sourceNormals,
         IReadOnlyList<Vector2> sourceUv,
         IReadOnlyList<Vector4> sourceTangents,
-        bool hasTangents)
+        bool hasTangents,
+        List<Vector3> vertices,
+        List<Vector3> normals,
+        List<Vector2> uv,
+        List<Vector4> tangents,
+        List<List<int>> trianglesBySubMesh,
+        int[] destinationVertexIndexBySourceVertexIndex,
+        int[] destinationVertexGenerationBySourceVertexIndex)
     {
         using (buildComponentMeshProfilerMarker.Auto())
         {
-        if (componentTriangleIndices == null ||
-            componentTriangleIndices.Count == 0)
+        if (groupedTriangleIndices == null ||
+            componentTriangleCount <= 0)
         {
             return null;
         }
 
-        int vertexCapacity =
-            Math.Min(
-                sourceVertices.Count,
-                componentTriangleIndices.Count * 3);
+        vertices.Clear();
+        normals.Clear();
+        uv.Clear();
 
-        var vertices = new List<Vector3>(vertexCapacity);
-        var normals = new List<Vector3>(vertexCapacity);
-        var uv = new List<Vector2>(vertexCapacity);
-        List<Vector4> tangents =
-            hasTangents
-                ? new List<Vector4>(vertexCapacity)
-                : null;
-
-        var trianglesBySubMesh =
-            new List<List<int>>(sourceTrianglesBySubMesh.Count);
-
-        var destinationVertexIndexBySourceVertexIndex =
-            new Dictionary<int, int>(vertexCapacity);
+        tangents.Clear();
 
         for (int subMeshIndex = 0;
              subMeshIndex < sourceTrianglesBySubMesh.Count;
              subMeshIndex++)
         {
-            trianglesBySubMesh.Add(new List<int>());
+            trianglesBySubMesh[subMeshIndex].Clear();
         }
 
         bool hasBounds = false;
         Vector3 minimum = default;
         Vector3 maximum = default;
 
+        // 0は未使用Generationとして残し、Component Index + 1を現在の世代番号に使う。
+        int destinationVertexGeneration = componentIndex + 1;
+
+        // GroupRootsはGlobal Triangle Indexの昇順でComponentへ追加する。
+        // その順序を利用し、TriangleごとのSubMesh二分探索を前進カーソルへ置き換える。
+        int subMeshCursor = 0;
+
         for (int i = 0;
-             i < componentTriangleIndices.Count;
+             i < componentTriangleCount;
              i++)
         {
             int triangleIndex =
-                componentTriangleIndices[i];
+                groupedTriangleIndices[componentStartIndex + i];
 
-            ResolveTriangleLocation(
-                triangleIndex,
-                firstTriangleIndexBySubMesh,
-                out int subMeshIndex,
-                out int triangleOffset);
+            while (triangleIndex >=
+                   firstTriangleIndexBySubMesh[subMeshCursor + 1])
+            {
+                subMeshCursor++;
+            }
+
+            int triangleOffset =
+                (triangleIndex -
+                 firstTriangleIndexBySubMesh[subMeshCursor]) * 3;
 
             IReadOnlyList<int> sourceTriangles =
-                sourceTrianglesBySubMesh[subMeshIndex];
+                sourceTrianglesBySubMesh[subMeshCursor];
 
             List<int> destinationTriangles =
-                trianglesBySubMesh[subMeshIndex];
+                trianglesBySubMesh[subMeshCursor];
 
             destinationTriangles.Add(
                 GetOrAddVertex(
@@ -875,7 +1198,9 @@ public sealed class MeshConnectedComponentSplitter
                     sourceUv,
                     sourceTangents,
                     hasTangents,
+                    destinationVertexGeneration,
                     destinationVertexIndexBySourceVertexIndex,
+                    destinationVertexGenerationBySourceVertexIndex,
                     vertices,
                     normals,
                     uv,
@@ -892,7 +1217,9 @@ public sealed class MeshConnectedComponentSplitter
                     sourceUv,
                     sourceTangents,
                     hasTangents,
+                    destinationVertexGeneration,
                     destinationVertexIndexBySourceVertexIndex,
+                    destinationVertexGenerationBySourceVertexIndex,
                     vertices,
                     normals,
                     uv,
@@ -909,7 +1236,9 @@ public sealed class MeshConnectedComponentSplitter
                     sourceUv,
                     sourceTangents,
                     hasTangents,
+                    destinationVertexGeneration,
                     destinationVertexIndexBySourceVertexIndex,
+                    destinationVertexGenerationBySourceVertexIndex,
                     vertices,
                     normals,
                     uv,
@@ -944,7 +1273,7 @@ public sealed class MeshConnectedComponentSplitter
         mesh.subMeshCount = sourceTrianglesBySubMesh.Count;
 
         for (int subMeshIndex = 0;
-             subMeshIndex < trianglesBySubMesh.Count;
+             subMeshIndex < sourceTrianglesBySubMesh.Count;
              subMeshIndex++)
         {
             mesh.SetTriangles(
@@ -970,7 +1299,9 @@ public sealed class MeshConnectedComponentSplitter
         IReadOnlyList<Vector2> sourceUv,
         IReadOnlyList<Vector4> sourceTangents,
         bool hasTangents,
-        Dictionary<int, int> destinationVertexIndexBySourceVertexIndex,
+        int destinationVertexGeneration,
+        int[] destinationVertexIndexBySourceVertexIndex,
+        int[] destinationVertexGenerationBySourceVertexIndex,
         List<Vector3> destinationVertices,
         List<Vector3> destinationNormals,
         List<Vector2> destinationUv,
@@ -979,14 +1310,13 @@ public sealed class MeshConnectedComponentSplitter
         ref Vector3 minimum,
         ref Vector3 maximum)
     {
-        if (destinationVertexIndexBySourceVertexIndex.TryGetValue(
-                sourceVertexIndex,
-                out int destinationVertexIndex))
+        if (destinationVertexGenerationBySourceVertexIndex[sourceVertexIndex] ==
+            destinationVertexGeneration)
         {
-            return destinationVertexIndex;
+            return destinationVertexIndexBySourceVertexIndex[sourceVertexIndex];
         }
 
-        destinationVertexIndex =
+        int destinationVertexIndex =
             destinationVertices.Count;
 
         Vector3 position =
@@ -1002,9 +1332,10 @@ public sealed class MeshConnectedComponentSplitter
                 sourceTangents[sourceVertexIndex]);
         }
 
-        destinationVertexIndexBySourceVertexIndex.Add(
-            sourceVertexIndex,
-            destinationVertexIndex);
+        destinationVertexIndexBySourceVertexIndex[sourceVertexIndex] =
+            destinationVertexIndex;
+        destinationVertexGenerationBySourceVertexIndex[sourceVertexIndex] =
+            destinationVertexGeneration;
 
         if (!hasBounds)
         {
@@ -1019,47 +1350,6 @@ public sealed class MeshConnectedComponentSplitter
         }
 
         return destinationVertexIndex;
-    }
-
-    private static void ResolveTriangleLocation(
-        int triangleIndex,
-        IReadOnlyList<int> firstTriangleIndexBySubMesh,
-        out int subMeshIndex,
-        out int triangleOffset)
-    {
-        int low = 0;
-        int high = firstTriangleIndexBySubMesh.Count - 2;
-
-        while (low <= high)
-        {
-            int middle = low + ((high - low) / 2);
-            int firstTriangleIndex =
-                firstTriangleIndexBySubMesh[middle];
-            int nextSubMeshFirstTriangleIndex =
-                firstTriangleIndexBySubMesh[middle + 1];
-
-            if (triangleIndex < firstTriangleIndex)
-            {
-                high = middle - 1;
-                continue;
-            }
-
-            if (triangleIndex >= nextSubMeshFirstTriangleIndex)
-            {
-                low = middle + 1;
-                continue;
-            }
-
-            subMeshIndex = middle;
-            triangleOffset =
-                (triangleIndex - firstTriangleIndex) * 3;
-            return;
-        }
-
-        throw new ArgumentOutOfRangeException(
-            nameof(triangleIndex),
-            triangleIndex,
-            "Triangle indexからSubMeshを解決できませんでした。");
     }
 
     private static float CalculatePositionEpsilon(Bounds bounds)
@@ -1186,41 +1476,4 @@ public sealed class MeshConnectedComponentSplitter
         }
     }
 
-    private readonly struct EdgeKey : IEquatable<EdgeKey>
-    {
-        public EdgeKey(int first, int second)
-        {
-            if (first <= second)
-            {
-                First = first;
-                Second = second;
-            }
-            else
-            {
-                First = second;
-                Second = first;
-            }
-        }
-
-        private int First { get; }
-        private int Second { get; }
-
-        public bool Equals(EdgeKey other)
-        {
-            return First == other.First && Second == other.Second;
-        }
-
-        public override bool Equals(object obj)
-        {
-            return obj is EdgeKey other && Equals(other);
-        }
-
-        public override int GetHashCode()
-        {
-            unchecked
-            {
-                return (First * 397) ^ Second;
-            }
-        }
-    }
 }

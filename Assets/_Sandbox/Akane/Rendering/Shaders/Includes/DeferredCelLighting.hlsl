@@ -119,13 +119,13 @@ half3 LightingCelDeferred(
 
     // 光の角度、距離減衰、Shadowを含む直接光の強さ。
     half lightAmount = ndotl * attenuation;
-    
+
     // 減衰を掛ける前のDiffuse。
     half3 diffuseBase = brdfData.diffuse * light.color;
-    
+
     // 元のPBRによる連続的なDiffuse。
     half3 originalDiffuse = diffuseBase * lightAmount;
-    
+
     // 減衰を含めた直接光を階調化する。
     half3 celDiffuse = diffuseBase * GetCelDiffuseFactor(lightAmount);
 

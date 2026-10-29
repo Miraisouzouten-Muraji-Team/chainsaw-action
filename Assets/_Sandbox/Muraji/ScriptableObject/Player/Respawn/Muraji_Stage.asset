@@ -10,20 +10,17 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 99e07f82f7c9b724d84fa0a86b415e85, type: 3}
-  m_Name: TestStageRespawnData
+  m_Name: Muraji_Stage
   m_EditorClassIdentifier: Assembly-CSharp::StageRespawnData
   respawnPoints:
   - areaNumber: 1
-    position: {x: -12.581, y: -7.659, z: 23.206}
+    position: {x: -0.018, y: 1.615, z: -0.02}
     faceRight: 0
   - areaNumber: 2
-    position: {x: 2.54, y: -4.543, z: 23.206}
+    position: {x: 54.91, y: 21.29, z: -0.02}
     faceRight: 0
   - areaNumber: 3
-    position: {x: 12.66, y: 4.09, z: 23.206}
-    faceRight: 0
-  - areaNumber: 4
-    position: {x: 0.03, y: 2.51, z: 23.206}
+    position: {x: 106.8, y: 21.29, z: -0.02}
     faceRight: 0
   fallbackAreaNumber: 1
   deathMotionSeconds: 0.8

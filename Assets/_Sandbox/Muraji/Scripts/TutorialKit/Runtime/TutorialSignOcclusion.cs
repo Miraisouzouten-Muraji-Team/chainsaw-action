@@ -5,13 +5,14 @@ using UnityEngine.UI;
 
 namespace Project.Tutorial
 {
-    // 最終画面の色は再描画せず、看板だけをプレイヤーのシルエットで抜く。
+    // 最終画面の色は再描画せず、看板だけをプレイヤーと指定ステージのシルエットで抜く。
     [DefaultExecutionOrder(20000)]
     public sealed class TutorialSignOcclusion : MonoBehaviour
     {
         private TutorialPlayer player;
         private TutorialZone zone;
-        private Renderer[] renderers;
+        private const float DISCOVERY_INTERVAL = 0.5f;
+        private readonly HashSet<Renderer> renderers = new HashSet<Renderer>();
         private float nextDiscovery;
         private Material maskMaterial, uiMaterial;
         private RenderTexture mask;
@@ -19,11 +20,14 @@ namespace Project.Tutorial
         private readonly Dictionary<Graphic, Material> originals = new Dictionary<Graphic, Material>();
         private bool initialized;
 
+        // 表示対象とZoneを設定し、変更時に対象一覧の再取得を予約する。
         internal void Configure(TutorialPlayer target, TutorialZone source)
         {
-            if (player != target) { player = target; renderers = null; nextDiscovery = 0f; }
+            if (player != target || zone != source) nextDiscovery = 0f;
+            player = target;
             zone = source;
         }
+        // 切り抜き用のシェーダーと描画リソースを初回だけ準備する。
         private void Initialize()
         {
             if (initialized) return;
@@ -45,19 +49,19 @@ namespace Project.Tutorial
             }
             commands = new CommandBuffer { name = "Tutorial Player Silhouette" };
         }
+        // アニメーションとカメラ移動後の形状で、看板を切り抜くマスクを更新する。
         private void LateUpdate()
         {
             Initialize();
             if (uiMaterial == null) return;
-            if (player == null || zone == null || !player.hideTutorialBehindPlayer)
+            if (zone == null)
             { uiMaterial.SetTexture("_PlayerMask", Texture2D.blackTexture); return; }
             Camera camera = zone.projectionCamera != null ? zone.projectionCamera : Camera.main;
             if (camera == null) { uiMaterial.SetTexture("_PlayerMask", Texture2D.blackTexture); return; }
-            if (renderers == null || Time.unscaledTime >= nextDiscovery)
+            if (Time.unscaledTime >= nextDiscovery)
             {
-                renderers = player.tutorialOccluders != null && player.tutorialOccluders.Length > 0
-                    ? player.tutorialOccluders : player.GetComponentsInChildren<Renderer>(true);
-                nextDiscovery = Time.unscaledTime + .5f;
+                CollectOccluders();
+                nextDiscovery = Time.unscaledTime + DISCOVERY_INTERVAL;
             }
             int width = Mathf.Max(1, Screen.width), height = Mathf.Max(1, Screen.height);
             if (mask == null || mask.width != width || mask.height != height)
@@ -94,18 +98,45 @@ namespace Project.Tutorial
             Graphics.ExecuteCommandBuffer(commands);
             RenderTexture.active = previous;
             uiMaterial.SetTexture("_PlayerMask", mask);
-            uiMaterial.SetFloat("_FlipMaskY", player.flipTutorialMaskY ? 1f : 0f);
+            uiMaterial.SetFloat("_FlipMaskY", player != null && player.flipTutorialMaskY ? 1f : 0f);
         }
+        // プレイヤーと明示指定されたステージを集め、重複描画を防ぐ。
+        private void CollectOccluders()
+        {
+            renderers.Clear();
+            if (player != null && player.hideTutorialBehindPlayer)
+            {
+                Renderer[] playerRenderers = player.tutorialOccluders != null && player.tutorialOccluders.Length > 0
+                    ? player.tutorialOccluders : player.GetComponentsInChildren<Renderer>(true);
+                foreach (Renderer renderer in playerRenderers)
+                    if (renderer != null) renderers.Add(renderer);
+            }
+            if (zone == null) return;
+            if (zone.stageOccluders != null)
+                foreach (Renderer renderer in zone.stageOccluders)
+                    if (renderer != null) renderers.Add(renderer);
+            if (zone.stageOccluderRoots != null)
+                foreach (Transform root in zone.stageOccluderRoots)
+                {
+                    if (root == null) continue;
+                    foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
+                        if (renderer != null) renderers.Add(renderer);
+                }
+        }
+
+        // 看板の非表示時にマスクを解放する。
         private void OnDisable()
         {
             if (uiMaterial != null) uiMaterial.SetTexture("_PlayerMask", Texture2D.blackTexture);
             ReleaseMask();
         }
+        // 生成したRenderTextureを解放する。
         private void ReleaseMask()
         {
             if (mask == null) return;
             mask.Release(); Destroy(mask); mask = null;
         }
+        // UIのマテリアルを戻し、生成した描画リソースを破棄する。
         private void OnDestroy()
         {
             foreach (var entry in originals)

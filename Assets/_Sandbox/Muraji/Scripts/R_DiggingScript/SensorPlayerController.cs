@@ -1,7 +1,21 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class SensorPlayerController : MonoBehaviour
 {
+    [Header("ジャンプの跳び出し・長押し")]
+    [Tooltip("既存のジャンプと同じボタンに割り当てたButton型InputActionを指定します。未設定では長押し調整を行いません。")]
+    [SerializeField] private InputActionReference jumpHoldAction;
+    private bool variableJumpActive;
+    private bool jumpReleased;
+    private float jumpHoldElapsed;
+    private bool enabledJumpHoldAction;
+
+    [Header("ジャンプの原因調査")]
+    [Tooltip("ジャンプ入力時の接地・支持・回数と、実行時の上下速度をConsoleへ出力します。調査後はオフにしてください。")]
+    [SerializeField] private bool logJumpDiagnostics = true;
+    private bool traceJumpLaunch;
+
     [Header("プレイヤーの共通設定")]
     [Tooltip("移動・ジャンプ・食い込み・角補正の設定を読み取るPlayerParameterアセットを指定してください。実行中の速度や残り時間はこのアセットへ書き込みません。")]
     [SerializeField] private PlayerParameter playerParameter;
@@ -295,6 +309,12 @@ public class SensorPlayerController : MonoBehaviour
 
     void OnEnable()
     {
+        // 長押しの参照先が無効なら、このControllerで有効化して終了時に戻す。
+        if (jumpHoldAction != null && jumpHoldAction.action != null && !jumpHoldAction.action.enabled)
+        {
+            jumpHoldAction.action.Enable();
+            enabledJumpHoldAction = true;
+        }
         if (playerRigidbody != null)
         {
             playerRigidbody.useGravity = false;
@@ -547,7 +567,15 @@ public class SensorPlayerController : MonoBehaviour
         if (jumpPending)
         {
             jumpPending = false;
+            traceJumpLaunch = logJumpDiagnostics;
+            // 力積を質量で割って初速へ加える。後続の速度代入で消えないよう直接合成する。
+            float impulse = pendingJumpCount >= MAX_JUMP_COUNT
+                ? playerParameter.airJumpLaunchImpulse : playerParameter.jumpLaunchImpulse;
+            pendingJumpPower += Mathf.Max(0f, impulse) / Mathf.Max(0.0001f, playerRigidbody.mass);
             velocity.y = pendingJumpPower;
+            variableJumpActive = true;
+            jumpReleased = false;
+            jumpHoldElapsed = 0f;
             jumpsUsed = pendingJumpCount;
             ClearJumpGroundState();
 
@@ -559,6 +587,7 @@ public class SensorPlayerController : MonoBehaviour
         if (knockbackHopPending)
         {
             knockbackHopPending = false;
+            variableJumpActive = false;
 
             velocity.y = playerParameter.wallKnockbackUpwardForce;
             ascentStartSpeed = playerParameter.wallKnockbackUpwardForce;
@@ -589,6 +618,7 @@ public class SensorPlayerController : MonoBehaviour
         if (wallJumpLaunchPending)
         {
             wallJumpLaunchPending = false;
+            variableJumpActive = false;
             jumpPending = false;
             velocity.x = pendingWallJumpVelocity.x;
             velocity.y = pendingWallJumpVelocity.y;
@@ -662,6 +692,12 @@ public class SensorPlayerController : MonoBehaviour
         debugVelocityBeforeWall = velocity;
         debugWallBlocked = ApplyWallMovementBlock(ref velocity);
         debugVelocityAfterWall = velocity;
+        if (traceJumpLaunch)
+        {
+            traceJumpLaunch = false;
+            Debug.Log($"[JumpTrace] 物理反映 frame={Time.frameCount} fixed={Time.fixedTime:F3} " +
+                $"回数={jumpsUsed} 設定初速={pendingJumpPower:F3} 最終速度={velocity}", this);
+        }
         playerRigidbody.linearVelocity = velocity;
 
         playerAnimator.SetSpeed(
@@ -831,6 +867,19 @@ public class SensorPlayerController : MonoBehaviour
         return true;
     }
 
+    // ジャンプ入力時の判定材料を記録する。ジャンプの許可条件や物理設定は変更しない。
+    private void LogJumpDiagnostics(string phaseName, bool grounded, bool coyote)
+    {
+        if (!logJumpDiagnostics) return;
+        string source = groundProbe != null ? groundProbe.Source : "Probeなし";
+        bool support = groundProbe != null && groundProbe.HasJumpSupport;
+        Debug.Log($"[JumpTrace] {phaseName} frame={Time.frameCount} fixed={Time.fixedTime:F3} " +
+            $"接地={isGroundedByRay} 支持={support} 初段接地={grounded} 猶予={coyote} " +
+            $"消費回数={jumpsUsed} 予約回数={pendingJumpCount} 予約={jumpPending} " +
+            $"接地元={source} 速度={playerRigidbody.linearVelocity} " +
+            $"法線={groundNormal} 接地無視残り={Mathf.Max(0f, ignoreGroundUntil - Time.time):F3}", this);
+    }
+
     // 壁ジャンプ、接地・猶予中の初段、二段目の順でジャンプを予約する。
     void Jump()
     {
@@ -907,6 +956,8 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        LogJumpDiagnostics("入力判定", isGrounded, canUseCoyoteTime);
+
         if (isGrounded || canUseCoyoteTime)
         {
             // 猶予中も、通常の初段と同じ強さ・回数でジャンプする。
@@ -928,6 +979,7 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         jumpPending = true;
+        LogJumpDiagnostics("予約確定", isGrounded, canUseCoyoteTime);
 
         // 予約時点で猶予を消費し、初段を連続使用できないようにする。
         lastGroundedTime = float.NegativeInfinity;
@@ -1118,6 +1170,10 @@ public class SensorPlayerController : MonoBehaviour
         bool isGrounded =
             isGroundedByRay &&
             Time.time >= ignoreGroundUntil;
+        // 食い込みや着地へ、通常ジャンプの長押し状態を持ち越さない。
+        if (isGrounded || chainsawDigging.IsDigging)
+            variableJumpActive = false;
+
         float gravityMultiplier;
 
         if (isGrounded)
@@ -1163,6 +1219,8 @@ public class SensorPlayerController : MonoBehaviour
             fallElapsedTime += deltaTime;
         }
 
+        float variableGravityScale = ApplyVariableJump(ref velocity, deltaTime);
+
         // 通常時・接地中・攻撃データ未設定時は、既存の重力を使う。
         float attackGravityMultiplier = 1f;
 
@@ -1182,6 +1240,7 @@ public class SensorPlayerController : MonoBehaviour
             Physics.gravity *
             playerParameter.gravityScale *
             gravityMultiplier *
+            variableGravityScale *
             attackGravityMultiplier *
             deltaTime;
 
@@ -1191,6 +1250,28 @@ public class SensorPlayerController : MonoBehaviour
             -playerParameter.maxFallSpeed
         );
     }
+    // 自分で開始した通常・二段ジャンプだけ、長押し・早離し・落下の調整を行う。
+    private float ApplyVariableJump(ref Vector3 velocity, float deltaTime)
+    {
+        if (!variableJumpActive) return 1f;
+        if (velocity.y <= 0f) return playerParameter.jumpFallGravityScale;
+
+        InputAction action = jumpHoldAction != null ? jumpHoldAction.action : null;
+        // 未設定や入力無効時は、意図せずジャンプを短縮しない。
+        if (action == null || !action.enabled) return 1f;
+
+        if (!jumpReleased && !action.IsPressed())
+        {
+            jumpReleased = true;
+            velocity.y *= playerParameter.jumpReleaseSpeedRatio;
+        }
+
+        jumpHoldElapsed += deltaTime;
+        // 一度離した後の押し直しでは、同じジャンプの上昇補助を再開しない。
+        return !jumpReleased && jumpHoldElapsed <= playerParameter.jumpHoldMaxSeconds
+            ? playerParameter.jumpHoldGravityScale : 1f;
+    }
+
     private bool IsGrounded()
     {
         if (chainsawDigging != null && chainsawDigging.Surface == ChainsawSurface.Floor)
@@ -2093,6 +2174,12 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
+        variableJumpActive = false;
+        jumpReleased = false;
+        jumpHoldElapsed = 0f;
+        if (enabledJumpHoldAction && jumpHoldAction != null && jumpHoldAction.action != null)
+            jumpHoldAction.action.Disable();
+        enabledJumpHoldAction = false;
         CancelDamageStun(false);
         if (groundProbe != null) groundProbe.Clear();
         debugGroundCollider = null;

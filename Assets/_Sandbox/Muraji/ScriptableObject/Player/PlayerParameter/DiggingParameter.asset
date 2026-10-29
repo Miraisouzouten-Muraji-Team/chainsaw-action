@@ -18,7 +18,7 @@ MonoBehaviour:
   floorDashPower: 15
   floorEvadeTime: 0.5
   wallConsumeInterval: 0.1
-  wallConsumeAmount: 1
+  wallConsumeAmount: 0.1
   wallJumpPower: 50
   bonusWallJumpPower: 15
   wallEvadeTime: 0.25

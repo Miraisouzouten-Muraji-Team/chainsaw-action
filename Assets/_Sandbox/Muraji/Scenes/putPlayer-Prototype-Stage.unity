@@ -128076,6 +128076,22 @@ PrefabInstance:
       propertyPath: m_LocalPosition.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: wallAngle
+      value: 180
+      objectReference: {fileID: 0}
+    - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: floorAngle
+      value: 180
+      objectReference: {fileID: 0}
+    - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: ceilingAngle
+      value: 270
+      objectReference: {fileID: 0}
+    - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: particlePrefab
+      value: 
+      objectReference: {fileID: 7044623282841772800, guid: 837e8e5252d7c7e4baa5ea5980ed9e2a, type: 3}
     - target: {fileID: 4474876397925208740, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: deathState
       value: Base Layer.Hurt

@@ -30,6 +30,7 @@ public class ChainsawDiggingParticles : MonoBehaviour
     private ParticleSystem particleInstance;
     private bool isEmitting;
 
+    // 必要な参照を取得し、設定不足なら処理を停止する。
     private void Awake()
     {
         if (chainsawDigging == null)
@@ -57,6 +58,7 @@ public class ChainsawDiggingParticles : MonoBehaviour
         }
     }
 
+    // 食い込み中だけ生成・追従・再生し、条件が終了したら生成物を破棄する。
     private void FixedUpdate()
     {
         if (chainsawDigging == null ||
@@ -112,8 +114,7 @@ public class ChainsawDiggingParticles : MonoBehaviour
 
         Vector3 position = emissionPoint.position;
 
-        // 初めて必要になった時点で生成する。
-        // 以後は同じインスタンスを再利用する。
+        // 食い込み開始ごとに生成する。継続中だけ同じインスタンスを使う。
         if (particleInstance == null)
         {
             CreateParticles(position, rotation);
@@ -125,11 +126,12 @@ public class ChainsawDiggingParticles : MonoBehaviour
 
         if (!isEmitting)
         {
-            particleInstance.Play(false);
+            particleInstance.Play(true);
             isEmitting = true;
         }
     }
 
+    // 食い込み専用のインスタンスを作り、ループ再生の準備をする。
     private void CreateParticles(
         Vector3 position,
         Quaternion rotation)
@@ -145,8 +147,15 @@ public class ChainsawDiggingParticles : MonoBehaviour
 
         main.stopAction = ParticleSystemStopAction.None;
 
+        // 子の停止アクションによる意図しない破棄を防ぎ、寿命はこのスクリプトで管理する。
+        foreach (ParticleSystem particles in particleInstance.GetComponentsInChildren<ParticleSystem>(true))
+        {
+            ParticleSystem.MainModule childMain = particles.main;
+            childMain.stopAction = ParticleSystemStopAction.None;
+        }
+
         particleInstance.Stop(
-            false,
+            true,
             ParticleSystemStopBehavior.StopEmittingAndClear);
 
         main.loop = true;
@@ -154,42 +163,33 @@ public class ChainsawDiggingParticles : MonoBehaviour
         main.simulationSpace = ParticleSystemSimulationSpace.World;
         main.useUnscaledTime = false;
 
+        particleInstance.gameObject.SetActive(true);
         isEmitting = false;
     }
 
+    // 子を含む全粒子を即座に消し、生成物を破棄して次回の新規生成へ備える。
     private void StopEmission()
     {
-        if (particleInstance != null && isEmitting)
-        {
-            // 新規発生だけを停止する。
-            // 残った粒子は寿命まで表示する。
-            particleInstance.Stop(
-                false,
-                ParticleSystemStopBehavior.StopEmitting);
-        }
-
         isEmitting = false;
+        if (particleInstance == null) return;
+
+        ParticleSystem instance = particleInstance;
+        particleInstance = null;
+        instance.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        // Destroyはフレーム末尾なので、先に非表示にして残像を残さない。
+        instance.gameObject.SetActive(false);
+        Destroy(instance.gameObject);
     }
 
+    // 無効化やリスポーン中にも、親なしで生成したパーティクルを残さない。
     private void OnDisable()
     {
-        if (particleInstance != null)
-        {
-            particleInstance.Stop(
-                false,
-                ParticleSystemStopBehavior.StopEmittingAndClear);
-        }
-
-        isEmitting = false;
+        StopEmission();
     }
 
+    // オブジェクト破棄時にも片付ける。既に停止済みなら何もしない。
     private void OnDestroy()
     {
-        // Playerの子ではないため、
-        // Playerの破棄時に明示的に片付ける。
-        if (particleInstance != null)
-        {
-            Destroy(particleInstance.gameObject);
-        }
+        StopEmission();
     }
 }

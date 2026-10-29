@@ -5,7 +5,7 @@ using UnityEngine.UI;
 
 namespace Project.Tutorial
 {
-    // 最終画面の色は再描画せず、看板だけをプレイヤーと指定ステージのシルエットで抜く。
+    // 最終画面の色は再描画せず、看板だけをプレイヤー・指定ステージ・登録された敵のシルエットで抜く。
     [DefaultExecutionOrder(20000)]
     public sealed class TutorialSignOcclusion : MonoBehaviour
     {
@@ -13,6 +13,9 @@ namespace Project.Tutorial
         private TutorialZone zone;
         private const float DISCOVERY_INTERVAL = 0.5f;
         private readonly HashSet<Renderer> renderers = new HashSet<Renderer>();
+        private readonly HashSet<Renderer> playerRenderers = new HashSet<Renderer>();
+        private readonly List<Renderer> playerChildren = new List<Renderer>();
+        private readonly List<Renderer> staleRenderers = new List<Renderer>();
         private float nextDiscovery;
         private Material maskMaterial, uiMaterial;
         private RenderTexture mask;
@@ -85,31 +88,81 @@ namespace Project.Tutorial
             commands.SetViewport(new Rect(viewport.x * width, viewport.y * height, viewport.width * width, viewport.height * height));
             // 独自CameraのCullingMaskやRendering Layerによる振り分けを経由しない。
             commands.SetGlobalMatrix("_TutorialMaskVP", GL.GetGPUProjectionMatrix(camera.projectionMatrix, true) * camera.worldToCameraMatrix);
+            // プレイヤーは毎フレーム確認し、敵の参照切れや再取得間隔に依存させない。
+            CollectPlayerOccluders();
+            foreach (Renderer renderer in playerRenderers) RecordRenderer(renderer);
+            staleRenderers.Clear();
             foreach (Renderer renderer in renderers)
             {
-                if (renderer == null || !renderer.enabled || renderer.forceRenderingOff || !renderer.gameObject.activeInHierarchy) continue;
-                Mesh mesh = null;
-                if (renderer is SkinnedMeshRenderer skinned) mesh = skinned.sharedMesh;
-                else if (renderer is MeshRenderer && renderer.TryGetComponent<MeshFilter>(out var filter)) mesh = filter.sharedMesh;
-                if (mesh == null) continue;
-                for (int i = 0; i < mesh.subMeshCount; i++) commands.DrawRenderer(renderer, maskMaterial, i, 0);
+                if (playerRenderers.Contains(renderer)) continue;
+                if (!RecordRenderer(renderer)) staleRenderers.Add(renderer);
             }
+            foreach (Renderer renderer in staleRenderers) renderers.Remove(renderer);
             var previous = RenderTexture.active;
-            Graphics.ExecuteCommandBuffer(commands);
-            RenderTexture.active = previous;
+            try { Graphics.ExecuteCommandBuffer(commands); }
+            finally { RenderTexture.active = previous; }
             uiMaterial.SetTexture("_PlayerMask", mask);
             uiMaterial.SetFloat("_FlipMaskY", player != null && player.flipTutorialMaskY ? 1f : 0f);
         }
-        // プレイヤーと明示指定されたステージを集め、重複描画を防ぐ。
+        // 生存しているRendererだけを記録し、参照切れが他の対象の描画を止めないようにする。
+        private bool RecordRenderer(Renderer renderer)
+        {
+            if (renderer == null) return false;
+            try
+            {
+                if (!renderer.enabled || renderer.forceRenderingOff || !renderer.gameObject.activeInHierarchy) return true;
+                Mesh mesh = null;
+                if (renderer is SkinnedMeshRenderer skinned)
+                {
+                    if (skinned == null) return false;
+                    mesh = skinned.sharedMesh;
+                }
+                else if (renderer is MeshRenderer && renderer.TryGetComponent<MeshFilter>(out var filter))
+                {
+                    if (filter == null) return false;
+                    mesh = filter.sharedMesh;
+                }
+                if (mesh == null) return true;
+                int subMeshCount = mesh.subMeshCount;
+                for (int i = 0; i < subMeshCount; i++)
+                {
+                    if (renderer == null) return false;
+                    commands.DrawRenderer(renderer, maskMaterial, i, 0);
+                }
+                return true;
+            }
+            catch (MissingReferenceException)
+            {
+                // モデルの破棄・差し替え中はこの対象だけを除外し、次回の収集を予約する。
+                nextDiscovery = 0f;
+                return false;
+            }
+        }
+
+        // プレイヤーの明示指定を優先し、全参照が失われた場合は現在の子モデルを再取得する。
+        private void CollectPlayerOccluders()
+        {
+            playerRenderers.Clear();
+            if (player == null || !player.hideTutorialBehindPlayer) return;
+            if (player.tutorialOccluders != null)
+                foreach (Renderer renderer in player.tutorialOccluders)
+                    if (renderer != null) playerRenderers.Add(renderer);
+            if (playerRenderers.Count > 0) return;
+            playerChildren.Clear();
+            player.GetComponentsInChildren<Renderer>(true, playerChildren);
+            foreach (Renderer renderer in playerChildren)
+                if (renderer != null && (renderer is MeshRenderer || renderer is SkinnedMeshRenderer))
+                    playerRenderers.Add(renderer);
+        }
+
+        // 登録された敵・明示指定されたステージを集め、重複描画を防ぐ。
         private void CollectOccluders()
         {
             renderers.Clear();
-            if (player != null && player.hideTutorialBehindPlayer)
+            foreach (TutorialEnemyOccluder enemy in TutorialEnemyOccluder.Active)
             {
-                Renderer[] playerRenderers = player.tutorialOccluders != null && player.tutorialOccluders.Length > 0
-                    ? player.tutorialOccluders : player.GetComponentsInChildren<Renderer>(true);
-                foreach (Renderer renderer in playerRenderers)
-                    if (renderer != null) renderers.Add(renderer);
+                if (enemy == null || !enemy.isActiveAndEnabled) continue;
+                enemy.CollectRenderers(renderers);
             }
             if (zone == null) return;
             if (zone.stageOccluders != null)

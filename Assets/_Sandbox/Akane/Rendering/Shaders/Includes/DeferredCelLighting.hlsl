@@ -12,30 +12,79 @@ float _CelLightThreshold;
 float _CelDarkBrightness;
 float _CelMiddleBrightness;
 float _CelLightBrightness;
+int _CelStepCount;
 
-// 法線と光の角度から、直接光のDiffuseを3階調化する。
+
+// 光の入射角を、既存のDark / Middle / Light境界に合わせて再配置する。
+// 3階調では従来のThreshold設定をそのまま使用する。
+float RemapCelLightAmount(float ndotl)
+{
+    float darkThreshold = saturate(min(_CelDarkThreshold, _CelLightThreshold));
+    float lightThreshold = saturate(max(_CelDarkThreshold, _CelLightThreshold));
+
+    // 暗部の区間。
+    if (ndotl < darkThreshold)
+    {
+        return (ndotl / max(darkThreshold, 0.0001)) / 3.0;
+    }
+
+    // 中間部の区間。
+    if (ndotl < lightThreshold)
+    {
+        float t = (ndotl - darkThreshold) /
+            max(lightThreshold - darkThreshold, 0.0001);
+
+        return (1.0 + t) / 3.0;
+    }
+
+    // 明部の区間。
+    float t = (ndotl - lightThreshold) /
+        max(1.0 - lightThreshold, 0.0001);
+
+    return (2.0 + t) / 3.0;
+}
+
+// 指定された階調数に応じて直接光のDiffuseを量子化する。
 half GetCelDiffuseFactor(half ndotl)
 {
-    half darkThreshold = min(_CelDarkThreshold, _CelLightThreshold);
-    half lightThreshold = max(_CelDarkThreshold, _CelLightThreshold);
-
-    // 光が面の裏側にある場合は直接光を発生させない。
+    // 光が裏側から当たる面には直接Diffuseを発生させない。
     if (ndotl <= 0.0001h)
     {
         return 0.0h;
     }
 
-    if (ndotl >= lightThreshold)
+    // 階調数を3〜12に制限する。
+    int stepCount = clamp(_CelStepCount, 3, 12);
+
+    // 既存のThresholdを考慮して光量を0〜1へ再配置する。
+    float lightAmount = RemapCelLightAmount(saturate(ndotl));
+
+    // 光量を指定した階調数に量子化する。
+    float stepIndex = min(
+        floor(lightAmount * stepCount),
+        stepCount - 1.0);
+
+    float stepPosition = stepIndex / (stepCount - 1.0);
+
+    // Dark → Middle → Lightの明るさを階調数に応じて補間する。
+    float brightness;
+
+    if (stepPosition <= 0.5)
     {
-        return (half)_CelLightBrightness;
+        brightness = lerp(
+            _CelDarkBrightness,
+            _CelMiddleBrightness,
+            stepPosition * 2.0);
+    }
+    else
+    {
+        brightness = lerp(
+            _CelMiddleBrightness,
+            _CelLightBrightness,
+            (stepPosition - 0.5) * 2.0);
     }
 
-    if (ndotl >= darkThreshold)
-    {
-        return (half)_CelMiddleBrightness;
-    }
-
-    return (half)_CelDarkBrightness;
+    return (half)brightness;
 }
 
 // URP Litの直接光をセルシェーディング対応にする。

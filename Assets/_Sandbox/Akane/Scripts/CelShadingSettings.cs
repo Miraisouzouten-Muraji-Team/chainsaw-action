@@ -1,37 +1,41 @@
-
 using UnityEngine;
 using UnityEngine.Rendering;
 
 [ExecuteAlways]
 public sealed class CelShadingSettings : MonoBehaviour
 {
-    // セルシェーディングを有効にする。
+    // セルシェーディングの有効・無効。
     [SerializeField] private bool celEnabled = true;
 
     // 元のPBRとセルシェーディングの混合率。
     [SerializeField, Range(0.0f, 1.0f)]
     private float celStrength = 1.0f;
 
-    // 3階調の境界。
+    // セルシェーディングの階調数。
+    [SerializeField, Range(3, 12)]
+    private int celStepCount = 3;
+
+    // 暗部・中間部・明部の境界。
     [SerializeField, Range(0.0f, 1.0f)]
     private float darkThreshold = 0.3f;
 
     [SerializeField, Range(0.0f, 1.0f)]
     private float lightThreshold = 0.7f;
 
-    // 各階調の直接光Diffuseの強さ。
+    // 各階調の明るさ。
     [SerializeField, Range(0.0f, 1.0f)]
     private float darkBrightness = 0.0f;
 
     [SerializeField, Range(0.0f, 1.0f)]
-    private float middleBrightness = 0.6f;
+    private float middleBrightness = 0.4f;
 
     [SerializeField, Range(0.0f, 1.0f)]
     private float lightBrightness = 1.0f;
 
-    // ShaderプロパティのID。
+    // ShaderプロパティID。
     private static readonly int CEL_ENABLED_ID = Shader.PropertyToID("_CelEnabled");
     private static readonly int CEL_STRENGTH_ID = Shader.PropertyToID("_CelStrength");
+    private static readonly int CEL_STEP_COUNT_ID = Shader.PropertyToID("_CelStepCount");
     private static readonly int CEL_DARK_THRESHOLD_ID = Shader.PropertyToID("_CelDarkThreshold");
     private static readonly int CEL_LIGHT_THRESHOLD_ID = Shader.PropertyToID("_CelLightThreshold");
     private static readonly int CEL_DARK_BRIGHTNESS_ID = Shader.PropertyToID("_CelDarkBrightness");
@@ -52,7 +56,7 @@ public sealed class CelShadingSettings : MonoBehaviour
 
     private void OnBeginCameraRendering(ScriptableRenderContext context, Camera camera)
     {
-        // Game / Scene / Pixel Captureの各カメラで設定を反映する。
+        // 各カメラの描画前に設定を反映する。
         ApplySettings();
     }
 
@@ -60,10 +64,9 @@ public sealed class CelShadingSettings : MonoBehaviour
     {
         Shader.SetGlobalFloat(CEL_ENABLED_ID, celEnabled ? 1.0f : 0.0f);
         Shader.SetGlobalFloat(CEL_STRENGTH_ID, celStrength);
-
+        Shader.SetGlobalInt(CEL_STEP_COUNT_ID, celStepCount);
         Shader.SetGlobalFloat(CEL_DARK_THRESHOLD_ID, darkThreshold);
         Shader.SetGlobalFloat(CEL_LIGHT_THRESHOLD_ID, lightThreshold);
-
         Shader.SetGlobalFloat(CEL_DARK_BRIGHTNESS_ID, darkBrightness);
         Shader.SetGlobalFloat(CEL_MIDDLE_BRIGHTNESS_ID, middleBrightness);
         Shader.SetGlobalFloat(CEL_LIGHT_BRIGHTNESS_ID, lightBrightness);

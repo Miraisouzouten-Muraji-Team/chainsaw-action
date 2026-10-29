@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections.Generic;
+using System.Threading;
 using Unity.Profiling;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -78,6 +80,26 @@ public sealed class MeshPlaneSplitter
     private const int MAX_SOURCE_TOPOLOGY_DIAGNOSTIC_TRIANGLES = 20;
     private const float NEARBY_BOUNDARY_ENDPOINT_SEARCH_SCALE = 4.0f;
     private const float SOURCE_SPLIT_VERTEX_MATCH_EPSILON_SCALE = 0.1f;
+
+    // 現在のProfiler結果と既知のSource Vertex数（約30,002）を収容する。
+    // 通常のEnemy死亡ではこの専用Bufferを直接再利用し、ArrayPoolへ所有権を渡さない。
+    private const int SOURCE_VERTEX_DATA_BUFFER_LENGTH = 32768;
+
+    private static VertexData[] sourceVertexDataBuffer;
+    private static int sourceVertexDataBufferLeaseState;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void InitializeSourceVertexDataBuffer()
+    {
+        if (sourceVertexDataBuffer == null ||
+            sourceVertexDataBuffer.Length < SOURCE_VERTEX_DATA_BUFFER_LENGTH)
+        {
+            sourceVertexDataBuffer =
+                new VertexData[SOURCE_VERTEX_DATA_BUFFER_LENGTH];
+        }
+
+        sourceVertexDataBufferLeaseState = 0;
+    }
 
     private readonly MeshConnectedComponentSplitter connectedComponentSplitter =
         new MeshConnectedComponentSplitter();
@@ -596,110 +618,28 @@ public sealed class MeshPlaneSplitter
         int degenerateCutSegmentCount = 0;
         int loggedDegenerateCutSegmentCount = 0;
 
-        for (int subMeshIndex = 0;
-             subMeshIndex < originalSubMeshCount;
-             subMeshIndex++)
+        VertexData[] sourceVertexDataByIndex = null;
+        bool returnSourceVertexDataBufferToPool = false;
+
+        try
         {
-            if (sourceMesh.GetTopology(subMeshIndex) != MeshTopology.Triangles)
+            using (readTriangleDataProfilerMarker.Auto())
             {
-                failureReason =
-                    $"SubMesh {subMeshIndex} がTriangles topologyではありません。";
-                return false;
-            }
+                sourceVertexDataByIndex =
+                    AcquireSourceVertexDataBuffer(
+                        sourceVertices.Length,
+                        out returnSourceVertexDataBufferToPool);
 
-            IReadOnlyList<int> sourceTriangleIndices;
-
-            if (useCachedTriangleValidation)
-            {
-                // Cut Plane検証で取得済みのSubMesh index配列をそのまま使い、
-                // 採用Planeの分割開始時にGetTrianglesを再実行しない。
-                sourceTriangleIndices =
-                    cachedSourceTrianglesBySubMesh[subMeshIndex];
-            }
-            else
-            {
-                // 通常経路では同じListへ書き込み、SubMeshごとの配列Allocationを避ける。
-                using (readTriangleDataProfilerMarker.Auto())
+                // Source Mesh由来の頂点属性はTriangle間で共有されるため、
+                // Source Vertexごとに一度だけVertexData化し、TriangleループではIndex参照だけを行う。
+                // Plane交差で生成されるCut VertexはこのBufferへ入れず、従来どおり補間処理で生成する。
+                for (int sourceVertexIndex = 0;
+                     sourceVertexIndex < sourceVertices.Length;
+                     sourceVertexIndex++)
                 {
-                    sourceMesh.GetTriangles(
-                        triangleIndices,
-                        subMeshIndex);
-                }
-
-                sourceTriangleIndices =
-                    triangleIndices;
-            }
-
-            if (sourceTriangleIndices.Count % 3 != 0)
-            {
-                failureReason =
-                    $"SubMesh {subMeshIndex} のTriangle index数が不正です。";
-                return false;
-            }
-
-            int estimatedSubMeshIndexCapacity =
-                CalculateInitialPieceTriangleIndexCapacity(
-                    sourceTriangleIndices.Count);
-
-            firstBuilder.SetInitialSubMeshIndexCapacity(
-                subMeshIndex,
-                estimatedSubMeshIndexCapacity);
-
-            secondBuilder.SetInitialSubMeshIndexCapacity(
-                subMeshIndex,
-                estimatedSubMeshIndexCapacity);
-
-            for (int triangleIndex = 0;
-                 triangleIndex < sourceTriangleIndices.Count;
-                 triangleIndex += 3)
-            {
-                int indexA;
-                int indexB;
-                int indexC;
-                VertexData vertexA;
-                VertexData vertexB;
-                VertexData vertexC;
-
-                using (readTriangleDataProfilerMarker.Auto())
-                {
-                    indexA = sourceTriangleIndices[triangleIndex];
-                    indexB = sourceTriangleIndices[triangleIndex + 1];
-                    indexC = sourceTriangleIndices[triangleIndex + 2];
-
-                    if (!IsValidVertexIndex(indexA, sourceVertices.Length) ||
-                        !IsValidVertexIndex(indexB, sourceVertices.Length) ||
-                        !IsValidVertexIndex(indexC, sourceVertices.Length))
-                    {
-                        failureReason =
-                            $"SubMesh {subMeshIndex} に範囲外の頂点indexがあります。";
-                        return false;
-                    }
-
-                    vertexA =
+                    sourceVertexDataByIndex[sourceVertexIndex] =
                         CreateVertexData(
-                            indexA,
-                            sourceVertices,
-                            sourceNormals,
-                            sourceUv,
-                            sourceTangents,
-                            hasUv,
-                            hasTangents,
-                            sourceConnectivityVertexIds);
-
-                    vertexB =
-                        CreateVertexData(
-                            indexB,
-                            sourceVertices,
-                            sourceNormals,
-                            sourceUv,
-                            sourceTangents,
-                            hasUv,
-                            hasTangents,
-                            sourceConnectivityVertexIds);
-
-                    vertexC =
-                        CreateVertexData(
-                            indexC,
+                            sourceVertexIndex,
                             sourceVertices,
                             sourceNormals,
                             sourceUv,
@@ -708,255 +648,347 @@ public sealed class MeshPlaneSplitter
                             hasTangents,
                             sourceConnectivityVertexIds);
                 }
+            }
 
-                float distanceA;
-                float distanceB;
-                float distanceC;
-                byte triangleClassification;
-
-                using (classifyTriangleProfilerMarker.Auto())
-                {
-                    if (useCachedTriangleValidation)
-                    {
-                        // Cut Plane検証時と同じ距離・分類を使う。
-                        // ここではGetDistanceToPointとPositive/Negative判定を再実行しない。
-                        distanceA =
-                            cachedSourceVertexPlaneDistances[indexA];
-
-                        distanceB =
-                            cachedSourceVertexPlaneDistances[indexB];
-
-                        distanceC =
-                            cachedSourceVertexPlaneDistances[indexC];
-
-                        triangleClassification =
-                            cachedTriangleClassificationsBySubMesh
-                                [subMeshIndex]
-                                [triangleIndex / 3];
-                    }
-                    else
-                    {
-                        distanceA =
-                            cutPlane.GetDistanceToPoint(
-                                vertexA.Position);
-
-                        distanceB =
-                            cutPlane.GetDistanceToPoint(
-                                vertexB.Position);
-
-                        distanceC =
-                            cutPlane.GetDistanceToPoint(
-                                vertexC.Position);
-
-                        triangleClassification =
-                            ClassifyTriangle(
-                                distanceA,
-                                distanceB,
-                                distanceC,
-                                geometryEpsilon);
-                    }
-
-                    if (!IsFinite(distanceA) ||
-                        !IsFinite(distanceB) ||
-                        !IsFinite(distanceC))
-                    {
-                        failureReason =
-                            "PlaneとTriangleの距離計算結果にNaN / Infinityを検出しました。";
-                        return false;
-                    }
-                }
-
-                if (triangleClassification ==
-                    TRIANGLE_CLASSIFICATION_POSITIVE)
-                {
-                    if (enableDiagnostics)
-                    {
-                        positiveOnlyTriangleCount++;
-                    }
-
-                    using (addUncutTriangleProfilerMarker.Auto())
-                    {
-                        firstBuilder.AddTriangle(
-                            vertexA,
-                            vertexB,
-                            vertexC,
-                            subMeshIndex,
-                            false);
-                    }
-
-                    continue;
-                }
-
-                if (triangleClassification ==
-                    TRIANGLE_CLASSIFICATION_NEGATIVE)
-                {
-                    if (enableDiagnostics)
-                    {
-                        negativeOnlyTriangleCount++;
-                    }
-
-                    using (addUncutTriangleProfilerMarker.Auto())
-                    {
-                        secondBuilder.AddTriangle(
-                            vertexA,
-                            vertexB,
-                            vertexC,
-                            subMeshIndex,
-                            false);
-                    }
-
-                    continue;
-                }
-
-                if (triangleClassification !=
-                    TRIANGLE_CLASSIFICATION_INTERSECTING)
+            for (int subMeshIndex = 0;
+                 subMeshIndex < originalSubMeshCount;
+                 subMeshIndex++)
+            {
+                if (sourceMesh.GetTopology(subMeshIndex) != MeshTopology.Triangles)
                 {
                     failureReason =
-                        "Triangle分類結果に未定義値が含まれています。";
+                        $"SubMesh {subMeshIndex} がTriangles topologyではありません。";
                     return false;
                 }
 
-                if (enableDiagnostics)
+                IReadOnlyList<int> sourceTriangleIndices;
+
+                if (useCachedTriangleValidation)
                 {
-                    intersectingTriangleCount++;
+                    // Cut Plane検証で取得済みのSubMesh index配列をそのまま使い、
+                    // 採用Planeの分割開始時にGetTrianglesを再実行しない。
+                    sourceTriangleIndices =
+                        cachedSourceTrianglesBySubMesh[subMeshIndex];
+                }
+                else
+                {
+                    // 通常経路では同じListへ書き込み、SubMeshごとの配列Allocationを避ける。
+                    using (readTriangleDataProfilerMarker.Auto())
+                    {
+                        sourceMesh.GetTriangles(
+                            triangleIndices,
+                            subMeshIndex);
+                    }
+
+                    sourceTriangleIndices =
+                        triangleIndices;
                 }
 
-                using (processIntersectingTriangleProfilerMarker.Auto())
+                if (sourceTriangleIndices.Count % 3 != 0)
                 {
-                    using (buildClippedGeometryProfilerMarker.Auto())
-                    {
-                        ClipTriangle(
-                            vertexA,
-                            vertexB,
-                            vertexC,
-                            distanceA,
-                            distanceB,
-                            distanceC,
-                            true,
-                            geometryEpsilon,
-                            clippedPolygon,
-                            cutConnectivityVertexIdsBySourceEdge,
-                            ref nextConnectivityVertexId);
-                    }
+                    failureReason =
+                        $"SubMesh {subMeshIndex} のTriangle index数が不正です。";
+                    return false;
+                }
 
-                    using (addClippedTrianglesProfilerMarker.Auto())
-                    {
-                        firstBuilder.AddConvexPolygon(
-                            clippedPolygon,
-                            subMeshIndex,
-                            false);
-                    }
+                int estimatedSubMeshIndexCapacity =
+                    CalculateInitialPieceTriangleIndexCapacity(
+                        sourceTriangleIndices.Count);
 
-                    using (buildClippedGeometryProfilerMarker.Auto())
-                    {
-                        ClipTriangle(
-                            vertexA,
-                            vertexB,
-                            vertexC,
-                            distanceA,
-                            distanceB,
-                            distanceC,
-                            false,
-                            geometryEpsilon,
-                            clippedPolygon,
-                            cutConnectivityVertexIdsBySourceEdge,
-                            ref nextConnectivityVertexId);
-                    }
+                firstBuilder.SetInitialSubMeshIndexCapacity(
+                    subMeshIndex,
+                    estimatedSubMeshIndexCapacity);
 
-                    using (addClippedTrianglesProfilerMarker.Auto())
-                    {
-                        secondBuilder.AddConvexPolygon(
-                            clippedPolygon,
-                            subMeshIndex,
-                            false);
-                    }
+                secondBuilder.SetInitialSubMeshIndexCapacity(
+                    subMeshIndex,
+                    estimatedSubMeshIndexCapacity);
 
-                    using (registerBoundaryProfilerMarker.Auto())
+                for (int triangleIndex = 0;
+                     triangleIndex < sourceTriangleIndices.Count;
+                     triangleIndex += 3)
+                {
+                    int indexA;
+                    int indexB;
+                    int indexC;
+                    VertexData vertexA;
+                    VertexData vertexB;
+                    VertexData vertexC;
+
+                    using (readTriangleDataProfilerMarker.Auto())
                     {
-                        if (!TryGetCutSegment(
-                                vertexA,
-                                vertexB,
-                                vertexC,
-                                indexA,
-                                indexB,
-                                indexC,
-                                distanceA,
-                                distanceB,
-                                distanceC,
-                                geometryEpsilon,
-                                cutPoints,
-                                cutPointSourceEdgeVertexIndexA,
-                                cutPointSourceEdgeVertexIndexB,
-                                cutPointConnectivityVertexIds,
-                                cutConnectivityVertexIdsBySourceEdge,
-                                ref nextConnectivityVertexId,
-                                out CutSegment cutSegment,
-                                out bool isDegenerateSegment))
+                        indexA = sourceTriangleIndices[triangleIndex];
+                        indexB = sourceTriangleIndices[triangleIndex + 1];
+                        indexC = sourceTriangleIndices[triangleIndex + 2];
+
+                        if (!IsValidVertexIndex(indexA, sourceVertices.Length) ||
+                            !IsValidVertexIndex(indexB, sourceVertices.Length) ||
+                            !IsValidVertexIndex(indexC, sourceVertices.Length))
                         {
-                            // 交点が1点しか得られないTriangleは、Planeが頂点へ接触しただけ等で
-                            // 境界Edgeを構成しない局所的な縮退として扱う。
-                            // 2交点が得られている場合は、距離が短くてもTopologyを維持するため
-                            // TryGetCutSegment側でCutSegmentとして残す。
-                            if (isDegenerateSegment)
-                            {
-                                if (enableDiagnostics)
-                                {
-                                    degenerateCutSegmentCount++;
-
-                                    if (loggedDegenerateCutSegmentCount <
-                                        MAX_DEGENERATE_SEGMENT_DIAGNOSTIC_DETAILS)
-                                    {
-                                        LogDegenerateCutSegmentDiagnostic(
-                                            subMeshIndex,
-                                            triangleIndex / 3,
-                                            triangleIndex,
-                                            vertexA,
-                                            vertexB,
-                                            vertexC,
-                                            indexA,
-                                            indexB,
-                                            indexC,
-                                            distanceA,
-                                            distanceB,
-                                            distanceC,
-                                            geometryEpsilon);
-
-                                        loggedDegenerateCutSegmentCount++;
-                                    }
-                                }
-
-                                continue;
-                            }
-
                             failureReason =
-                                "交差Triangleの切断線分計算中にNaN / Infinity等の不正値を検出しました。";
+                                $"SubMesh {subMeshIndex} に範囲外の頂点indexがあります。";
                             return false;
                         }
 
-                        // CutSegmentの各端点には、生成元の元Mesh Vertex / Edgeを保持する。
-                        // Boundary Nodeの同一性はこの生成元Topologyを主条件として判定し、
-                        // 近接した別Edge由来の交点を誤結合しない。
-                        cutSegment =
-                            new CutSegment(
-                                cutSegment.First,
-                                cutSegment.Second,
-                                cutSegment.FirstSourceEdgeVertexIndexA,
-                                cutSegment.FirstSourceEdgeVertexIndexB,
-                                cutSegment.SecondSourceEdgeVertexIndexA,
-                                cutSegment.SecondSourceEdgeVertexIndexB,
-                                cutSegment.FirstConnectivityVertexId,
-                                cutSegment.SecondConnectivityVertexId,
-                                subMeshIndex,
-                                triangleIndex / 3,
-                                triangleIndex,
-                                indexA,
-                                indexB,
-                                indexC);
+                        vertexA = sourceVertexDataByIndex[indexA];
+                        vertexB = sourceVertexDataByIndex[indexB];
+                        vertexC = sourceVertexDataByIndex[indexC];
+                    }
 
-                        cutSegments.Add(cutSegment);
+                    float distanceA;
+                    float distanceB;
+                    float distanceC;
+                    byte triangleClassification;
+
+                    using (classifyTriangleProfilerMarker.Auto())
+                    {
+                        if (useCachedTriangleValidation)
+                        {
+                            // Cut Plane検証時と同じ距離・分類を使う。
+                            // ここではGetDistanceToPointとPositive/Negative判定を再実行しない。
+                            distanceA =
+                                cachedSourceVertexPlaneDistances[indexA];
+
+                            distanceB =
+                                cachedSourceVertexPlaneDistances[indexB];
+
+                            distanceC =
+                                cachedSourceVertexPlaneDistances[indexC];
+
+                            triangleClassification =
+                                cachedTriangleClassificationsBySubMesh
+                                    [subMeshIndex]
+                                    [triangleIndex / 3];
+                        }
+                        else
+                        {
+                            distanceA =
+                                cutPlane.GetDistanceToPoint(
+                                    vertexA.Position);
+
+                            distanceB =
+                                cutPlane.GetDistanceToPoint(
+                                    vertexB.Position);
+
+                            distanceC =
+                                cutPlane.GetDistanceToPoint(
+                                    vertexC.Position);
+
+                            triangleClassification =
+                                ClassifyTriangle(
+                                    distanceA,
+                                    distanceB,
+                                    distanceC,
+                                    geometryEpsilon);
+                        }
+
+                        if (!IsFinite(distanceA) ||
+                            !IsFinite(distanceB) ||
+                            !IsFinite(distanceC))
+                        {
+                            failureReason =
+                                "PlaneとTriangleの距離計算結果にNaN / Infinityを検出しました。";
+                            return false;
+                        }
+                    }
+
+                    if (triangleClassification ==
+                        TRIANGLE_CLASSIFICATION_POSITIVE)
+                    {
+                        if (enableDiagnostics)
+                        {
+                            positiveOnlyTriangleCount++;
+                        }
+
+                        using (addUncutTriangleProfilerMarker.Auto())
+                        {
+                            firstBuilder.AddTriangle(
+                                vertexA,
+                                vertexB,
+                                vertexC,
+                                subMeshIndex,
+                                false);
+                        }
+
+                        continue;
+                    }
+
+                    if (triangleClassification ==
+                        TRIANGLE_CLASSIFICATION_NEGATIVE)
+                    {
+                        if (enableDiagnostics)
+                        {
+                            negativeOnlyTriangleCount++;
+                        }
+
+                        using (addUncutTriangleProfilerMarker.Auto())
+                        {
+                            secondBuilder.AddTriangle(
+                                vertexA,
+                                vertexB,
+                                vertexC,
+                                subMeshIndex,
+                                false);
+                        }
+
+                        continue;
+                    }
+
+                    if (triangleClassification !=
+                        TRIANGLE_CLASSIFICATION_INTERSECTING)
+                    {
+                        failureReason =
+                            "Triangle分類結果に未定義値が含まれています。";
+                        return false;
+                    }
+
+                    if (enableDiagnostics)
+                    {
+                        intersectingTriangleCount++;
+                    }
+
+                    using (processIntersectingTriangleProfilerMarker.Auto())
+                    {
+                        using (buildClippedGeometryProfilerMarker.Auto())
+                        {
+                            ClipTriangle(
+                                vertexA,
+                                vertexB,
+                                vertexC,
+                                distanceA,
+                                distanceB,
+                                distanceC,
+                                true,
+                                geometryEpsilon,
+                                clippedPolygon,
+                                cutConnectivityVertexIdsBySourceEdge,
+                                ref nextConnectivityVertexId);
+                        }
+
+                        using (addClippedTrianglesProfilerMarker.Auto())
+                        {
+                            firstBuilder.AddConvexPolygon(
+                                clippedPolygon,
+                                subMeshIndex,
+                                false);
+                        }
+
+                        using (buildClippedGeometryProfilerMarker.Auto())
+                        {
+                            ClipTriangle(
+                                vertexA,
+                                vertexB,
+                                vertexC,
+                                distanceA,
+                                distanceB,
+                                distanceC,
+                                false,
+                                geometryEpsilon,
+                                clippedPolygon,
+                                cutConnectivityVertexIdsBySourceEdge,
+                                ref nextConnectivityVertexId);
+                        }
+
+                        using (addClippedTrianglesProfilerMarker.Auto())
+                        {
+                            secondBuilder.AddConvexPolygon(
+                                clippedPolygon,
+                                subMeshIndex,
+                                false);
+                        }
+
+                        using (registerBoundaryProfilerMarker.Auto())
+                        {
+                            if (!TryGetCutSegment(
+                                    vertexA,
+                                    vertexB,
+                                    vertexC,
+                                    indexA,
+                                    indexB,
+                                    indexC,
+                                    distanceA,
+                                    distanceB,
+                                    distanceC,
+                                    geometryEpsilon,
+                                    cutPoints,
+                                    cutPointSourceEdgeVertexIndexA,
+                                    cutPointSourceEdgeVertexIndexB,
+                                    cutPointConnectivityVertexIds,
+                                    cutConnectivityVertexIdsBySourceEdge,
+                                    ref nextConnectivityVertexId,
+                                    out CutSegment cutSegment,
+                                    out bool isDegenerateSegment))
+                            {
+                                // 交点が1点しか得られないTriangleは、Planeが頂点へ接触しただけ等で
+                                // 境界Edgeを構成しない局所的な縮退として扱う。
+                                // 2交点が得られている場合は、距離が短くてもTopologyを維持するため
+                                // TryGetCutSegment側でCutSegmentとして残す。
+                                if (isDegenerateSegment)
+                                {
+                                    if (enableDiagnostics)
+                                    {
+                                        degenerateCutSegmentCount++;
+
+                                        if (loggedDegenerateCutSegmentCount <
+                                            MAX_DEGENERATE_SEGMENT_DIAGNOSTIC_DETAILS)
+                                        {
+                                            LogDegenerateCutSegmentDiagnostic(
+                                                subMeshIndex,
+                                                triangleIndex / 3,
+                                                triangleIndex,
+                                                vertexA,
+                                                vertexB,
+                                                vertexC,
+                                                indexA,
+                                                indexB,
+                                                indexC,
+                                                distanceA,
+                                                distanceB,
+                                                distanceC,
+                                                geometryEpsilon);
+
+                                            loggedDegenerateCutSegmentCount++;
+                                        }
+                                    }
+
+                                    continue;
+                                }
+
+                                failureReason =
+                                    "交差Triangleの切断線分計算中にNaN / Infinity等の不正値を検出しました。";
+                                return false;
+                            }
+
+                            // CutSegmentの各端点には、生成元の元Mesh Vertex / Edgeを保持する。
+                            // Boundary Nodeの同一性はこの生成元Topologyを主条件として判定し、
+                            // 近接した別Edge由来の交点を誤結合しない。
+                            cutSegment =
+                                new CutSegment(
+                                    cutSegment.First,
+                                    cutSegment.Second,
+                                    cutSegment.FirstSourceEdgeVertexIndexA,
+                                    cutSegment.FirstSourceEdgeVertexIndexB,
+                                    cutSegment.SecondSourceEdgeVertexIndexA,
+                                    cutSegment.SecondSourceEdgeVertexIndexB,
+                                    cutSegment.FirstConnectivityVertexId,
+                                    cutSegment.SecondConnectivityVertexId,
+                                    subMeshIndex,
+                                    triangleIndex / 3,
+                                    triangleIndex,
+                                    indexA,
+                                    indexB,
+                                    indexC);
+
+                            cutSegments.Add(cutSegment);
+                        }
                     }
                 }
             }
+        }
+        finally
+        {
+            ReleaseSourceVertexDataBuffer(
+                sourceVertexDataByIndex,
+                returnSourceVertexDataBufferToPool);
         }
 
         if (enableDiagnostics)
@@ -1199,6 +1231,52 @@ public sealed class MeshPlaneSplitter
         return maximumConnectivityVertexId + 1;
     }
 
+
+    private static VertexData[] AcquireSourceVertexDataBuffer(
+        int requiredLength,
+        out bool returnToPool)
+    {
+        VertexData[] retainedBuffer =
+            sourceVertexDataBuffer;
+
+        if (retainedBuffer != null &&
+            requiredLength <= retainedBuffer.Length &&
+            Interlocked.CompareExchange(
+                ref sourceVertexDataBufferLeaseState,
+                1,
+                0) == 0)
+        {
+            returnToPool = false;
+            return retainedBuffer;
+        }
+
+        // 32,768頂点超過または想定外の再入時だけ、従来のPool経路へ退避する。
+        // 通常のEnemy死亡ではBeforeSceneLoadで保持した専用Bufferを使用する。
+        returnToPool = true;
+        return ArrayPool<VertexData>.Shared.Rent(requiredLength);
+    }
+
+    private static void ReleaseSourceVertexDataBuffer(
+        VertexData[] buffer,
+        bool returnToPool)
+    {
+        if (buffer == null)
+        {
+            return;
+        }
+
+        if (returnToPool)
+        {
+            ArrayPool<VertexData>.Shared.Return(
+                buffer,
+                false);
+            return;
+        }
+
+        Interlocked.Exchange(
+            ref sourceVertexDataBufferLeaseState,
+            0);
+    }
 
     private static VertexData CreateVertexData(
         int index,

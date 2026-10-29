@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 6589344586481476205}
   - component: {fileID: 1787020106862075068}
+  - component: {fileID: 5384503320076492432}
   m_Layer: 0
   m_Name: EnemySpawnArea
   m_TagString: Untagged
@@ -49,3 +50,21 @@ MonoBehaviour:
   - {fileID: 0}
   spawners:
   - {fileID: 0}
+--- !u!114 &5384503320076492432
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6265533415786048423}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dc2fc3bcc7a33f946a82c626d885cd2f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BattleAreaEnemiesCondition
+  areaTrigger: {fileID: 0}
+  scanInterval: 0.2
+  enemyLayerMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  completionCheckDelay: 1.5

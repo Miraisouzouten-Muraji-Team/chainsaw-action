@@ -4,16 +4,8 @@ using UnityEngine;
 
 public class BattleAreaEnemiesCondition : GimmickConditionBase
 {
-    [Header("エリア設定")]
-    [SerializeField]
-    private EnemySpawnArea esa = null;
-
     [SerializeField]
     private Collider areaTrigger;
-
-    [Header("初期配置された敵")]
-    [SerializeField]
-    private List<EnemyHealth> areaAllEnemies = new();
 
     [Header("敵の検出設定")]
     [Tooltip("トリガー内を検索する間隔（秒）")]
@@ -54,11 +46,6 @@ public class BattleAreaEnemiesCondition : GimmickConditionBase
 
     private void Awake()
     {
-        if (esa == null)
-        {
-            esa = GetComponent<EnemySpawnArea>();
-        }
-
         if (areaTrigger == null)
         {
             areaTrigger = GetComponent<Collider>();
@@ -80,10 +67,6 @@ public class BattleAreaEnemiesCondition : GimmickConditionBase
         }
     }
 
-    private void OnEnable()
-    {
-        RegisterInitialEnemies();
-    }
 
     private void Start()
     {
@@ -131,17 +114,6 @@ public class BattleAreaEnemiesCondition : GimmickConditionBase
 
         hasRegisteredAnyEnemy = false;
         scanTimer = 0f;
-    }
-
-    /// <summary>
-    /// Inspectorで指定した初期配置の敵を登録する
-    /// </summary>
-    private void RegisterInitialEnemies()
-    {
-        foreach (EnemyHealth enemy in areaAllEnemies)
-        {
-            RegisterEnemy(enemy);
-        }
     }
 
     /// <summary>

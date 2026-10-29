@@ -1,4 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using Unity.Profiling;
 using UnityEngine;
 
 /// <summary>
@@ -11,6 +12,27 @@ using UnityEngine;
 /// </remarks>
 public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
 {
+    private static readonly ProfilerMarker createPiecesProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Digging.Effect.Total");
+
+        private static readonly ProfilerMarker getSourceProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Digging.Effect.GetSourceAndBake");
+
+        private static readonly ProfilerMarker createPieceObjectsProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Digging.Effect.CreatePieceObjects");
+
+        private static readonly ProfilerMarker createPieceShellProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Digging.Effect.CreatePieceShell");
+
+        private static readonly ProfilerMarker configurePieceProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Digging.Effect.ConfigurePieceObject");
+
+        private static readonly ProfilerMarker resolvePlayerCollidersProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Digging.Effect.ResolvePlayerColliders");
+
+        private static readonly ProfilerMarker ignorePlayerCollisionProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Digging.Effect.IgnorePlayerCollisions");
+
     private const int MIN_TARGET_PIECE_COUNT = 2;
 
     [Header("分割対象")]
@@ -103,6 +125,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     /// </returns>
     public bool TryCreatePieces()
     {
+        using (createPiecesProfilerMarker.Auto())
+        {
         if (HasCompletedSplit)
         {
             Debug.LogWarning(
@@ -179,6 +203,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             {
                 DestroyRuntimeMesh(sourceMesh);
             }
+        }
+    
         }
     }
 
@@ -333,6 +359,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         out bool destroySourceMeshAfterSplit,
         out string failureReason)
     {
+        using (getSourceProfilerMarker.Auto())
+        {
         sourceMesh = null;
         sourceRenderer = null;
         destroySourceMeshAfterSplit = false;
@@ -393,6 +421,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             "分割対象からMeshを取得できませんでした。";
 
         return false;
+    
+        }
     }
 
     private bool ValidateSourceMeshMaterialLayout(
@@ -447,6 +477,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         Renderer sourceRenderer,
         out string failureReason)
     {
+        using (createPieceObjectsProfilerMarker.Auto())
+        {
         if (splitPieceMeshes == null ||
             splitPieceMeshes.Count == 0)
         {
@@ -520,6 +552,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
 
         failureReason = null;
         return pieceObjects.Count > 0;
+    
+        }
     }
 
     /// <summary>
@@ -600,6 +634,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     private GameObject CreatePieceShell(
         string objectName)
     {
+        using (createPieceShellProfilerMarker.Auto())
+        {
         var pieceObject =
             new GameObject(
                 objectName);
@@ -622,6 +658,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         pieceObject.AddComponent<Rigidbody>();
 
         return pieceObject;
+    
+        }
     }
 
     /// <summary>
@@ -634,6 +672,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         Material[] materials,
         Renderer sourceRenderer)
     {
+        using (configurePieceProfilerMarker.Auto())
+        {
         pieceObject.name =
             $"{sourceRenderer.name}_DiggingPiece_{pieceIndex:D2}";
 
@@ -765,6 +805,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
 
         IgnorePlayerCollisions(
             pieceCollider);
+    
+        }
     }
 
     /// <summary>
@@ -772,6 +814,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     /// </summary>
     private void ResolvePlayerCollidersForPieceCollision()
     {
+        using (resolvePlayerCollidersProfilerMarker.Auto())
+        {
         playerColliders.Clear();
 
         if (playerReference.TryGetPlayerColliders(
@@ -785,6 +829,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             "Player TagからPlayer Colliderを取得できませんでした。" +
             "Piece生成は継続しますが、Playerとの衝突無効化は適用されません。",
             this);
+    
+        }
     }
 
     /// <summary>
@@ -793,6 +839,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     private void IgnorePlayerCollisions(
         Collider pieceCollider)
     {
+        using (ignorePlayerCollisionProfilerMarker.Auto())
+        {
         for (int colliderIndex = 0;
              colliderIndex < playerColliders.Count;
              colliderIndex++)
@@ -809,6 +857,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
                 pieceCollider,
                 playerCollider,
                 true);
+        }
+    
         }
     }
 

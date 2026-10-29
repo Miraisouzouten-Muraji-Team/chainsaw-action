@@ -1,4 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using Unity.Profiling;
 using UnityEngine;
 
 /// <summary>
@@ -11,6 +12,9 @@ using UnityEngine;
 /// </remarks>
 public sealed class EnemyCutPieceShrink : MonoBehaviour
 {
+    private static readonly ProfilerMarker beginShrinkProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.PieceEffects.BeginShrink");
+
     private readonly List<Transform> pieceTransforms =
         new List<Transform>();
 
@@ -50,6 +54,8 @@ public sealed class EnemyCutPieceShrink : MonoBehaviour
         float delay,
         float duration)
     {
+        using (beginShrinkProfilerMarker.Auto())
+        {
         if (pieces == null ||
             pieces.Count == 0)
         {
@@ -119,6 +125,8 @@ public sealed class EnemyCutPieceShrink : MonoBehaviour
         enabled = true;
 
         return true;
+    
+        }
     }
 
     private void Update()

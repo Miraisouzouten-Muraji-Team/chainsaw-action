@@ -1,4 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using Unity.Profiling;
 using UnityEngine;
 
 /// <summary>
@@ -15,6 +16,27 @@ using UnityEngine;
 /// </remarks>
 public sealed class EnemyMeshCutter : MonoBehaviour
 {
+    private static readonly ProfilerMarker tryCutProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.Total");
+
+        private static readonly ProfilerMarker getSourceProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.GetSourceAndBake");
+
+        private static readonly ProfilerMarker convertTrajectoryProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.ConvertTrajectory");
+
+        private static readonly ProfilerMarker createPieceShellProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.CreatePieceShell");
+
+        private static readonly ProfilerMarker configurePieceProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.ConfigurePieceObject");
+
+        private static readonly ProfilerMarker resolvePlayerCollidersProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.ResolvePlayerColliders");
+
+        private static readonly ProfilerMarker ignorePlayerCollisionProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.IgnorePlayerCollisions");
+
     [Header("切断対象")]
 
     [Tooltip(
@@ -159,6 +181,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     /// </returns>
     public bool TryCut(ChainsawAttackTrajectory trajectory)
     {
+        using (tryCutProfilerMarker.Auto())
+        {
         if (ShouldRunDiagnostics)
         {
             LogDiagnostic(
@@ -392,6 +416,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 DestroyRuntimeMesh(sourceMesh);
             }
         }
+    
+        }
     }
 
     /// <summary>
@@ -583,6 +609,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         out bool destroySourceMeshAfterCut,
         out string failureReason)
     {
+        using (getSourceProfilerMarker.Auto())
+        {
         sourceMesh = null;
         sourceRenderer = null;
         destroySourceMeshAfterCut = false;
@@ -665,6 +693,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             "切断対象からMeshを取得できませんでした。";
 
         return false;
+    
+        }
     }
 
     /// <summary>
@@ -729,6 +759,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         out List<Vector3> localTipPositions,
         out List<Vector3> localRootPositions)
     {
+        using (convertTrajectoryProfilerMarker.Auto())
+        {
         int sampleCount =
             trajectory.SampleCount;
 
@@ -750,6 +782,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             localRootPositions.Add(
                 rendererTransform.InverseTransformPoint(
                     sample.RootPosition));
+        }
+    
         }
     }
 
@@ -833,6 +867,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     private GameObject CreatePieceShell(
         string objectName)
     {
+        using (createPieceShellProfilerMarker.Auto())
+        {
         var pieceObject =
             new GameObject(
                 objectName);
@@ -855,6 +891,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         pieceObject.AddComponent<Rigidbody>();
 
         return pieceObject;
+    
+        }
     }
 
     /// <summary>
@@ -867,6 +905,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         Material[] materials,
         Renderer sourceRenderer)
     {
+        using (configurePieceProfilerMarker.Auto())
+        {
         pieceObject.name =
             $"{sourceRenderer.name}_Cut_{suffix}";
 
@@ -1018,6 +1058,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 $"SourceWorldBoundsCenter={FormatVector3(sourceRenderer.bounds.center)}, " +
                 $"SourceWorldBoundsSize={FormatVector3(sourceRenderer.bounds.size)}");
         }
+    
+        }
     }
 
     /// <summary>
@@ -1025,6 +1067,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     /// </summary>
     private void ResolvePlayerCollidersForPieceCollision()
     {
+        using (resolvePlayerCollidersProfilerMarker.Auto())
+        {
         playerColliders.Clear();
 
         if (playerReference.TryGetPlayerColliders(
@@ -1038,6 +1082,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             "Player TagからPlayer Colliderを取得できませんでした。" +
             "Piece生成は継続しますが、Playerとの衝突無効化は適用されません。",
             this);
+    
+        }
     }
 
     /// <summary>
@@ -1046,6 +1092,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     private void IgnorePlayerCollisions(
         Collider pieceCollider)
     {
+        using (ignorePlayerCollisionProfilerMarker.Auto())
+        {
         for (int colliderIndex = 0;
              colliderIndex < playerColliders.Count;
              colliderIndex++)
@@ -1062,6 +1110,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 pieceCollider,
                 playerCollider,
                 true);
+        }
+    
         }
     }
 

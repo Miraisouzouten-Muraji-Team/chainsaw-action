@@ -1,4 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using Unity.Profiling;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -15,6 +16,9 @@ using UnityEngine.Serialization;
 /// </remarks>
 public sealed class EnemyCutPieceBurst : MonoBehaviour
 {
+    private static readonly ProfilerMarker beginBurstProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.PieceEffects.BeginBurst");
+
     private const float DIRECTION_EPSILON_SQR =
         0.000001f;
 
@@ -110,6 +114,8 @@ public sealed class EnemyCutPieceBurst : MonoBehaviour
         float hitSourceDirectionSign,
         float chainsawRotationRatio)
     {
+        using (beginBurstProfilerMarker.Auto())
+        {
         ResetBurstVelocityDecayState();
 
         if (cutPieces == null ||
@@ -276,6 +282,8 @@ public sealed class EnemyCutPieceBurst : MonoBehaviour
         }
 
         return true;
+    
+        }
     }
 
     /// <summary>

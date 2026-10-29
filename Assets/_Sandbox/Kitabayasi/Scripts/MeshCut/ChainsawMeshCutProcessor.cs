@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using Unity.Profiling;
 using UnityEngine;
 
 /// <summary>
@@ -11,6 +12,24 @@ using UnityEngine;
 /// </remarks>
 public sealed class ChainsawMeshCutProcessor
 {
+    private static readonly ProfilerMarker tryCutProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Processor.Total");
+
+        private static readonly ProfilerMarker readSourceTrianglesProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Processor.ReadSourceTriangles");
+
+        private static readonly ProfilerMarker calculateCutRangeProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Processor.CalculateCutRange");
+
+        private static readonly ProfilerMarker createCutPlaneProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Processor.SelectCutPlane");
+
+        private static readonly ProfilerMarker validateCutPlaneProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Processor.ValidateCutPlaneCandidate");
+
+        private static readonly ProfilerMarker validateFinalBoundaryProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Normal.Processor.ValidateFinalBoundary");
+
     private const float MIN_DIRECTION_SQR_MAGNITUDE = 0.00000001f;
 
     private readonly MeshPlaneSplitter meshPlaneSplitter =
@@ -33,6 +52,8 @@ public sealed class ChainsawMeshCutProcessor
         out List<Mesh> pieceMeshes,
         out string failureReason)
     {
+        using (tryCutProfilerMarker.Auto())
+        {
         pieceMeshes = new List<Mesh>();
         failureReason = null;
 
@@ -147,6 +168,8 @@ public sealed class ChainsawMeshCutProcessor
         }
 
         return true;
+    
+        }
     }
 
     private static bool ValidateInputs(
@@ -235,6 +258,8 @@ public sealed class ChainsawMeshCutProcessor
         out List<int[]> sourceTrianglesBySubMesh,
         out string failureReason)
     {
+        using (readSourceTrianglesProfilerMarker.Auto())
+        {
         sourceTrianglesBySubMesh =
             new List<int[]>(sourceMesh.subMeshCount);
 
@@ -279,6 +304,8 @@ public sealed class ChainsawMeshCutProcessor
 
         failureReason = null;
         return true;
+    
+        }
     }
 
 
@@ -322,6 +349,8 @@ public sealed class ChainsawMeshCutProcessor
         out Plane correctedCutPlane,
         out string failureReason)
     {
+        using (createCutPlaneProfilerMarker.Auto())
+        {
         correctedCutPlane = default;
 
         string lastTrajectoryCandidateFailure = null;
@@ -464,6 +493,8 @@ public sealed class ChainsawMeshCutProcessor
         }
 
         return false;
+    
+        }
     }
 
     private static bool TryCreateTrajectoryPlaneCandidate(
@@ -605,6 +636,8 @@ public sealed class ChainsawMeshCutProcessor
         out float cutRangeGeometryEpsilon,
         out string failureReason)
     {
+        using (calculateCutRangeProfilerMarker.Auto())
+        {
         cutRangeSpaceBounds = default;
         cutRangeMinimum = 0.0f;
         cutRangeMaximum = 0.0f;
@@ -667,6 +700,8 @@ public sealed class ChainsawMeshCutProcessor
 
         failureReason = null;
         return true;
+    
+        }
     }
 
     private static bool TryClampPlanePointToCutRange(
@@ -747,6 +782,8 @@ public sealed class ChainsawMeshCutProcessor
         out int intersectionSegmentCount,
         out string failureReason)
     {
+        using (validateCutPlaneProfilerMarker.Auto())
+        {
         intersectionMinimum =
             float.PositiveInfinity;
 
@@ -944,6 +981,8 @@ public sealed class ChainsawMeshCutProcessor
 
         failureReason = null;
         return true;
+    
+        }
     }
 
     private static bool TryGetTrianglePlaneIntersectionPoints(
@@ -1515,6 +1554,8 @@ public sealed class ChainsawMeshCutProcessor
         bool enableDiagnostics,
         out string failureReason)
     {
+        using (validateFinalBoundaryProfilerMarker.Auto())
+        {
         float boundaryMinimum =
             float.PositiveInfinity;
 
@@ -1580,6 +1621,8 @@ public sealed class ChainsawMeshCutProcessor
 
         failureReason = null;
         return true;
+    
+        }
     }
 
     private static bool TryExpandCutBoundaryAxisRange(

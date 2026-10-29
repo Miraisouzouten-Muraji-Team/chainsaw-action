@@ -1,4 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using Unity.Profiling;
 using UnityEngine;
 
 /// <summary>
@@ -12,6 +13,9 @@ using UnityEngine;
 /// </remarks>
 public sealed class EnemyDiggingDeathBurst : MonoBehaviour
 {
+    private static readonly ProfilerMarker beginBurstProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Digging.PieceEffects.BeginBurst");
+
     private const float DIRECTION_EPSILON_SQR = 0.000001f;
     private const float MAX_DIRECTION_SPREAD = 90f;
 
@@ -68,6 +72,8 @@ public sealed class EnemyDiggingDeathBurst : MonoBehaviour
     public bool BeginBurst(
         IReadOnlyList<Transform> pieces)
     {
+        using (beginBurstProfilerMarker.Auto())
+        {
         if (burstOrigin == null)
         {
             Debug.LogWarning(
@@ -208,6 +214,8 @@ public sealed class EnemyDiggingDeathBurst : MonoBehaviour
             this);
 
         return false;
+    
+        }
     }
 
     private void ApplyUpperBurst(

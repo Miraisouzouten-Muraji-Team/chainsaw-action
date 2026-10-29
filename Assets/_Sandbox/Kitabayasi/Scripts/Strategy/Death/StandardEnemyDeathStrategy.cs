@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using Unity.Profiling;
 using UnityEngine;
 
 /// <summary>
@@ -17,6 +18,18 @@ using UnityEngine;
 public sealed class StandardEnemyDeathStrategy :
     IEnemyDeathStrategy
 {
+    private static readonly ProfilerMarker deathMeshEffectProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Death.Total");
+
+        private static readonly ProfilerMarker normalDeathMeshProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Death.Normal.Total");
+
+        private static readonly ProfilerMarker normalPieceEffectsProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Death.Normal.PieceEffects");
+
+        private static readonly ProfilerMarker diggingDeathMeshProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Death.Digging.Total");
+
     private const float COORDINATE_ROUND_TRIP_WARNING_THRESHOLD = 0.001f;
     private const float SCALE_DIFFERENCE_WARNING_THRESHOLD = 0.001f;
 
@@ -276,6 +289,8 @@ public sealed class StandardEnemyDeathStrategy :
     /// </summary>
     private void TryBeginDeathMeshEffect()
     {
+        using (deathMeshEffectProfilerMarker.Auto())
+        {
         if (enemyAttackHitReceiver != null)
         {
             PlayerAttackHitData lastPlayerAttackHitData =
@@ -292,6 +307,8 @@ public sealed class StandardEnemyDeathStrategy :
         }
 
         TryCutDeathMesh();
+    
+        }
     }
 
     /// <summary>
@@ -300,6 +317,8 @@ public sealed class StandardEnemyDeathStrategy :
     /// </summary>
     private void TryBeginDiggingDeathMesh()
     {
+        using (diggingDeathMeshProfilerMarker.Auto())
+        {
         if (enemyDiggingMeshDeathEffect == null)
         {
             Debug.LogWarning(
@@ -352,6 +371,8 @@ public sealed class StandardEnemyDeathStrategy :
         TryBeginPieceShrink(
             pieceTransforms,
             "Death-Digging-04 Shrink");
+    
+        }
     }
 
     /// <summary>
@@ -360,6 +381,8 @@ public sealed class StandardEnemyDeathStrategy :
     /// </summary>
     private void TryCutDeathMesh()
     {
+        using (normalDeathMeshProfilerMarker.Auto())
+        {
         if (ShouldRunMeshCutDiagnostics)
         {
             LogMeshCutDiagnostic(
@@ -562,6 +585,8 @@ public sealed class StandardEnemyDeathStrategy :
         }
 
         TryBeginCutPieceEffects();
+    
+        }
     }
 
     private ChainsawAttackTrajectoryProfile FindTrajectoryProfile(
@@ -1270,6 +1295,8 @@ public sealed class StandardEnemyDeathStrategy :
 
     private void TryBeginCutPieceEffects()
     {
+        using (normalPieceEffectsProfilerMarker.Auto())
+        {
         var cutPieceTransforms =
             new List<Transform>();
 
@@ -1359,6 +1386,8 @@ public sealed class StandardEnemyDeathStrategy :
         TryBeginPieceShrink(
             cutPieceTransforms,
             "Death-09 Shrink");
+    
+        }
     }
 
     /// <summary>

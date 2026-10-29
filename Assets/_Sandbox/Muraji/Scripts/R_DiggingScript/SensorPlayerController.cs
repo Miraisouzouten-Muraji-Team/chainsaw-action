@@ -1,8 +1,43 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 public class SensorPlayerController : MonoBehaviour
 {
+    [System.Serializable]
+    private sealed class MovementEffectSetting
+    {
+        [Tooltip("生成するエフェクトのPrefabです。未設定ならこの種類のエフェクトを出しません。")]
+        public GameObject Prefab;
+        [Tooltip("プレイヤーの子に配置した、エフェクトの出現位置と向きを決める空オブジェクトです。")]
+        public Transform SpawnPoint;
+        [Tooltip("生成から削除までの秒数です。エフェクトが消えるまでの長さ以上に設定してください。")]
+        [Min(0.01f)] public float Lifetime = 2f;
+    }
+
+    [Header("移動エフェクト：Prefabと出現位置")]
+    [SerializeField] private MovementEffectSetting walkEffect = new MovementEffectSetting();
+    [SerializeField] private MovementEffectSetting jumpEffect = new MovementEffectSetting();
+    [SerializeField] private MovementEffectSetting doubleJumpEffect = new MovementEffectSetting();
+    [SerializeField] private MovementEffectSetting landingEffect = new MovementEffectSetting();
+    [Header("移動エフェクト：歩行と着地の判定")]
+    [Tooltip("歩行中に再生されるAnimationClipを登録してください。ステート名ではなく実際のクリップで確認します。未登録なら歩行エフェクトを出しません。")]
+    [SerializeField] private AnimationClip[] walkEffectClips = new AnimationClip[0];
+    [Tooltip("歩行アニメーションを再生するAnimatorのレイヤー番号です。通常の基本レイヤーは0です。")]
+    [SerializeField, Min(0)] private int walkEffectAnimatorLayer;
+    [Tooltip("歩行エフェクトを生成する間隔です。小さいほど密に出ます。")]
+    [SerializeField, Min(0.02f)] private float walkEffectInterval = 0.15f;
+    [Tooltip("ブレンド中の歩行クリップを再生中とみなす最小の重みです。")]
+    [SerializeField, Range(0.01f, 1f)] private float walkEffectMinimumWeight = 0.1f;
+    [Tooltip("着地エフェクトに必要な空中時間です。斜面の接地判定が短く途切れたときの連発を防ぎます。")]
+    [SerializeField, Min(0f)] private float landingEffectMinimumAirSeconds = 0.08f;
+    private Animator movementEffectAnimator;
+    private readonly List<AnimatorClipInfo> movementEffectClipInfos = new List<AnimatorClipInfo>();
+    private float walkEffectRemaining;
+    private bool effectGroundStateInitialized;
+    private bool effectWasSupported;
+    private float effectAirStartedAt;
+
     [Header("ジャンプの跳び出し・長押し")]
     [Tooltip("既存のジャンプと同じボタンに割り当てたButton型InputActionを指定します。未設定では長押し調整を行いません。")]
     [SerializeField] private InputActionReference jumpHoldAction;
@@ -230,6 +265,7 @@ public class SensorPlayerController : MonoBehaviour
     {
         input = GetComponent<PlayerInputHandler>();
         playerAnimator = GetComponent<PlayerAnimator>();
+        movementEffectAnimator = GetComponent<Animator>();
         playerRigidbody = GetComponent<Rigidbody>();
 
         // Rayの発射位置は専用Transformのみで決める。物理Colliderは参照しない。
@@ -396,6 +432,7 @@ public class SensorPlayerController : MonoBehaviour
 
         // 実接触と補助判定で着地を確認し、空中ジャンプ回数を回復する。
         RefreshGroundRayState();
+        TickWalkEffect(deltaTime);
 
         if (chainsawAccelerator.isActiveAndEnabled)
         {
@@ -927,6 +964,7 @@ public class SensorPlayerController : MonoBehaviour
             playerRigidbody.linearVelocity = Vector3.zero;
             // 壁ジャンプ専用アニメーションを再生する。硬直と跳躍処理は変更しない。
             playerAnimator.PlayWallJump();
+            SpawnMovementEffect(jumpEffect);
             return;
         }
 
@@ -979,6 +1017,7 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         jumpPending = true;
+        SpawnMovementEffect(pendingJumpCount >= MAX_JUMP_COUNT ? doubleJumpEffect : jumpEffect);
         LogJumpDiagnostics("予約確定", isGrounded, canUseCoyoteTime);
 
         // 予約時点で猶予を消費し、初段を連続使用できないようにする。
@@ -1034,6 +1073,7 @@ public class SensorPlayerController : MonoBehaviour
 
         // 下り追従や前方の先読みだけでは回数を戻さず、本体の支持確認を必要とする。
         if (HasJumpGroundSupport()) jumpsUsed = 0;
+        ObserveLandingEffect();
     }
 
     // 移動補助用の接地と区別し、ジャンプ回数を回復できる支持面かを返す。
@@ -2174,6 +2214,8 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
+        walkEffectRemaining = 0f;
+        effectGroundStateInitialized = false;
         variableJumpActive = false;
         jumpReleased = false;
         jumpHoldElapsed = 0f;
@@ -2241,5 +2283,103 @@ public class SensorPlayerController : MonoBehaviour
         {
             input.ResetInput();
         }
+    }
+
+    // 設定した空オブジェクトからワールド空間へ生成し、再生と寿命を設定する。
+    private void SpawnMovementEffect(MovementEffectSetting setting)
+    {
+        if (setting == null || setting.Prefab == null || setting.SpawnPoint == null)
+            return;
+
+        GameObject instance = Instantiate(setting.Prefab, setting.SpawnPoint.position,
+            setting.SpawnPoint.rotation * setting.Prefab.transform.rotation);
+        instance.SetActive(true);
+        // Play On AwakeがオフのParticleSystemにも対応する。子の非表示設定は維持する。
+        foreach (ParticleSystem particles in instance.GetComponentsInChildren<ParticleSystem>())
+        {
+            if (!particles.isPlaying) particles.Play(false);
+        }
+        Destroy(instance, Mathf.Max(0.01f, setting.Lifetime));
+    }
+
+    // 登録した歩行クリップが再生され、地面上を移動している間だけ一定間隔で生成する。
+    private void TickWalkEffect(float deltaTime)
+    {
+        bool canEmit = !IsAttacking && !IsDamageStunned && !IsImpactStunned &&
+            wallJumpStunRemaining <= 0f && !wallJumpLaunchPending && !jumpPending &&
+            chainsawDigging != null && !chainsawDigging.IsDigging &&
+            HasJumpGroundSupport() && Time.time >= ignoreGroundUntil &&
+            Mathf.Abs(playerRigidbody.linearVelocity.x) > 0.01f && IsWalkEffectAnimationPlaying();
+        if (!canEmit)
+        {
+            walkEffectRemaining = 0f;
+            return;
+        }
+
+        walkEffectRemaining -= deltaTime;
+        if (walkEffectRemaining > 0f) return;
+        SpawnMovementEffect(walkEffect);
+        walkEffectRemaining = Mathf.Max(0.02f, walkEffectInterval);
+    }
+
+    // 現在と遷移先のクリップを確認し、名前を推測せず登録済み歩行モーションを判別する。
+    private bool IsWalkEffectAnimationPlaying()
+    {
+        if (movementEffectAnimator == null || !movementEffectAnimator.isActiveAndEnabled ||
+            movementEffectAnimator.runtimeAnimatorController == null || movementEffectAnimator.speed <= 0f ||
+            walkEffectAnimatorLayer < 0 || walkEffectAnimatorLayer >= movementEffectAnimator.layerCount ||
+            walkEffectClips == null || walkEffectClips.Length == 0)
+            return false;
+
+        if (walkEffectAnimatorLayer > 0 &&
+            movementEffectAnimator.GetLayerWeight(walkEffectAnimatorLayer) < walkEffectMinimumWeight)
+            return false;
+
+        AnimatorStateInfo current = movementEffectAnimator.GetCurrentAnimatorStateInfo(walkEffectAnimatorLayer);
+        movementEffectAnimator.GetCurrentAnimatorClipInfo(walkEffectAnimatorLayer, movementEffectClipInfos);
+        if (Mathf.Abs(current.speed * current.speedMultiplier) > 0.001f && ContainsWalkEffectClip())
+            return true;
+
+        if (!movementEffectAnimator.IsInTransition(walkEffectAnimatorLayer)) return false;
+        AnimatorStateInfo next = movementEffectAnimator.GetNextAnimatorStateInfo(walkEffectAnimatorLayer);
+        movementEffectAnimator.GetNextAnimatorClipInfo(walkEffectAnimatorLayer, movementEffectClipInfos);
+        return Mathf.Abs(next.speed * next.speedMultiplier) > 0.001f && ContainsWalkEffectClip();
+    }
+
+    // ブレンドの重みが十分あるクリップが、歩行用として登録されているか確認する。
+    private bool ContainsWalkEffectClip()
+    {
+        foreach (AnimatorClipInfo info in movementEffectClipInfos)
+        {
+            if (info.clip == null || info.weight < walkEffectMinimumWeight) continue;
+            foreach (AnimationClip clip in walkEffectClips)
+                if (clip != null && clip == info.clip) return true;
+        }
+        return false;
+    }
+
+    // 実際のジャンプ用支持が空中から接地へ戻った瞬間だけ着地エフェクトを出す。
+    // 複数回の接地照会でも経過時間を重複加算せず、初期配置や復活では出さない。
+    private void ObserveLandingEffect()
+    {
+        bool supported = HasJumpGroundSupport();
+        if (!effectGroundStateInitialized)
+        {
+            effectGroundStateInitialized = true;
+            effectWasSupported = supported;
+            effectAirStartedAt = Time.time;
+            return;
+        }
+
+        if (!supported && effectWasSupported)
+            effectAirStartedAt = Time.time;
+
+        if (supported && !effectWasSupported &&
+            Time.time - effectAirStartedAt >= landingEffectMinimumAirSeconds &&
+            !jumpPending && !wallJumpLaunchPending && wallJumpStunRemaining <= 0f &&
+            chainsawDigging != null && !chainsawDigging.IsDigging)
+            SpawnMovementEffect(landingEffect);
+
+        effectWasSupported = supported;
     }
 }

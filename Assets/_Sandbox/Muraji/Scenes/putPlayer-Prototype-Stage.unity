@@ -128050,7 +128050,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3609346295830887544, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Enabled
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 3609346295830887544, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Center.x
@@ -128237,9 +128237,17 @@ PrefabInstance:
       value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: walkEffect.Prefab
+      value: 
+      objectReference: {fileID: 2508192069092340084, guid: f787e45fd32d718478daee5e1a6ef32a, type: 3}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: chainsawAudioSource
       value: 
       objectReference: {fileID: 1460914060}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: walkEffect.Lifetime
+      value: 0.5
+      objectReference: {fileID: 0}
     - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: airJumpLaunchImpulse
       value: 2
@@ -128253,9 +128261,45 @@ PrefabInstance:
       value: 0.9
       objectReference: {fileID: 0}
     - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: landingEffect.Prefab
+      value: 
+      objectReference: {fileID: 1475400350550726891, guid: 873007ee2dffc354e95a1110312d3377, type: 3}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: walkEffect.SpawnPoint
+      value: 
+      objectReference: {fileID: 1420853011}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: directWallSpeedDivisor
       value: 5
       objectReference: {fileID: 0}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: landingEffect.Lifetime
+      value: 0.3
+      objectReference: {fileID: 0}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: doubleJumpEffect.Prefab
+      value: 
+      objectReference: {fileID: 4026887684143952547, guid: 098f157927a3abf4ea8488589f6bf67f, type: 3}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: landingEffect.SpawnPoint
+      value: 
+      objectReference: {fileID: 1420853011}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: doubleJumpEffect.Lifetime
+      value: 0.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: walkEffectClips.Array.size
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: doubleJumpEffect.SpawnPoint
+      value: 
+      objectReference: {fileID: 1420853011}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: 'walkEffectClips.Array.data[0]'
+      value: 
+      objectReference: {fileID: -203655887218126122, guid: 9e524d9aa33cd374298e93379558fab3, type: 3}
     - target: {fileID: 7810380243804671968, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.y
       value: 0.95
@@ -128278,7 +128322,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8829701663556054117, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8932933858338773496, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: hurtDuration
@@ -128840,6 +128884,11 @@ MonoBehaviour:
 --- !u!65 &1416235475 stripped
 BoxCollider:
   m_CorrespondingSourceObject: {fileID: 7824983804689355250, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &1420853011 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 700277126749977039, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
   m_PrefabInstance: {fileID: 1351245142}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1431690092

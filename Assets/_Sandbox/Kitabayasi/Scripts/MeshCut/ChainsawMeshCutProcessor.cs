@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Threading;
 using Unity.Profiling;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// チェンソー軌跡から切断Planeを決定し、共通Mesh分割処理へ切断を依頼する。
@@ -29,9 +30,32 @@ public sealed class ChainsawMeshCutProcessor
     // Enemy死亡フレームの追加Allocationなしで行うための専用Buffer。
     private const int SOURCE_VERTEX_PLANE_DISTANCE_GENERATION_BUFFER_LENGTH = 32768;
 
+    // Mesh.vertices / GetTriangles(int) が返す配列を死亡時に生成しないため、
+    // 通常攻撃のSource Mesh読み取り用Listをクラス専用Poolで再利用する。
+    // Triangle indexは現在の約4.1万Triangle規模（約12.5万index）を収容できる値を起動時に確保する。
+    private const int SOURCE_MESH_VERTEX_LIST_WARMUP_CAPACITY = 32768;
+    private const int SOURCE_MESH_TRIANGLE_INDEX_LIST_WARMUP_CAPACITY = 131072;
+    private const int SOURCE_MESH_TRIANGLE_INDEX_LIST_WARMUP_COUNT = 2;
+    private const int SOURCE_MESH_SUBMESH_LIST_WARMUP_CAPACITY = 8;
+
     private static int[] sourceVertexPlaneDistanceGenerationBuffer;
     private static int sourceVertexPlaneDistanceGenerationBufferLeaseState;
     private static int sourceVertexPlaneDistanceGeneration;
+
+    private static readonly Stack<List<Vector3>> sourceVertexListPool =
+        new Stack<List<Vector3>>();
+
+    private static readonly Stack<List<int>> sourceTriangleIndexListPool =
+        new Stack<List<int>>();
+
+    private static readonly Stack<List<List<int>>> sourceTrianglesBySubMeshListPool =
+        new Stack<List<List<int>>>();
+
+    // 通常攻撃のMeshFilter.sharedMesh専用。Source Mesh自体をKeyにすることで、
+    // 同一sharedMeshを使うEnemy間でPositionベースConnectivity結果を共有する。
+    // SkinnedMeshRendererのBakeMeshは姿勢ごとに頂点位置が変わるため、このCacheへ入れない。
+    private static readonly Dictionary<Mesh, int[]> sourceConnectivityVertexIdsBySharedMesh =
+        new Dictionary<Mesh, int[]>();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void InitializeSourceVertexPlaneDistanceGenerationBuffer()
@@ -55,6 +79,29 @@ public sealed class ChainsawMeshCutProcessor
 
         sourceVertexPlaneDistanceGeneration = 0;
         sourceVertexPlaneDistanceGenerationBufferLeaseState = 0;
+
+        // Domain Reload無効でも前回PlayのMesh参照とConnectivity配列を持ち越さない。
+        sourceConnectivityVertexIdsBySharedMesh.Clear();
+
+        // DictionaryがSceneをまたいでMesh AssetやRuntime Meshを強参照し続けないよう、
+        // Scene解放時にCacheも解放する。Additive Scene解放時にClearされても結果は再計算されるだけで安全。
+        SceneManager.sceneUnloaded -= HandleSceneUnloaded;
+        SceneManager.sceneUnloaded += HandleSceneUnloaded;
+
+        EnsurePooledListCount(
+            sourceVertexListPool,
+            1,
+            SOURCE_MESH_VERTEX_LIST_WARMUP_CAPACITY);
+
+        EnsurePooledListCount(
+            sourceTriangleIndexListPool,
+            SOURCE_MESH_TRIANGLE_INDEX_LIST_WARMUP_COUNT,
+            SOURCE_MESH_TRIANGLE_INDEX_LIST_WARMUP_CAPACITY);
+
+        EnsurePooledListCount(
+            sourceTrianglesBySubMeshListPool,
+            1,
+            SOURCE_MESH_SUBMESH_LIST_WARMUP_CAPACITY);
     }
 
     private readonly MeshPlaneSplitter meshPlaneSplitter =
@@ -63,8 +110,13 @@ public sealed class ChainsawMeshCutProcessor
     /// <summary>
     /// Bake済みMeshをチェンソー軌跡由来のPlaneで分割し、Connected Piece単位の最終Meshを生成する。
     /// </summary>
+    /// <param name="useSharedMeshConnectivityCache">
+    /// MeshFilter.sharedMeshを読み取り専用Sourceとして使う通常2分割経路だけtrueにする。
+    /// BakeMesh等、頂点Positionが実行時に変化するMeshではfalseにする。
+    /// </param>
     public bool TryCut(
         Mesh sourceMesh,
+        bool useSharedMeshConnectivityCache,
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
         int cutDirectionSampleCount,
@@ -99,146 +151,313 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
-        Vector3[] sourceVertices =
-            sourceMesh.vertices;
+        List<Vector3> sourceVertices =
+            AcquireReusableList(
+                sourceVertexListPool,
+                sourceMesh.vertexCount);
 
-        if (!TryGetSourceTriangleIndices(
-                sourceMesh,
-                sourceVertices.Length,
-                out List<int[]> sourceTrianglesBySubMesh,
-                out failureReason))
-        {
-            return false;
-        }
-
-        List<byte[]> triangleClassificationsBySubMesh =
-            CreateTriangleClassificationBuffers(
-                sourceTrianglesBySubMesh);
-
-        var sourceVertexPlaneDistances =
-            new float[sourceVertices.Length];
-
-        float geometryEpsilon =
-            MeshPlaneSplitter.CalculateGeometryEpsilon(sourceMesh.bounds);
-
-        if (!TryCalculateCutRangeParameters(
-                sourceVertices,
-                sourceToCutRangeSpace,
-                cutRangeAxis,
-                cutRangeMinimumNormalized,
-                cutRangeMaximumNormalized,
-                out Bounds cutRangeSpaceBounds,
-                out float cutRangeMinimum,
-                out float cutRangeMaximum,
-                out float cutRangeGeometryEpsilon,
-                out failureReason))
-        {
-            return false;
-        }
-
-        int[] sourceVertexPlaneDistanceGenerations =
-            AcquireSourceVertexPlaneDistanceGenerationBuffer(
-                sourceVertices.Length,
-                out bool returnPlaneDistanceGenerationsToPool,
-                out int planeDistanceGeneration);
-
-        int planeDistanceCacheCandidateCount = 0;
-        int planeDistanceCacheRequestCount = 0;
-        int planeDistanceCalculationCount = 0;
-        int planeDistanceCacheHitCount = 0;
-
-        Plane correctedCutPlane = default;
-        bool hasValidCutPlane;
+        List<List<int>> sourceTrianglesBySubMesh = null;
 
         try
         {
-            hasValidCutPlane =
-                TryCreateCutPlane(
+            // 配列Propertyではなく、Capacityを保持するListへ直接読み込む。
+            // Mesh.GetVerticesはList内容を置換するため、前回要素をコピーせず再利用できる。
+            sourceMesh.GetVertices(sourceVertices);
+
+            if (sourceVertices.Count != sourceMesh.vertexCount)
+            {
+                failureReason =
+                    "切断対象MeshのvertexCountと取得したVertex数が一致していません。";
+                return false;
+            }
+
+            if (!TryGetSourceTriangleIndices(
+                    sourceMesh,
+                    sourceVertices.Count,
+                    out sourceTrianglesBySubMesh,
+                    out failureReason))
+            {
+                return false;
+            }
+
+            List<byte[]> triangleClassificationsBySubMesh =
+                CreateTriangleClassificationBuffers(
+                    sourceTrianglesBySubMesh);
+
+            var sourceVertexPlaneDistances =
+                new float[sourceVertices.Count];
+
+            float geometryEpsilon =
+                MeshPlaneSplitter.CalculateGeometryEpsilon(sourceMesh.bounds);
+
+            if (!TryCalculateCutRangeParameters(
+                    sourceVertices,
+                    sourceToCutRangeSpace,
+                    cutRangeAxis,
+                    cutRangeMinimumNormalized,
+                    cutRangeMaximumNormalized,
+                    out Bounds cutRangeSpaceBounds,
+                    out float cutRangeMinimum,
+                    out float cutRangeMaximum,
+                    out float cutRangeGeometryEpsilon,
+                    out failureReason))
+            {
+                return false;
+            }
+
+            int[] sourceVertexPlaneDistanceGenerations =
+                AcquireSourceVertexPlaneDistanceGenerationBuffer(
+                    sourceVertices.Count,
+                    out bool returnPlaneDistanceGenerationsToPool,
+                    out int planeDistanceGeneration);
+
+            int planeDistanceCacheCandidateCount = 0;
+            int planeDistanceCacheRequestCount = 0;
+            int planeDistanceCalculationCount = 0;
+            int planeDistanceCacheHitCount = 0;
+
+            Plane correctedCutPlane = default;
+            bool hasValidCutPlane;
+
+            try
+            {
+                hasValidCutPlane =
+                    TryCreateCutPlane(
+                        sourceVertices,
+                        sourceTrianglesBySubMesh,
+                        sourceVertexPlaneDistances,
+                        sourceVertexPlaneDistanceGenerations,
+                        ref planeDistanceGeneration,
+                        triangleClassificationsBySubMesh,
+                        localTipPositions,
+                        localRootPositions,
+                        cutDirectionSampleCount,
+                        sourceToCutRangeSpace,
+                        cutRangeAxis,
+                        cutRangeSpaceBounds,
+                        cutRangeMinimumNormalized,
+                        cutRangeMaximumNormalized,
+                        cutRangeMinimum,
+                        cutRangeMaximum,
+                        geometryEpsilon,
+                        cutRangeGeometryEpsilon,
+                        enableDiagnostics,
+                        ref planeDistanceCacheCandidateCount,
+                        ref planeDistanceCacheRequestCount,
+                        ref planeDistanceCalculationCount,
+                        ref planeDistanceCacheHitCount,
+                        out correctedCutPlane,
+                        out failureReason);
+            }
+            finally
+            {
+                ReleaseSourceVertexPlaneDistanceGenerationBuffer(
+                    sourceVertexPlaneDistanceGenerations,
+                    returnPlaneDistanceGenerationsToPool,
+                    planeDistanceGeneration);
+
+                if (enableDiagnostics)
+                {
+                    LogPlaneDistanceCacheDiagnostic(
+                        sourceVertices.Count,
+                        returnPlaneDistanceGenerationsToPool,
+                        planeDistanceCacheCandidateCount,
+                        planeDistanceCacheRequestCount,
+                        planeDistanceCalculationCount,
+                        planeDistanceCacheHitCount);
+                }
+            }
+
+            if (!hasValidCutPlane)
+            {
+                return false;
+            }
+
+            IReadOnlyList<int> sourceConnectivityVertexIds = null;
+
+            if (useSharedMeshConnectivityCache)
+            {
+                sourceConnectivityVertexIds =
+                    GetOrBuildSharedMeshConnectivityVertexIds(
+                        sourceMesh,
+                        sourceVertices,
+                        out bool connectivityCacheHit);
+
+                if (enableDiagnostics)
+                {
+                    Debug.Log(
+                        "[MeshCutConnectivityCache] " +
+                        $"{(connectivityCacheHit ? "HIT" : "MISS")} / " +
+                        $"Mesh={sourceMesh.name}, " +
+                        $"VertexCount={sourceVertices.Count}");
+                }
+            }
+
+            if (!meshPlaneSplitter.TrySplitConnectedPieces(
+                    sourceMesh,
+                    correctedCutPlane,
+                    cutSurfaceUvScale,
                     sourceVertices,
                     sourceTrianglesBySubMesh,
                     sourceVertexPlaneDistances,
-                    sourceVertexPlaneDistanceGenerations,
-                    ref planeDistanceGeneration,
                     triangleClassificationsBySubMesh,
-                    localTipPositions,
-                    localRootPositions,
-                    cutDirectionSampleCount,
-                    sourceToCutRangeSpace,
-                    cutRangeAxis,
-                    cutRangeSpaceBounds,
-                    cutRangeMinimumNormalized,
-                    cutRangeMaximumNormalized,
-                    cutRangeMinimum,
-                    cutRangeMaximum,
-                    geometryEpsilon,
-                    cutRangeGeometryEpsilon,
+                    sourceConnectivityVertexIds,
+                    "EnemyCut_FirstPiece",
+                    "EnemyCut_SecondPiece",
+                    cutBoundaryPoints =>
+                    {
+                        return TryValidateFinalCutBoundaryWithinRange(
+                                cutBoundaryPoints,
+                                sourceToCutRangeSpace,
+                                cutRangeAxis,
+                                cutRangeSpaceBounds,
+                                cutRangeMinimum,
+                                cutRangeMaximum,
+                                cutRangeGeometryEpsilon,
+                                enableDiagnostics,
+                                out string boundaryFailureReason)
+                            ? null
+                            : boundaryFailureReason;
+                    },
                     enableDiagnostics,
-                    ref planeDistanceCacheCandidateCount,
-                    ref planeDistanceCacheRequestCount,
-                    ref planeDistanceCalculationCount,
-                    ref planeDistanceCacheHitCount,
-                    out correctedCutPlane,
-                    out failureReason);
+                    out pieceMeshes,
+                    out failureReason))
+            {
+                return false;
+            }
+
+            return true;
         }
         finally
         {
-            ReleaseSourceVertexPlaneDistanceGenerationBuffer(
-                sourceVertexPlaneDistanceGenerations,
-                returnPlaneDistanceGenerationsToPool,
-                planeDistanceGeneration);
+            ReleaseSourceTrianglesBySubMeshBuffer(
+                sourceTrianglesBySubMesh);
 
-            if (enableDiagnostics)
+            ReleaseReusableList(
+                sourceVertexListPool,
+                sourceVertices);
+        }
+    
+        }
+    }
+
+    private static void EnsurePooledListCount<T>(
+        Stack<List<T>> pool,
+        int requiredCount,
+        int warmupCapacity)
+    {
+        int sufficientlySizedCount = 0;
+
+        foreach (List<T> list in pool)
+        {
+            if (list.Capacity >= warmupCapacity)
             {
-                LogPlaneDistanceCacheDiagnostic(
-                    sourceVertices.Length,
-                    returnPlaneDistanceGenerationsToPool,
-                    planeDistanceCacheCandidateCount,
-                    planeDistanceCacheRequestCount,
-                    planeDistanceCalculationCount,
-                    planeDistanceCacheHitCount);
+                sufficientlySizedCount++;
             }
         }
 
-        if (!hasValidCutPlane)
+        while (sufficientlySizedCount < requiredCount)
         {
-            return false;
-        }
+            pool.Push(
+                new List<T>(warmupCapacity));
 
-        if (!meshPlaneSplitter.TrySplitConnectedPieces(
+            sufficientlySizedCount++;
+        }
+    }
+
+    private static void HandleSceneUnloaded(Scene scene)
+    {
+        sourceConnectivityVertexIdsBySharedMesh.Clear();
+    }
+
+    /// <summary>
+    /// MeshFilter.sharedMesh用のSource Connectivity IDをMesh単位で取得する。
+    /// </summary>
+    /// <remarks>
+    /// Cache Valueは後段で読み取り専用として共有し、Enemy死亡ごとの配列コピーは行わない。
+    /// 同じMesh参照のままVertex Position / Topologyを変更する経路では明示的な無効化が必要になるため、
+    /// このメソッドは固定sharedMesh入力からだけ呼び出す。
+    /// </remarks>
+    private static IReadOnlyList<int> GetOrBuildSharedMeshConnectivityVertexIds(
+        Mesh sourceMesh,
+        IReadOnlyList<Vector3> sourceVertices,
+        out bool cacheHit)
+    {
+        if (sourceConnectivityVertexIdsBySharedMesh.TryGetValue(
                 sourceMesh,
-                correctedCutPlane,
-                cutSurfaceUvScale,
-                sourceVertices,
-                sourceTrianglesBySubMesh,
-                sourceVertexPlaneDistances,
-                triangleClassificationsBySubMesh,
-                "EnemyCut_FirstPiece",
-                "EnemyCut_SecondPiece",
-                cutBoundaryPoints =>
-                {
-                    return TryValidateFinalCutBoundaryWithinRange(
-                            cutBoundaryPoints,
-                            sourceToCutRangeSpace,
-                            cutRangeAxis,
-                            cutRangeSpaceBounds,
-                            cutRangeMinimum,
-                            cutRangeMaximum,
-                            cutRangeGeometryEpsilon,
-                            enableDiagnostics,
-                            out string boundaryFailureReason)
-                        ? null
-                        : boundaryFailureReason;
-                },
-                enableDiagnostics,
-                out pieceMeshes,
-                out failureReason))
+                out int[] cachedConnectivityVertexIds) &&
+            cachedConnectivityVertexIds != null &&
+            cachedConnectivityVertexIds.Length == sourceVertices.Count)
         {
-            return false;
+            cacheHit = true;
+            return cachedConnectivityVertexIds;
         }
 
-        return true;
-    
+        int[] connectivityVertexIds =
+            MeshConnectedComponentSplitter.BuildConnectedVertexIds(
+                sourceVertices,
+                sourceMesh.bounds);
+
+        sourceConnectivityVertexIdsBySharedMesh[sourceMesh] =
+            connectivityVertexIds;
+
+        cacheHit = false;
+        return connectivityVertexIds;
+    }
+
+    private static List<T> AcquireReusableList<T>(
+        Stack<List<T>> pool,
+        int minimumCapacity)
+    {
+        List<T> list =
+            pool.Count > 0
+                ? pool.Pop()
+                : new List<T>(minimumCapacity);
+
+        list.Clear();
+
+        if (list.Capacity < minimumCapacity)
+        {
+            list.Capacity = minimumCapacity;
         }
+
+        return list;
+    }
+
+    private static void ReleaseReusableList<T>(
+        Stack<List<T>> pool,
+        List<T> list)
+    {
+        if (list == null)
+        {
+            return;
+        }
+
+        list.Clear();
+        pool.Push(list);
+    }
+
+    private static void ReleaseSourceTrianglesBySubMeshBuffer(
+        List<List<int>> sourceTrianglesBySubMesh)
+    {
+        if (sourceTrianglesBySubMesh == null)
+        {
+            return;
+        }
+
+        // 取得順の逆で返し、次回も先頭SubMeshから同じLIFO順で再利用しやすくする。
+        for (int subMeshIndex = sourceTrianglesBySubMesh.Count - 1;
+             subMeshIndex >= 0;
+             subMeshIndex--)
+        {
+            ReleaseReusableList(
+                sourceTriangleIndexListPool,
+                sourceTrianglesBySubMesh[subMeshIndex]);
+        }
+
+        ReleaseReusableList(
+            sourceTrianglesBySubMeshListPool,
+            sourceTrianglesBySubMesh);
     }
 
     private static bool ValidateInputs(
@@ -324,11 +543,13 @@ public sealed class ChainsawMeshCutProcessor
     private static bool TryGetSourceTriangleIndices(
         Mesh sourceMesh,
         int sourceVertexCount,
-        out List<int[]> sourceTrianglesBySubMesh,
+        out List<List<int>> sourceTrianglesBySubMesh,
         out string failureReason)
     {
         sourceTrianglesBySubMesh =
-            new List<int[]>(sourceMesh.subMeshCount);
+            AcquireReusableList(
+                sourceTrianglesBySubMeshListPool,
+                sourceMesh.subMeshCount);
 
         for (int subMeshIndex = 0;
              subMeshIndex < sourceMesh.subMeshCount;
@@ -342,10 +563,19 @@ public sealed class ChainsawMeshCutProcessor
                 return false;
             }
 
-            int[] triangles =
-                sourceMesh.GetTriangles(subMeshIndex);
+            List<int> triangles =
+                AcquireReusableList(
+                    sourceTriangleIndexListPool,
+                    0);
 
-            if (triangles.Length % 3 != 0)
+            // 失敗途中でも呼び出し側finallyから確実に返却できるよう、取得直後に所有を登録する。
+            sourceTrianglesBySubMesh.Add(triangles);
+
+            sourceMesh.GetTriangles(
+                triangles,
+                subMeshIndex);
+
+            if (triangles.Count % 3 != 0)
             {
                 failureReason =
                     $"SubMesh {subMeshIndex} のTriangle index数が不正です。";
@@ -353,7 +583,7 @@ public sealed class ChainsawMeshCutProcessor
             }
 
             for (int triangleIndex = 0;
-                 triangleIndex < triangles.Length;
+                 triangleIndex < triangles.Count;
                  triangleIndex++)
             {
                 if (!IsValidVertexIndex(
@@ -365,18 +595,14 @@ public sealed class ChainsawMeshCutProcessor
                     return false;
                 }
             }
-
-            sourceTrianglesBySubMesh.Add(triangles);
         }
 
         failureReason = null;
         return true;
-    
     }
 
-
     private static List<byte[]> CreateTriangleClassificationBuffers(
-        IReadOnlyList<int[]> sourceTrianglesBySubMesh)
+        IReadOnlyList<List<int>> sourceTrianglesBySubMesh)
     {
         var result =
             new List<byte[]>(sourceTrianglesBySubMesh.Count);
@@ -387,7 +613,7 @@ public sealed class ChainsawMeshCutProcessor
         {
             result.Add(
                 new byte[
-                    sourceTrianglesBySubMesh[subMeshIndex].Length / 3]);
+                    sourceTrianglesBySubMesh[subMeshIndex].Count / 3]);
         }
 
         return result;
@@ -396,7 +622,7 @@ public sealed class ChainsawMeshCutProcessor
 
     private bool TryCreateCutPlane(
         IReadOnlyList<Vector3> sourceVertices,
-        IReadOnlyList<int[]> sourceTrianglesBySubMesh,
+        IReadOnlyList<List<int>> sourceTrianglesBySubMesh,
         float[] sourceVertexPlaneDistances,
         int[] sourceVertexPlaneDistanceGenerations,
         ref int planeDistanceGeneration,
@@ -845,7 +1071,7 @@ public sealed class ChainsawMeshCutProcessor
 
     private static bool TryValidateCutPlaneWithinRange(
         IReadOnlyList<Vector3> sourceVertices,
-        IReadOnlyList<int[]> sourceTrianglesBySubMesh,
+        IReadOnlyList<List<int>> sourceTrianglesBySubMesh,
         float[] sourceVertexPlaneDistances,
         int[] sourceVertexPlaneDistanceGenerations,
         ref int planeDistanceGeneration,
@@ -916,7 +1142,7 @@ public sealed class ChainsawMeshCutProcessor
              subMeshIndex < sourceTrianglesBySubMesh.Count;
              subMeshIndex++)
         {
-            int[] triangles =
+            List<int> triangles =
                 sourceTrianglesBySubMesh[subMeshIndex];
 
             byte[] triangleClassifications =
@@ -924,7 +1150,7 @@ public sealed class ChainsawMeshCutProcessor
 
             if (triangleClassifications == null ||
                 triangleClassifications.Length !=
-                    triangles.Length / 3)
+                    triangles.Count / 3)
             {
                 failureReason =
                     $"SubMesh {subMeshIndex} のTriangle分類バッファ数が一致していません。";
@@ -932,7 +1158,7 @@ public sealed class ChainsawMeshCutProcessor
             }
 
             for (int triangleIndex = 0;
-                 triangleIndex + 2 < triangles.Length;
+                 triangleIndex + 2 < triangles.Count;
                  triangleIndex += 3)
             {
                 int indexA =
@@ -1398,7 +1624,7 @@ public sealed class ChainsawMeshCutProcessor
 
     private static bool TryCreateAxisAlignedFallbackCutPlane(
         IReadOnlyList<Vector3> sourceVertices,
-        IReadOnlyList<int[]> sourceTrianglesBySubMesh,
+        IReadOnlyList<List<int>> sourceTrianglesBySubMesh,
         float[] sourceVertexPlaneDistances,
         int[] sourceVertexPlaneDistanceGenerations,
         ref int planeDistanceGeneration,

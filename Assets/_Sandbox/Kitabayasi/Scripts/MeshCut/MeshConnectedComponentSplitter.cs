@@ -128,6 +128,7 @@ public sealed class MeshConnectedComponentSplitter
             trianglesBySubMesh,
             triangleCount,
             null,
+            false,
             out componentMeshes,
             out failureReason);
     
@@ -135,21 +136,24 @@ public sealed class MeshConnectedComponentSplitter
     }
 
     /// <summary>
-    /// Unity Meshへ確定する前の分割作業バッファから、連結成分だけを最終Mesh化する。
+    /// MeshPlaneSplitterが内部生成・検証済みの分割作業バッファから、連結成分だけを最終Mesh化する。
     /// </summary>
     /// <remarks>
-    /// MeshPlaneSplitterが構築済みの頂点属性、Triangle index、Connectivity ID、Boundsを直接受け取り、
+    /// この入口はPieceMeshBuilder専用で、Triangle indexとConnectivity IDの全要素再検証を行わない。
+    /// 外部・汎用入力はpublic TrySplit(Mesh, ...)を使用し、従来のMesh入力検証を通す。
+    /// 構築済みの頂点属性、Triangle、Connectivity ID、Boundsを直接利用し、
     /// 中間Mesh生成・TriangleRecordへの全コピー・Bounds算出用の頂点再走査・
     /// Piece完成後のPositionベースConnectivity再構築を行わない。
     /// </remarks>
-    internal bool TrySplit(
-        IReadOnlyList<Vector3> sourceVertices,
-        IReadOnlyList<Vector3> sourceNormals,
-        IReadOnlyList<Vector2> sourceUv,
-        IReadOnlyList<Vector4> sourceTangents,
+    internal bool TrySplitTrustedWorkingData(
+        List<Vector3> sourceVertices,
+        List<Vector3> sourceNormals,
+        List<Vector2> sourceUv,
+        List<Vector4> sourceTangents,
         bool hasTangents,
-        IReadOnlyList<List<int>> sourceTrianglesBySubMesh,
-        IReadOnlyList<int> connectedVertexIds,
+        List<List<int>> sourceTrianglesBySubMesh,
+        List<int> connectedVertexIds,
+        int triangleCount,
         Bounds sourceBounds,
         string meshNamePrefix,
         out List<Mesh> componentMeshes,
@@ -159,37 +163,21 @@ public sealed class MeshConnectedComponentSplitter
         {
         componentMeshes = new List<Mesh>();
 
-        if (!TryValidateWorkingData(
+        // この入口はMeshPlaneSplitterのPieceMeshBuilder専用。
+        // Triangle index・Connectivity IDは前段の生成処理で保証済みなので、
+        // ここでは全要素を再走査せず、参照とCountの契約だけを確認する。
+        if (!TryValidateTrustedWorkingDataHeader(
                 sourceVertices,
                 sourceNormals,
                 sourceUv,
                 sourceTangents,
                 hasTangents,
                 sourceTrianglesBySubMesh,
-                out int triangleCount,
+                connectedVertexIds,
+                triangleCount,
                 out failureReason))
         {
             return false;
-        }
-
-        if (connectedVertexIds == null ||
-            connectedVertexIds.Count != sourceVertices.Count)
-        {
-            failureReason =
-                "Connected Component用Connectivity ID数が頂点数と一致していません。";
-            return false;
-        }
-
-        for (int vertexIndex = 0;
-             vertexIndex < connectedVertexIds.Count;
-             vertexIndex++)
-        {
-            if (connectedVertexIds[vertexIndex] < 0)
-            {
-                failureReason =
-                    $"頂点 {vertexIndex} に有効なConnectivity IDが設定されていません。";
-                return false;
-            }
         }
 
         return TrySplitReadData(
@@ -203,6 +191,7 @@ public sealed class MeshConnectedComponentSplitter
             sourceTrianglesBySubMesh,
             triangleCount,
             connectedVertexIds,
+            true,
             out componentMeshes,
             out failureReason);
     
@@ -220,6 +209,7 @@ public sealed class MeshConnectedComponentSplitter
         IReadOnlyList<List<int>> trianglesBySubMesh,
         int triangleCount,
         IReadOnlyList<int> precomputedConnectedVertexIds,
+        bool isTrustedWorkingData,
         out List<Mesh> componentMeshes,
         out string failureReason)
     {
@@ -266,16 +256,7 @@ public sealed class MeshConnectedComponentSplitter
         List<Vector3> componentNormals = componentNormalsScratch;
         List<Vector2> componentUv = componentUvScratch;
         List<Vector4> componentTangents = componentTangentsScratch;
-
-        if (isComponentMeshScratchInUse)
-        {
-            failureReason =
-                "BuildComponentMesh用Scratch Bufferが既に使用中です。" +
-                " MeshConnectedComponentSplitterは同期・非再入呼び出しを前提としています。";
-            return false;
-        }
-
-        isComponentMeshScratchInUse = true;
+        bool componentMeshScratchAcquired = false;
 
         try
         {
@@ -285,21 +266,10 @@ public sealed class MeshConnectedComponentSplitter
                 edgeKeys = ArrayPool<ulong>.Shared.Rent(edgeTableCapacity);
                 edgeOwnerTriangles = ArrayPool<int>.Shared.Rent(edgeTableCapacity);
                 edgeOccupied = ArrayPool<byte>.Shared.Rent(edgeTableCapacity);
-                firstTriangleIndexBySubMesh =
-                    ArrayPool<int>.Shared.Rent(trianglesBySubMesh.Count + 1);
                 rootToComponent = ArrayPool<int>.Shared.Rent(triangleCount);
                 componentIndexByTriangle =
                     ArrayPool<int>.Shared.Rent(triangleCount);
                 componentCounts = ArrayPool<int>.Shared.Rent(triangleCount);
-                componentStarts = ArrayPool<int>.Shared.Rent(triangleCount);
-                componentWriteCursor =
-                    ArrayPool<int>.Shared.Rent(triangleCount);
-                groupedTriangleIndices =
-                    ArrayPool<int>.Shared.Rent(triangleCount);
-                destinationVertexIndexBySourceVertexIndex =
-                    ArrayPool<int>.Shared.Rent(vertices.Count);
-                destinationVertexGenerationBySourceVertexIndex =
-                    ArrayPool<int>.Shared.Rent(vertices.Count);
 
                 // Pool配列は前回値を保持し得るため、アルゴリズムが初期値に依存する使用範囲だけ初期化する。
                 for (int i = 0; i < triangleCount; i++)
@@ -311,14 +281,6 @@ public sealed class MeshConnectedComponentSplitter
                 }
 
                 Array.Clear(edgeOccupied, 0, edgeTableCapacity);
-                Array.Clear(
-                    destinationVertexGenerationBySourceVertexIndex,
-                    0,
-                    vertices.Count);
-
-                FillFirstTriangleIndicesBySubMesh(
-                    trianglesBySubMesh,
-                    firstTriangleIndexBySubMesh);
 
             int triangleIndex = 0;
             int edgeTableMask = edgeTableCapacity - 1;
@@ -411,6 +373,60 @@ public sealed class MeshConnectedComponentSplitter
                     componentCounts[componentIndex]++;
                 }
 
+                if (componentCount == 1 &&
+                    isTrustedWorkingData &&
+                    precomputedConnectedVertexIds != null &&
+                    vertices is List<Vector3> workingVertices &&
+                    normals is List<Vector3> workingNormals &&
+                    uv is List<Vector2> workingUv &&
+                    tangents is List<Vector4> workingTangents &&
+                    trianglesBySubMesh is List<List<int>> workingTrianglesBySubMesh)
+                {
+                    Mesh componentMesh =
+                        BuildDirectWorkingDataMesh(
+                            meshNamePrefix,
+                            workingVertices,
+                            workingNormals,
+                            workingUv,
+                            workingTangents,
+                            hasTangents,
+                            workingTrianglesBySubMesh,
+                            sourceBounds);
+
+                    if (componentMesh == null)
+                    {
+                        failureReason =
+                            "連結成分から有効なMeshを生成できませんでした。";
+                        return false;
+                    }
+
+                    componentMeshes.Capacity = 1;
+                    componentMeshes.Add(componentMesh);
+                    failureReason = null;
+                    return true;
+                }
+
+                componentStarts = ArrayPool<int>.Shared.Rent(triangleCount);
+                componentWriteCursor =
+                    ArrayPool<int>.Shared.Rent(triangleCount);
+                groupedTriangleIndices =
+                    ArrayPool<int>.Shared.Rent(triangleCount);
+                firstTriangleIndexBySubMesh =
+                    ArrayPool<int>.Shared.Rent(trianglesBySubMesh.Count + 1);
+                destinationVertexIndexBySourceVertexIndex =
+                    ArrayPool<int>.Shared.Rent(vertices.Count);
+                destinationVertexGenerationBySourceVertexIndex =
+                    ArrayPool<int>.Shared.Rent(vertices.Count);
+
+                Array.Clear(
+                    destinationVertexGenerationBySourceVertexIndex,
+                    0,
+                    vertices.Count);
+
+                FillFirstTriangleIndicesBySubMesh(
+                    trianglesBySubMesh,
+                    firstTriangleIndexBySubMesh);
+
                 int groupedWriteStart = 0;
 
                 for (int componentIndex = 0;
@@ -439,6 +455,17 @@ public sealed class MeshConnectedComponentSplitter
                 }
 
             componentMeshes.Capacity = componentCount;
+
+            if (isComponentMeshScratchInUse)
+            {
+                failureReason =
+                    "BuildComponentMesh用Scratch Bufferが既に使用中です。" +
+                    " MeshConnectedComponentSplitterは同期・非再入呼び出しを前提としています。";
+                return false;
+            }
+
+            isComponentMeshScratchInUse = true;
+            componentMeshScratchAcquired = true;
 
             PrepareComponentMeshScratchBuffers(
                 trianglesBySubMesh.Count,
@@ -516,13 +543,16 @@ public sealed class MeshConnectedComponentSplitter
             ReturnPooledArray(destinationVertexIndexBySourceVertexIndex);
             ReturnPooledArray(destinationVertexGenerationBySourceVertexIndex);
 
-            // Countだけを破棄し、CapacityとList自体の所有権はSplitter専用Scratchへ残す。
-            // 共有Poolへ返さないため、uGUIや他システムに事前確保済みBacking Arrayを取得されない。
-            componentVertices.Clear();
-            componentNormals.Clear();
-            componentUv.Clear();
-            componentTangents.Clear();
-            isComponentMeshScratchInUse = false;
+            if (componentMeshScratchAcquired)
+            {
+                // Countだけを破棄し、CapacityとList自体の所有権はSplitter専用Scratchへ残す。
+                // 共有Poolへ返さないため、uGUIや他システムに事前確保済みBacking Arrayを取得されない。
+                componentVertices.Clear();
+                componentNormals.Clear();
+                componentUv.Clear();
+                componentTangents.Clear();
+                isComponentMeshScratchInUse = false;
+            }
         }
 
         }
@@ -630,18 +660,17 @@ public sealed class MeshConnectedComponentSplitter
     
     }
 
-    private static bool TryValidateWorkingData(
-        IReadOnlyList<Vector3> sourceVertices,
-        IReadOnlyList<Vector3> sourceNormals,
-        IReadOnlyList<Vector2> sourceUv,
-        IReadOnlyList<Vector4> sourceTangents,
+    private static bool TryValidateTrustedWorkingDataHeader(
+        List<Vector3> sourceVertices,
+        List<Vector3> sourceNormals,
+        List<Vector2> sourceUv,
+        List<Vector4> sourceTangents,
         bool hasTangents,
-        IReadOnlyList<List<int>> sourceTrianglesBySubMesh,
-        out int triangleCount,
+        List<List<int>> sourceTrianglesBySubMesh,
+        List<int> connectedVertexIds,
+        int triangleCount,
         out string failureReason)
     {
-        triangleCount = 0;
-
         if (sourceVertices == null ||
             sourceVertices.Count == 0 ||
             sourceNormals == null ||
@@ -649,10 +678,13 @@ public sealed class MeshConnectedComponentSplitter
             sourceUv == null ||
             sourceUv.Count != sourceVertices.Count ||
             sourceTrianglesBySubMesh == null ||
-            sourceTrianglesBySubMesh.Count == 0)
+            sourceTrianglesBySubMesh.Count == 0 ||
+            connectedVertexIds == null ||
+            connectedVertexIds.Count != sourceVertices.Count ||
+            triangleCount <= 0)
         {
             failureReason =
-                "連結成分判定用の分割作業データが不正です。";
+                "連結成分判定用の内部生成済み作業データが不正です。";
             return false;
         }
 
@@ -662,51 +694,6 @@ public sealed class MeshConnectedComponentSplitter
         {
             failureReason =
                 "連結成分判定用のTangent数が頂点数と一致していません。";
-            return false;
-        }
-
-        for (int subMeshIndex = 0;
-             subMeshIndex < sourceTrianglesBySubMesh.Count;
-             subMeshIndex++)
-        {
-            IReadOnlyList<int> subMeshTriangles =
-                sourceTrianglesBySubMesh[subMeshIndex];
-
-            if (subMeshTriangles == null ||
-                subMeshTriangles.Count % 3 != 0)
-            {
-                failureReason =
-                    $"SubMesh {subMeshIndex} の作業Triangle index数が不正です。";
-                return false;
-            }
-
-            for (int offset = 0;
-                 offset < subMeshTriangles.Count;
-                 offset += 3)
-            {
-                if (!IsValidVertexIndex(
-                        subMeshTriangles[offset],
-                        sourceVertices.Count) ||
-                    !IsValidVertexIndex(
-                        subMeshTriangles[offset + 1],
-                        sourceVertices.Count) ||
-                    !IsValidVertexIndex(
-                        subMeshTriangles[offset + 2],
-                        sourceVertices.Count))
-                {
-                    failureReason =
-                        $"SubMesh {subMeshIndex} の作業Triangleに範囲外の頂点indexがあります。";
-                    return false;
-                }
-            }
-
-            triangleCount += subMeshTriangles.Count / 3;
-        }
-
-        if (triangleCount == 0)
-        {
-            failureReason =
-                "連結成分判定用のTriangleがありません。";
             return false;
         }
 
@@ -733,14 +720,6 @@ public sealed class MeshConnectedComponentSplitter
 
         firstTriangleIndexBySubMesh[trianglesBySubMesh.Count] =
             triangleIndex;
-    }
-
-    private static bool IsValidVertexIndex(
-        int vertexIndex,
-        int vertexCount)
-    {
-        return vertexIndex >= 0 &&
-               vertexIndex < vertexCount;
     }
 
     /// <summary>
@@ -1085,6 +1064,59 @@ public sealed class MeshConnectedComponentSplitter
         {
             ArrayPool<T>.Shared.Return(array);
         }
+    }
+
+    private static Mesh BuildDirectWorkingDataMesh(
+        string meshNamePrefix,
+        List<Vector3> vertices,
+        List<Vector3> normals,
+        List<Vector2> uv,
+        List<Vector4> tangents,
+        bool hasTangents,
+        List<List<int>> trianglesBySubMesh,
+        Bounds sourceBounds)
+    {
+        if (vertices.Count == 0)
+        {
+            return null;
+        }
+
+        var mesh = new Mesh
+        {
+            name = $"{meshNamePrefix}_Component_00",
+            indexFormat = vertices.Count > ushort.MaxValue
+                ? IndexFormat.UInt32
+                : IndexFormat.UInt16
+        };
+
+        // PieceMeshBuilderのListをそのままMesh APIへ渡し、
+        // Component用Scratchへの頂点属性・Triangle再コピーを行わない。
+        mesh.SetVertices(vertices);
+        mesh.SetNormals(normals);
+        mesh.SetUVs(0, uv);
+
+        if (hasTangents)
+        {
+            mesh.SetTangents(tangents);
+        }
+
+        mesh.subMeshCount = trianglesBySubMesh.Count;
+
+        for (int subMeshIndex = 0;
+             subMeshIndex < trianglesBySubMesh.Count;
+             subMeshIndex++)
+        {
+            mesh.SetTriangles(
+                trianglesBySubMesh[subMeshIndex],
+                subMeshIndex,
+                false);
+        }
+
+        // Builderが頂点追加時に増分計算済みのBoundsを引き継ぐ。
+        // SetTriangles側のcalculateBoundsもfalseなので、全頂点再走査は発生させない。
+        mesh.bounds = sourceBounds;
+
+        return mesh;
     }
 
     private static Mesh BuildComponentMesh(

@@ -289,6 +289,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
             bool succeeded = cutProcessor.TryCut(
                 sourceMesh,
+                targetMeshFilter != null,
                 localTipPositions,
                 localRootPositions,
                 cutDirectionSampleCount,

@@ -60,12 +60,6 @@ public sealed class MeshPlaneSplitter
         private static readonly ProfilerMarker registerBoundaryProfilerMarker =
             new ProfilerMarker("EnemyMeshCut.SplitPlane.ProcessTriangles.RegisterBoundary");
 
-        private static readonly ProfilerMarker builderResolveVerticesProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.SplitPlane.PieceBuilder.ResolveOrAddVertices");
-
-        private static readonly ProfilerMarker builderAppendTriangleIndicesProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.SplitPlane.PieceBuilder.AppendTriangleIndices");
-
     private const float GEOMETRY_EPSILON_RATIO = 0.00001f;
     private const float MIN_GEOMETRY_EPSILON = 0.000001f;
     private const float MIN_DIRECTION_SQR_MAGNITUDE = 0.00000001f;
@@ -594,11 +588,13 @@ public sealed class MeshPlaneSplitter
         var firstBuilder = new PieceMeshBuilder(
             originalSubMeshCount + 1,
             hasTangents,
+            sourceVertices.Length,
             estimatedPieceVertexCapacity);
 
         var secondBuilder = new PieceMeshBuilder(
             originalSubMeshCount + 1,
             hasTangents,
+            sourceVertices.Length,
             estimatedPieceVertexCapacity);
 
         var cutSegments = new List<CutSegment>();
@@ -4861,7 +4857,7 @@ public sealed class MeshPlaneSplitter
     {
         // Source Vertexは基本的に切断Planeのどちらか一方へ分かれるため、
         // 両BuilderへSource Mesh全頂点数を予約せず、半数を初期推定値とする。
-        // 偏った切断や交点Vertex追加で超過した場合はList / Dictionaryの通常拡張へ任せる。
+        // 偏った切断や交点Vertex追加で超過した場合はListの通常拡張へ任せる。
         return sourceVertexCount / 2 +
                sourceVertexCount % 2;
     }
@@ -4896,7 +4892,8 @@ public sealed class MeshPlaneSplitter
 
         // 元Mesh由来の頂点だけを再利用する。位置一致では統合せず、
         // UV seam / hard edgeとして分離された別Source Vertex Indexは維持する。
-        private readonly Dictionary<int, int>
+        // 0を未登録として使えるよう、実際のOutput Vertex Index + 1を格納する。
+        private readonly int[]
             outputVertexIndexBySourceVertexIndex;
 
         private readonly bool hasTangents;
@@ -4928,6 +4925,7 @@ public sealed class MeshPlaneSplitter
         public PieceMeshBuilder(
             int subMeshCount,
             bool hasTangents,
+            int sourceVertexCount,
             int estimatedVertexCapacity)
         {
             this.hasTangents =
@@ -4956,8 +4954,7 @@ public sealed class MeshPlaneSplitter
                     estimatedVertexCapacity);
 
             outputVertexIndexBySourceVertexIndex =
-                new Dictionary<int, int>(
-                    estimatedVertexCapacity);
+                new int[sourceVertexCount];
 
             trianglesBySubMesh =
                 new List<List<int>>(
@@ -5024,32 +5021,26 @@ public sealed class MeshPlaneSplitter
             int secondIndex;
             int thirdIndex;
 
-            using (MeshPlaneSplitter.builderResolveVerticesProfilerMarker.Auto())
-            {
-                firstIndex =
-                    AddVertex(first);
+            firstIndex =
+                AddVertex(first);
 
-                secondIndex =
-                    AddVertex(second);
+            secondIndex =
+                AddVertex(second);
 
-                thirdIndex =
-                    AddVertex(third);
-            }
+            thirdIndex =
+                AddVertex(third);
 
-            using (MeshPlaneSplitter.builderAppendTriangleIndicesProfilerMarker.Auto())
-            {
-                trianglesBySubMesh[
-                    subMeshIndex].Add(
-                        firstIndex);
+            trianglesBySubMesh[
+                subMeshIndex].Add(
+                    firstIndex);
 
-                trianglesBySubMesh[
-                    subMeshIndex].Add(
-                        secondIndex);
+            trianglesBySubMesh[
+                subMeshIndex].Add(
+                    secondIndex);
 
-                trianglesBySubMesh[
-                    subMeshIndex].Add(
-                        thirdIndex);
-            }
+            trianglesBySubMesh[
+                subMeshIndex].Add(
+                    thirdIndex);
 
             if (!isCap)
             {
@@ -5119,12 +5110,16 @@ public sealed class MeshPlaneSplitter
         private int AddVertex(
             VertexData vertex)
         {
-            if (vertex.HasSourceVertexIndex &&
-                outputVertexIndexBySourceVertexIndex.TryGetValue(
-                    vertex.SourceVertexIndex,
-                    out int existingIndex))
+            if (vertex.HasSourceVertexIndex)
             {
-                return existingIndex;
+                int storedOutputIndex =
+                    outputVertexIndexBySourceVertexIndex[
+                        vertex.SourceVertexIndex];
+
+                if (storedOutputIndex != 0)
+                {
+                    return storedOutputIndex - 1;
+                }
             }
 
             int index =
@@ -5152,9 +5147,9 @@ public sealed class MeshPlaneSplitter
 
             if (vertex.HasSourceVertexIndex)
             {
-                outputVertexIndexBySourceVertexIndex.Add(
-                    vertex.SourceVertexIndex,
-                    index);
+                outputVertexIndexBySourceVertexIndex[
+                    vertex.SourceVertexIndex] =
+                    index + 1;
             }
 
             return index;

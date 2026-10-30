@@ -128024,6 +128024,10 @@ PrefabInstance:
       propertyPath: enemyDigPointPath
       value: DiggingPoint
       objectReference: {fileID: 0}
+    - target: {fileID: 1691384145625399883, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingEventTimeout
+      value: 5
+      objectReference: {fileID: 0}
     - target: {fileID: 1881424739761464751, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Name
       value: InGameObjects
@@ -128156,6 +128160,14 @@ PrefabInstance:
       propertyPath: particlePrefab
       value: 
       objectReference: {fileID: 7044623282841772800, guid: 837e8e5252d7c7e4baa5ea5980ed9e2a, type: 3}
+    - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: groundContactPoint
+      value: 
+      objectReference: {fileID: 1376630537}
+    - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: groundContactLayers.m_Bits
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 4275880465371736696, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_UiScaleMode
       value: 1
@@ -219186,6 +219198,17 @@ MonoBehaviour:
   slashWidthRatio: 0.95
   slashHeightRatio: 0.08
   sortingOrder: 32760
+  overlay: {fileID: 0}
+  background: {fileID: 0}
+  slash: {fileID: 0}
+  wasThirdAttack: 0
+  pending: 0
+  delayRemaining: 0
+  firstFrame: -1
+  activeStep: -1
+  lastRenderedFrame: -100
+  effectRequestedFrame: -1
+  missingPassWarning: 0
 --- !u!1 &1999055609
 GameObject:
   m_ObjectHideFlags: 0

@@ -20,8 +20,8 @@ MonoBehaviour:
   jumpForce: 35
   airJumpForce: 37.5
   coyoteTime: 0.1
-  gravityScale: 10
-  jumpStartGravityMultiplier: 0.7
+  gravityScale: 8
+  jumpStartGravityMultiplier: 0.5
   maxFallGravityMultiplier: 2
   fallGravityIncreaseTime: 0.9
   maxFallSpeed: 40

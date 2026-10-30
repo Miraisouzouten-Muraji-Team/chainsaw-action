@@ -1,4 +1,7 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Buffers;
+using System.Collections.Generic;
+using System.Threading;
 using Unity.Profiling;
 using UnityEngine;
 
@@ -21,6 +24,38 @@ public sealed class ChainsawMeshCutProcessor
 
 
     private const float MIN_DIRECTION_SQR_MAGNITUDE = 0.00000001f;
+
+    // 現在の既知のSource Vertex数（約30,002）を収容し、Plane候補検証のGeneration管理を
+    // Enemy死亡フレームの追加Allocationなしで行うための専用Buffer。
+    private const int SOURCE_VERTEX_PLANE_DISTANCE_GENERATION_BUFFER_LENGTH = 32768;
+
+    private static int[] sourceVertexPlaneDistanceGenerationBuffer;
+    private static int sourceVertexPlaneDistanceGenerationBufferLeaseState;
+    private static int sourceVertexPlaneDistanceGeneration;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void InitializeSourceVertexPlaneDistanceGenerationBuffer()
+    {
+        if (sourceVertexPlaneDistanceGenerationBuffer == null ||
+            sourceVertexPlaneDistanceGenerationBuffer.Length <
+                SOURCE_VERTEX_PLANE_DISTANCE_GENERATION_BUFFER_LENGTH)
+        {
+            sourceVertexPlaneDistanceGenerationBuffer =
+                new int[SOURCE_VERTEX_PLANE_DISTANCE_GENERATION_BUFFER_LENGTH];
+        }
+        else
+        {
+            // Enter Play Mode OptionsでDomain Reloadを無効化していても、
+            // Generationを0へ戻した後に前回Playの値をキャッシュ済みと誤認しないようにする。
+            Array.Clear(
+                sourceVertexPlaneDistanceGenerationBuffer,
+                0,
+                sourceVertexPlaneDistanceGenerationBuffer.Length);
+        }
+
+        sourceVertexPlaneDistanceGeneration = 0;
+        sourceVertexPlaneDistanceGenerationBufferLeaseState = 0;
+    }
 
     private readonly MeshPlaneSplitter meshPlaneSplitter =
         new MeshPlaneSplitter();
@@ -101,26 +136,70 @@ public sealed class ChainsawMeshCutProcessor
             return false;
         }
 
-        if (!TryCreateCutPlane(
-                sourceVertices,
-                sourceTrianglesBySubMesh,
-                sourceVertexPlaneDistances,
-                triangleClassificationsBySubMesh,
-                localTipPositions,
-                localRootPositions,
-                cutDirectionSampleCount,
-                sourceToCutRangeSpace,
-                cutRangeAxis,
-                cutRangeSpaceBounds,
-                cutRangeMinimumNormalized,
-                cutRangeMaximumNormalized,
-                cutRangeMinimum,
-                cutRangeMaximum,
-                geometryEpsilon,
-                cutRangeGeometryEpsilon,
-                enableDiagnostics,
-                out Plane correctedCutPlane,
-                out failureReason))
+        int[] sourceVertexPlaneDistanceGenerations =
+            AcquireSourceVertexPlaneDistanceGenerationBuffer(
+                sourceVertices.Length,
+                out bool returnPlaneDistanceGenerationsToPool,
+                out int planeDistanceGeneration);
+
+        int planeDistanceCacheCandidateCount = 0;
+        int planeDistanceCacheRequestCount = 0;
+        int planeDistanceCalculationCount = 0;
+        int planeDistanceCacheHitCount = 0;
+
+        Plane correctedCutPlane = default;
+        bool hasValidCutPlane;
+
+        try
+        {
+            hasValidCutPlane =
+                TryCreateCutPlane(
+                    sourceVertices,
+                    sourceTrianglesBySubMesh,
+                    sourceVertexPlaneDistances,
+                    sourceVertexPlaneDistanceGenerations,
+                    ref planeDistanceGeneration,
+                    triangleClassificationsBySubMesh,
+                    localTipPositions,
+                    localRootPositions,
+                    cutDirectionSampleCount,
+                    sourceToCutRangeSpace,
+                    cutRangeAxis,
+                    cutRangeSpaceBounds,
+                    cutRangeMinimumNormalized,
+                    cutRangeMaximumNormalized,
+                    cutRangeMinimum,
+                    cutRangeMaximum,
+                    geometryEpsilon,
+                    cutRangeGeometryEpsilon,
+                    enableDiagnostics,
+                    ref planeDistanceCacheCandidateCount,
+                    ref planeDistanceCacheRequestCount,
+                    ref planeDistanceCalculationCount,
+                    ref planeDistanceCacheHitCount,
+                    out correctedCutPlane,
+                    out failureReason);
+        }
+        finally
+        {
+            ReleaseSourceVertexPlaneDistanceGenerationBuffer(
+                sourceVertexPlaneDistanceGenerations,
+                returnPlaneDistanceGenerationsToPool,
+                planeDistanceGeneration);
+
+            if (enableDiagnostics)
+            {
+                LogPlaneDistanceCacheDiagnostic(
+                    sourceVertices.Length,
+                    returnPlaneDistanceGenerationsToPool,
+                    planeDistanceCacheCandidateCount,
+                    planeDistanceCacheRequestCount,
+                    planeDistanceCalculationCount,
+                    planeDistanceCacheHitCount);
+            }
+        }
+
+        if (!hasValidCutPlane)
         {
             return false;
         }
@@ -319,6 +398,8 @@ public sealed class ChainsawMeshCutProcessor
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<int[]> sourceTrianglesBySubMesh,
         float[] sourceVertexPlaneDistances,
+        int[] sourceVertexPlaneDistanceGenerations,
+        ref int planeDistanceGeneration,
         IReadOnlyList<byte[]> triangleClassificationsBySubMesh,
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
@@ -333,6 +414,10 @@ public sealed class ChainsawMeshCutProcessor
         float geometryEpsilon,
         float cutRangeGeometryEpsilon,
         bool enableDiagnostics,
+        ref int planeDistanceCacheCandidateCount,
+        ref int planeDistanceCacheRequestCount,
+        ref int planeDistanceCalculationCount,
+        ref int planeDistanceCacheHitCount,
         out Plane correctedCutPlane,
         out string failureReason)
     {
@@ -394,6 +479,8 @@ public sealed class ChainsawMeshCutProcessor
                     sourceVertices,
                     sourceTrianglesBySubMesh,
                     sourceVertexPlaneDistances,
+                    sourceVertexPlaneDistanceGenerations,
+                    ref planeDistanceGeneration,
                     triangleClassificationsBySubMesh,
                     candidatePlane,
                     sourceToCutRangeSpace,
@@ -403,6 +490,11 @@ public sealed class ChainsawMeshCutProcessor
                     geometryEpsilon,
                     cutRangeGeometryEpsilon,
                     intersectionPointBuffer,
+                    enableDiagnostics,
+                    ref planeDistanceCacheCandidateCount,
+                    ref planeDistanceCacheRequestCount,
+                    ref planeDistanceCalculationCount,
+                    ref planeDistanceCacheHitCount,
                     out float intersectionMinimum,
                     out float intersectionMaximum,
                     out int intersectionSegmentCount,
@@ -447,6 +539,8 @@ public sealed class ChainsawMeshCutProcessor
                 sourceVertices,
                 sourceTrianglesBySubMesh,
                 sourceVertexPlaneDistances,
+                sourceVertexPlaneDistanceGenerations,
+                ref planeDistanceGeneration,
                 triangleClassificationsBySubMesh,
                 localTipPositions,
                 localRootPositions,
@@ -461,6 +555,10 @@ public sealed class ChainsawMeshCutProcessor
                 cutRangeGeometryEpsilon,
                 intersectionPointBuffer,
                 enableDiagnostics,
+                ref planeDistanceCacheCandidateCount,
+                ref planeDistanceCacheRequestCount,
+                ref planeDistanceCalculationCount,
+                ref planeDistanceCacheHitCount,
                 out correctedCutPlane,
                 out failureReason))
         {
@@ -749,6 +847,8 @@ public sealed class ChainsawMeshCutProcessor
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<int[]> sourceTrianglesBySubMesh,
         float[] sourceVertexPlaneDistances,
+        int[] sourceVertexPlaneDistanceGenerations,
+        ref int planeDistanceGeneration,
         IReadOnlyList<byte[]> triangleClassificationsBySubMesh,
         Plane cutPlane,
         Matrix4x4 sourceToCutRangeSpace,
@@ -758,6 +858,11 @@ public sealed class ChainsawMeshCutProcessor
         float geometryEpsilon,
         float cutRangeGeometryEpsilon,
         List<Vector3> intersectionPointBuffer,
+        bool enableCacheDiagnostics,
+        ref int planeDistanceCacheCandidateCount,
+        ref int planeDistanceCacheRequestCount,
+        ref int planeDistanceCalculationCount,
+        ref int planeDistanceCacheHitCount,
         out float intersectionMinimum,
         out float intersectionMaximum,
         out int intersectionSegmentCount,
@@ -774,6 +879,8 @@ public sealed class ChainsawMeshCutProcessor
 
         if (sourceVertexPlaneDistances == null ||
             sourceVertexPlaneDistances.Length != sourceVertices.Count ||
+            sourceVertexPlaneDistanceGenerations == null ||
+            sourceVertexPlaneDistanceGenerations.Length < sourceVertices.Count ||
             triangleClassificationsBySubMesh == null ||
             triangleClassificationsBySubMesh.Count !=
                 sourceTrianglesBySubMesh.Count ||
@@ -783,6 +890,16 @@ public sealed class ChainsawMeshCutProcessor
                 "Cut Plane検証結果の作業バッファ構成がSource Meshと一致していません。";
             return false;
         }
+
+        if (enableCacheDiagnostics)
+        {
+            planeDistanceCacheCandidateCount++;
+        }
+
+        int currentPlaneDistanceGeneration =
+            AdvancePlaneDistanceGeneration(
+                sourceVertexPlaneDistanceGenerations,
+                ref planeDistanceGeneration);
 
         float allowedMinimum =
             cutRangeMinimum -
@@ -837,13 +954,43 @@ public sealed class ChainsawMeshCutProcessor
                     sourceVertices[indexC];
 
                 float distanceA =
-                    cutPlane.GetDistanceToPoint(positionA);
+                    GetOrCalculatePlaneDistance(
+                        indexA,
+                        positionA,
+                        cutPlane,
+                        sourceVertexPlaneDistances,
+                        sourceVertexPlaneDistanceGenerations,
+                        currentPlaneDistanceGeneration,
+                        enableCacheDiagnostics,
+                        ref planeDistanceCacheRequestCount,
+                        ref planeDistanceCalculationCount,
+                        ref planeDistanceCacheHitCount);
 
                 float distanceB =
-                    cutPlane.GetDistanceToPoint(positionB);
+                    GetOrCalculatePlaneDistance(
+                        indexB,
+                        positionB,
+                        cutPlane,
+                        sourceVertexPlaneDistances,
+                        sourceVertexPlaneDistanceGenerations,
+                        currentPlaneDistanceGeneration,
+                        enableCacheDiagnostics,
+                        ref planeDistanceCacheRequestCount,
+                        ref planeDistanceCalculationCount,
+                        ref planeDistanceCacheHitCount);
 
                 float distanceC =
-                    cutPlane.GetDistanceToPoint(positionC);
+                    GetOrCalculatePlaneDistance(
+                        indexC,
+                        positionC,
+                        cutPlane,
+                        sourceVertexPlaneDistances,
+                        sourceVertexPlaneDistanceGenerations,
+                        currentPlaneDistanceGeneration,
+                        enableCacheDiagnostics,
+                        ref planeDistanceCacheRequestCount,
+                        ref planeDistanceCalculationCount,
+                        ref planeDistanceCacheHitCount);
 
                 if (!IsFinite(distanceA) ||
                     !IsFinite(distanceB) ||
@@ -854,18 +1001,9 @@ public sealed class ChainsawMeshCutProcessor
                     return false;
                 }
 
-                // 同一頂点が複数Triangleに属していても値は同じなので、
-                // 最後に書かれた値を採用候補の分割処理で再利用できる。
-                // このSigned Distanceがあれば、交差Edge判定と
-                // t = dA / (dA - dB) による交点補間率も同じ値から再現できる。
-                sourceVertexPlaneDistances[indexA] =
-                    distanceA;
-
-                sourceVertexPlaneDistances[indexB] =
-                    distanceB;
-
-                sourceVertexPlaneDistances[indexC] =
-                    distanceC;
+                // sourceVertexPlaneDistancesには、この候補で初めて参照した頂点だけを書き込む。
+                // 採用候補の検証完了時点では全Triangleを走査済みなので、後段のMesh分割が
+                // 必要とするSource Vertex距離は従来どおりこの配列から再利用できる。
 
                 byte triangleClassification =
                     MeshPlaneSplitter.ClassifyTriangle(
@@ -961,6 +1099,74 @@ public sealed class ChainsawMeshCutProcessor
         failureReason = null;
         return true;
     
+    }
+
+    private static float GetOrCalculatePlaneDistance(
+        int sourceVertexIndex,
+        Vector3 sourceVertexPosition,
+        Plane cutPlane,
+        float[] sourceVertexPlaneDistances,
+        int[] sourceVertexPlaneDistanceGenerations,
+        int currentPlaneDistanceGeneration,
+        bool enableCacheDiagnostics,
+        ref int planeDistanceCacheRequestCount,
+        ref int planeDistanceCalculationCount,
+        ref int planeDistanceCacheHitCount)
+    {
+        if (enableCacheDiagnostics)
+        {
+            planeDistanceCacheRequestCount++;
+        }
+
+        if (sourceVertexPlaneDistanceGenerations[sourceVertexIndex] ==
+            currentPlaneDistanceGeneration)
+        {
+            if (enableCacheDiagnostics)
+            {
+                planeDistanceCacheHitCount++;
+            }
+
+            return sourceVertexPlaneDistances[sourceVertexIndex];
+        }
+
+        if (enableCacheDiagnostics)
+        {
+            planeDistanceCalculationCount++;
+        }
+
+        float distance =
+            cutPlane.GetDistanceToPoint(sourceVertexPosition);
+
+        sourceVertexPlaneDistances[sourceVertexIndex] =
+            distance;
+
+        // 候補ごとのArray.Clearを避けながら、同じSource Vertexの値が
+        // どのPlane候補で計算されたものかを識別する。
+        sourceVertexPlaneDistanceGenerations[sourceVertexIndex] =
+            currentPlaneDistanceGeneration;
+
+        return distance;
+    }
+
+    private static int AdvancePlaneDistanceGeneration(
+        int[] sourceVertexPlaneDistanceGenerations,
+        ref int planeDistanceGeneration)
+    {
+        if (planeDistanceGeneration == int.MaxValue)
+        {
+            // 通常経路では全配列をClearしない。Generationが一周する時だけ
+            // 既存タグを無効化し、過去候補の値を新候補のキャッシュと誤認しないようにする。
+            Array.Clear(
+                sourceVertexPlaneDistanceGenerations,
+                0,
+                sourceVertexPlaneDistanceGenerations.Length);
+
+            planeDistanceGeneration = 1;
+            return planeDistanceGeneration;
+        }
+
+        planeDistanceGeneration++;
+        return planeDistanceGeneration;
     }
 
     private static bool TryGetTrianglePlaneIntersectionPoints(
@@ -1099,10 +1305,103 @@ public sealed class ChainsawMeshCutProcessor
             point);
     }
 
+    private static void LogPlaneDistanceCacheDiagnostic(
+        int sourceVertexCount,
+        bool usedArrayPoolGenerationBuffer,
+        int candidateCount,
+        int requestCount,
+        int calculationCount,
+        int cacheHitCount)
+    {
+        float cacheHitRate =
+            requestCount > 0
+                ? cacheHitCount * 100.0f / requestCount
+                : 0.0f;
+
+        string generationBufferSource =
+            usedArrayPoolGenerationBuffer
+                ? "ArrayPool"
+                : "Retained";
+
+        Debug.Log(
+            "[PlaneDistanceCache] " +
+            $"Vertices={sourceVertexCount}, " +
+            $"Candidates={candidateCount}, " +
+            $"Requests={requestCount}, " +
+            $"Calculations={calculationCount}, " +
+            $"CacheHits={cacheHitCount}, " +
+            $"HitRate={cacheHitRate:F2}%, " +
+            $"GenerationBuffer={generationBufferSource}");
+    }
+
+    private static int[] AcquireSourceVertexPlaneDistanceGenerationBuffer(
+        int requiredLength,
+        out bool returnToPool,
+        out int planeDistanceGeneration)
+    {
+        int[] retainedBuffer =
+            sourceVertexPlaneDistanceGenerationBuffer;
+
+        if (retainedBuffer != null &&
+            requiredLength <= retainedBuffer.Length &&
+            Interlocked.CompareExchange(
+                ref sourceVertexPlaneDistanceGenerationBufferLeaseState,
+                1,
+                0) == 0)
+        {
+            returnToPool = false;
+            planeDistanceGeneration =
+                sourceVertexPlaneDistanceGeneration;
+            return retainedBuffer;
+        }
+
+        // 32,768頂点超過または想定外の再入時だけPoolへ退避する。
+        // Pool配列は以前の利用者の値を保持し得るため、取得時に今回使う範囲だけ初期化する。
+        int[] rentedBuffer =
+            ArrayPool<int>.Shared.Rent(requiredLength);
+
+        Array.Clear(
+            rentedBuffer,
+            0,
+            requiredLength);
+
+        returnToPool = true;
+        planeDistanceGeneration = 0;
+        return rentedBuffer;
+    }
+
+    private static void ReleaseSourceVertexPlaneDistanceGenerationBuffer(
+        int[] buffer,
+        bool returnToPool,
+        int planeDistanceGeneration)
+    {
+        if (buffer == null)
+        {
+            return;
+        }
+
+        if (returnToPool)
+        {
+            ArrayPool<int>.Shared.Return(
+                buffer,
+                false);
+            return;
+        }
+
+        sourceVertexPlaneDistanceGeneration =
+            planeDistanceGeneration;
+
+        Interlocked.Exchange(
+            ref sourceVertexPlaneDistanceGenerationBufferLeaseState,
+            0);
+    }
+
     private static bool TryCreateAxisAlignedFallbackCutPlane(
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<int[]> sourceTrianglesBySubMesh,
         float[] sourceVertexPlaneDistances,
+        int[] sourceVertexPlaneDistanceGenerations,
+        ref int planeDistanceGeneration,
         IReadOnlyList<byte[]> triangleClassificationsBySubMesh,
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
@@ -1117,6 +1416,10 @@ public sealed class ChainsawMeshCutProcessor
         float cutRangeGeometryEpsilon,
         List<Vector3> intersectionPointBuffer,
         bool enableDiagnostics,
+        ref int planeDistanceCacheCandidateCount,
+        ref int planeDistanceCacheRequestCount,
+        ref int planeDistanceCalculationCount,
+        ref int planeDistanceCacheHitCount,
         out Plane fallbackCutPlane,
         out string failureReason)
     {
@@ -1206,6 +1509,8 @@ public sealed class ChainsawMeshCutProcessor
                     sourceVertices,
                     sourceTrianglesBySubMesh,
                     sourceVertexPlaneDistances,
+                    sourceVertexPlaneDistanceGenerations,
+                    ref planeDistanceGeneration,
                     triangleClassificationsBySubMesh,
                     planeInSourceSpace,
                     sourceToCutRangeSpace,
@@ -1215,6 +1520,11 @@ public sealed class ChainsawMeshCutProcessor
                     geometryEpsilon,
                     cutRangeGeometryEpsilon,
                     intersectionPointBuffer,
+                    enableDiagnostics,
+                    ref planeDistanceCacheCandidateCount,
+                    ref planeDistanceCacheRequestCount,
+                    ref planeDistanceCalculationCount,
+                    ref planeDistanceCacheHitCount,
                     out float intersectionMinimum,
                     out float intersectionMaximum,
                     out int intersectionSegmentCount,

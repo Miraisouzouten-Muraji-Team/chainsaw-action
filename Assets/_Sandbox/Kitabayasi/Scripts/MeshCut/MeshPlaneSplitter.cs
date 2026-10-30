@@ -27,38 +27,20 @@ public sealed class MeshPlaneSplitter
         private static readonly ProfilerMarker addCutSurfaceCapsProfilerMarker =
             new ProfilerMarker("EnemyMeshCut.SplitPlane.BuildCutSurfaceCaps");
 
-        private static readonly ProfilerMarker triangulateCapsProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.SplitPlane.TriangulateCaps");
 
         private static readonly ProfilerMarker buildFinalMeshProfilerMarker =
             new ProfilerMarker("EnemyMeshCut.SplitPlane.BuildFinalMesh");
 
-        private static readonly ProfilerMarker readTriangleDataProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.SplitPlane.ProcessTriangles.ReadTriangleData");
 
-        private static readonly ProfilerMarker readSourceAttributesProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.SplitPlane.ProcessTriangles.ReadTriangleData.ReadSourceAttributes");
 
-        private static readonly ProfilerMarker classifyTriangleProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.SplitPlane.ProcessTriangles.ClassifyTriangle");
 
-        private static readonly ProfilerMarker addUncutTriangleProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.SplitPlane.ProcessTriangles.AddUncutTriangle");
 
-        private static readonly ProfilerMarker processIntersectingTriangleProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.SplitPlane.ProcessTriangles.ProcessIntersectingTriangle");
 
-        private static readonly ProfilerMarker calculateIntersectionsProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.SplitPlane.ProcessTriangles.CalculateIntersections");
 
-        private static readonly ProfilerMarker buildClippedGeometryProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.SplitPlane.ProcessTriangles.BuildClippedGeometry");
 
-        private static readonly ProfilerMarker addClippedTrianglesProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.SplitPlane.ProcessTriangles.AddClippedTriangles");
 
-        private static readonly ProfilerMarker registerBoundaryProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.SplitPlane.ProcessTriangles.RegisterBoundary");
+
+
 
     private const float GEOMETRY_EPSILON_RATIO = 0.00001f;
     private const float MIN_GEOMETRY_EPSILON = 0.000001f;
@@ -521,10 +503,6 @@ public sealed class MeshPlaneSplitter
         Vector2[] sourceUv;
         Vector4[] sourceTangents;
 
-        using (readTriangleDataProfilerMarker.Auto())
-        {
-            using (readSourceAttributesProfilerMarker.Auto())
-            {
                 sourceVertices =
                     useCachedTriangleValidation
                         ? cachedSourceVertices
@@ -533,8 +511,6 @@ public sealed class MeshPlaneSplitter
                 sourceNormals = sourceMesh.normals;
                 sourceUv = sourceMesh.uv;
                 sourceTangents = sourceMesh.tangents;
-            }
-        }
 
         if (sourceNormals == null ||
             sourceNormals.Length != sourceVertices.Length)
@@ -619,8 +595,6 @@ public sealed class MeshPlaneSplitter
 
         try
         {
-            using (readTriangleDataProfilerMarker.Auto())
-            {
                 sourceVertexDataByIndex =
                     AcquireSourceVertexDataBuffer(
                         sourceVertices.Length,
@@ -644,7 +618,6 @@ public sealed class MeshPlaneSplitter
                             hasTangents,
                             sourceConnectivityVertexIds);
                 }
-            }
 
             for (int subMeshIndex = 0;
                  subMeshIndex < originalSubMeshCount;
@@ -669,12 +642,9 @@ public sealed class MeshPlaneSplitter
                 else
                 {
                     // 通常経路では同じListへ書き込み、SubMeshごとの配列Allocationを避ける。
-                    using (readTriangleDataProfilerMarker.Auto())
-                    {
                         sourceMesh.GetTriangles(
                             triangleIndices,
                             subMeshIndex);
-                    }
 
                     sourceTriangleIndices =
                         triangleIndices;
@@ -710,8 +680,6 @@ public sealed class MeshPlaneSplitter
                     VertexData vertexB;
                     VertexData vertexC;
 
-                    using (readTriangleDataProfilerMarker.Auto())
-                    {
                         indexA = sourceTriangleIndices[triangleIndex];
                         indexB = sourceTriangleIndices[triangleIndex + 1];
                         indexC = sourceTriangleIndices[triangleIndex + 2];
@@ -728,15 +696,12 @@ public sealed class MeshPlaneSplitter
                         vertexA = sourceVertexDataByIndex[indexA];
                         vertexB = sourceVertexDataByIndex[indexB];
                         vertexC = sourceVertexDataByIndex[indexC];
-                    }
 
                     float distanceA;
                     float distanceB;
                     float distanceC;
                     byte triangleClassification;
 
-                    using (classifyTriangleProfilerMarker.Auto())
-                    {
                         if (useCachedTriangleValidation)
                         {
                             // Cut Plane検証時と同じ距離・分類を使う。
@@ -785,7 +750,6 @@ public sealed class MeshPlaneSplitter
                                 "PlaneとTriangleの距離計算結果にNaN / Infinityを検出しました。";
                             return false;
                         }
-                    }
 
                     if (triangleClassification ==
                         TRIANGLE_CLASSIFICATION_POSITIVE)
@@ -795,15 +759,12 @@ public sealed class MeshPlaneSplitter
                             positiveOnlyTriangleCount++;
                         }
 
-                        using (addUncutTriangleProfilerMarker.Auto())
-                        {
                             firstBuilder.AddTriangle(
                                 vertexA,
                                 vertexB,
                                 vertexC,
                                 subMeshIndex,
                                 false);
-                        }
 
                         continue;
                     }
@@ -816,15 +777,12 @@ public sealed class MeshPlaneSplitter
                             negativeOnlyTriangleCount++;
                         }
 
-                        using (addUncutTriangleProfilerMarker.Auto())
-                        {
                             secondBuilder.AddTriangle(
                                 vertexA,
                                 vertexB,
                                 vertexC,
                                 subMeshIndex,
                                 false);
-                        }
 
                         continue;
                     }
@@ -842,10 +800,6 @@ public sealed class MeshPlaneSplitter
                         intersectingTriangleCount++;
                     }
 
-                    using (processIntersectingTriangleProfilerMarker.Auto())
-                    {
-                        using (buildClippedGeometryProfilerMarker.Auto())
-                        {
                             ClipTriangle(
                                 vertexA,
                                 vertexB,
@@ -858,18 +812,12 @@ public sealed class MeshPlaneSplitter
                                 clippedPolygon,
                                 cutConnectivityVertexIdsBySourceEdge,
                                 ref nextConnectivityVertexId);
-                        }
 
-                        using (addClippedTrianglesProfilerMarker.Auto())
-                        {
                             firstBuilder.AddConvexPolygon(
                                 clippedPolygon,
                                 subMeshIndex,
                                 false);
-                        }
 
-                        using (buildClippedGeometryProfilerMarker.Auto())
-                        {
                             ClipTriangle(
                                 vertexA,
                                 vertexB,
@@ -882,18 +830,12 @@ public sealed class MeshPlaneSplitter
                                 clippedPolygon,
                                 cutConnectivityVertexIdsBySourceEdge,
                                 ref nextConnectivityVertexId);
-                        }
 
-                        using (addClippedTrianglesProfilerMarker.Auto())
-                        {
                             secondBuilder.AddConvexPolygon(
                                 clippedPolygon,
                                 subMeshIndex,
                                 false);
-                        }
 
-                        using (registerBoundaryProfilerMarker.Auto())
-                        {
                             if (!TryGetCutSegment(
                                     vertexA,
                                     vertexB,
@@ -975,8 +917,6 @@ public sealed class MeshPlaneSplitter
                                     indexC);
 
                             cutSegments.Add(cutSegment);
-                        }
-                    }
                 }
             }
         }
@@ -1468,8 +1408,6 @@ public sealed class MeshPlaneSplitter
         Dictionary<long, int> cutConnectivityVertexIdsBySourceEdge,
         ref int nextConnectivityVertexId)
     {
-        using (calculateIntersectionsProfilerMarker.Auto())
-        {
             float denominator =
                 fromDistance - toDistance;
 
@@ -1496,7 +1434,6 @@ public sealed class MeshPlaneSplitter
                 to,
                 interpolation,
                 connectivityVertexId);
-        }
     }
 
     private static int GetCutConnectivityVertexId(
@@ -4189,8 +4126,6 @@ public sealed class MeshPlaneSplitter
         float areaEpsilon,
         out List<int> triangleIndices)
     {
-        using (triangulateCapsProfilerMarker.Auto())
-        {
         triangleIndices =
             new List<int>();
 
@@ -4350,7 +4285,6 @@ public sealed class MeshPlaneSplitter
 
         return true;
     
-        }
     }
 
     private static bool IsPointInsideTriangle(
@@ -5021,26 +4955,26 @@ public sealed class MeshPlaneSplitter
             int secondIndex;
             int thirdIndex;
 
-            firstIndex =
-                AddVertex(first);
+                firstIndex =
+                    AddVertex(first);
 
-            secondIndex =
-                AddVertex(second);
+                secondIndex =
+                    AddVertex(second);
 
-            thirdIndex =
-                AddVertex(third);
+                thirdIndex =
+                    AddVertex(third);
 
-            trianglesBySubMesh[
-                subMeshIndex].Add(
-                    firstIndex);
+                trianglesBySubMesh[
+                    subMeshIndex].Add(
+                        firstIndex);
 
-            trianglesBySubMesh[
-                subMeshIndex].Add(
-                    secondIndex);
+                trianglesBySubMesh[
+                    subMeshIndex].Add(
+                        secondIndex);
 
-            trianglesBySubMesh[
-                subMeshIndex].Add(
-                    thirdIndex);
+                trianglesBySubMesh[
+                    subMeshIndex].Add(
+                        thirdIndex);
 
             if (!isCap)
             {

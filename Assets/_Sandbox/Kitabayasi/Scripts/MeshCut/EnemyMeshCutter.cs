@@ -19,23 +19,11 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     private static readonly ProfilerMarker tryCutProfilerMarker =
             new ProfilerMarker("EnemyMeshCut.Normal.Cutter.Total");
 
-        private static readonly ProfilerMarker getSourceProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.GetSourceAndBake");
 
-        private static readonly ProfilerMarker convertTrajectoryProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.ConvertTrajectory");
 
-        private static readonly ProfilerMarker createPieceShellProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.CreatePieceShell");
 
-        private static readonly ProfilerMarker configurePieceProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.ConfigurePieceObject");
 
-        private static readonly ProfilerMarker resolvePlayerCollidersProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.ResolvePlayerColliders");
 
-        private static readonly ProfilerMarker ignorePlayerCollisionProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.Normal.Cutter.IgnorePlayerCollisions");
 
     [Header("切断対象")]
 
@@ -609,8 +597,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         out bool destroySourceMeshAfterCut,
         out string failureReason)
     {
-        using (getSourceProfilerMarker.Auto())
-        {
         sourceMesh = null;
         sourceRenderer = null;
         destroySourceMeshAfterCut = false;
@@ -694,7 +680,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
         return false;
     
-        }
     }
 
     /// <summary>
@@ -759,8 +744,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         out List<Vector3> localTipPositions,
         out List<Vector3> localRootPositions)
     {
-        using (convertTrajectoryProfilerMarker.Auto())
-        {
         int sampleCount =
             trajectory.SampleCount;
 
@@ -784,7 +767,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                     sample.RootPosition));
         }
     
-        }
     }
 
     /// <summary>
@@ -867,8 +849,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     private GameObject CreatePieceShell(
         string objectName)
     {
-        using (createPieceShellProfilerMarker.Auto())
-        {
         var pieceObject =
             new GameObject(
                 objectName);
@@ -892,7 +872,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
         return pieceObject;
     
-        }
     }
 
     /// <summary>
@@ -905,8 +884,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         Material[] materials,
         Renderer sourceRenderer)
     {
-        using (configurePieceProfilerMarker.Auto())
-        {
         pieceObject.name =
             $"{sourceRenderer.name}_Cut_{suffix}";
 
@@ -1059,7 +1036,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 $"SourceWorldBoundsSize={FormatVector3(sourceRenderer.bounds.size)}");
         }
     
-        }
     }
 
     /// <summary>
@@ -1067,8 +1043,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     /// </summary>
     private void ResolvePlayerCollidersForPieceCollision()
     {
-        using (resolvePlayerCollidersProfilerMarker.Auto())
-        {
         playerColliders.Clear();
 
         if (playerReference.TryGetPlayerColliders(
@@ -1083,7 +1057,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             "Piece生成は継続しますが、Playerとの衝突無効化は適用されません。",
             this);
     
-        }
     }
 
     /// <summary>
@@ -1092,8 +1065,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     private void IgnorePlayerCollisions(
         Collider pieceCollider)
     {
-        using (ignorePlayerCollisionProfilerMarker.Auto())
-        {
         for (int colliderIndex = 0;
              colliderIndex < playerColliders.Count;
              colliderIndex++)
@@ -1112,7 +1083,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 true);
         }
     
-        }
     }
 
     /// <summary>

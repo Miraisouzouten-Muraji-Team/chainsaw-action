@@ -15,14 +15,8 @@ public sealed class MeshTargetCountSplitter
     private static readonly ProfilerMarker targetCountTotalProfilerMarker =
             new ProfilerMarker("EnemyMeshCut.Digging.TargetCount.Total");
 
-        private static readonly ProfilerMarker splitPieceProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.Digging.TargetCount.SplitOnePiece");
 
-        private static readonly ProfilerMarker appendConnectedComponentsProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.Digging.TargetCount.SplitConnectedComponents");
 
-        private static readonly ProfilerMarker findLargestPieceProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.Digging.TargetCount.FindLargestPiece");
 
     private const int MIN_TARGET_PIECE_COUNT = 2;
 
@@ -133,8 +127,6 @@ public sealed class MeshTargetCountSplitter
         out List<Mesh> splitPieceMeshes,
         out string failureReason)
     {
-        using (splitPieceProfilerMarker.Auto())
-        {
         splitPieceMeshes = new List<Mesh>();
         failureReason = null;
 
@@ -234,7 +226,6 @@ public sealed class MeshTargetCountSplitter
 
         return false;
     
-        }
     }
 
     private bool TryAppendConnectedComponents(
@@ -242,8 +233,6 @@ public sealed class MeshTargetCountSplitter
         List<Mesh> destination,
         out string failureReason)
     {
-        using (appendConnectedComponentsProfilerMarker.Auto())
-        {
         if (!connectedComponentSplitter.TrySplit(
                 sourceMesh,
                 out List<Mesh> componentMeshes,
@@ -255,15 +244,12 @@ public sealed class MeshTargetCountSplitter
         destination.AddRange(componentMeshes);
         return true;
     
-        }
     }
 
     private static int FindLargestSplittablePieceIndex(
         IReadOnlyList<Mesh> pieces,
         HashSet<Mesh> unsplittablePieces)
     {
-        using (findLargestPieceProfilerMarker.Auto())
-        {
         int largestPieceIndex = -1;
         float largestApproximateVolume = float.NegativeInfinity;
         float largestBoundsMagnitude = float.NegativeInfinity;
@@ -311,7 +297,6 @@ public sealed class MeshTargetCountSplitter
 
         return largestPieceIndex;
     
-        }
     }
 
     private static Plane CreateCenterSplitPlane(

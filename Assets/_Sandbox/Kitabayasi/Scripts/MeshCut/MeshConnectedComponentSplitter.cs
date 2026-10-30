@@ -25,23 +25,11 @@ public sealed class MeshConnectedComponentSplitter
         private static readonly ProfilerMarker splitReadDataProfilerMarker =
             new ProfilerMarker("EnemyMeshCut.ConnectedComponents.GroupTriangles");
 
-        private static readonly ProfilerMarker readSourceMeshProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.ConnectedComponents.ReadSourceMesh");
 
-        private static readonly ProfilerMarker buildConnectedVertexIdsProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.ConnectedComponents.BuildConnectedVertexIds");
 
-        private static readonly ProfilerMarker initializeGroupingProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.ConnectedComponents.GroupTriangles.Initialize");
 
-        private static readonly ProfilerMarker registerEdgesProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.ConnectedComponents.GroupTriangles.RegisterEdges");
 
-        private static readonly ProfilerMarker groupRootsProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.ConnectedComponents.GroupTriangles.GroupRoots");
 
-        private static readonly ProfilerMarker buildComponentMeshProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.ConnectedComponents.BuildComponentMesh");
 
     private const float POSITION_EPSILON_RATIO = 0.00001f;
     private const float MIN_POSITION_EPSILON = 0.000001f;
@@ -291,8 +279,6 @@ public sealed class MeshConnectedComponentSplitter
 
         try
         {
-            using (initializeGroupingProfilerMarker.Auto())
-            {
                 // 大きな一時配列をEnemy死亡ごとにnewせず、共有Poolから借りて再利用する。
                 parent = ArrayPool<int>.Shared.Rent(triangleCount);
                 rank = ArrayPool<byte>.Shared.Rent(triangleCount);
@@ -333,13 +319,10 @@ public sealed class MeshConnectedComponentSplitter
                 FillFirstTriangleIndicesBySubMesh(
                     trianglesBySubMesh,
                     firstTriangleIndexBySubMesh);
-            }
 
             int triangleIndex = 0;
             int edgeTableMask = edgeTableCapacity - 1;
 
-            using (registerEdgesProfilerMarker.Auto())
-            {
                 for (int subMeshIndex = 0;
                      subMeshIndex < trianglesBySubMesh.Count;
                      subMeshIndex++)
@@ -402,12 +385,9 @@ public sealed class MeshConnectedComponentSplitter
                         triangleIndex++;
                     }
                 }
-            }
 
             int componentCount = 0;
 
-            using (groupRootsProfilerMarker.Auto())
-            {
                 for (triangleIndex = 0;
                      triangleIndex < triangleCount;
                      triangleIndex++)
@@ -457,7 +437,6 @@ public sealed class MeshConnectedComponentSplitter
                         componentWriteCursor[componentIndex]++] =
                         triangleIndex;
                 }
-            }
 
             componentMeshes.Capacity = componentCount;
 
@@ -560,8 +539,6 @@ public sealed class MeshConnectedComponentSplitter
         out int triangleCount,
         out string failureReason)
     {
-        using (readSourceMeshProfilerMarker.Auto())
-        {
         vertices = null;
         normals = null;
         uv = null;
@@ -651,7 +628,6 @@ public sealed class MeshConnectedComponentSplitter
         failureReason = null;
         return true;
     
-        }
     }
 
     private static bool TryValidateWorkingData(
@@ -791,8 +767,6 @@ public sealed class MeshConnectedComponentSplitter
         IReadOnlyList<Vector3> vertices,
         float positionEpsilon)
     {
-        using (buildConnectedVertexIdsProfilerMarker.Auto())
-        {
         int vertexCount = vertices.Count;
         var connectedVertexIds = new int[vertexCount];
 
@@ -925,7 +899,6 @@ public sealed class MeshConnectedComponentSplitter
 
         return connectedVertexIds;
 
-        }
     }
 
     /// <summary>
@@ -1135,8 +1108,6 @@ public sealed class MeshConnectedComponentSplitter
         int[] destinationVertexIndexBySourceVertexIndex,
         int[] destinationVertexGenerationBySourceVertexIndex)
     {
-        using (buildComponentMeshProfilerMarker.Auto())
-        {
         if (groupedTriangleIndices == null ||
             componentTriangleCount <= 0)
         {
@@ -1289,7 +1260,6 @@ public sealed class MeshConnectedComponentSplitter
 
         return mesh;
     
-        }
     }
 
     private static int GetOrAddVertex(

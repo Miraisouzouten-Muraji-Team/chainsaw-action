@@ -24,8 +24,6 @@ public sealed class StandardEnemyDeathStrategy :
         private static readonly ProfilerMarker normalDeathMeshProfilerMarker =
             new ProfilerMarker("EnemyMeshCut.Death.Normal.Total");
 
-        private static readonly ProfilerMarker normalPieceEffectsProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.Death.Normal.PieceEffects");
 
         private static readonly ProfilerMarker diggingDeathMeshProfilerMarker =
             new ProfilerMarker("EnemyMeshCut.Death.Digging.Total");
@@ -1295,8 +1293,6 @@ public sealed class StandardEnemyDeathStrategy :
 
     private void TryBeginCutPieceEffects()
     {
-        using (normalPieceEffectsProfilerMarker.Auto())
-        {
         var cutPieceTransforms =
             new List<Transform>();
 
@@ -1387,7 +1383,6 @@ public sealed class StandardEnemyDeathStrategy :
             cutPieceTransforms,
             "Death-09 Shrink");
     
-        }
     }
 
     /// <summary>

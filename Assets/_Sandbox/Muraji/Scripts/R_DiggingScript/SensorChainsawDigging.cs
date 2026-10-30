@@ -76,7 +76,57 @@ public class SensorChainsawDigging : MonoBehaviour
     // 同じ食い込み中に押し出しを繰り返し、敵と追従中のプレイヤーを加速させない。
     private bool enemyPushApplied;
 
-    // 継続中の敵に対して、開始時の位置差を保つプレイヤーの追従先を返す。
+    [Header("敵食い込み時の位置補正")]
+    [Tooltip("実際のチェーンソーの先端に配置したTipを指定してください。プレイヤーと一緒に移動する子オブジェクトを使用します。未設定なら従来の位置で追従します。")]
+    [SerializeField] private Transform chainsawTip;
+
+    [Tooltip("EnemyAttackHitReceiverが付いたオブジェクトから見た、食い込み位置の名前または階層パスです。直下ならChainsawDigPoint、子階層ならModel/ChainsawDigPointのように指定します。")]
+    [SerializeField] private string enemyDigPointPath = "ChainsawDigPoint";
+
+    // 今回食い込んでいる敵の、Tipを合わせる位置。
+    private Transform enemyDigPoint;
+
+    // 食い込み開始時に、対象の敵からTipを合わせる位置を取得する。
+    private void InitializeEnemyTipAlignment()
+    {
+        enemyDigPoint = null;
+
+        // 未設定の場合は、従来の追従を使用する。
+        if (chainsawTip == null)
+        {
+            return;
+        }
+
+        // プレイヤーを移動したときにTipも移動する階層を必須にする。
+        if (chainsawTip == transform || !chainsawTip.IsChildOf(transform))
+        {
+            Debug.LogWarning(
+                "敵食い込みのTipには、このプレイヤーの子にあるチェーンソー先端を指定してください。従来の追従を使用します。",
+                this);
+            return;
+        }
+
+        if (contact.Enemy == null ||
+            string.IsNullOrWhiteSpace(enemyDigPointPath))
+        {
+            return;
+        }
+
+        enemyDigPoint = contact.Enemy.transform.Find(enemyDigPointPath);
+
+        if (enemyDigPoint == null)
+        {
+            Debug.LogWarning(
+                $"敵「{contact.Enemy.name}」に食い込み位置" +
+                $"「{enemyDigPointPath}」がありません。" +
+                "EnemyAttackHitReceiverが付いたオブジェクトからの階層を確認してください。" +
+                "今回は従来の追従を使用します。",
+                contact.Enemy);
+        }
+    }
+
+    // 敵の指定位置にTipが重なるよう、プレイヤーの追従先を計算する。
+    // 設定がない場合は、従来の敵との位置差を使って追従する。
     public bool TryGetEnemyFollowPosition(out Vector3 position)
     {
         position = default;
@@ -89,6 +139,26 @@ public class SensorChainsawDigging : MonoBehaviour
             return false;
         }
 
+        if (chainsawTip != null &&
+            enemyDigPoint != null &&
+            enemyDigPoint.gameObject.activeInHierarchy)
+        {
+            // アニメーションや左右反転による先端位置の変化も反映する。
+            Vector3 tipOffset = chainsawTip.position - transform.position;
+            position = enemyDigPoint.position - tipOffset;
+
+            // 既存の2D移動を維持し、奥行き方向には移動しない。
+            position.z = transform.position.z;
+
+            // 指定位置が途中で削除・無効化された場合に、
+            // 食い込み開始前の位置へ戻らないよう現在の位置差を保存する。
+            enemyFollowOffset =
+                transform.position - contact.Enemy.transform.position;
+
+            return true;
+        }
+
+        // 未設定の敵は、従来どおりの追従を維持する。
         position = contact.Enemy.transform.position + enemyFollowOffset;
         return true;
     }
@@ -809,6 +879,10 @@ public class SensorChainsawDigging : MonoBehaviour
             enemyFollowOffset = transform.position - contact.Enemy.transform.position;
             enemyLocalHitPoint = contact.Enemy.transform.InverseTransformPoint(contact.Point);
             enemyPushApplied = false;
+
+            // 今回の敵に用意した、Tipを合わせる位置を取得する。
+            InitializeEnemyTipAlignment();
+
             chainsawAttack.BeginDigging();
         }
 
@@ -922,6 +996,7 @@ public class SensorChainsawDigging : MonoBehaviour
         enemyFollowOffset = Vector3.zero;
         enemyLocalHitPoint = Vector3.zero;
         enemyPushApplied = false;
+        enemyDigPoint = null;
 
         timer = 0f;
         surfaceContactLostTime = 0f;

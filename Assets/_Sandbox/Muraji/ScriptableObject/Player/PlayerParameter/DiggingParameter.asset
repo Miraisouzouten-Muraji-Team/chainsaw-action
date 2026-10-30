@@ -22,7 +22,7 @@ MonoBehaviour:
   wallJumpPower: 50
   bonusWallJumpPower: 15
   wallEvadeTime: 0.25
-  wallContactGraceTime: 0.1
+  wallContactGraceTime: 0.2
   ceilingSpeedDivisor: 5
   ceilingDashPower: 15
   ceilingEvadeTime: 0.35

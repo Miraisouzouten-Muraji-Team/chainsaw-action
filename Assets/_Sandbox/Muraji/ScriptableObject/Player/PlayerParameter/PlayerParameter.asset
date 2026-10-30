@@ -15,7 +15,7 @@ MonoBehaviour:
   moveSpeed: 11
   acceleration: 20
   deceleration: 30
-  attackMoveSpeedMultiplier: 0
+  attackMoveSpeedMultiplier: 0.4
   moveDeadZone: 0.3
   jumpForce: 35
   airJumpForce: 37.5

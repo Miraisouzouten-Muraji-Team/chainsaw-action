@@ -322,8 +322,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3756634590755638313}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.29747579, y: -0.68485355, z: -0.3831532, w: 0.5437624}
-  m_LocalPosition: {x: 0.4319, y: -0.0172, z: 0.0038}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.726, y: -0.1, z: 0.014}
   m_LocalScale: {x: 8.75, y: 8.750004, z: 8.750011}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -808,7 +808,6 @@ GameObject:
   - component: {fileID: 1203193980578457020}
   - component: {fileID: 3327013363795973915}
   - component: {fileID: 3846418490811467109}
-  - component: {fileID: 7019276864892403022}
   m_Layer: 0
   m_Name: Player 1
   m_TagString: Player
@@ -878,6 +877,29 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cea2bfeaf7c54a74590b3da1d613afbe, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SensorPlayerController
+  walkEffect:
+    Prefab: {fileID: 0}
+    SpawnPoint: {fileID: 0}
+    Lifetime: 2
+  jumpEffect:
+    Prefab: {fileID: 0}
+    SpawnPoint: {fileID: 0}
+    Lifetime: 2
+  doubleJumpEffect:
+    Prefab: {fileID: 0}
+    SpawnPoint: {fileID: 0}
+    Lifetime: 2
+  landingEffect:
+    Prefab: {fileID: 0}
+    SpawnPoint: {fileID: 0}
+    Lifetime: 2
+  walkEffectClips: []
+  walkEffectAnimatorLayer: 0
+  walkEffectInterval: 0.15
+  walkEffectMinimumWeight: 0.1
+  landingEffectMinimumAirSeconds: 0.08
+  jumpHoldAction: {fileID: 0}
+  logJumpDiagnostics: 1
   playerParameter: {fileID: 11400000, guid: 95f83e18d5c42904aa49a97890997239, type: 2}
   chainsawDigging: {fileID: 4166513584750343507}
   chainsawAccelerator: {fileID: 3199202209234272052}
@@ -928,6 +950,8 @@ MonoBehaviour:
   chainsawAttack: {fileID: 2192336546025605430}
   diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
   surfaceContactGraceTime: 0.1
+  chainsawTip: {fileID: 0}
+  enemyDigPointPath: ChainsawDigPoint
 --- !u!114 &6047860458994670659
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1119,34 +1143,6 @@ MonoBehaviour:
   rays: []
   segments: 24
   drawingLayer: 0
---- !u!114 &7019276864892403022
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7542431373430556866}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e7ce3ce98439148429b0a90db13526a2, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPlayer
-  inputBehaviours: []
-  clearBufferedInput:
-    m_PersistentCalls:
-      m_Calls:
-      - m_Target: {fileID: 0}
-        m_TargetAssemblyTypeName: 
-        m_MethodName: 
-        m_Mode: 1
-        m_Arguments:
-          m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: 
-          m_IntArgument: 0
-          m_FloatArgument: 0
-          m_StringArgument: 
-          m_BoolArgument: 0
-        m_CallState: 2
 --- !u!1 &7674304533746313249
 GameObject:
   m_ObjectHideFlags: 0
@@ -1794,6 +1790,11 @@ MonoBehaviour:
   playerController: {fileID: 4996046773718306232}
   particlePrefab: {fileID: 198000012283690144, guid: 96b2ec0239d11fa4b9792311efceb8ed, type: 3}
   emissionPoint: {fileID: 7464963693528972124}
+  groundContactPoint: {fileID: 7464963693528972124}
+  groundContactRadius: 0.03
+  groundContactLayers:
+    serializedVersion: 2
+    m_Bits: 1
   floorAngle: 135
   wallAngle: 225
   ceilingAngle: 225

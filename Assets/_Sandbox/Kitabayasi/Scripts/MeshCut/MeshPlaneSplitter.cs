@@ -31,6 +31,9 @@ public sealed class MeshPlaneSplitter
         private static readonly ProfilerMarker buildFinalMeshProfilerMarker =
             new ProfilerMarker("EnemyMeshCut.SplitPlane.BuildFinalMesh");
 
+        private static readonly ProfilerMarker createPieceMeshBuildersProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.SplitPlane.CreatePieceMeshBuilders");
+
 
 
 
@@ -85,6 +88,10 @@ public sealed class MeshPlaneSplitter
     private static readonly Stack<List<Vector4>> sourceTangentListPool =
         new Stack<List<Vector4>>();
 
+    // 通常攻撃2分割専用。Enemyごとに保持せず、同時に必要な2個を共有して再利用する。
+    private static readonly Stack<PieceMeshBuilder> pieceMeshBuilderPool =
+        new Stack<PieceMeshBuilder>();
+
     // Boundary診断がSource Triangleを再取得する場合だけ使用する。
     // 通常分割本体のTriangleはChainsawMeshCutProcessorから受け取るため、再取得しない。
     private static readonly Stack<List<int>> diagnosticTriangleIndexListPool =
@@ -136,6 +143,8 @@ public sealed class MeshPlaneSplitter
         EnsurePooledListAvailable(
             sourceTangentListPool,
             SOURCE_MESH_ATTRIBUTE_LIST_WARMUP_CAPACITY);
+
+        WarmupPieceMeshBuilderPool();
     }
 
     private readonly MeshConnectedComponentSplitter connectedComponentSplitter =
@@ -575,6 +584,9 @@ public sealed class MeshPlaneSplitter
         List<Vector2> sourceUvBuffer = null;
         List<Vector4> sourceTangentBuffer = null;
 
+        PieceMeshBuilder firstBuilder = null;
+        PieceMeshBuilder secondBuilder = null;
+
         try
         {
             if (useCachedTriangleValidation)
@@ -686,17 +698,42 @@ public sealed class MeshPlaneSplitter
             CalculateInitialPieceVertexCapacity(
                 sourceVertices.Count);
 
-        var firstBuilder = new PieceMeshBuilder(
-            originalSubMeshCount + 1,
-            hasTangents,
-            sourceVertices.Count,
-            estimatedPieceVertexCapacity);
+        using (createPieceMeshBuildersProfilerMarker.Auto())
+        {
+            if (splitConnectedComponents)
+            {
+                firstBuilder =
+                    AcquirePieceMeshBuilder(
+                        originalSubMeshCount + 1,
+                        hasTangents,
+                        sourceVertices.Count,
+                        estimatedPieceVertexCapacity);
 
-        var secondBuilder = new PieceMeshBuilder(
-            originalSubMeshCount + 1,
-            hasTangents,
-            sourceVertices.Count,
-            estimatedPieceVertexCapacity);
+                secondBuilder =
+                    AcquirePieceMeshBuilder(
+                        originalSubMeshCount + 1,
+                        hasTangents,
+                        sourceVertices.Count,
+                        estimatedPieceVertexCapacity);
+            }
+            else
+            {
+                // 通常攻撃2分割以外は従来どおり毎回生成し、Pool再利用の対象にしない。
+                firstBuilder = new PieceMeshBuilder(
+                    originalSubMeshCount + 1,
+                    hasTangents,
+                    sourceVertices.Count,
+                    estimatedPieceVertexCapacity,
+                    false);
+
+                secondBuilder = new PieceMeshBuilder(
+                    originalSubMeshCount + 1,
+                    hasTangents,
+                    sourceVertices.Count,
+                    estimatedPieceVertexCapacity,
+                    false);
+            }
+        }
 
         var cutSegments = new List<CutSegment>();
 
@@ -1251,6 +1288,14 @@ public sealed class MeshPlaneSplitter
         }
         finally
         {
+            if (splitConnectedComponents)
+            {
+                // Connected Component生成まで同期的に完了した後で返却する。
+                // 途中returnや例外でも、このfinallyを通るため貸し出し状態が残らない。
+                ReleasePieceMeshBuilder(secondBuilder);
+                ReleasePieceMeshBuilder(firstBuilder);
+            }
+
             ReleaseReusableList(
                 sourceTangentListPool,
                 sourceTangentBuffer);
@@ -1451,6 +1496,86 @@ public sealed class MeshPlaneSplitter
 
         list.Clear();
         pool.Push(list);
+    }
+
+    private static void WarmupPieceMeshBuilderPool()
+    {
+        int estimatedVertexCapacity =
+            CalculateInitialPieceVertexCapacity(
+                SOURCE_VERTEX_DATA_BUFFER_LENGTH);
+
+        // 有効なSource Meshは最低1 SubMeshを持ち、Cut Surface分を加えるため、
+        // 2個のSubMesh Listを最小Warmup単位として用意する。
+        const int warmupSubMeshCount = 2;
+
+        foreach (PieceMeshBuilder builder in pieceMeshBuilderPool)
+        {
+            builder.PrepareForUse(
+                warmupSubMeshCount,
+                true,
+                SOURCE_VERTEX_DATA_BUFFER_LENGTH,
+                estimatedVertexCapacity);
+        }
+
+        while (pieceMeshBuilderPool.Count < 2)
+        {
+            pieceMeshBuilderPool.Push(
+                new PieceMeshBuilder(
+                    warmupSubMeshCount,
+                    true,
+                    SOURCE_VERTEX_DATA_BUFFER_LENGTH,
+                    estimatedVertexCapacity,
+                    true));
+        }
+    }
+
+    private static PieceMeshBuilder AcquirePieceMeshBuilder(
+        int subMeshCount,
+        bool hasTangents,
+        int sourceVertexCount,
+        int estimatedVertexCapacity)
+    {
+        if (pieceMeshBuilderPool.Count == 0)
+        {
+            // 想定外の再入等で2個を使い切っていても、処理を壊さず新規生成へ退避する。
+            return new PieceMeshBuilder(
+                subMeshCount,
+                hasTangents,
+                sourceVertexCount,
+                estimatedVertexCapacity,
+                true);
+        }
+
+        PieceMeshBuilder builder =
+            pieceMeshBuilderPool.Pop();
+
+        try
+        {
+            builder.PrepareForUse(
+                subMeshCount,
+                hasTangents,
+                sourceVertexCount,
+                estimatedVertexCapacity);
+
+            return builder;
+        }
+        catch
+        {
+            // Prepare中に例外が発生しても、取得済みBuilderをPoolから失わない。
+            pieceMeshBuilderPool.Push(builder);
+            throw;
+        }
+    }
+
+    private static void ReleasePieceMeshBuilder(
+        PieceMeshBuilder builder)
+    {
+        if (builder == null)
+        {
+            return;
+        }
+
+        pieceMeshBuilderPool.Push(builder);
     }
 
     private static VertexData[] AcquireSourceVertexDataBuffer(
@@ -5397,13 +5522,18 @@ public sealed class MeshPlaneSplitter
         private readonly List<List<int>>
             trianglesBySubMesh;
 
+        // SubMesh数が減った場合もList本体とBacking Arrayを捨てず、
+        // 次にSubMesh数が増えたときへ再利用する。通常攻撃2分割のPool Builderだけが保持する。
+        private readonly Stack<List<int>>
+            spareTrianglesBySubMesh;
+
         // 元Mesh由来の頂点だけを再利用する。位置一致では統合せず、
         // UV seam / hard edgeとして分離された別Source Vertex Indexは維持する。
         // 0を未登録として使えるよう、実際のOutput Vertex Index + 1を格納する。
-        private readonly int[]
+        private int[]
             outputVertexIndexBySourceVertexIndex;
 
-        private readonly bool hasTangents;
+        private bool hasTangents;
 
         private bool hasBounds;
         private Vector3 minimumPosition;
@@ -5439,7 +5569,8 @@ public sealed class MeshPlaneSplitter
             int subMeshCount,
             bool hasTangents,
             int sourceVertexCount,
-            int estimatedVertexCapacity)
+            int estimatedVertexCapacity,
+            bool supportsReuse)
         {
             this.hasTangents =
                 hasTangents;
@@ -5473,12 +5604,124 @@ public sealed class MeshPlaneSplitter
                 new List<List<int>>(
                     subMeshCount);
 
+            spareTrianglesBySubMesh =
+                supportsReuse
+                    ? new Stack<List<int>>()
+                    : null;
+
             for (int i = 0;
                  i < subMeshCount;
                  i++)
             {
                 trianglesBySubMesh.Add(
                     new List<int>());
+            }
+        }
+
+        public void PrepareForUse(
+            int subMeshCount,
+            bool useTangents,
+            int sourceVertexCount,
+            int estimatedVertexCapacity)
+        {
+            vertices.Clear();
+            normals.Clear();
+            uv.Clear();
+            tangents.Clear();
+            connectivityVertexIds.Clear();
+
+            if (vertices.Capacity < estimatedVertexCapacity)
+            {
+                vertices.Capacity = estimatedVertexCapacity;
+            }
+
+            if (normals.Capacity < estimatedVertexCapacity)
+            {
+                normals.Capacity = estimatedVertexCapacity;
+            }
+
+            if (uv.Capacity < estimatedVertexCapacity)
+            {
+                uv.Capacity = estimatedVertexCapacity;
+            }
+
+            if (useTangents &&
+                tangents.Capacity < estimatedVertexCapacity)
+            {
+                tangents.Capacity = estimatedVertexCapacity;
+            }
+
+            if (connectivityVertexIds.Capacity < estimatedVertexCapacity)
+            {
+                connectivityVertexIds.Capacity = estimatedVertexCapacity;
+            }
+
+            if (outputVertexIndexBySourceVertexIndex.Length < sourceVertexCount)
+            {
+                // 旧内容は引き継ぐ必要がないため、Array.Resizeによるコピーは行わない。
+                outputVertexIndexBySourceVertexIndex =
+                    new int[sourceVertexCount];
+            }
+            else
+            {
+                // 0を未登録値として使うため、今回参照し得るSource Vertex範囲だけ初期化する。
+                Array.Clear(
+                    outputVertexIndexBySourceVertexIndex,
+                    0,
+                    sourceVertexCount);
+            }
+
+            ResetSubMeshTriangleLists(subMeshCount);
+
+            hasTangents = useTangents;
+            OriginalTriangleCount = 0;
+            TotalTriangleCount = 0;
+            hasBounds = false;
+            minimumPosition = default;
+            maximumPosition = default;
+        }
+
+        private void ResetSubMeshTriangleLists(
+            int requiredSubMeshCount)
+        {
+            for (int subMeshIndex = 0;
+                 subMeshIndex < trianglesBySubMesh.Count;
+                 subMeshIndex++)
+            {
+                trianglesBySubMesh[subMeshIndex].Clear();
+            }
+
+            if (trianglesBySubMesh.Count > requiredSubMeshCount)
+            {
+                // Pool BuilderだけがSubMesh List退避領域を持つ。
+                // PrepareForUseはPool Builderに対してのみ呼ばれる。
+                while (trianglesBySubMesh.Count > requiredSubMeshCount)
+                {
+                    int lastIndex =
+                        trianglesBySubMesh.Count - 1;
+
+                    List<int> spareTriangles =
+                        trianglesBySubMesh[lastIndex];
+
+                    trianglesBySubMesh.RemoveAt(lastIndex);
+                    spareTrianglesBySubMesh.Push(spareTriangles);
+                }
+            }
+
+            if (trianglesBySubMesh.Capacity < requiredSubMeshCount)
+            {
+                trianglesBySubMesh.Capacity = requiredSubMeshCount;
+            }
+
+            while (trianglesBySubMesh.Count < requiredSubMeshCount)
+            {
+                List<int> triangles =
+                    spareTrianglesBySubMesh.Count > 0
+                        ? spareTrianglesBySubMesh.Pop()
+                        : new List<int>();
+
+                triangles.Clear();
+                trianglesBySubMesh.Add(triangles);
             }
         }
 

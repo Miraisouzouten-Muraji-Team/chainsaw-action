@@ -645,7 +645,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: -6616500621307276426, guid: ed1c2d7b836be064ba9ccb3501fc8c64, type: 3}
+  m_Sprite: {fileID: 0}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -1424,18 +1424,28 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StageSelectController
   areas:
-  - stageName: Stage1
-    areaNumber: Area1
+  - displayName: 'STAGE1
+
+      AREA1'
     screenshot: {fileID: -6616500621307276426, guid: ed1c2d7b836be064ba9ccb3501fc8c64, type: 3}
     sceneName: Stage1Area1
-  - stageName: Stage1
-    areaNumber: Area2
+  - displayName: 'STAGE1
+
+      AREA2'
     screenshot: {fileID: -5110826189495050274, guid: 88120473315a54a45af06b3df97e2430, type: 3}
     sceneName: Stage1Area2
-  - stageName: Stage1
-    areaNumber: Area3
+  - displayName: 'STAGE1
+
+      AREA3'
     screenshot: {fileID: -6616500621307276426, guid: ed1c2d7b836be064ba9ccb3501fc8c64, type: 3}
     sceneName: Stage1Area3
+  - displayName: 'STAGE1
+
+      AREA4'
+    screenshot: {fileID: -5110826189495050274, guid: 88120473315a54a45af06b3df97e2430, type: 3}
+    sceneName: Stage1Area4
+  transitionManager: {fileID: 1593801880}
+  transitionType: 3
   currentIndex: 0
   previousCard: {fileID: 2023482141}
   currentCard: {fileID: 1804489732}
@@ -1967,7 +1977,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: -5110826189495050274, guid: 88120473315a54a45af06b3df97e2430, type: 3}
+  m_Sprite: {fileID: 0}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -2227,7 +2237,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: -6616500621307276426, guid: ed1c2d7b836be064ba9ccb3501fc8c64, type: 3}
+  m_Sprite: {fileID: 0}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1

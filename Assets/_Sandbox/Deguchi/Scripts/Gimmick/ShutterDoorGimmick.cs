@@ -71,6 +71,10 @@ public class ShutterDoorGimmick : MonoBehaviour
     [SerializeField]
     private float shakeFrequency = 25f;
 
+    [Header("演出の再生")]
+    [Tooltip("以下の演出を再生するか")]
+    [SerializeField]bool isPlay = true;
+
     [Header("カメラ演出")]
 
     [Tooltip("普段プレイヤーを映しているMain Camera")]
@@ -135,6 +139,7 @@ public class ShutterDoorGimmick : MonoBehaviour
 
     private void Start()
     {
+        if (!mainCamera) { mainCamera = GameObject.Find("Main Camera").GetComponent<Camera>(); }
         // Scene開始時点ですでに条件を満たしている可能性もあるため確認。
         TryStartSequence();
     }
@@ -239,7 +244,7 @@ public class ShutterDoorGimmick : MonoBehaviour
          * ---------------------------
          */
 
-        if (gameplaySequenceLock != null)
+        if (gameplaySequenceLock != null && isPlay)
         {
             gameplaySequenceLock.LockGameplay();
             ownsGameplayLock = true;
@@ -255,7 +260,7 @@ public class ShutterDoorGimmick : MonoBehaviour
         Quaternion originalCameraRotation = Quaternion.identity;
         float originalCameraFov = 60f;
 
-        if (mainCamera != null)
+        if (mainCamera != null && isPlay)
         {
             originalCameraPosition =
                 mainCamera.transform.position;
@@ -273,7 +278,7 @@ public class ShutterDoorGimmick : MonoBehaviour
          * ---------------------------
          */
 
-        if (mainCamera != null && doorCameraPoint != null)
+        if (mainCamera != null && doorCameraPoint != null && isPlay)
         {
             yield return MoveCamera(
                 doorCameraPoint.position,
@@ -305,7 +310,7 @@ public class ShutterDoorGimmick : MonoBehaviour
          * ---------------------------
          */
 
-        if (mainCamera != null)
+        if (mainCamera != null && isPlay)
         {
             yield return MoveCamera(
                 originalCameraPosition,
@@ -321,7 +326,7 @@ public class ShutterDoorGimmick : MonoBehaviour
          * ---------------------------
          */
 
-        if (gameplaySequenceLock != null)
+        if (gameplaySequenceLock != null && isPlay)
         {
             gameplaySequenceLock.UnlockGameplay();
             ownsGameplayLock = false;

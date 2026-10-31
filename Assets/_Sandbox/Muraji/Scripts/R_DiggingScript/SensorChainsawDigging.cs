@@ -39,6 +39,9 @@ public class SensorChainsawDigging : MonoBehaviour
 
     public ChainsawSurface Surface { get; private set; }
 
+    // 入力更新と物理更新の間で開始しても、Controllerが壁への進入を検出できる番号。
+    public uint WallEntryVersion { get; private set; }
+
     public bool HasBonus { get; private set; }
 
     public bool IsEvading =>
@@ -587,6 +590,19 @@ public class SensorChainsawDigging : MonoBehaviour
                     $"{contact.Collider.name}",
                     contact.Collider);
             }
+            else if (Surface == ChainsawSurface.Ceiling &&
+                     next.Surface == ChainsawSurface.Wall)
+            {
+                // 天井の接触が終わって壁へ移った場合は、要求を維持して壁登りを開始する。
+                contact = next;
+                Surface = ChainsawSurface.None;
+                timer = 0f;
+                pendingDash = 0f;
+                pendingWallCollider = null;
+                pendingWallTime = 0f;
+                wallContactLostTime = 0f;
+                if (!BeginDigging()) return;
+            }
             else if (next.Surface == ChainsawSurface.Enemy &&
                      Surface != ChainsawSurface.Enemy)
             {
@@ -916,6 +932,12 @@ public class SensorChainsawDigging : MonoBehaviour
         // 初回の接触後は、既存の食い込み継続・解除処理へ移行する。
         // 成立した面の停止イベントで姿勢を保持する。
         isWaitingForContact = false;
+
+        // 成功した壁食い込み開始ごとに通知番号を進める。解除直後の再開始も区別する。
+        if (Surface == ChainsawSurface.Wall)
+        {
+            unchecked { WallEntryVersion++; }
+        }
 
         LogDiggingContact();
 

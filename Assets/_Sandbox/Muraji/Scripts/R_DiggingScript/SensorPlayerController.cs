@@ -130,6 +130,22 @@ public class SensorPlayerController : MonoBehaviour
     [SerializeField] private float wallTravelSpeed;
     // 床からの速度引き継ぎと、直接開始時の回転速度連動を区別する。
     private bool useDirectWallSpeed;
+    // 最後に上昇速度を初期化した壁食い込みの開始番号。
+    private uint handledWallEntryVersion;
+
+    private const float WALL_SPEED_EPSILON = 0.001f;
+    private const float WALL_STALL_SECONDS = 0.3f;
+    private const float WALL_PROGRESS_RATIO = 0.1f;
+
+    [Header("壁登り停止の原因調査")]
+    [Tooltip("壁登り中に上昇が止まった場合、指示速度・実際の移動速度・位置の固定設定をConsoleに一度出します。原因確認後はオフにしてください。")]
+    [SerializeField] private bool logWallStallDiagnostics = true;
+    private bool wallMotionSamplePending;
+    private uint wallMotionSampleVersion;
+    private Vector3 wallMotionSamplePosition;
+    private Vector3 wallMotionRequestedVelocity;
+    private float wallStallElapsed;
+    private bool wallStallReported;
 
     private float knockbackVelocity;
 
@@ -424,6 +440,9 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        // 前回指示した上昇速度と、物理更新後の実移動を比較する。
+        CheckWallClimbProgress(deltaTime);
+
         // 被弾硬直中は入力による移動を止め、落下と硬直時間だけを進める。
         if (TickDamageStun(deltaTime))
         {
@@ -493,13 +512,20 @@ public class SensorPlayerController : MonoBehaviour
             knockbackHopPending = true;
         }
 
+        // Update内で既に壁食い込みが成立していても、開始番号で取りこぼさず初期化する。
         bool enteredWall =
-            previousSurface != ChainsawSurface.Wall &&
-            chainsawDigging.Surface == ChainsawSurface.Wall;
+            chainsawDigging.Surface == ChainsawSurface.Wall &&
+            (previousSurface != ChainsawSurface.Wall ||
+             handledWallEntryVersion != chainsawDigging.WallEntryVersion);
 
         if (enteredWall)
         {
-            useDirectWallSpeed = previousSurface != ChainsawSurface.Floor;
+            handledWallEntryVersion = chainsawDigging.WallEntryVersion;
+            // 床からの速度が0なら、通常の壁登り速度を使う。
+            // 正の床移動速度を引き継ぐ従来の挙動は維持する。
+            useDirectWallSpeed =
+                previousSurface != ChainsawSurface.Floor ||
+                previousMoveSpeed <= WALL_SPEED_EPSILON;
             wallTravelSpeed =
                 useDirectWallSpeed
                     ? CalculateDirectWallSpeed()
@@ -736,10 +762,69 @@ public class SensorPlayerController : MonoBehaviour
                 $"回数={jumpsUsed} 設定初速={pendingJumpPower:F3} 最終速度={velocity}", this);
         }
         playerRigidbody.linearVelocity = velocity;
+        RecordWallClimbMotion(velocity);
 
         playerAnimator.SetSpeed(
             knockbackVelocity != 0f ? 0f : currentSpeed
         );
+    }
+
+    // 次の物理更新で比較するため、壁登りの開始番号・位置・最終指示速度を保存する。
+    private void RecordWallClimbMotion(Vector3 velocity)
+    {
+        wallMotionSamplePending =
+            logWallStallDiagnostics && chainsawDigging.Surface == ChainsawSurface.Wall;
+        if (!wallMotionSamplePending) return;
+
+        wallMotionSampleVersion = chainsawDigging.WallEntryVersion;
+        wallMotionSamplePosition = playerRigidbody.position;
+        wallMotionRequestedVelocity = velocity;
+    }
+
+    // 上昇停止が続いた場合だけ診断を出す。速度や位置、衝突判定は変更しない。
+    private void CheckWallClimbProgress(float deltaTime)
+    {
+        bool canCompare =
+            logWallStallDiagnostics && wallMotionSamplePending && deltaTime > 0f &&
+            chainsawDigging != null && chainsawDigging.Surface == ChainsawSurface.Wall &&
+            wallMotionSampleVersion == chainsawDigging.WallEntryVersion &&
+            !IsDamageStunned && !IsImpactStunned && wallJumpStunRemaining <= 0f;
+        wallMotionSamplePending = false;
+        if (!canCompare)
+        {
+            wallStallElapsed = 0f;
+            wallStallReported = false;
+            return;
+        }
+
+        float measuredSpeed =
+            (playerRigidbody.position.y - wallMotionSamplePosition.y) / deltaTime;
+        float requestedSpeed = wallMotionRequestedVelocity.y;
+        bool hasUpwardCommand = requestedSpeed > WALL_SPEED_EPSILON;
+        bool hasProgress = hasUpwardCommand &&
+            measuredSpeed >= requestedSpeed * WALL_PROGRESS_RATIO;
+        if (hasProgress)
+        {
+            wallStallElapsed = 0f;
+            wallStallReported = false;
+            return;
+        }
+
+        wallStallElapsed += deltaTime;
+        if (wallStallReported || wallStallElapsed < WALL_STALL_SECONDS) return;
+        wallStallReported = true;
+
+        string reason = hasUpwardCommand
+            ? "上昇指示あり・実移動不足（衝突、摩擦、固定設定、別処理の上書きを確認）"
+            : "上昇指示なし（速度設定、引き継ぎ、面の法線を確認）";
+        Debug.LogWarning(
+            $"[壁登り停止] {reason}\n" +
+            $"壁速度={wallTravelSpeed:F4} 通常速度方式={useDirectWallSpeed} " +
+            $"指示速度={wallMotionRequestedVelocity.ToString("F4")} " +
+            $"実測上下速度={measuredSpeed:F4} " +
+            $"物理速度={playerRigidbody.linearVelocity.ToString("F4")} " +
+            $"法線={chainsawDigging.SurfaceNormal.ToString("F4")} " +
+            $"固定={playerRigidbody.constraints}", this);
     }
 
     // 被弾時に攻撃・食い込み・移動予約を終了し、指定時間の操作硬直を開始する。

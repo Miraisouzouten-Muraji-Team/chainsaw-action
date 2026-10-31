@@ -128475,9 +128475,6 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 5046133520663052250, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1994472501}
-    - targetCorrespondingSourceObject: {fileID: 5046133520663052250, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 1994472512}
     - targetCorrespondingSourceObject: {fileID: 6468764369876483958, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1460914060}
@@ -128969,6 +128966,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPresenter
   uiFont: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
+  tutorialOpen: {fileID: 0}
+  tutorialClose: {fileID: 0}
+  tutorialNavigate: {fileID: 0}
+  tutorialReleaseGuard: {fileID: 0}
 --- !u!65 &1416235475 stripped
 BoxCollider:
   m_CorrespondingSourceObject: {fileID: 7824983804689355250, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
@@ -170917,6 +170918,10 @@ PrefabInstance:
     - target: {fileID: 4656271209163700965, guid: 6d4f233d85e96ec458a6134ad2180c37, type: 3}
       propertyPath: m_Name
       value: DroneEnemy
+      objectReference: {fileID: 0}
+    - target: {fileID: 4656271209163700965, guid: 6d4f233d85e96ec458a6134ad2180c37, type: 3}
+      propertyPath: m_TagString
+      value: Untagged
       objectReference: {fileID: 0}
     - target: {fileID: 7339521482760744611, guid: 6d4f233d85e96ec458a6134ad2180c37, type: 3}
       propertyPath: m_LocalPosition.x
@@ -219154,61 +219159,6 @@ MonoBehaviour:
           m_StringArgument: 
           m_BoolArgument: 0
         m_CallState: 2
---- !u!114 &1994472502 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
-  m_PrefabInstance: {fileID: 1351245142}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1994472484}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cea2bfeaf7c54a74590b3da1d613afbe, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SensorPlayerController
---- !u!114 &1994472512
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1994472484}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c549da474bec52c4cbabee6da59e2052, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PlayerThirdAttackImpact
-  controller: {fileID: 1994472502}
-  thirdAttackData: {fileID: 11400000, guid: e540abe81fcc379418b2cdafb563b6e8, type: 2}
-  startDelaySeconds: 0.1
-  autoSelectFinalCamera: 1
-  impactCamera: {fileID: 1082406077}
-  threshold: 0.3
-  invertFirstStep: 0
-  previewThreshold: 0
-  previewInverted: 0
-  renderStatus: "\u5F85\u6A5F\u4E2D"
-  firstStepFrames: 4
-  secondStepFrames: 4
-  thirdStepFrames: 4
-  fourthStepFrames: 4
-  slashFrames: 1
-  finalBlackFrames: 1
-  slashSprite: {fileID: 0}
-  slashAngle: 25
-  slashWidthRatio: 0.95
-  slashHeightRatio: 0.08
-  sortingOrder: 32760
-  overlay: {fileID: 0}
-  background: {fileID: 0}
-  slash: {fileID: 0}
-  wasThirdAttack: 0
-  pending: 0
-  delayRemaining: 0
-  firstFrame: -1
-  activeStep: -1
-  lastRenderedFrame: -100
-  effectRequestedFrame: -1
-  missingPassWarning: 0
 --- !u!1 &1999055609
 GameObject:
   m_ObjectHideFlags: 0
@@ -240341,6 +240291,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPresenter
   uiFont: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
+  tutorialOpen: {fileID: 0}
+  tutorialClose: {fileID: 0}
+  tutorialNavigate: {fileID: 0}
+  tutorialReleaseGuard: {fileID: 0}
 --- !u!1 &2085156841
 GameObject:
   m_ObjectHideFlags: 0

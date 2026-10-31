@@ -467,8 +467,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.006458829, y: 0.0035331135, z: 0.007204771}
-  m_Center: {x: 0.0003283788, y: 0.0007334443, z: -0.0011023836}
+  m_Size: {x: 0.006458829, y: 0.0035331135, z: 0.006921762}
+  m_Center: {x: 0.00032837878, y: 0.0007334443, z: 0.0002495605}
 --- !u!1 &4322828102838182231
 GameObject:
   m_ObjectHideFlags: 0
@@ -495,7 +495,7 @@ Transform:
   m_GameObject: {fileID: 4322828102838182231}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.00897, z: 0}
+  m_LocalPosition: {x: -0, y: 0.00897, z: -0.00145}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -520,8 +520,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.005, y: 0.017074373, z: 0.011317976}
-  m_Center: {x: -3.612647e-13, y: 0.002797991, z: 0.003158986}
+  m_Size: {x: 0.005, y: 0.024402259, z: 0.012767262}
+  m_Center: {x: 2.0481346e-17, y: 0.0064619295, z: 0.0045830165}
 --- !u!1 &4599671833493754076
 GameObject:
   m_ObjectHideFlags: 0
@@ -878,21 +878,21 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SensorPlayerController
   walkEffect:
-    Prefab: {fileID: 0}
-    SpawnPoint: {fileID: 0}
-    Lifetime: 2
+    Prefab: {fileID: 2508192069092340084, guid: f787e45fd32d718478daee5e1a6ef32a, type: 3}
+    SpawnPoint: {fileID: 2818282200944578263}
+    Lifetime: 0.5
   jumpEffect:
     Prefab: {fileID: 0}
     SpawnPoint: {fileID: 0}
     Lifetime: 2
   doubleJumpEffect:
-    Prefab: {fileID: 0}
-    SpawnPoint: {fileID: 0}
-    Lifetime: 2
+    Prefab: {fileID: 4026887684143952547, guid: 098f157927a3abf4ea8488589f6bf67f, type: 3}
+    SpawnPoint: {fileID: 2818282200944578263}
+    Lifetime: 0.75
   landingEffect:
-    Prefab: {fileID: 0}
-    SpawnPoint: {fileID: 0}
-    Lifetime: 2
+    Prefab: {fileID: 1475400350550726891, guid: 873007ee2dffc354e95a1110312d3377, type: 3}
+    SpawnPoint: {fileID: 2818282200944578263}
+    Lifetime: 0.3
   walkEffectClips: []
   walkEffectAnimatorLayer: 0
   walkEffectInterval: 0.15
@@ -913,6 +913,7 @@ MonoBehaviour:
   debugTargetSpeed: 0
   debugCurrentSpeed: 0
   wallTravelSpeed: 0
+  logWallStallDiagnostics: 1
   groundNormal: {x: 0, y: 1, z: 0}
   debugGroundCollider: {fileID: 0}
   debugGroundSource: 
@@ -949,9 +950,7 @@ MonoBehaviour:
   playerAnimator: {fileID: 2921792244955255645}
   chainsawAttack: {fileID: 2192336546025605430}
   diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
-  surfaceContactGraceTime: 0.1
-  chainsawTip: {fileID: 0}
-  enemyDigPointPath: ChainsawDigPoint
+  movementContactDamageMultiplier: 0.3
 --- !u!114 &6047860458994670659
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1231,8 +1230,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7736900866004463327}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: 0.7077235, z: -0, w: 0.7064895}
-  m_LocalPosition: {x: 0.10754728, y: 0, z: -0.0001912117}
+  m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 70, y: 70, z: 70}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -1240,7 +1239,7 @@ Transform:
   - {fileID: 8771988832917560280}
   - {fileID: 9052240401034306503}
   m_Father: {fileID: 4814178263090608376}
-  m_LocalEulerAnglesHint: {x: 0, y: -42.1, z: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
 --- !u!1001 &2096873142665683200
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1788,7 +1787,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawDiggingParticles
   chainsawDigging: {fileID: 4166513584750343507}
   playerController: {fileID: 4996046773718306232}
-  particlePrefab: {fileID: 198000012283690144, guid: 96b2ec0239d11fa4b9792311efceb8ed, type: 3}
+  particlePrefab: {fileID: 7044623282841772800, guid: 837e8e5252d7c7e4baa5ea5980ed9e2a, type: 3}
   emissionPoint: {fileID: 7464963693528972124}
   groundContactPoint: {fileID: 7464963693528972124}
   groundContactRadius: 0.03

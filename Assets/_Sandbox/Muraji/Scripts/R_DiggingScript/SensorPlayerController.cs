@@ -440,6 +440,10 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        // 前回の本体衝突による接触攻撃は、敵とプレイヤー双方の衝突通知後に確定する。
+        // 被弾硬直による早期returnより先に実行する。
+        if (chainsawDigging != null) chainsawDigging.FlushMovementCollisionHits();
+
         // 前回指示した上昇速度と、物理更新後の実移動を比較する。
         CheckWallClimbProgress(deltaTime);
 
@@ -767,6 +771,10 @@ public class SensorPlayerController : MonoBehaviour
         playerAnimator.SetSpeed(
             knockbackVelocity != 0f ? 0f : currentSpeed
         );
+
+        // 最終移動量で敵への接触攻撃を照会する。貫通中もTrigger通知に依存しない。
+        // 命中先から被弾などが再入しても、ここより後で速度を上書きしない。
+        chainsawDigging.HitMovementEnemies(velocity * deltaTime);
     }
 
     // 次の物理更新で比較するため、壁登りの開始番号・位置・最終指示速度を保存する。
@@ -827,10 +835,19 @@ public class SensorPlayerController : MonoBehaviour
             $"固定={playerRigidbody.constraints}", this);
     }
 
-    // 被弾時に攻撃・食い込み・移動予約を終了し、指定時間の操作硬直を開始する。
+    // 通常時は被弾硬直を開始する。成立済みの食い込み中は姿勢・移動・接続を維持する。
     public void BeginDamageStun(float duration)
     {
         if (!isActiveAndEnabled || playerRigidbody == null || playerAnimator == null)
+        {
+            return;
+        }
+
+        // HP減少・被弾後の無敵・点滅は受信側で処理するため、ここでは取り消さない。
+        // 床・壁・天井・敵への食い込み中は、やられ遷移と速度リセット、食い込み解除を行わない。
+        // 未接触の空中待機はIsDiggingがfalseなので、従来どおり被弾硬直に入る。
+        if (chainsawDigging != null &&
+            chainsawDigging.isActiveAndEnabled && chainsawDigging.IsDigging)
         {
             return;
         }
@@ -1412,6 +1429,8 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        // 被弾側の通知が先に食い込みを解除していても、移動を指示した時点の接触攻撃を記録する。
+        if (chainsawDigging != null) chainsawDigging.QueueMovementEnemyCollision(collision);
         // 移動を止める処理より先に、実際に触れた地形の面を記録する。
         if (groundProbe != null) groundProbe.RecordContact(collision);
         if (IsDamageStunned) return;
@@ -1431,6 +1450,8 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        // 被弾側の通知が先に食い込みを解除していても、移動を指示した時点の接触攻撃を記録する。
+        if (chainsawDigging != null) chainsawDigging.QueueMovementEnemyCollision(collision);
         // 移動を止める処理より先に、実際に触れた地形の面を記録する。
         if (groundProbe != null) groundProbe.RecordContact(collision);
         if (IsDamageStunned) return;

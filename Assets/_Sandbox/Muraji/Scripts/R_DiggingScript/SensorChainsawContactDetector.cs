@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 // ChainsawSurfaceは既存PlayerAnimatorと同じ型を共有する。
@@ -20,8 +21,12 @@ public class SensorChainsawContactDetector : MonoBehaviour
     [Header("Player本体と、判定専用の親（モデルとは分ける）")]
     [SerializeField] private Transform ownerRoot;
 
-    [Tooltip("Player直下、Local Position / Rotation = 0、Scale = 1。子を右向き用に配置")]
+    [Tooltip("上・中央・下の判定をまとめる親です。実行開始前に右向き用の位置・角度へ配置してください。Player本体を中心に、初期位置と初期角度の両方を左右反転します。アニメーションで動かさない専用の親を指定し、Scaleは1にしてください。")]
     [SerializeField] private Transform sensorRoot;
+
+    // Player本体の現在のY回転を重ねないよう、右向き配置をワールド基準で保存する。
+    private Quaternion rightSensorWorldRotation;
+    private Vector3 rightSensorWorldOffset;
 
     [Header("正面の上・中央・下。すべて3D BoxCollider / Is Trigger ON")]
 
@@ -49,8 +54,106 @@ public class SensorChainsawContactDetector : MonoBehaviour
     [SerializeField] private Vector3 detectedNormal;
 
     private Collider[] overlapBuffer = new Collider[32];
+    private RaycastHit[] movementHitBuffer = new RaycastHit[32];
 
     private SensorPlayerController playerController;
+
+    // 敵専用センサーの重なりと今回の移動経路を調べ、固定食い込みとは別に命中候補を集める。
+    public void CollectMovementEnemyContacts(
+        List<SensorChainsawContact> destination, Vector3 displacement, Vector3 surfaceNormal)
+    {
+        destination.Clear();
+        if (!isActiveAndEnabled || !configured ||
+            !middleSensor.enabled || !middleSensor.gameObject.activeInHierarchy)
+            return;
+
+        Physics.SyncTransforms();
+        Vector3 center = middleSensor.transform.TransformPoint(middleSensor.center);
+        Vector3 scale = middleSensor.transform.lossyScale;
+        Vector3 half = Vector3.Scale(middleSensor.size * 0.5f,
+            new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
+        Quaternion rotation = middleSensor.transform.rotation;
+        int count;
+        do
+        {
+            count = Physics.OverlapBoxNonAlloc(center, half, overlapBuffer, rotation,
+                contactDetectorParameter.EnemyLayers.value, QueryTriggerInteraction.Collide);
+            if (count < overlapBuffer.Length) break;
+            System.Array.Resize(ref overlapBuffer, overlapBuffer.Length * 2);
+        } while (true);
+
+        for (int i = 0; i < count; i++)
+        {
+            Collider target = overlapBuffer[i];
+            if (target != null)
+                AddMovementEnemyContact(destination, target, center, target.ClosestPoint(center));
+        }
+
+        float distance = displacement.magnitude;
+        if (distance <= POINT_TOLERANCE) return;
+        Vector3 direction = displacement / distance;
+
+        // 地形を越えた先へ先読み攻撃しないよう、進行方向を塞ぐ面までに限定する。
+        do
+        {
+            count = Physics.BoxCastNonAlloc(center, half, direction, movementHitBuffer,
+                rotation, distance, contactDetectorParameter.TerrainLayers.value,
+                QueryTriggerInteraction.Ignore);
+            if (count < movementHitBuffer.Length) break;
+            System.Array.Resize(ref movementHitBuffer, movementHitBuffer.Length * 2);
+        } while (true);
+        float allowedDistance = distance;
+        for (int i = 0; i < count; i++)
+        {
+            RaycastHit hit = movementHitBuffer[i];
+            // 張り付き用速度で支持面へ押していても、その面で経路を0に切り詰めない。
+            if (hit.collider != null && !IsOwner(hit.collider) &&
+                Vector3.Dot(hit.normal, surfaceNormal) < 0.99f &&
+                Vector3.Dot(direction, hit.normal) < -0.01f)
+                allowedDistance = Mathf.Min(allowedDistance, hit.distance);
+        }
+        if (allowedDistance <= POINT_TOLERANCE) return;
+
+        do
+        {
+            count = Physics.BoxCastNonAlloc(center, half, direction, movementHitBuffer,
+                rotation, allowedDistance, contactDetectorParameter.EnemyLayers.value,
+                QueryTriggerInteraction.Collide);
+            if (count < movementHitBuffer.Length) break;
+            System.Array.Resize(ref movementHitBuffer, movementHitBuffer.Length * 2);
+        } while (true);
+        for (int i = 0; i < count; i++)
+        {
+            RaycastHit hit = movementHitBuffer[i];
+            if (hit.collider != null)
+                AddMovementEnemyContact(destination, hit.collider,
+                    center + direction * hit.distance, hit.point);
+        }
+    }
+
+    // 無効な敵・壁の裏側・同じ敵の複数Colliderを除き、移動接触の命中候補を追加する。
+    private void AddMovementEnemyContact(List<SensorChainsawContact> destination,
+        Collider target, Vector3 sensorCenter, Vector3 point)
+    {
+        if (IsOwner(target)) return;
+        EnemyAttackHitReceiver enemy = target.GetComponentInParent<EnemyAttackHitReceiver>();
+        if (!CanReceiveEnemyHit(enemy)) return;
+
+        Vector3 sightOrigin = new Vector3(
+            ownerRoot.position.x, sensorCenter.y, sensorCenter.z);
+        if (IsBlocked(sightOrigin, point, target)) return;
+        for (int i = 0; i < destination.Count; i++)
+            if (destination[i].Enemy == enemy) return;
+
+        destination.Add(new SensorChainsawContact
+        {
+            Collider = target,
+            Enemy = enemy,
+            Surface = ChainsawSurface.Enemy,
+            Point = point,
+            Normal = Vector3.zero
+        });
+    }
 
     // 所有者のControllerから床・壁分類の共通値を取得する。
     private float ResolvedSurfaceNormalThreshold
@@ -67,6 +170,9 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
     private bool configured;
     private float facing = 1f;
+    /// <summary>敵接触攻撃の検索に使用する、既存設定の敵レイヤー。</summary>
+    public int EnemyLayerMask => contactDetectorParameter != null ? contactDetectorParameter.EnemyLayers.value : 0;
+
     public int TerrainLayerMask => contactDetectorParameter != null ? contactDetectorParameter.TerrainLayers.value : 0;
 
     // Receiverを変更せず、敵の有効状態と同じオブジェクトのHPから食い込み可能かを調べる。
@@ -146,6 +252,13 @@ public class SensorChainsawContactDetector : MonoBehaviour
             enabled = false;
         }
 
+        if (configured)
+        {
+            // 起動時の右向き配置を保存する。以降のPlayer本体の左右反転は基準へ加えない。
+            rightSensorWorldRotation = sensorRoot.rotation;
+            rightSensorWorldOffset = sensorRoot.position - ownerRoot.position;
+        }
+
         if (frontRayOrigin == null)
         {
             Debug.LogWarning(
@@ -165,6 +278,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
             sensor.transform.IsChildOf(sensorRoot);
     }
 
+    // Playerの位置だけに追従し、向きは初期配置から一度だけ反転して二重回転を防ぐ。
     public void SetFacingDirection(float direction)
     {
         if (!configured || !isActiveAndEnabled)
@@ -179,11 +293,17 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
         if (sensorRoot != null)
         {
-            sensorRoot.localRotation = Quaternion.Euler(
+            Quaternion facingRotation = Quaternion.Euler(
                 0f,
                 facing < 0f ? 180f : 0f,
                 0f
             );
+            // Player本体も180度回る構成なので、現在のownerRoot.rotationを掛けると
+            // 左向きの180度が二重に入り、ワールドで右向きへ戻ってしまう。
+            Vector3 position = ownerRoot.position + facingRotation * rightSensorWorldOffset;
+            Quaternion rotation = facingRotation * rightSensorWorldRotation;
+            // 最終ワールド姿勢を指定し、親の回転分はUnityのTransform変換で相殺する。
+            sensorRoot.SetPositionAndRotation(position, rotation);
         }
     }
 
@@ -219,13 +339,18 @@ public class SensorChainsawContactDetector : MonoBehaviour
             ref bestScore
         );
 
-        CollectContacts(
-            middleSensor,
-            preferred,
-            currentSurface,
-            ref contact,
-            ref bestScore
-        );
+        // 地形食い込み中は敵を「食い込み先」として再選択しない。
+        // 未食い込み時は従来どおり敵への直接食い込みを許可する。
+        if (currentSurface == ChainsawSurface.None)
+        {
+            CollectContacts(
+                middleSensor,
+                preferred,
+                currentSurface,
+                ref contact,
+                ref bestScore
+            );
+        }
 
         CollectContacts(
             lowerSensor,
@@ -253,7 +378,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
         return contact.Collider != null;
     }
 
-    // 床候補・床食い込み継続中・未接触からの開始時に、実際の支持面を共有する。
+    // 床を検出した場合、または床食い込み継続中だけ、実際の支持面を共有する。
     private void ApplyPlayerGroundSupport(
         ChainsawSurface currentSurface,
         ref SensorChainsawContact contact)
@@ -262,8 +387,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
             playerController = ownerRoot.GetComponent<SensorPlayerController>();
 
         bool canReplaceFloor = contact.Surface == ChainsawSurface.Floor ||
-            (contact.Collider == null &&
-             (currentSurface == ChainsawSurface.Floor || currentSurface == ChainsawSurface.None));
+            (contact.Collider == null && currentSurface == ChainsawSurface.Floor);
 
         if (!canReplaceFloor || playerController == null ||
             !playerController.TryGetGroundSupport(out SensorChainsawContact ground) ||

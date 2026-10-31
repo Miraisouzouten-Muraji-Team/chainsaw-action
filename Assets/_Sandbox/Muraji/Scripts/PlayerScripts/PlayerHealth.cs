@@ -18,6 +18,11 @@ public sealed class PlayerHealth : MonoBehaviour
         new Dictionary<DamageFloorData, ExposureState>();
 
     private Rigidbody playerBody;
+    private SensorChainsawDigging chainsawDigging;
+
+    // 敵・床・その他のダメージ経路で、現在のボーナス食い込みによる無敵を共有する。
+    private bool IsBonusInvulnerable =>
+        chainsawDigging != null && chainsawDigging.HasBonus;
     private Collider[] bodyColliders;
     private float maxHealth;
     private bool initialized;
@@ -60,6 +65,8 @@ public sealed class PlayerHealth : MonoBehaviour
 
         // Mid_Colliderではなく、移動ControllerがあるPlayerのRigidbodyを使う。
         playerBody = controller.GetComponent<Rigidbody>();
+        // 食い込み側の80%条件をそのまま使い、HP側に別の閾値や無敵時間を作らない。
+        chainsawDigging = controller.GetComponent<SensorChainsawDigging>();
 
         if (healthData == null || playerBody == null)
         {
@@ -167,10 +174,11 @@ public sealed class PlayerHealth : MonoBehaviour
         return false;
     }
 
-    // 接触中の差分ダメージを現在HPへ適用する。時間到達を理由に残りHPを全削除しない。
+    // 通常時だけ床の接触時間と差分ダメージを進める。ボーナス中は履歴も進めない。
     public void ApplyFloorContact(DamageFloorData data)
     {
-        if (!initialized || !isActiveAndEnabled || IsDead || data == null)
+        if (!initialized || !isActiveAndEnabled || IsDead || data == null ||
+            IsBonusInvulnerable)
             return;
 
         if (!exposures.TryGetValue(data, out ExposureState state))
@@ -213,10 +221,10 @@ public sealed class PlayerHealth : MonoBehaviour
         TakeDamage(damage);
     }
 
-    // HPを減らし、変更を通知する。死亡通知は生存から0になったときだけ発行する。
+    // ボーナス無敵中はダメージを拒否し、通常時だけHP減少と変更・死亡通知を行う。
     public void TakeDamage(float amount)
     {
-        if (!initialized || IsDead || amount <= 0f ||
+        if (!initialized || IsDead || IsBonusInvulnerable || amount <= 0f ||
             float.IsNaN(amount) || float.IsInfinity(amount)) return;
 
         currentHealth = Mathf.Max(0f, currentHealth - amount);

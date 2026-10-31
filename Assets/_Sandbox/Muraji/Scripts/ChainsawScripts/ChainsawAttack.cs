@@ -44,6 +44,11 @@ public class ChainsawAttack : MonoBehaviour
     private bool hitStopWarningLogged;
     private bool knockbackWarningLogged;
 
+    // 敵受信側はAttackData.damageを直接読むため、共有SOを変更せず
+    // ダメージ別のランタイムコピーを保持する。敵のLastPlayerAttackHitDataからも参照される。
+    private readonly Dictionary<(AttackData, int), AttackData> scaledDiggingData =
+        new Dictionary<(AttackData, int), AttackData>();
+
     private AttackData currentData;
     private float attackHitStopTime;
     private float attackShakeMagnitude;
@@ -162,8 +167,7 @@ public class ChainsawAttack : MonoBehaviour
     /// </summary>
     /// <remarks>
     /// 対象をComponentで受け取り、既存の食い込み側からの呼び出しを維持する。
-    /// multiplierは呼び出し互換性のため保持する。
-    /// 現在の受信側はAttackData.damageを使用するため、倍率は反映されない。
+    /// 受信側がAttackData.damageを直接読むため、倍率は共有SOではなく実行時コピーに反映する。
     /// </remarks>
     public bool HitDigging(
         Component enemy,
@@ -187,7 +191,16 @@ public class ChainsawAttack : MonoBehaviour
             return false;
         }
 
-        if (!SendAttackHit(receiver, data))
+        // 敵側の既存APIは倍率を受け取らないため、送信するSOのランタイムコピーに反映。
+        // 共有AttackDataは絶対に変更しない。
+        int scaledDamage = Mathf.Max(0, Mathf.RoundToInt(data.damage * Mathf.Max(0f, multiplier)));
+        if (scaledDamage <= 0)
+        {
+            return false;
+        }
+
+        AttackData sendData = GetScaledDiggingData(data, scaledDamage);
+        if (!SendAttackHit(receiver, sendData))
         {
             return false;
         }
@@ -200,6 +213,81 @@ public class ChainsawAttack : MonoBehaviour
             Mathf.Max(0f, data.cameraShack));
 
         return true;
+    }
+
+    // 成立済みの移動接触を送信する。被弾で食い込みが解除されても今回の命中は取り消さない。
+    public bool HitMovementContact(
+        Component enemy,
+        AttackData data,
+        float multiplier,
+        Vector3 point)
+    {
+        if (!isActiveAndEnabled ||
+            enemy == null ||
+            data == null)
+        {
+            return false;
+        }
+
+        EnemyAttackHitReceiver receiver =
+            enemy.GetComponentInParent<EnemyAttackHitReceiver>();
+
+        if (receiver == null)
+        {
+            return false;
+        }
+
+        // 敵側の既存APIは倍率を受け取らないため、送信するSOのランタイムコピーに反映。
+        // 共有AttackDataは絶対に変更しない。
+        int scaledDamage = Mathf.Max(0, Mathf.RoundToInt(data.damage * Mathf.Max(0f, multiplier)));
+        if (scaledDamage <= 0)
+        {
+            return false;
+        }
+
+        AttackData sendData = GetScaledDiggingData(data, scaledDamage);
+        if (!SendAttackHit(receiver, sendData))
+        {
+            return false;
+        }
+
+        // 食い込みも、呼び出し元が渡した攻撃SOの演出設定を使用する。
+        PlayHitEffects(
+            point,
+            Mathf.Max(0f, data.hitStopTime),
+            true,
+            Mathf.Max(0f, data.cameraShack));
+
+        return true;
+    }
+
+    /// <summary>
+    /// 敵側を変更せず、指定した整数ダメージを送るための実行時AttackDataを取得する。
+    /// コピーは武器の生存中保持し、受信側の最後の命中情報から参照可能にする。
+    /// </summary>
+    private AttackData GetScaledDiggingData(AttackData source, int damage)
+    {
+        var key = (source, damage);
+        if (scaledDiggingData.TryGetValue(key, out AttackData cached) && cached != null)
+        {
+            return cached;
+        }
+
+        AttackData runtimeData = Instantiate(source);
+        runtimeData.name = source.name + "_RuntimeDamage_" + damage;
+        runtimeData.damage = damage;
+        scaledDiggingData[key] = runtimeData;
+        return runtimeData;
+    }
+
+    /// <summary>武器破棄時にのみ、作成したランタイムSOを解放する。</summary>
+    private void OnDestroy()
+    {
+        foreach (AttackData data in scaledDiggingData.Values)
+        {
+            if (data != null) Destroy(data);
+        }
+        scaledDiggingData.Clear();
     }
 
     private void OnTriggerEnter(Collider other)

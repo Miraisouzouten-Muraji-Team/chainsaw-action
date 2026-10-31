@@ -2,10 +2,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using UnityEngine.EventSystems;
-#if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
-#endif
 
 namespace Project.Tutorial
 {
@@ -14,6 +12,17 @@ namespace Project.Tutorial
     {
         [Tooltip("日本語対応のDynamic Font推奨。未指定時はUnity標準フォント。")]
         public Font uiFont;
+        [Header("チュートリアルのInput Actions")]
+        [Tooltip("説明を開くButton型Actionです。未設定ならEキー・ゲームパッドの西ボタンを使用します。")]
+        [SerializeField] private InputActionReference tutorialOpen;
+        [Tooltip("説明を閉じるButton型Actionです。未設定ならEscapeキー・ゲームパッドの東ボタンを使用します。")]
+        [SerializeField] private InputActionReference tutorialClose;
+        [Tooltip("ページ切替用のValue型・AxisのActionです。負の値で前、正の値で次へ進みます。未設定なら左右キー・A/D・左スティック・十字キーを使用します。")]
+        [SerializeField] private InputActionReference tutorialNavigate;
+        [Tooltip("閉じた直後の誤操作を防ぐため、離されるまで再開を待つButton型Actionです。未設定ならSpace・ゲームパッドの南／北ボタンを確認します。開閉ボタンは別途自動確認します。")]
+        [SerializeField] private InputActionReference tutorialReleaseGuard;
+        private InputAction openAction, closeAction, navigateAction, releaseGuardAction;
+
         private static TutorialPresenter instance;
         public static bool IsModalOpen => instance != null && instance.paused;
         private Canvas canvas;
@@ -47,10 +56,15 @@ namespace Project.Tutorial
             // 専用のルートオブジェクトに配置する。
             transform.SetParent(null);
             DontDestroyOnLoad(gameObject);
+            InitializeTutorialInput();
             BuildUI();
         }
+        // UI入力を有効化し、シーン変更を監視する。
         private void OnEnable()
         {
+            if (instance != this) return;
+            openAction?.Enable(); closeAction?.Enable();
+            navigateAction?.Enable(); releaseGuardAction?.Enable();
             if (canvas != null) canvas.gameObject.SetActive(true);
             SceneManager.activeSceneChanged += SceneChanged;
             SceneManager.sceneUnloaded += SceneUnloaded;
@@ -83,7 +97,7 @@ namespace Project.Tutorial
             signOcclusion = sign.root.gameObject.AddComponent<TutorialSignOcclusion>();
             prompt = TutorialView.Label(canvasRect, font, "Interact Prompt", 28, Color.cyan);
             prompt.rectTransform.sizeDelta = new Vector2(520, 56);
-            prompt.text = "[ X / E ] 説明を見る"; prompt.gameObject.SetActive(false);
+            prompt.text = $"[ {openAction.GetBindingDisplayString()} ] 説明を見る"; prompt.gameObject.SetActive(false);
             var shadeRect = TutorialView.Rect("Modal Backdrop", canvasRect, Vector2.zero);
             TutorialView.Place(shadeRect, Vector2.zero, Vector2.one);
             var backdrop = shadeRect.gameObject.AddComponent<Image>(); backdrop.color = new Color(0, 0, 0, .72f);
@@ -99,11 +113,7 @@ namespace Project.Tutorial
             if (EventSystem.current != null || FindFirstObjectByType<EventSystem>() != null) return;
             var go = new GameObject("Tutorial EventSystem", typeof(EventSystem));
             // シーンごとに既存EventSystemを優先。自動生成物はそのシーンと一緒に破棄される。
-#if ENABLE_INPUT_SYSTEM
             go.AddComponent<InputSystemUIInputModule>();
-#else
-            go.AddComponent<StandaloneInputModule>();
-#endif
         }
 
         private struct InputState
@@ -111,37 +121,58 @@ namespace Project.Tutorial
             internal bool open, close, actionHeld;
             internal float horizontal;
         }
-        private static InputState ReadInput()
+        // UI専用Actionから入力を取得する。停止中も動く既存Updateで使用する。
+        private InputState ReadInput()
         {
-            var state = new InputState();
-#if ENABLE_INPUT_SYSTEM
-            var pad = Gamepad.current;
-            if (pad != null)
+            return new InputState
             {
-                state.open = pad.buttonWest.wasPressedThisFrame;
-                state.close = pad.buttonEast.wasPressedThisFrame;
-                state.actionHeld = pad.buttonWest.isPressed || pad.buttonEast.isPressed ||
-                    pad.buttonSouth.isPressed || pad.buttonNorth.isPressed;
-                state.horizontal = pad.leftStick.x.ReadValue();
-            }
-            var keyboard = Keyboard.current;
-            if (keyboard != null)
-            {
-                state.open |= keyboard.eKey.wasPressedThisFrame;
-                state.close |= keyboard.escapeKey.wasPressedThisFrame;
-                state.actionHeld |= keyboard.eKey.isPressed || keyboard.escapeKey.isPressed || keyboard.spaceKey.isPressed;
-                if (keyboard.leftArrowKey.isPressed || keyboard.aKey.isPressed) state.horizontal = -1;
-                if (keyboard.rightArrowKey.isPressed || keyboard.dKey.isPressed) state.horizontal = 1;
-            }
-#elif ENABLE_LEGACY_INPUT_MANAGER
-            state.open = Input.GetKeyDown(KeyCode.E);
-            state.close = Input.GetKeyDown(KeyCode.Escape);
-            state.actionHeld = Input.GetKey(KeyCode.E) || Input.GetKey(KeyCode.Escape) || Input.GetKey(KeyCode.Space);
-            if (Input.GetKey(KeyCode.LeftArrow) || Input.GetKey(KeyCode.A)) state.horizontal = -1;
-            if (Input.GetKey(KeyCode.RightArrow) || Input.GetKey(KeyCode.D)) state.horizontal = 1;
-#endif
-            return state;
+                open = openAction != null && openAction.WasPressedThisFrame(),
+                close = closeAction != null && closeAction.WasPressedThisFrame(),
+                horizontal = navigateAction != null ? navigateAction.ReadValue<float>() : 0f,
+                actionHeld = (openAction != null && openAction.IsPressed()) ||
+                    (closeAction != null && closeAction.IsPressed()) ||
+                    (releaseGuardAction != null && releaseGuardAction.IsPressed())
+            };
         }
+
+        // 登録Actionを複製してUI専用に使用し、ゲーム側の有効・無効状態と分離する。
+        private void InitializeTutorialInput()
+        {
+            openAction = tutorialOpen != null && tutorialOpen.action != null
+                ? tutorialOpen.action.Clone() : new InputAction("TutorialOpen", InputActionType.Button);
+            if (tutorialOpen == null || tutorialOpen.action == null)
+            {
+                openAction.AddBinding("<Keyboard>/e");
+                openAction.AddBinding("<Gamepad>/buttonWest");
+            }
+            closeAction = tutorialClose != null && tutorialClose.action != null
+                ? tutorialClose.action.Clone() : new InputAction("TutorialClose", InputActionType.Button);
+            if (tutorialClose == null || tutorialClose.action == null)
+            {
+                closeAction.AddBinding("<Keyboard>/escape");
+                closeAction.AddBinding("<Gamepad>/buttonEast");
+            }
+            navigateAction = tutorialNavigate != null && tutorialNavigate.action != null
+                ? tutorialNavigate.action.Clone() : new InputAction("TutorialNavigate", InputActionType.Value, expectedControlType: "Axis");
+            if (tutorialNavigate == null || tutorialNavigate.action == null)
+            {
+                navigateAction.AddBinding("<Gamepad>/leftStick/x");
+                navigateAction.AddBinding("<Gamepad>/dpad/x");
+                navigateAction.AddCompositeBinding("1DAxis")
+                    .With("Negative", "<Keyboard>/leftArrow").With("Positive", "<Keyboard>/rightArrow");
+                navigateAction.AddCompositeBinding("1DAxis")
+                    .With("Negative", "<Keyboard>/a").With("Positive", "<Keyboard>/d");
+            }
+            releaseGuardAction = tutorialReleaseGuard != null && tutorialReleaseGuard.action != null
+                ? tutorialReleaseGuard.action.Clone() : new InputAction("TutorialReleaseGuard", InputActionType.Button);
+            if (tutorialReleaseGuard == null || tutorialReleaseGuard.action == null)
+            {
+                releaseGuardAction.AddBinding("<Keyboard>/space");
+                releaseGuardAction.AddBinding("<Gamepad>/buttonSouth");
+                releaseGuardAction.AddBinding("<Gamepad>/buttonNorth");
+            }
+        }
+
         private void Update()
         {
             if (instance != this || canvas == null) return;
@@ -240,7 +271,7 @@ namespace Project.Tutorial
             modalClock = 0f;
             modal.SetPage(modalDefinition.pages[pageIndex] ?? new TutorialPage { title = "未設定", description = "このページの内容を設定してください。" });
             modal.Tick(0f);
-            modal.footer.text = $"{pageIndex + 1} / {modalDefinition.pages.Length}　 Lスティック / ← →：切替　 B / Esc：閉じる";
+            modal.footer.text = $"{pageIndex + 1} / {modalDefinition.pages.Length}　 {navigateAction.GetBindingDisplayString()}：切替　 {closeAction.GetBindingDisplayString()}：閉じる";
             modal.previous.interactable = pageIndex > 0;
             modal.next.interactable = pageIndex < modalDefinition.pages.Length - 1;
         }
@@ -261,15 +292,21 @@ namespace Project.Tutorial
             if (modal != null) modal.root.gameObject.SetActive(false);
             if (shade != null) shade.SetActive(false);
         }
+        // 専用Actionを無効化して、説明表示中ならゲームを再開する。
         private void OnDisable()
         {
+            openAction?.Disable(); closeAction?.Disable();
+            navigateAction?.Disable(); releaseGuardAction?.Disable();
             SceneManager.activeSceneChanged -= SceneChanged;
             SceneManager.sceneUnloaded -= SceneUnloaded;
             CloseImmediately();
             if (canvas != null) canvas.gameObject.SetActive(false);
         }
+        // 複製したActionのリソースを解放する。
         private void OnDestroy()
         {
+            openAction?.Dispose(); closeAction?.Dispose();
+            navigateAction?.Dispose(); releaseGuardAction?.Dispose();
             CloseImmediately(); if (instance == this) instance = null;
         }
     }

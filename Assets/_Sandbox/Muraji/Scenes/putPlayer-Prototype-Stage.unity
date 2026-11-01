@@ -207876,6 +207876,11 @@ MonoBehaviour:
   horizontalSpread: 24
   useUnscaledTime: 1
   maximumPopups: 24
+  burstPreviousOnHit: 1
+  burstDuration: 0.16
+  burstScale: 5
+  burstSpread: 35
+  burstRise: 50
   previewAttackData: {fileID: 11400000, guid: 8607520c691a1314eb0173541cd3397a, type: 2}
 --- !u!4 &1867457829
 Transform:

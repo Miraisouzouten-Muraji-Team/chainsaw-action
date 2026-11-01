@@ -42,7 +42,19 @@ public sealed class DamagePopupPresenter : MonoBehaviour
     [Tooltip("オンならヒットストップ中も数字の移動と消滅を進めます。")]
     [SerializeField] private bool useUnscaledTime = true;
     [Tooltip("同時に出せる数字の上限です。上限時は古い表示を再利用します。起動時に必要な分を用意します。")]
-    [SerializeField, Range(1, 64)] private int maximumPopups = 24;
+    [SerializeField, Range(2, 64)] private int maximumPopups = 24;
+
+    [Header("次の命中で前の数字を弾く")]
+    [Tooltip("同じ敵に次の数字が表示された瞬間、直前の数字を弾けさせて消します。")]
+    [SerializeField] private bool burstPreviousOnHit = true;
+    [Tooltip("前の数字が弾け始めてから消えるまでの秒数です。")]
+    [SerializeField, Min(MIN_LIFETIME)] private float burstDuration = 0.16f;
+    [Tooltip("弾けるときの拡大率です。弾け始めの大きさに対する倍率です。")]
+    [SerializeField, Min(1f)] private float burstScale = 1.6f;
+    [Tooltip("数字の文字同士が左右へ離れる距離です。1920×1080を基準に指定します。")]
+    [SerializeField, Min(0f)] private float burstSpread = 35f;
+    [Tooltip("弾けるときに数字が上へ飛ぶ距離です。1920×1080を基準に指定します。")]
+    [SerializeField, Min(0f)] private float burstRise = 25f;
 
     [Header("動作確認")]
     [Tooltip("再生中にコンポーネント右上のメニューからテスト表示するときに使う攻撃データです。実際の攻撃では、命中した攻撃のデータを使用します。")]
@@ -61,6 +73,11 @@ public sealed class DamagePopupPresenter : MonoBehaviour
         public float Age;
         public float Lifetime;
         public bool Active;
+        public int TargetKey;
+        public bool Bursting;
+        public float BurstAge;
+        public float BurstStartAlpha;
+        public float BurstStartScale;
     }
 
     private PopupFrame[] frames;
@@ -93,7 +110,7 @@ public sealed class DamagePopupPresenter : MonoBehaviour
         scaler.referenceResolution = new Vector2(1920f, 1080f);
         scaler.matchWidthOrHeight = 0.5f;
 
-        frames = new PopupFrame[Mathf.Clamp(maximumPopups, 1, 64)];
+        frames = new PopupFrame[Mathf.Clamp(maximumPopups, 2, 64)];
         for (int i = 0; i < frames.Length; i++) frames[i] = CreateFrame(i);
     }
 
@@ -144,15 +161,32 @@ public sealed class DamagePopupPresenter : MonoBehaviour
         text.raycastTarget = false;
         text.extraPadding = true;
         text.color = Color.white;
+        text.textWrappingMode = TextWrappingModes.NoWrap;
         return text;
     }
 
-    // 攻撃SOの表示設定で実ダメージを表示する。フォントの元マテリアルは変更しない。
-    public void Show(Vector3 worldPosition, int damage, AttackData attackData)
+    // 実ダメージを表示し、同じ敵の直前の数字を弾く。敵の識別値を省略した呼び出しは共通グループとして扱う。
+    public void Show(Vector3 worldPosition, int damage, AttackData attackData, int targetKey = 0)
     {
         if (!isActiveAndEnabled || frames == null || canvasRect == null ||
             damage <= 0 || attackData == null ||
             !attackData.showDamagePopup) return;
+        if (burstPreviousOnHit)
+        {
+            foreach (PopupFrame previous in frames)
+            {
+                if (previous.Active && !previous.Bursting && previous.TargetKey == targetKey)
+                    BeginBurst(previous);
+            }
+        }
+        // 空いている枠を優先し、弾けている途中の数字を可能な限り残す。
+        for (int i = 0; i < frames.Length; i++)
+        {
+            int index = (nextFrame + i) % frames.Length;
+            if (frames[index].Active) continue;
+            nextFrame = index;
+            break;
+        }
         PopupFrame frame = frames[nextFrame];
         if (frame.Root == null) return;
         nextFrame = (nextFrame + 1) % frames.Length;
@@ -161,6 +195,9 @@ public sealed class DamagePopupPresenter : MonoBehaviour
         frame.Age = 0f;
         frame.Lifetime = Mathf.Max(MIN_LIFETIME, lifetime);
         frame.Active = true;
+        frame.TargetKey = targetKey;
+        frame.Bursting = false;
+        frame.BurstAge = 0f;
         frame.Root.gameObject.SetActive(true);
         frame.Root.SetAsLastSibling();
         frame.Root.localScale = Vector3.one * POP_SCALE;
@@ -196,7 +233,21 @@ public sealed class DamagePopupPresenter : MonoBehaviour
         frame.Halo.gameObject.SetActive(strength > 0f);
         frame.Core.UpdateMeshPadding();
         frame.Halo.UpdateMeshPadding();
+        // 同じ数字の枠を再利用しても、前回の散らした頂点を残さない。
+        frame.Core.ForceMeshUpdate();
+        frame.Halo.ForceMeshUpdate(true);
         PositionFrame(frame);
+    }
+
+    // 通常表示の現在の大きさと透明度を引き継ぎ、弾けて消える段階へ切り替える。
+    private void BeginBurst(PopupFrame frame)
+    {
+        if (frame.Root == null) return;
+        PositionFrame(frame);
+        frame.BurstStartScale = frame.Root.localScale.x;
+        frame.BurstStartAlpha = frame.Group.alpha;
+        frame.BurstAge = 0f;
+        frame.Bursting = true;
     }
 
     // 明るさ・鮮やかさ・透明度を維持し、文字の色合いだけを少し変える。
@@ -229,8 +280,11 @@ public sealed class DamagePopupPresenter : MonoBehaviour
         foreach (PopupFrame frame in frames)
         {
             if (!frame.Active || frame.Root == null) continue;
-            frame.Age += deltaTime;
-            if (frame.Age >= frame.Lifetime)
+            if (frame.Bursting) frame.BurstAge += deltaTime;
+            else frame.Age += deltaTime;
+            if (frame.Bursting
+                ? frame.BurstAge >= Mathf.Max(MIN_LIFETIME, burstDuration)
+                : frame.Age >= frame.Lifetime)
             {
                 frame.Active = false;
                 frame.Root.gameObject.SetActive(false);
@@ -266,6 +320,38 @@ public sealed class DamagePopupPresenter : MonoBehaviour
         float pop = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(progress / POP_END));
         frame.Root.localScale = Vector3.one * Mathf.Lerp(POP_SCALE, 1f, pop);
         frame.Group.alpha = 1f - Mathf.Clamp01((progress - FADE_START) / (1f - FADE_START));
+        if (frame.Bursting)
+        {
+            float burstProgress = Mathf.Clamp01(frame.BurstAge / Mathf.Max(MIN_LIFETIME, burstDuration));
+            float burstEase = 1f - (1f - burstProgress) * (1f - burstProgress);
+            frame.Root.anchoredPosition += Vector2.up * (burstRise * burstEase);
+            frame.Root.localScale = Vector3.one * frame.BurstStartScale *
+                Mathf.Lerp(1f, Mathf.Max(1f, burstScale), burstEase);
+            frame.Group.alpha = frame.BurstStartAlpha * (1f - burstProgress);
+            ScatterCharacters(frame.Core, burstEase);
+            if (frame.Halo.gameObject.activeSelf) ScatterCharacters(frame.Halo, burstEase);
+        }
+    }
+
+    // 元の文字メッシュを毎回作り直し、各桁を左右へ散らす。光の層にも同じ変形を適用する。
+    private void ScatterCharacters(TextMeshProUGUI text, float progress)
+    {
+        text.ForceMeshUpdate();
+        TMP_TextInfo textInfo = text.textInfo;
+        float center = (textInfo.characterCount - 1) * 0.5f;
+        for (int i = 0; i < textInfo.characterCount; i++)
+        {
+            TMP_CharacterInfo character = textInfo.characterInfo[i];
+            if (!character.isVisible) continue;
+            Vector3[] vertices = textInfo.meshInfo[character.materialReferenceIndex].vertices;
+            // 拡大後も設定したUI距離になるように、親の拡大率で割って補正する。
+            float scale = Mathf.Max(0.01f, text.rectTransform.parent.localScale.x);
+            Vector3 offset = new Vector3((i - center) * burstSpread,
+                (i % 2 == 0 ? 1f : -1f) * burstSpread * 0.2f, 0f) * (progress / scale);
+            for (int vertex = 0; vertex < 4; vertex++)
+                vertices[character.vertexIndex + vertex] += offset;
+        }
+        text.UpdateVertexData(TMP_VertexDataUpdateFlags.Vertices);
     }
 
     // 無効化時に表示をすべて返却し、再有効化後へ数字を持ち越さない。

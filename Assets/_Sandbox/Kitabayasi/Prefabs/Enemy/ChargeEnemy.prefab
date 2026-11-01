@@ -232,9 +232,9 @@ MonoBehaviour:
         - {fileID: 11400000, guid: 61602f79a95b44545aeaaa498e3d0c4b, type: 2}
         - {fileID: 11400000, guid: 51cf14bc037d2294990288d016e884dc, type: 2}
         diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
-        enableMeshCutDiagnosticLogs: 1
-        enableTrajectoryCoordinateValidation: 1
-        drawReconstructedTrajectory: 1
+        enableMeshCutDiagnosticLogs: 0
+        enableTrajectoryCoordinateValidation: 0
+        drawReconstructedTrajectory: 0
         reconstructedTrajectoryDrawDuration: 10
     - rid: 2559746817728970821
       type: {class: ChargeEnemySearchStrategy, ns: , asm: Assembly-CSharp}
@@ -280,13 +280,14 @@ MonoBehaviour:
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
+  preGeneratedPieceCount: 0
   cutDirectionSampleCount: 4
   cutRangeAxis: 1
   cutRangeMinimumNormalized: 0.21
   cutRangeMaximumNormalized: 0.8
   cutSurfaceUvScale: 1
   showCutRangeGizmo: 1
-  enableDiagnosticLogs: 1
+  enableDiagnosticLogs: 0
 --- !u!114 &1733720320225840598
 MonoBehaviour:
   m_ObjectHideFlags: 0

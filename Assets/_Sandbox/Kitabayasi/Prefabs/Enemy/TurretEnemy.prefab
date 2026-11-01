@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 7573595858921808902}
   - component: {fileID: 68427616243653233}
   - component: {fileID: 5812095973288034105}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: Visual
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -100,7 +100,7 @@ GameObject:
   m_Component:
   - component: {fileID: 3152740893958577207}
   - component: {fileID: 1021633018836868843}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: UpperAimLine
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -241,7 +241,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1518330480203777996}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: VisualRoot
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -273,7 +273,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 3348819899320545653}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: FirePoint
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -305,7 +305,7 @@ GameObject:
   m_Component:
   - component: {fileID: 8416877676745275987}
   - component: {fileID: 8933088630211567759}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: LowerAimLine
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -453,7 +453,7 @@ GameObject:
   - component: {fileID: 6079298865832868127}
   - component: {fileID: 8008778851312300228}
   - component: {fileID: 8199927516915867206}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: TurretEnemy
   m_TagString: Untagged
   m_Icon: {fileID: 0}

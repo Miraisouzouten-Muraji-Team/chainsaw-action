@@ -12,6 +12,7 @@ using UnityEngine;
 /// </remarks>
 public sealed class EnemyDiggingDeathBurst : MonoBehaviour
 {
+
     private const float DIRECTION_EPSILON_SQR = 0.000001f;
     private const float MAX_DIRECTION_SPREAD = 90f;
 

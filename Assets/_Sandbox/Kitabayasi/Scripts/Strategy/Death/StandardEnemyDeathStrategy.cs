@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Unity.Profiling;
 using UnityEngine;
@@ -1382,7 +1382,6 @@ public sealed class StandardEnemyDeathStrategy :
         TryBeginPieceShrink(
             cutPieceTransforms,
             "Death-09 Shrink");
-    
     }
 
     /// <summary>

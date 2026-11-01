@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 64c805a08c8f71f4c9a6c23ac3d46b51
+guid: e4a2d07cc09857041acb823aed8e0357
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -3917123054719525106
-    second: MeterBackground_0
+      213: -1922745234486579504
+    second: "\u30E1\u30FC\u30BF\u30FC_\u9752_0"
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -100,13 +100,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: MeterBackground_0
+      name: "\u30E1\u30FC\u30BF\u30FC_\u9752_0"
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 2560
-        height: 2560
+        width: 310
+        height: 280
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -115,8 +115,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: e0f13f5e55593a9c0800000000000000
-      internalID: -3917123054719525106
+      spriteID: 0de2ad875690155e0800000000000000
+      internalID: -1922745234486579504
       vertices: []
       indices: 
       edges: []
@@ -135,7 +135,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      MeterBackground_0: -3917123054719525106
+      "\u30E1\u30FC\u30BF\u30FC_\u9752_0": -1922745234486579504
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

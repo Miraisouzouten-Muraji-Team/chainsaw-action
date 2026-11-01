@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 0ee8f136660e40149bff424db94a3c5d
+guid: 662fa8fb8107c2e47bc69073620e473b
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -2018236264817288210
-    second: TextBackground_0
+      213: -8990990517769548674
+    second: "Stage5(\u4EEE)_0"
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -100,13 +100,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: TextBackground_0
+      name: "Stage5(\u4EEE)_0"
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 2560
-        height: 2560
+        width: 3002
+        height: 1326
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -115,8 +115,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: eeb11ca6fc8cdf3e0800000000000000
-      internalID: -2018236264817288210
+      spriteID: e7cc079a2c5993380800000000000000
+      internalID: -8990990517769548674
       vertices: []
       indices: 
       edges: []
@@ -135,7 +135,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      TextBackground_0: -2018236264817288210
+      "Stage5(\u4EEE)_0": -8990990517769548674
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

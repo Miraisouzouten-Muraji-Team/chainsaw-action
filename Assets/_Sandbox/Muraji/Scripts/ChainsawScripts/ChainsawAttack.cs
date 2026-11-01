@@ -26,6 +26,10 @@ public class ChainsawAttack : MonoBehaviour
     private readonly List<SlashKnockbackState> activeSlashKnockbacks =
         new List<SlashKnockbackState>();
 
+    [Header("ダメージ数字")]
+    [Tooltip("ダメージ数字を表示するDamagePopupPresenterです。未設定なら起動時にシーン内から取得します。")]
+    [SerializeField] private DamagePopupPresenter damagePopupPresenter;
+
     [Header("ヒット演出")]
     [SerializeField] private GameObject hitParticle;
     [Tooltip("ゲーム画面のカメラを揺らすコンポーネントを指定してください。未設定なら自動取得します。")]
@@ -43,6 +47,11 @@ public class ChainsawAttack : MonoBehaviour
     private bool shakeWarningLogged;
     private bool hitStopWarningLogged;
     private bool knockbackWarningLogged;
+
+    // 敵受信側はAttackData.damageを直接読むため、共有SOを変更せず
+    // ダメージ別のランタイムコピーを保持する。敵のLastPlayerAttackHitDataからも参照される。
+    private readonly Dictionary<(AttackData, int), AttackData> scaledDiggingData =
+        new Dictionary<(AttackData, int), AttackData>();
 
     private AttackData currentData;
     private float attackHitStopTime;
@@ -70,6 +79,8 @@ public class ChainsawAttack : MonoBehaviour
         }
 
         hitBox.enabled = false;
+        if (damagePopupPresenter == null)
+            damagePopupPresenter = FindAnyObjectByType<DamagePopupPresenter>();
 
         if (cameraShake == null)
         {
@@ -162,8 +173,7 @@ public class ChainsawAttack : MonoBehaviour
     /// </summary>
     /// <remarks>
     /// 対象をComponentで受け取り、既存の食い込み側からの呼び出しを維持する。
-    /// multiplierは呼び出し互換性のため保持する。
-    /// 現在の受信側はAttackData.damageを使用するため、倍率は反映されない。
+    /// 受信側がAttackData.damageを直接読むため、倍率は共有SOではなく実行時コピーに反映する。
     /// </remarks>
     public bool HitDigging(
         Component enemy,
@@ -187,7 +197,16 @@ public class ChainsawAttack : MonoBehaviour
             return false;
         }
 
-        if (!SendAttackHit(receiver, data))
+        // 敵側の既存APIは倍率を受け取らないため、送信するSOのランタイムコピーに反映。
+        // 共有AttackDataは絶対に変更しない。
+        int scaledDamage = Mathf.Max(0, Mathf.RoundToInt(data.damage * Mathf.Max(0f, multiplier)));
+        if (scaledDamage <= 0)
+        {
+            return false;
+        }
+
+        AttackData sendData = GetScaledDiggingData(data, scaledDamage);
+        if (!SendAttackHit(receiver, sendData, point))
         {
             return false;
         }
@@ -200,6 +219,81 @@ public class ChainsawAttack : MonoBehaviour
             Mathf.Max(0f, data.cameraShack));
 
         return true;
+    }
+
+    // 成立済みの移動接触を送信する。被弾で食い込みが解除されても今回の命中は取り消さない。
+    public bool HitMovementContact(
+        Component enemy,
+        AttackData data,
+        float multiplier,
+        Vector3 point)
+    {
+        if (!isActiveAndEnabled ||
+            enemy == null ||
+            data == null)
+        {
+            return false;
+        }
+
+        EnemyAttackHitReceiver receiver =
+            enemy.GetComponentInParent<EnemyAttackHitReceiver>();
+
+        if (receiver == null)
+        {
+            return false;
+        }
+
+        // 敵側の既存APIは倍率を受け取らないため、送信するSOのランタイムコピーに反映。
+        // 共有AttackDataは絶対に変更しない。
+        int scaledDamage = Mathf.Max(0, Mathf.RoundToInt(data.damage * Mathf.Max(0f, multiplier)));
+        if (scaledDamage <= 0)
+        {
+            return false;
+        }
+
+        AttackData sendData = GetScaledDiggingData(data, scaledDamage);
+        if (!SendAttackHit(receiver, sendData, point))
+        {
+            return false;
+        }
+
+        // 食い込みも、呼び出し元が渡した攻撃SOの演出設定を使用する。
+        PlayHitEffects(
+            point,
+            Mathf.Max(0f, data.hitStopTime),
+            true,
+            Mathf.Max(0f, data.cameraShack));
+
+        return true;
+    }
+
+    /// <summary>
+    /// 敵側を変更せず、指定した整数ダメージを送るための実行時AttackDataを取得する。
+    /// コピーは武器の生存中保持し、受信側の最後の命中情報から参照可能にする。
+    /// </summary>
+    private AttackData GetScaledDiggingData(AttackData source, int damage)
+    {
+        var key = (source, damage);
+        if (scaledDiggingData.TryGetValue(key, out AttackData cached) && cached != null)
+        {
+            return cached;
+        }
+
+        AttackData runtimeData = Instantiate(source);
+        runtimeData.name = source.name + "_RuntimeDamage_" + damage;
+        runtimeData.damage = damage;
+        scaledDiggingData[key] = runtimeData;
+        return runtimeData;
+    }
+
+    /// <summary>武器破棄時にのみ、作成したランタイムSOを解放する。</summary>
+    private void OnDestroy()
+    {
+        foreach (AttackData data in scaledDiggingData.Values)
+        {
+            if (data != null) Destroy(data);
+        }
+        scaledDiggingData.Clear();
     }
 
     private void OnTriggerEnter(Collider other)
@@ -255,7 +349,7 @@ public class ChainsawAttack : MonoBehaviour
         // 送信先の処理中に再度呼ばれても重複送信しないよう、先に登録する。
         hitEnemies.Add(receiver);
 
-        if (!SendAttackHit(receiver, attackData))
+        if (!SendAttackHit(receiver, attackData, point))
         {
             // 送信できなかった場合は、次の接触通知で再試行できるようにする。
             hitEnemies.Remove(receiver);
@@ -547,7 +641,8 @@ public class ChainsawAttack : MonoBehaviour
     /// </returns>
     private bool SendAttackHit(
         EnemyAttackHitReceiver target,
-        AttackData attackData)
+        AttackData attackData,
+        Vector3 point)
     {
         if (target == null ||
             !target.isActiveAndEnabled ||
@@ -564,12 +659,30 @@ public class ChainsawAttack : MonoBehaviour
             return false;
         }
 
-        // 敵の受信実装を、既存の共通インターフェース経由で呼び出す。
-        IAttackHitReceiver receiver = target;
+        // HP変更通知を受信中だけ読み、無効な命中や0ダメージでは数字を出さない。
+        // 死亡演出で敵がその場で破棄されても、通知された実ダメージを保持する。
+        int actualDamage = 0;
+        // 敵HPの減少だけを集計し、回復通知をダメージへ加算しない。
+        void RecordDamage(int previousHealth, int currentHealth)
+        {
+            actualDamage += Mathf.Max(0, previousHealth - currentHealth);
+        }
 
-        receiver.ReceiveAttackHit(
-            new PlayerAttackHitData(attackData));
+        enemyHealth.HealthChanged += RecordDamage;
+        try
+        {
+            // 敵の受信実装を、既存の共通インターフェース経由で呼び出す。
+            IAttackHitReceiver receiver = target;
+            receiver.ReceiveAttackHit(new PlayerAttackHitData(attackData));
+        }
+        finally
+        {
+            enemyHealth.HealthChanged -= RecordDamage;
+        }
 
+        // 表示の有無で攻撃の成功や消費量を変えない。
+        if (actualDamage > 0 && damagePopupPresenter != null)
+            damagePopupPresenter.Show(point, actualDamage, attackData);
         return true;
     }
     // 武器が無効になった場合は攻撃を終了し、管理中の敵の残留速度も停止する。

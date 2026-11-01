@@ -195,6 +195,72 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.16762903, y: 0.03263235, z: 0.15274186}
   m_Center: {x: -0.021365695, y: 1.6395695, z: 0.020470284}
+--- !u!1 &712927310162322494
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4601945336214892759}
+  - component: {fileID: 947244366289016893}
+  m_Layer: 0
+  m_Name: DamagePopupPresenter
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4601945336214892759
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 712927310162322494}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -0.2930299, y: -0.86353, z: 6.1171}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 4814178263090608376}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &947244366289016893
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 712927310162322494}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 48ab7d84ba210fd45b6eb7fe6df0655b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DamagePopupPresenter
+  fontAsset: {fileID: 11400000, guid: 7301a8996796e8b49a93d223a26812b0, type: 2}
+  worldCamera: {fileID: 0}
+  worldOffset: {x: 0, y: 0.45, z: 0}
+  sortingOrder: 2000
+  useCustomOutputRect: 0
+  outputRect:
+    serializedVersion: 2
+    x: 0
+    y: 0
+    width: 1
+    height: 1
+  lifetime: 0.7
+  riseDistance: 90
+  horizontalSpread: 24
+  useUnscaledTime: 1
+  maximumPopups: 24
+  burstPreviousOnHit: 1
+  burstDuration: 0.16
+  burstScale: 5
+  burstSpread: 35
+  burstRise: 50
+  previewAttackData: {fileID: 11400000, guid: 8607520c691a1314eb0173541cd3397a, type: 2}
 --- !u!1 &1329660818406057514
 GameObject:
   m_ObjectHideFlags: 0
@@ -400,6 +466,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawAttack
   hitBox: {fileID: 6651475171482002204}
   slashKnockbackPriorityDuration: 10
+  damagePopupPresenter: {fileID: 0}
   hitParticle: {fileID: 6176228616533195752, guid: 8b653b8ed8f598c42baa0eca3fd64bea, type: 3}
   cameraShake: {fileID: 0}
   duration: 0.05
@@ -836,6 +903,7 @@ Transform:
   - {fileID: 2818282200944578263}
   - {fileID: 9053628660963896147}
   - {fileID: 4749061671589895260}
+  - {fileID: 4601945336214892759}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!54 &2306593271223150465

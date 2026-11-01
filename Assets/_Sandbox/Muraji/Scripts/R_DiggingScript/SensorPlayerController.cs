@@ -46,6 +46,14 @@ public class SensorPlayerController : MonoBehaviour
     private float jumpHoldElapsed;
     private bool enabledJumpHoldAction;
 
+    // 天井猶予の設定はPlayerParameterから読み、接触状態や経過時間は本体ごとに管理する。
+    private bool ceilingFallGraceActive;
+    private bool ceilingFallGraceConsumed;
+    private float ceilingFallGraceUpwardSpeed;
+    private float ceilingFallGraceElapsed;
+    private float ceilingFallGraceContactTime = float.NegativeInfinity;
+    private const float MIN_CEILING_GRACE_UPWARD_SPEED = 0.05f;
+
     [Header("ジャンプの原因調査")]
     [Tooltip("ジャンプ入力時の接地・支持・回数と、実行時の上下速度をConsoleへ出力します。調査後はオフにしてください。")]
     [SerializeField] private bool logJumpDiagnostics = true;
@@ -406,6 +414,8 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         chainsawDigging.SetFacingDirection(facingDirection);
+        // 入力で壁食い込みが解除される前に、離脱後の空中ジャンプを1回分確保する。
+        RestoreAirJumpFromWallDigging();
         chainsawDigging.HandleInput(
     input.WedgieInput,
     input.WedgieHeld,
@@ -413,6 +423,9 @@ public class SensorPlayerController : MonoBehaviour
     facingDirection,
     IsGrounded()
 );
+
+        // この入力で新しく壁に食い込んだ場合も、同じフレームから回数を回復する。
+        RestoreAirJumpFromWallDigging();
 
         // 同時押しの優先順位：弱攻撃 > ジャンプ > 食い込み。
         if (input.SlashInput)
@@ -435,6 +448,7 @@ public class SensorPlayerController : MonoBehaviour
 
         if (playerRigidbody == null || playerRigidbody.isKinematic)
         {
+            ResetCeilingFallGrace(true);
             ascentStartSpeed = 0f;
             fallElapsedTime = 0f;
             return;
@@ -509,6 +523,9 @@ public class SensorPlayerController : MonoBehaviour
             currentSpeed,
             ResolvedImpactTerrainLayers
         );
+
+        // 物理更新で壁食い込みが成立した場合も、Updateを待たずに回復する。
+        RestoreAirJumpFromWallDigging();
 
         if (chainsawDigging.TryTakeWallBounce(out float bounceDirection))
         {
@@ -587,6 +604,7 @@ public class SensorPlayerController : MonoBehaviour
 
         if (suppressGravity)
         {
+            ResetCeilingFallGrace(false);
             ascentStartSpeed = 0f;
             fallElapsedTime = 0f;
 
@@ -633,6 +651,7 @@ public class SensorPlayerController : MonoBehaviour
 
         if (jumpPending)
         {
+            ResetCeilingFallGrace(true);
             jumpPending = false;
             traceJumpLaunch = logJumpDiagnostics;
             // 力積を質量で割って初速へ加える。後続の速度代入で消えないよう直接合成する。
@@ -653,6 +672,7 @@ public class SensorPlayerController : MonoBehaviour
 
         if (knockbackHopPending)
         {
+            ResetCeilingFallGrace(false);
             knockbackHopPending = false;
             variableJumpActive = false;
 
@@ -684,6 +704,7 @@ public class SensorPlayerController : MonoBehaviour
         // 壁ジャンプの初速は通常移動・食い込み速度の計算後に上書きする。
         if (wallJumpLaunchPending)
         {
+            ResetCeilingFallGrace(false);
             wallJumpLaunchPending = false;
             variableJumpActive = false;
             jumpPending = false;
@@ -710,6 +731,7 @@ public class SensorPlayerController : MonoBehaviour
         // 速度決定の最後で適用し、重力計算や食い込み速度で上書きされないようにする。
         if (ceilingCornerJumpPending)
         {
+            ResetCeilingFallGrace(false);
             ceilingCornerJumpPending = false;
             velocity.y = Mathf.Max(velocity.y, playerParameter.cornerJumpForce);
             ascentStartSpeed = Mathf.Max(ascentStartSpeed, velocity.y);
@@ -852,6 +874,7 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        ResetCeilingFallGrace(false);
         RestoreImpactConstraints();
         impactStunRemaining = 0f;
         impactBounceDirection = 0f;
@@ -1019,6 +1042,15 @@ public class SensorPlayerController : MonoBehaviour
             $"法線={groundNormal} 接地無視残り={Mathf.Max(0f, ignoreGroundUntil - Time.time):F3}", this);
     }
 
+    // 壁食い込み中は1段目使用済みに揃え、離脱後に二段目を1回使える状態にする。
+    // 壁を離れた後は回復しないため、空中ジャンプの連続使用は許可しない。
+    private void RestoreAirJumpFromWallDigging()
+    {
+        if (chainsawDigging != null && chainsawDigging.isActiveAndEnabled &&
+            chainsawDigging.Surface == ChainsawSurface.Wall)
+            jumpsUsed = MAX_JUMP_COUNT - 1;
+    }
+
     // 壁ジャンプ、接地・猶予中の初段、二段目の順でジャンプを予約する。
     void Jump()
     {
@@ -1045,6 +1077,7 @@ public class SensorPlayerController : MonoBehaviour
         if (wallJump && surfaceBeforeJump == ChainsawSurface.Wall &&
             Mathf.Abs(wallNormal.x) > 0.01f)
         {
+            ResetCeilingFallGrace(false);
             float horizontalDirection = Mathf.Sign(wallNormal.x);
             float angleRadians = playerParameter.surfaceStickJumpAngle * Mathf.Deg2Rad;
             pendingWallJumpVelocity = new Vector3(
@@ -1302,7 +1335,7 @@ public class SensorPlayerController : MonoBehaviour
         fallElapsedTime = 0f;
     }
 
-    // 通常の上昇・落下補正に空中攻撃の重力倍率を掛け、落下速度上限内で速度を更新する。
+    // 通常の上昇・落下と攻撃時の重力を更新する。天井猶予中は残った上昇の勢いだけを減らし、上下移動を止める。
     private void ApplyJumpGravity(
         ref Vector3 velocity,
         float deltaTime)
@@ -1312,6 +1345,9 @@ public class SensorPlayerController : MonoBehaviour
         bool isGrounded =
             isGroundedByRay &&
             Time.time >= ignoreGroundUntil;
+        // 接触を保っている間だけ、衝突前に残った上昇速度で従来の重力を計算する。
+        // Rigidbodyへはこの仮の上昇速度を渡さず、天井へ押し込み続けることを防ぐ。
+        bool delayingCeilingFall = PrepareCeilingFallGrace(ref velocity, isGrounded);
         // 食い込みや着地へ、通常ジャンプの長押し状態を持ち越さない。
         if (isGrounded || chainsawDigging.IsDigging)
             variableJumpActive = false;
@@ -1391,6 +1427,85 @@ public class SensorPlayerController : MonoBehaviour
             velocity.y,
             -playerParameter.maxFallSpeed
         );
+
+        if (delayingCeilingFall)
+        {
+            ceilingFallGraceUpwardSpeed = Mathf.Max(0f, velocity.y);
+            ceilingFallGraceElapsed += deltaTime;
+            velocity.y = 0f;
+            fallElapsedTime = 0f;
+            if (ceilingFallGraceUpwardSpeed <= 0f ||
+                ceilingFallGraceElapsed >= Mathf.Max(0f, playerParameter.ceilingFallGraceMaxSeconds))
+                ResetCeilingFallGrace(false);
+        }
+    }
+
+    // 地形の下面への実接触を記録し、自分で開始したジャンプの上昇中に一度だけ猶予を開始する。
+    private void RecordCeilingFallGraceContact(Collision collision)
+    {
+        if (!playerParameter.enableCeilingFallGrace || playerParameter.ceilingFallGraceMaxSeconds <= 0f ||
+            IsDamageStunned || IsImpactStunned || wallJumpStunRemaining > 0f ||
+            wallJumpLaunchPending || jumpPending || ceilingCornerJumpPending ||
+            Time.time < ceilingCornerGraceUntil || !variableJumpActive ||
+            chainsawDigging == null || chainsawDigging.IsDigging ||
+            lastDiggingPhysicsSurface != ChainsawSurface.None)
+            return;
+
+        int terrainLayers = playerParameter.groundRayLayers.value != 0
+            ? playerParameter.groundRayLayers.value : ResolvedImpactTerrainLayers;
+        for (int i = 0; i < collision.contactCount; i++)
+        {
+            ContactPoint contact = collision.GetContact(i);
+            Collider terrain = contact.otherCollider;
+            if (terrain == null || terrain.isTrigger ||
+                terrain.transform == transform || terrain.transform.IsChildOf(transform) ||
+                (terrainLayers & (1 << terrain.gameObject.layer)) == 0 ||
+                Mathf.Abs(contact.normal.z) > 0.5f ||
+                contact.normal.y > -Mathf.Clamp(playerParameter.impactSurfaceNormalThreshold, 0.1f, 1f))
+                continue;
+
+            ceilingFallGraceContactTime = Time.fixedTime;
+            if (ceilingFallGraceActive || ceilingFallGraceConsumed ||
+                lastDiggingPhysicsVelocity.y <= MIN_CEILING_GRACE_UPWARD_SPEED)
+                return;
+
+            ceilingFallGraceActive = true;
+            ceilingFallGraceConsumed = true;
+            ceilingFallGraceUpwardSpeed = lastDiggingPhysicsVelocity.y;
+            ceilingFallGraceElapsed = 0f;
+            fallElapsedTime = 0f;
+            return;
+        }
+    }
+
+    // 接触・ジャンプ状態と時間上限を確認し、有効な場合だけ重力計算用の上昇速度へ置き換える。
+    private bool PrepareCeilingFallGrace(ref Vector3 velocity, bool isGrounded)
+    {
+        if (!ceilingFallGraceActive) return false;
+        bool contactIsRecent = Time.fixedTime - ceilingFallGraceContactTime <=
+            Time.fixedDeltaTime * 1.5f + 0.001f;
+        if (!playerParameter.enableCeilingFallGrace || playerParameter.ceilingFallGraceMaxSeconds <= 0f ||
+            !contactIsRecent || isGrounded || !variableJumpActive ||
+            chainsawDigging.IsDigging || IsDamageStunned || IsImpactStunned ||
+            wallJumpStunRemaining > 0f || wallJumpLaunchPending ||
+            ceilingCornerJumpPending || knockbackHopPending ||
+            ceilingFallGraceElapsed >= playerParameter.ceilingFallGraceMaxSeconds)
+        {
+            ResetCeilingFallGrace(false);
+            return false;
+        }
+        velocity.y = ceilingFallGraceUpwardSpeed;
+        return true;
+    }
+
+    // 天井猶予を解除する。新しい通常ジャンプ・無効化時だけ、次の接触で開始できる状態へ戻す。
+    private void ResetCeilingFallGrace(bool allowNewGrace)
+    {
+        ceilingFallGraceActive = false;
+        ceilingFallGraceUpwardSpeed = 0f;
+        ceilingFallGraceElapsed = 0f;
+        ceilingFallGraceContactTime = float.NegativeInfinity;
+        if (allowNewGrace) ceilingFallGraceConsumed = false;
     }
     // 自分で開始した通常・二段ジャンプだけ、長押し・早離し・落下の調整を行う。
     private float ApplyVariableJump(ref Vector3 velocity, float deltaTime)
@@ -1422,6 +1537,7 @@ public class SensorPlayerController : MonoBehaviour
         return isGroundedByRay;
     }
 
+    // 接地・角補正・食い込み衝突を処理し、通常ジャンプの天井猶予を記録する。
     void OnCollisionEnter(Collision collision)
     {
         if (!isActiveAndEnabled)
@@ -1440,9 +1556,12 @@ public class SensorPlayerController : MonoBehaviour
         if (!correctingCeilingCorner)
             TryBeginDiggingImpact(collision);
 
+        RecordCeilingFallGraceContact(collision);
+
         UpdateWallContact(collision);
     }
 
+    // 継続接触を更新する。天井猶予は接触通知ごとに延長せず、同じジャンプでは一度だけ開始する。
     void OnCollisionStay(Collision collision)
     {
         if (!isActiveAndEnabled)
@@ -1460,6 +1579,8 @@ public class SensorPlayerController : MonoBehaviour
         bool correctingCeilingCorner = TryQueueCeilingCornerCorrection(collision);
         if (!correctingCeilingCorner)
             TryBeginDiggingImpact(collision);
+
+        RecordCeilingFallGraceContact(collision);
 
         UpdateWallContact(collision);
     }
@@ -2113,6 +2234,7 @@ public class SensorPlayerController : MonoBehaviour
     // 設定アセットの時間と揺れの値を使い、硬直とカメラシェイクを開始する。
     private void BeginDiggingImpactStun(float bounceDirection)
     {
+        ResetCeilingFallGrace(false);
         // 硬直終了後に衝突前のジャンプ猶予を持ち越さない。
         lastGroundedTime = float.NegativeInfinity;
         ResetFloorTravelImpact();
@@ -2320,6 +2442,7 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
+        ResetCeilingFallGrace(true);
         walkEffectRemaining = 0f;
         effectGroundStateInitialized = false;
         variableJumpActive = false;

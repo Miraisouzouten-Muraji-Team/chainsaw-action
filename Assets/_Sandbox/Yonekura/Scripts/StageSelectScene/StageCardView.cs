@@ -8,14 +8,16 @@ using TMPro;
 public class StageCardView : MonoBehaviour
 {
     [Header("表示設定")]
-    [Tooltip("ステージ画像を表示するCardのImageを設定します。なお、CardのImage欄には何も設定しないでください。")]
     [SerializeField] private Image screenshotImage;
-
-    [Tooltip("ステージ名を表示するTextMeshProを設定します。")]
     [SerializeField] private TMP_Text stageNameText;
-
-    [Tooltip("カード全体の透明度を制御するCanvasGroupを設定します。")]
     [SerializeField] private CanvasGroup canvasGroup;
+
+    [Header("進行状態の表示")]
+    [SerializeField] private GameObject clearMark;
+    [SerializeField] private GameObject lockMark;
+
+    [Header("ロック時の画像色")]
+    [SerializeField] private Color lockedColor = Color.gray;
 
     /// <summary>
     /// カードの透明度を制御するCanvasGroup。
@@ -23,15 +25,37 @@ public class StageCardView : MonoBehaviour
     public CanvasGroup Group => canvasGroup;
 
     /// <summary>
-    /// ステージ情報をカードに反映する。
+    /// ステージ情報と進行状態をカードに反映する。
     /// </summary>
-    public void SetData(string displayName, Sprite screenshot)
+    public void SetData(
+        string displayName,
+        Sprite screenshot,
+        StageAreaStatus status)
     {
         bool hasStage = !string.IsNullOrEmpty(displayName);
 
-        screenshotImage.sprite = screenshot;
-        screenshotImage.enabled = hasStage;
-        stageNameText.text = hasStage ? displayName : "";
+        if (screenshotImage != null)
+        {
+            screenshotImage.sprite = screenshot;
+            screenshotImage.enabled = hasStage;
+
+            // ロック中は画像を暗くする。
+            screenshotImage.color =
+                status == StageAreaStatus.Locked
+                    ? lockedColor
+                    : Color.white;
+        }
+
+        if (stageNameText != null)
+            stageNameText.text = hasStage ? displayName : "";
+
+        if (clearMark != null)
+            clearMark.SetActive(
+                hasStage && status == StageAreaStatus.Cleared);
+
+        if (lockMark != null)
+            lockMark.SetActive(
+                hasStage && status == StageAreaStatus.Locked);
     }
 
     /// <summary>
@@ -39,7 +63,9 @@ public class StageCardView : MonoBehaviour
     /// </summary>
     public void SetAppearance(float alpha, float scale)
     {
-        canvasGroup.alpha = alpha;
+        if (canvasGroup != null)
+            canvasGroup.alpha = alpha;
+
         transform.localScale = Vector3.one * scale;
     }
 }

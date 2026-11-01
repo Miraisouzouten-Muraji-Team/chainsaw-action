@@ -1,7 +1,9 @@
+using DG.Tweening;
 using System;
+using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using DG.Tweening;
+using static StageSelectController;
 
 /// <summary>
 /// ステージセレクトのカード移動、入力、シーン遷移を管理する。
@@ -87,6 +89,10 @@ public class StageSelectController : MonoBehaviour
     [SerializeField, Range(0f, 0.5f)]
     private float resetThreshold = 0.2f;
 
+    [Header("ロックメッセージ")]
+    [Tooltip("ロック中のエリアを決定したときに理由を表示するTextMeshProを設定します。")]
+    [SerializeField] private TMP_Text lockMessageText;
+
     private Vector3 leftArrowBaseScale;
     private Vector3 rightArrowBaseScale;
 
@@ -96,6 +102,25 @@ public class StageSelectController : MonoBehaviour
     private RectTransform previousRect;
     private RectTransform currentRect;
     private RectTransform nextRect;
+
+    // 各エリアのシーン名を取得する。
+    private string[] GetSceneNames()
+    {
+        string[] sceneNames = new string[areas.Length];
+
+        for (int i = 0; i < areas.Length; i++)
+            sceneNames[i] = areas[i].sceneName;
+
+        return sceneNames;
+    }
+
+    /// <summary>
+    /// 進行状況をカード表示に反映する。
+    /// </summary>
+    public void RefreshProgressDisplay()
+    {
+        UpdateCardData();
+    }
 
     // カードを少し内側から定位置まで滑らかに移動させる。
     private void AnimateSideCard(
@@ -162,6 +187,11 @@ public class StageSelectController : MonoBehaviour
 
         UpdateCardData();
         SetInitialPositions();
+
+        if (lockMessageText != null)
+        {
+            lockMessageText.gameObject.SetActive(false);
+        }
     }
 
     private void Update()
@@ -258,6 +288,11 @@ public class StageSelectController : MonoBehaviour
     /// </summary>
     public void SelectPrevious()
     {
+        if (lockMessageText != null)
+        {
+            lockMessageText.gameObject.SetActive(false);
+        }
+
         if (isAnimating || currentIndex <= 0)
         {
             return;
@@ -309,6 +344,11 @@ public class StageSelectController : MonoBehaviour
     /// </summary>
     public void SelectNext()
     {
+        if (lockMessageText != null)
+        {
+            lockMessageText.gameObject.SetActive(false);
+        }
+
         // 最後のステージでは右に移動しない。
         if (isAnimating || currentIndex >= areas.Length - 1)
         {
@@ -465,44 +505,64 @@ public class StageSelectController : MonoBehaviour
     /// 現在の選択位置に合わせて3枚のカードを更新する。
     /// 範囲外のステージは空欄にする。
     /// </summary>
+
+    /// <summary>
+    /// 現在の選択位置に合わせて3枚のカードを更新する。
+    /// 範囲外のステージは空欄にする。
+    /// </summary>
     private void UpdateCardData()
     {
+        string[] sceneNames = GetSceneNames();
+
         // 左側のカード。
         if (currentIndex > 0)
         {
-            StageAreaData area = areas[currentIndex - 1];
+            int index = currentIndex - 1;
+            StageAreaData area = areas[index];
+
+            StageAreaStatus status =
+                StageProgressManager.GetAreaStatus(index, sceneNames);
 
             previousCard.SetData(
                 area.displayName,
-                area.screenshot);
+                area.screenshot,
+                status);
         }
         else
         {
-            previousCard.SetData("", null);
+            previousCard.SetData("", null, StageAreaStatus.Unplayed);
         }
 
         // 中央のカード。
         StageAreaData currentArea = areas[currentIndex];
 
+        StageAreaStatus currentStatus =
+            StageProgressManager.GetAreaStatus(currentIndex, sceneNames);
+
         currentCard.SetData(
             currentArea.displayName,
-            currentArea.screenshot);
+            currentArea.screenshot,
+            currentStatus);
 
         // 右側のカード。
         if (currentIndex < areas.Length - 1)
         {
-            StageAreaData area = areas[currentIndex + 1];
+            int index = currentIndex + 1;
+            StageAreaData area = areas[index];
+
+            StageAreaStatus status =
+                StageProgressManager.GetAreaStatus(index, sceneNames);
 
             nextCard.SetData(
                 area.displayName,
-                area.screenshot);
+                area.screenshot,
+                status);
         }
         else
         {
-            nextCard.SetData("", null);
+            nextCard.SetData("", null, StageAreaStatus.Unplayed);
         }
     }
-
 
     /// <summary>
     /// 各カードの位置、大きさ、透明度と矢印の表示を設定する。
@@ -573,7 +633,7 @@ public class StageSelectController : MonoBehaviour
     }
 
     /// <summary>
-    /// 中央に表示されているステージのシーンへ遷移する。
+    /// 中央に表示されているエリアのシーンへ遷移する。
     /// </summary>
     public void ConfirmSelection()
     {
@@ -581,6 +641,22 @@ public class StageSelectController : MonoBehaviour
             areas.Length == 0 ||
             isAnimating)
         {
+            return;
+        }
+
+        // ロック中のエリアは決定できない。
+        if (!StageProgressManager.IsAreaUnlocked(
+            currentIndex,
+            GetSceneNames()))
+        {
+            if (lockMessageText != null)
+            {
+                lockMessageText.text =
+                    "前のエリアをクリアすると開放されます。";
+
+                lockMessageText.gameObject.SetActive(true);
+            }
+
             return;
         }
 
@@ -593,7 +669,6 @@ public class StageSelectController : MonoBehaviour
             return;
         }
 
-        // 選択中のステージのシーン名を取得する。
         string sceneName = areas[currentIndex].sceneName;
 
         if (string.IsNullOrWhiteSpace(sceneName))
@@ -604,12 +679,16 @@ public class StageSelectController : MonoBehaviour
             return;
         }
 
-        // 遷移中の連続入力を防止する。
+        if (lockMessageText != null)
+        {
+            lockMessageText.gameObject.SetActive(false);
+        }
+
         isAnimating = true;
 
-        // 指定されたトランジションでシーンを切り替える。
         transitionManager.TransitionToScene(
             sceneName,
             transitionType);
     }
+
 }

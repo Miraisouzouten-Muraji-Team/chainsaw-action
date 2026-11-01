@@ -26,6 +26,10 @@ public class ChainsawAttack : MonoBehaviour
     private readonly List<SlashKnockbackState> activeSlashKnockbacks =
         new List<SlashKnockbackState>();
 
+    [Header("ダメージ数字")]
+    [Tooltip("ダメージ数字を表示するDamagePopupPresenterです。未設定なら起動時にシーン内から取得します。")]
+    [SerializeField] private DamagePopupPresenter damagePopupPresenter;
+
     [Header("ヒット演出")]
     [SerializeField] private GameObject hitParticle;
     [Tooltip("ゲーム画面のカメラを揺らすコンポーネントを指定してください。未設定なら自動取得します。")]
@@ -75,6 +79,8 @@ public class ChainsawAttack : MonoBehaviour
         }
 
         hitBox.enabled = false;
+        if (damagePopupPresenter == null)
+            damagePopupPresenter = FindAnyObjectByType<DamagePopupPresenter>();
 
         if (cameraShake == null)
         {
@@ -200,7 +206,7 @@ public class ChainsawAttack : MonoBehaviour
         }
 
         AttackData sendData = GetScaledDiggingData(data, scaledDamage);
-        if (!SendAttackHit(receiver, sendData))
+        if (!SendAttackHit(receiver, sendData, point))
         {
             return false;
         }
@@ -246,7 +252,7 @@ public class ChainsawAttack : MonoBehaviour
         }
 
         AttackData sendData = GetScaledDiggingData(data, scaledDamage);
-        if (!SendAttackHit(receiver, sendData))
+        if (!SendAttackHit(receiver, sendData, point))
         {
             return false;
         }
@@ -343,7 +349,7 @@ public class ChainsawAttack : MonoBehaviour
         // 送信先の処理中に再度呼ばれても重複送信しないよう、先に登録する。
         hitEnemies.Add(receiver);
 
-        if (!SendAttackHit(receiver, attackData))
+        if (!SendAttackHit(receiver, attackData, point))
         {
             // 送信できなかった場合は、次の接触通知で再試行できるようにする。
             hitEnemies.Remove(receiver);
@@ -635,7 +641,8 @@ public class ChainsawAttack : MonoBehaviour
     /// </returns>
     private bool SendAttackHit(
         EnemyAttackHitReceiver target,
-        AttackData attackData)
+        AttackData attackData,
+        Vector3 point)
     {
         if (target == null ||
             !target.isActiveAndEnabled ||
@@ -652,12 +659,30 @@ public class ChainsawAttack : MonoBehaviour
             return false;
         }
 
-        // 敵の受信実装を、既存の共通インターフェース経由で呼び出す。
-        IAttackHitReceiver receiver = target;
+        // HP変更通知を受信中だけ読み、無効な命中や0ダメージでは数字を出さない。
+        // 死亡演出で敵がその場で破棄されても、通知された実ダメージを保持する。
+        int actualDamage = 0;
+        // 敵HPの減少だけを集計し、回復通知をダメージへ加算しない。
+        void RecordDamage(int previousHealth, int currentHealth)
+        {
+            actualDamage += Mathf.Max(0, previousHealth - currentHealth);
+        }
 
-        receiver.ReceiveAttackHit(
-            new PlayerAttackHitData(attackData));
+        enemyHealth.HealthChanged += RecordDamage;
+        try
+        {
+            // 敵の受信実装を、既存の共通インターフェース経由で呼び出す。
+            IAttackHitReceiver receiver = target;
+            receiver.ReceiveAttackHit(new PlayerAttackHitData(attackData));
+        }
+        finally
+        {
+            enemyHealth.HealthChanged -= RecordDamage;
+        }
 
+        // 表示の有無で攻撃の成功や消費量を変えない。
+        if (actualDamage > 0 && damagePopupPresenter != null)
+            damagePopupPresenter.Show(point, actualDamage, attackData);
         return true;
     }
     // 武器が無効になった場合は攻撃を終了し、管理中の敵の残留速度も停止する。

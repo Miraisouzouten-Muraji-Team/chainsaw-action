@@ -19,3 +19,14 @@ MonoBehaviour:
   cameraShack: 0.5
   hitStopTime: 0.2
   airAttackGravityScale: 1
+  showDamagePopup: 1
+  damagePopupFontSize: 64
+  damagePopupColor: {r: 0.2986393, g: 0, b: 1, a: 1}
+  damagePopupUseOutline: 1
+  damagePopupOutlineColor: {r: 0, g: 0, b: 0, a: 1}
+  damagePopupOutlineWidth: 0.5
+  damagePopupUseGradient: 1
+  damagePopupBottomColor: {r: 1, g: 0.07843137, b: 0.9764848, a: 1}
+  damagePopupHueVariation: 0
+  damagePopupNeonColor: {r: 1, g: 0.10142936, b: 0, a: 1}
+  damagePopupNeonStrength: 0

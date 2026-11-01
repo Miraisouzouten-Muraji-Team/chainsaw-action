@@ -13,9 +13,20 @@ MonoBehaviour:
   m_Name: DiggingAttackData
   m_EditorClassIdentifier: Assembly-CSharp::AttackData
   damage: 1
-  attackVector: 0
+  attackVector: {x: 0, y: 0}
   attackMoveRange: 0
   attackMoveDuration: 0.15
   cameraShack: 0
   hitStopTime: 0
   airAttackGravityScale: 1
+  showDamagePopup: 1
+  damagePopupFontSize: 48
+  damagePopupColor: {r: 0.29803923, g: 0, b: 1, a: 1}
+  damagePopupUseOutline: 1
+  damagePopupOutlineColor: {r: 0, g: 0, b: 0, a: 1}
+  damagePopupOutlineWidth: 0.5
+  damagePopupUseGradient: 1
+  damagePopupBottomColor: {r: 1, g: 0.078431375, b: 0.9411765, a: 1}
+  damagePopupHueVariation: 0
+  damagePopupNeonColor: {r: 1, g: 0.12220541, b: 0, a: 1}
+  damagePopupNeonStrength: 0

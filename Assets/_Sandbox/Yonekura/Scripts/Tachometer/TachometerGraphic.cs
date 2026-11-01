@@ -111,10 +111,8 @@ public class TachometerGraphic : MaskableGraphic
     /// <summary>
     /// Inspectorで設定が変更されたときに、円弧の表示設定を更新する。
     /// </summary>
-    protected override void OnValidate()
+    protected void OnValidate()
     {
-        base.OnValidate();
-
         if (!isActiveAndEnabled)
             return;
 

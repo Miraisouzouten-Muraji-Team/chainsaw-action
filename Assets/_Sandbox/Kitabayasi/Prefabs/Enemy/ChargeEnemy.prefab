@@ -220,7 +220,7 @@ MonoBehaviour:
   visualRoot: {fileID: 6351129882097626863}
   deathStrategy:
     rid: 2559746817728970819
-  showPatrolDebugVisualization: 1
+  showPatrolDebugVisualization: 0
   references:
     version: 2
     RefIds:

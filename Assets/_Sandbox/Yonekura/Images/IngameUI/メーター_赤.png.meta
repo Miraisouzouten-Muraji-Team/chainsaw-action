@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: d06278aaad1e214439f428f5f1f5add7
+guid: 07c5199c7f28a9e4aa0706b90ea88c7f
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -6527260261228635250
-    second: Needles_0
+      213: 6444731628814024312
+    second: "\u30E1\u30FC\u30BF\u30FC_\u8D64_0"
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -100,13 +100,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Needles_0
+      name: "\u30E1\u30FC\u30BF\u30FC_\u8D64_0"
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 2560
-        height: 2560
+        width: 312
+        height: 282
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -115,8 +115,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: e8b91f410638a65a0800000000000000
-      internalID: -6527260261228635250
+      spriteID: 87e3f205549407950800000000000000
+      internalID: 6444731628814024312
       vertices: []
       indices: 
       edges: []
@@ -135,7 +135,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Needles_0: -6527260261228635250
+      "\u30E1\u30FC\u30BF\u30FC_\u8D64_0": 6444731628814024312
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

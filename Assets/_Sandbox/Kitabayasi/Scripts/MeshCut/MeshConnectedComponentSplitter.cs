@@ -131,7 +131,7 @@ public sealed class MeshConnectedComponentSplitter
             false,
             out componentMeshes,
             out failureReason);
-    
+
         }
     }
 
@@ -194,7 +194,7 @@ public sealed class MeshConnectedComponentSplitter
             true,
             out componentMeshes,
             out failureReason);
-    
+
         }
     }
 
@@ -657,7 +657,7 @@ public sealed class MeshConnectedComponentSplitter
 
         failureReason = null;
         return true;
-    
+
     }
 
     private static bool TryValidateTrustedWorkingDataHeader(
@@ -1291,7 +1291,7 @@ public sealed class MeshConnectedComponentSplitter
                 maximum - minimum);
 
         return mesh;
-    
+
     }
 
     private static int GetOrAddVertex(

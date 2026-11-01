@@ -117,7 +117,7 @@ public sealed class MeshTargetCountSplitter
 
         failureReason = null;
         return true;
-    
+
         }
     }
 
@@ -225,7 +225,7 @@ public sealed class MeshTargetCountSplitter
             "追加分割用Planeを決定できませんでした。";
 
         return false;
-    
+
     }
 
     private bool TryAppendConnectedComponents(
@@ -243,7 +243,7 @@ public sealed class MeshTargetCountSplitter
 
         destination.AddRange(componentMeshes);
         return true;
-    
+
     }
 
     private static int FindLargestSplittablePieceIndex(
@@ -296,7 +296,7 @@ public sealed class MeshTargetCountSplitter
         }
 
         return largestPieceIndex;
-    
+
     }
 
     private static Plane CreateCenterSplitPlane(

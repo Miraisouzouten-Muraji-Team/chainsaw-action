@@ -403,7 +403,7 @@ public sealed class MeshPlaneSplitter
             out secondPieceMesh,
             out connectedPieceMeshes,
             out failureReason);
-    
+
         }
     }
 
@@ -1308,7 +1308,7 @@ public sealed class MeshPlaneSplitter
                 sourceNormalListPool,
                 sourceNormalBuffer);
         }
-    
+
         }
     }
 
@@ -2543,7 +2543,7 @@ public sealed class MeshPlaneSplitter
 
         failureReason = null;
         return true;
-    
+
         }
     }
 
@@ -3965,7 +3965,7 @@ public sealed class MeshPlaneSplitter
 
         failureReason = null;
         return true;
-    
+
         }
     }
 
@@ -4954,7 +4954,7 @@ public sealed class MeshPlaneSplitter
             remainingIndices[2]);
 
         return true;
-    
+
     }
 
     private static bool IsPointInsideTriangle(
@@ -5863,7 +5863,7 @@ public sealed class MeshPlaneSplitter
             mesh.bounds = BuilderBounds;
 
             return mesh;
-        
+
             }
         }
 

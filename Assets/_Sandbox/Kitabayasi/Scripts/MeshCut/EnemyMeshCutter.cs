@@ -405,7 +405,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 DestroyRuntimeMesh(sourceMesh);
             }
         }
-    
+
         }
     }
 
@@ -680,7 +680,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             "切断対象からMeshを取得できませんでした。";
 
         return false;
-    
+
     }
 
     /// <summary>
@@ -767,7 +767,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 rendererTransform.InverseTransformPoint(
                     sample.RootPosition));
         }
-    
+
     }
 
     /// <summary>
@@ -872,7 +872,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         pieceObject.AddComponent<Rigidbody>();
 
         return pieceObject;
-    
+
     }
 
     /// <summary>
@@ -1036,7 +1036,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 $"SourceWorldBoundsCenter={FormatVector3(sourceRenderer.bounds.center)}, " +
                 $"SourceWorldBoundsSize={FormatVector3(sourceRenderer.bounds.size)}");
         }
-    
+
     }
 
     /// <summary>
@@ -1057,7 +1057,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             "Player TagからPlayer Colliderを取得できませんでした。" +
             "Piece生成は継続しますが、Playerとの衝突無効化は適用されません。",
             this);
-    
+
     }
 
     /// <summary>
@@ -1083,7 +1083,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 playerCollider,
                 true);
         }
-    
+
     }
 
     /// <summary>

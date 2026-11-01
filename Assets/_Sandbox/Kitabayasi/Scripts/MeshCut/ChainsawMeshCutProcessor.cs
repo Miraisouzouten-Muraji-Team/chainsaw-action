@@ -1004,7 +1004,7 @@ public sealed class ChainsawMeshCutProcessor
 
         failureReason = null;
         return true;
-    
+
     }
     private static bool TryClampPlanePointToCutRange(
         Vector3 originalPlanePoint,
@@ -1321,7 +1321,7 @@ public sealed class ChainsawMeshCutProcessor
 
         failureReason = null;
         return true;
-    
+
     }
   private static float GetOrCalculatePlaneDistance(
         int sourceVertexIndex,
@@ -2129,7 +2129,7 @@ public sealed class ChainsawMeshCutProcessor
 
         failureReason = null;
         return true;
-    
+
     }
 
     private static bool TryExpandCutBoundaryAxisRange(

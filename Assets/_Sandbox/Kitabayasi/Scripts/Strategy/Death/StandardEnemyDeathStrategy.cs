@@ -305,7 +305,7 @@ public sealed class StandardEnemyDeathStrategy :
         }
 
         TryCutDeathMesh();
-    
+
         }
     }
 
@@ -369,7 +369,7 @@ public sealed class StandardEnemyDeathStrategy :
         TryBeginPieceShrink(
             pieceTransforms,
             "Death-Digging-04 Shrink");
-    
+
         }
     }
 
@@ -583,7 +583,7 @@ public sealed class StandardEnemyDeathStrategy :
         }
 
         TryBeginCutPieceEffects();
-    
+
         }
     }
 

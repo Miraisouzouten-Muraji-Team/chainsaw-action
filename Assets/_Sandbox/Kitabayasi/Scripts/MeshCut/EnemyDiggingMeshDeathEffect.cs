@@ -533,7 +533,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
 
         failureReason = null;
         return pieceObjects.Count > 0;
-    
+
     }
 
     /// <summary>
@@ -636,7 +636,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         pieceObject.AddComponent<Rigidbody>();
 
         return pieceObject;
-    
+
     }
 
     /// <summary>
@@ -780,7 +780,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
 
         IgnorePlayerCollisions(
             pieceCollider);
-    
+
     }
 
     /// <summary>
@@ -801,7 +801,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             "Player TagからPlayer Colliderを取得できませんでした。" +
             "Piece生成は継続しますが、Playerとの衝突無効化は適用されません。",
             this);
-    
+
     }
 
     /// <summary>
@@ -827,7 +827,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
                 playerCollider,
                 true);
         }
-    
+
     }
 
     private float CalculatePieceMass(

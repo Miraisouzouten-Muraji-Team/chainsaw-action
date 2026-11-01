@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -209,7 +209,6 @@ public sealed class EnemyDiggingDeathBurst : MonoBehaviour
             this);
 
         return false;
-    
     }
 
     private void ApplyUpperBurst(

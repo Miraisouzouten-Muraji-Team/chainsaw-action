@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Threading;
@@ -337,7 +337,6 @@ public sealed class ChainsawMeshCutProcessor
                 sourceVertexListPool,
                 sourceVertices);
         }
-    
         }
     }
 
@@ -802,7 +801,6 @@ public sealed class ChainsawMeshCutProcessor
         }
 
         return false;
-    
     }
 
     private static bool TryCreateTrajectoryPlaneCandidate(
@@ -1008,7 +1006,6 @@ public sealed class ChainsawMeshCutProcessor
         return true;
     
     }
-
     private static bool TryClampPlanePointToCutRange(
         Vector3 originalPlanePoint,
         Matrix4x4 sourceToCutRangeSpace,
@@ -1326,8 +1323,7 @@ public sealed class ChainsawMeshCutProcessor
         return true;
     
     }
-
-    private static float GetOrCalculatePlaneDistance(
+  private static float GetOrCalculatePlaneDistance(
         int sourceVertexIndex,
         Vector3 sourceVertexPosition,
         Plane cutPlane,

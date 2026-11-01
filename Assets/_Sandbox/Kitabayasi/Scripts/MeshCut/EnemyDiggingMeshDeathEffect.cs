@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Unity.Profiling;
 using UnityEngine;
 
@@ -192,7 +192,6 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
                 DestroyRuntimeMesh(sourceMesh);
             }
         }
-    
         }
     }
 
@@ -407,7 +406,6 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             "分割対象からMeshを取得できませんでした。";
 
         return false;
-    
     }
 
     private bool ValidateSourceMeshMaterialLayout(

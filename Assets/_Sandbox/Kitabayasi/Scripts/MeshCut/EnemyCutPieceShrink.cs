@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -120,7 +120,6 @@ public sealed class EnemyCutPieceShrink : MonoBehaviour
         enabled = true;
 
         return true;
-    
     }
 
     private void Update()

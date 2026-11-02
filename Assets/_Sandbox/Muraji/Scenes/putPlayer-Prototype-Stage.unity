@@ -66242,6 +66242,53 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 2292058601784843701, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
   m_PrefabInstance: {fileID: 1351245142}
   m_PrefabAsset: {fileID: 0}
+--- !u!1 &748823387
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 748823389}
+  - component: {fileID: 748823388}
+  m_Layer: 0
+  m_Name: EnemyRespawnManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &748823388
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 748823387}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0643912d8fed1274ba95d8a8e4702164, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyRespawnManager
+  resetLayers:
+    serializedVersion: 2
+    m_Bits: 64
+--- !u!4 &748823389
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 748823387}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 60.49219, y: 32.95993, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &749911510
 GameObject:
   m_ObjectHideFlags: 0
@@ -128258,6 +128305,18 @@ PrefabInstance:
     - target: {fileID: 4474876397925208740, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: respawnState
       value: Base Layer.Idle
+      objectReference: {fileID: 0}
+    - target: {fileID: 4474876397925208740, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: playerParameter
+      value: 
+      objectReference: {fileID: 11400000, guid: 95f83e18d5c42904aa49a97890997239, type: 2}
+    - target: {fileID: 4474876397925208740, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: enemyRespawnManager
+      value: 
+      objectReference: {fileID: 748823388}
+    - target: {fileID: 4474876397925208740, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: maximumDeathFallSeconds
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4474876397925208740, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: respawnStarted.m_PersistentCalls.m_Calls.Array.size
@@ -240948,3 +241007,4 @@ SceneRoots:
   - {fileID: 1348585284}
   - {fileID: 527985438}
   - {fileID: 964629044}
+  - {fileID: 748823389}

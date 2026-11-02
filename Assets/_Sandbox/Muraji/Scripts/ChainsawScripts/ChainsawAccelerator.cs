@@ -17,6 +17,7 @@ public class ChainsawAccelerator : MonoBehaviour
     [SerializeField] private AccelerationParameter accelerationParameter;
 
     [SerializeField, Min(0.01f)]
+    [Tooltip("食い込み開始時に上限を超えているアクセル値を、食い込み用の上限まで下げる秒数。途中で食い込みを解除しても減速を続けます。")]
     private float diggingDecelerationTime = 0.3f;
 
     private float minSpeed
@@ -94,6 +95,10 @@ public class ChainsawAccelerator : MonoBehaviour
     private bool wasDigging;
     private bool transitionInitialized;
 
+    // 食い込みを離しても、開始時に確定した減速目標を保持する。
+    private bool isDiggingLimitPending;
+    private float pendingDiggingLimit;
+
     private TransitionMode transitionMode;
 
     private bool isBonusDecelerating;
@@ -101,6 +106,7 @@ public class ChainsawAccelerator : MonoBehaviour
     private float bonusDecelerationDuration;
     private float bonusDecelerationStartSpeed;
     private float bonusDecelerationTargetSpeed;
+    private float lastBonusDecelerationFixedTime = float.NegativeInfinity;
 
     // SOの割り当てを確認してから、従来通り初期回転数を設定する。
     private void Awake()
@@ -114,6 +120,7 @@ public class ChainsawAccelerator : MonoBehaviour
         CurrentSpeed = minSpeed;
     }
 
+    // 通常の加減速とボーナス減速を更新し、確定した減速目標への到達をアクセル入力より優先する。
     public void Tick(
         bool isAccelerating,
         float deltaTime,
@@ -124,9 +131,10 @@ public class ChainsawAccelerator : MonoBehaviour
             return;
         }
 
-        // 専用減速中は通常の加減速を重ねない。進行は食い込み側から行う。
+        // 食い込み側の更新が止まっても、Controllerの物理更新から専用減速を進める。
         if (isBonusDecelerating)
         {
+            TickBonusDeceleration(deltaTime);
             wasDigging = isDigging;
             return;
         }
@@ -135,12 +143,37 @@ public class ChainsawAccelerator : MonoBehaviour
             ? Mathf.Clamp(diggingMaxSpeed, minSpeed, MaxSpeed)
             : MaxSpeed;
 
+        // 専用減速APIを使わない既存の呼び出しでも、食い込み用上限までの減速を保持する。
+        if (isDigging && CurrentSpeed > limit)
+        {
+            pendingDiggingLimit = isDiggingLimitPending
+                ? Mathf.Min(pendingDiggingLimit, limit)
+                : limit;
+            isDiggingLimitPending = true;
+        }
+
+        if (isDiggingLimitPending && CurrentSpeed <= pendingDiggingLimit)
+        {
+            isDiggingLimitPending = false;
+            transitionInitialized = false;
+        }
+
+        if (isDiggingLimitPending)
+        {
+            limit = pendingDiggingLimit;
+        }
+
         bool enteredDigging = isDigging && !wasDigging;
         bool diggingChanged = isDigging != wasDigging;
 
         TransitionMode nextMode;
 
-        if (!isAccelerating)
+        if (isDiggingLimitPending)
+        {
+            // 食い込み解除・アクセルの押し直しより、確定した目標まで下げる処理を優先する。
+            nextMode = TransitionMode.SettlingToDiggingLimit;
+        }
+        else if (!isAccelerating)
         {
             // アクセルを離した場合は最低速度へ減速。
             nextMode = TransitionMode.Decelerating;
@@ -157,7 +190,7 @@ public class ChainsawAccelerator : MonoBehaviour
 
         bool restartTransition =
             !transitionInitialized ||
-            diggingChanged ||
+            (diggingChanged && !isDiggingLimitPending) ||
             nextMode != transitionMode ||
             !Mathf.Approximately(limit, previousLimit);
 
@@ -178,8 +211,8 @@ public class ChainsawAccelerator : MonoBehaviour
 
         wasDigging = isDigging;
 
-        // 食い込み開始時は現在の値をそのまま引き継ぐ。
-        if (enteredDigging)
+        // 上限超過の強制減速がない場合は、食い込み開始時の現在値を引き継ぐ。
+        if (enteredDigging && !isDiggingLimitPending)
         {
             return;
         }
@@ -235,6 +268,7 @@ public class ChainsawAccelerator : MonoBehaviour
         CurrentSpeed = Mathf.Clamp(CurrentSpeed, 0f, MaxSpeed);
     }
 
+    // 未設定の曲線は等速として扱い、設定された曲線の値を既存の範囲内で評価する。
     private static float Evaluate(AnimationCurve curve, float time)
     {
         return curve == null || curve.length == 0
@@ -250,21 +284,34 @@ public class ChainsawAccelerator : MonoBehaviour
             return;
         }
 
+        float target = Mathf.Min(CurrentSpeed, Mathf.Max(0f, targetSpeed));
+        if (isBonusDecelerating)
+        {
+            // 連続した要求で減速時間を先延ばしにしない。新しい目標が低い場合だけ反映する。
+            bonusDecelerationTargetSpeed = Mathf.Min(bonusDecelerationTargetSpeed, target);
+            return;
+        }
+
         bonusDecelerationStartSpeed = CurrentSpeed;
-        bonusDecelerationTargetSpeed = Mathf.Min(CurrentSpeed, Mathf.Max(0f, targetSpeed));
+        bonusDecelerationTargetSpeed = target;
         bonusDecelerationDuration = Mathf.Max(MIN_TRANSITION_DURATION, duration);
         bonusDecelerationElapsed = 0f;
         isBonusDecelerating = CurrentSpeed > bonusDecelerationTargetSpeed;
+        // 明示的に渡された目標がある場合は、通常の食い込み上限よりその設定を優先する。
+        isDiggingLimitPending = false;
         transitionInitialized = false;
     }
 
-    // 食い込み側のFixedUpdate経由で時間を進め、指定秒数で滑らかに減速する。
+    // 指定秒数で専用減速を進める。同じ物理更新で双方から呼ばれても二重に時間を進めない。
     public void TickBonusDeceleration(float deltaTime)
     {
-        if (!isBonusDecelerating || deltaTime <= 0f)
+        if (!isBonusDecelerating || deltaTime <= 0f ||
+            lastBonusDecelerationFixedTime == Time.fixedTime)
         {
             return;
         }
+
+        lastBonusDecelerationFixedTime = Time.fixedTime;
 
         bonusDecelerationElapsed = Mathf.Min(
             bonusDecelerationDuration, bonusDecelerationElapsed + deltaTime);
@@ -282,17 +329,31 @@ public class ChainsawAccelerator : MonoBehaviour
         }
     }
 
-    // 専用減速を終了し、次の通常更新で現在値から加減速を再計算する。
+    // 目標到達後だけ専用減速を終了する。食い込み解除による途中キャンセルでは減速を残す。
     public void CancelBonusDeceleration()
     {
+        if (isBonusDecelerating && CurrentSpeed > bonusDecelerationTargetSpeed)
+        {
+            return;
+        }
+
         isBonusDecelerating = false;
         bonusDecelerationElapsed = 0f;
         transitionInitialized = false;
     }
 
-    // 無効化・再有効化をまたいで専用減速が残らないようにする。
+    // 無効化時は未完了の減速目標まで下げて終了し、再有効化による減速回避を防ぐ。
     private void OnDisable()
     {
+        if (isBonusDecelerating)
+        {
+            CurrentSpeed = Mathf.Min(CurrentSpeed, bonusDecelerationTargetSpeed);
+        }
+        if (isDiggingLimitPending)
+        {
+            CurrentSpeed = Mathf.Min(CurrentSpeed, pendingDiggingLimit);
+            isDiggingLimitPending = false;
+        }
         CancelBonusDeceleration();
     }
 

@@ -7,7 +7,7 @@ using UnityEngine.Rendering.Universal;
 using UnityEngine.InputSystem;
 #endif
 
-// Unity 6 / URP. RuntimeDebugKitへの依存なし。
+// Unity 6 / URP。表示の一括切り替えだけDebugDisplayVisibilityで共有する。
 [DisallowMultipleComponent]
 public sealed class GraphicsDebugMenu : MonoBehaviour
 {
@@ -72,8 +72,6 @@ public sealed class GraphicsDebugMenu : MonoBehaviour
     private bool[] initialPreviewVisibility;
     private Vector2 scroll;
     private string statsText = "Collecting...";
-    private CursorLockMode previousLock;
-    private bool previousCursor;
 
     private void OnEnable()
     {
@@ -133,15 +131,18 @@ public sealed class GraphicsDebugMenu : MonoBehaviour
         captured = true;
     }
 
+    // 共通の表示切り替えと個別メニュー入力を処理し、描画統計を更新する。
     private void Update()
     {
+        DebugDisplayVisibility.ProcessInput();
         bool toggle = false;
 #if ENABLE_INPUT_SYSTEM
         toggle = Keyboard.current != null && Keyboard.current.f2Key.wasPressedThisFrame;
 #elif ENABLE_LEGACY_INPUT_MANAGER
         toggle = Input.GetKeyDown(KeyCode.F2);
 #endif
-        if (toggle) SetOpen(!opened);
+        if (toggle && DebugDisplayVisibility.IsVisible && !DebugDisplayVisibility.ToggledThisFrame)
+            SetOpen(!opened);
         elapsed += Time.unscaledDeltaTime;
         frames++;
         refresh += Time.unscaledDeltaTime;
@@ -216,20 +217,18 @@ public sealed class GraphicsDebugMenu : MonoBehaviour
             if (previews[i] != null) previews[i].visible = initialPreviewVisibility[i];
     }
 
+    // メニューの開閉を共通のカーソル管理へ通知する。
     private void SetOpen(bool value)
     {
         if (opened == value) return;
         opened = value;
-        if (opened)
-        {
-            previousLock = Cursor.lockState; previousCursor = Cursor.visible;
-            Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
-        }
-        else { Cursor.lockState = previousLock; Cursor.visible = previousCursor; }
+        DebugDisplayVisibility.SetMenuOpen(this, opened);
     }
 
+    // 一括非表示中は全UIを描かず、表示中は既存の統計・プレビュー・操作欄を描画する。
     private void OnGUI()
     {
+        if (!DebugDisplayVisibility.IsVisible) return;
         var previousMatrix = GUI.matrix;
         float scale = Mathf.Clamp(interfaceScale, 0.2f, 1f);
         GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1));

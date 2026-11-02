@@ -70,6 +70,24 @@ public class SensorChainsawDigging : MonoBehaviour
     public Vector3 SurfaceNormal =>
         contact.Normal;
 
+    // 凸の角で法線が真下になった場合も、本体幅による天井支持が確定しているかを返す。
+    public bool HasCeilingBodySupport => isActiveAndEnabled && IsRequested &&
+        Surface == ChainsawSurface.Ceiling && contact.HasCeilingBodyTarget;
+
+    // 天井継続中だけ、次の本体位置と安全な高さから求めた移動速度をControllerへ渡す。
+    public bool TryGetCeilingFollowVelocity(float moveSpeed, float stickSpeed,
+        float deltaTime, out Vector3 velocity)
+    {
+        velocity = default;
+        if (!isActiveAndEnabled || !IsRequested || Surface != ChainsawSurface.Ceiling ||
+            detector == null || !detector.TryGetCeilingBodySupport(
+                moveSpeed, deltaTime, contact.Normal, out SensorChainsawContact support))
+            return false;
+        // Controllerが今回確定した速度でも照会し、加速やボーナス直後の移動先と判定位置を揃える。
+        contact = support;
+        return detector.TryGetCeilingFollowVelocity(contact, moveSpeed, stickSpeed, deltaTime, out velocity);
+    }
+
     public float MoveSpeedBonus =>
         !IsDigging || accelerator == null
             ? 0f
@@ -406,7 +424,10 @@ public class SensorChainsawDigging : MonoBehaviour
                 contact.Collider,
                 out next,
                 Surface,
-                facingDirection);
+                facingDirection,
+                floorMoveSpeed,
+                deltaTime,
+                contact.Normal);
         }
 
         // 前方の敵を検出した場合は、

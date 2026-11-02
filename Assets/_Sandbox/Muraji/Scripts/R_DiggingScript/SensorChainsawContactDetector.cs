@@ -11,6 +11,9 @@ public struct SensorChainsawContact
     public ChainsawSurface Surface;
     public Vector3 Point;
     public Vector3 Normal;
+    // 天井継続の本体BoxCastが求めた安全な中心位置。通常の床・壁・敵判定では使用しない。
+    public bool HasCeilingBodyTarget;
+    public Vector3 CeilingBodyTarget;
 }
 
 public class SensorChainsawContactDetector : MonoBehaviour
@@ -57,6 +60,11 @@ public class SensorChainsawContactDetector : MonoBehaviour
     private RaycastHit[] movementHitBuffer = new RaycastHit[32];
 
     private SensorPlayerController playerController;
+    private Rigidbody ownerBody;
+    private readonly List<Collider> ceilingBodyColliders = new List<Collider>();
+    private float ceilingBodyContactOffset;
+    private const float CEILING_FOLLOW_SKIN = 0.005f;
+    private const int CEILING_PATH_MAX_PASSES = 4;
 
     // 敵専用センサーの重なりと今回の移動経路を調べ、固定食い込みとは別に命中候補を集める。
     public void CollectMovementEnemyContacts(
@@ -307,11 +315,15 @@ public class SensorChainsawContactDetector : MonoBehaviour
         }
     }
 
+    // 食い込み開始は各センサーで調べ、天井継続中は今回の移動先を支える本体幅の照会で面を確定する。
     public bool TryGetContact(
         Collider preferred,
         out SensorChainsawContact contact,
         ChainsawSurface currentSurface = ChainsawSurface.None,
-        float facingDirection = 0f)
+        float facingDirection = 0f,
+        float ceilingMoveSpeed = 0f,
+        float ceilingDeltaTime = 0f,
+        Vector3 ceilingPreviousNormal = default)
     {
         contact = default;
 
@@ -367,6 +379,18 @@ public class SensorChainsawContactDetector : MonoBehaviour
             ref bestScore
         );
 
+        // 開始時はUpper、継続中は本体の次の移動位置を支える天井で判定する。
+        // 前方の遠い面や、後ろに残った斜面の法線だけで移動方向を決めない。
+        if (currentSurface == ChainsawSurface.Ceiling)
+        {
+            if (contact.Surface != ChainsawSurface.Wall &&
+                TryGetCeilingBodySupport(ceilingMoveSpeed, ceilingDeltaTime,
+                ceilingPreviousNormal, out SensorChainsawContact support))
+                contact = support;
+            else if (contact.Surface == ChainsawSurface.Ceiling)
+                contact = default;
+        }
+
         // 床候補は通常移動と同じ支持面へそろえる。
         // 敵・壁・天井の優先順位は既存どおり維持する。
         ApplyPlayerGroundSupport(currentSurface, ref contact);
@@ -376,6 +400,143 @@ public class SensorChainsawContactDetector : MonoBehaviour
         detectedNormal = contact.Normal;
 
         return contact.Collider != null;
+    }
+
+    // 同じRigidbodyに属する有効な非Triggerの本体形状だけを集め、ワールド範囲を求める。
+    private bool TryGetCeilingBodyBounds(out Bounds bounds)
+    {
+        bounds = default;
+        ceilingBodyContactOffset = 0f;
+        if (ownerBody == null) ownerBody = ownerRoot.GetComponent<Rigidbody>();
+        if (ownerBody == null) return false;
+        ownerBody.GetComponentsInChildren<Collider>(true, ceilingBodyColliders);
+        bool found = false;
+        foreach (Collider bodyCollider in ceilingBodyColliders)
+        {
+            if (bodyCollider == null || !bodyCollider.enabled || bodyCollider.isTrigger ||
+                !bodyCollider.gameObject.activeInHierarchy || bodyCollider.attachedRigidbody != ownerBody)
+                continue;
+            if (!found) bounds = bodyCollider.bounds;
+            else bounds.Encapsulate(bodyCollider.bounds);
+            ceilingBodyContactOffset = Mathf.Max(ceilingBodyContactOffset, bodyCollider.contactOffset);
+            found = true;
+        }
+        return found;
+    }
+
+    // 次の横位置の本体幅を上向きにBoxCastし、頭が通れる高さを決める実際の天井を取得する。
+    // 平面・斜面・凸の継ぎ目を同じ方法で調べ、Upperから一瞬外れても本体の支持を維持する。
+    public bool TryGetCeilingBodySupport(float moveSpeed, float deltaTime,
+        Vector3 previousNormal, out SensorChainsawContact contact)
+    {
+        contact = default;
+        if (!isActiveAndEnabled || !configured) return false;
+        if (!TryGetCeilingBodyBounds(out Bounds bounds)) return false;
+        float travel = Mathf.Abs(moveSpeed) * Mathf.Max(0f, deltaTime);
+        float probeDistance = Mathf.Max(bounds.extents.y,
+            Mathf.Max(0.01f, contactDetectorParameter.NormalRayBackoff)) + travel + CEILING_FOLLOW_SKIN;
+        Vector3 half = new Vector3(
+            Mathf.Max(0.001f, bounds.extents.x),
+            Mathf.Max(0.001f, bounds.extents.y),
+            Mathf.Max(0.001f, bounds.extents.z));
+        // 接線上の移動距離がtravelなので、横方向の先読みも最大travelに限定する。
+        float horizontalRatio = previousNormal.sqrMagnitude > 0.01f
+            ? Mathf.Abs(previousNormal.normalized.y) : 1f;
+        Vector3 origin = bounds.center + Vector3.right * (moveSpeed * Mathf.Max(0f, deltaTime) * horizontalRatio)
+            - Vector3.up * probeDistance;
+        float nearestDistance = float.PositiveInfinity;
+        foreach (RaycastHit hit in Physics.BoxCastAll(origin, half, Vector3.up,
+            Quaternion.identity, probeDistance * 2f,
+            contactDetectorParameter.TerrainLayers, QueryTriggerInteraction.Ignore))
+        {
+            if (hit.collider == null || IsOwner(hit.collider) || hit.distance <= POINT_TOLERANCE ||
+                hit.point.y < bounds.center.y || Mathf.Abs(hit.normal.z) > 0.5f)
+                continue;
+            Vector3 normal = new Vector3(hit.normal.x, hit.normal.y, 0f).normalized;
+            if (normal.y > -ResolvedSurfaceNormalThreshold) continue;
+            if (hit.distance > nearestDistance) continue;
+            if (hit.distance == nearestDistance && contact.Collider != null &&
+                hit.collider.GetInstanceID() >= contact.Collider.GetInstanceID()) continue;
+            nearestDistance = hit.distance;
+            contact = new SensorChainsawContact
+            {
+                Collider = hit.collider,
+                Surface = ChainsawSurface.Ceiling,
+                Point = hit.point,
+                Normal = normal,
+                HasCeilingBodyTarget = true,
+                // 本体を縮めずに調べ、両Colliderの接触余白も確保する。
+                // 角で法線が真下になっても、許容する斜面側の余白を失わない高さへ下げる。
+                CeilingBodyTarget = new Vector3(origin.x,
+                    origin.y + hit.distance - GetCeilingClearance(hit.collider) /
+                    Mathf.Max(0.01f, ResolvedSurfaceNormalThreshold), bounds.center.z)
+            };
+        }
+        detectedSurface = contact.Surface;
+        detectedCollider = contact.Collider;
+        detectedNormal = contact.Normal;
+        return contact.Collider != null;
+    }
+
+    // 本体と天井の接触生成範囲に入らないよう、双方の接触余白と小さな安全距離を合計する。
+    private float GetCeilingClearance(Collider ceilingCollider)
+    {
+        return ceilingBodyContactOffset + Mathf.Max(0f, ceilingCollider.contactOffset) + CEILING_FOLLOW_SKIN;
+    }
+
+    // 移動経路を本体サイズで掃引し、途中で当たる天井の面から離れる高さへ補正する。
+    // 移動先だけが安全でも角を横切る途中で接触するため、Xを維持したままYを下げて再検査する。
+    private void ResolveCeilingPath(Bounds bounds, float pathClearance, ref Vector3 displacement)
+    {
+        // 実体がめり込む手前の接触生成範囲も掃引する。支持位置側には残り半分のskinを残す。
+        Vector3 castHalf = bounds.extents;
+        castHalf.y += Mathf.Max(0f, pathClearance - CEILING_FOLLOW_SKIN * 0.5f) /
+            Mathf.Max(0.01f, ResolvedSurfaceNormalThreshold);
+        for (int pass = 0; pass < CEILING_PATH_MAX_PASSES; pass++)
+        {
+            float distance = displacement.magnitude;
+            if (distance <= POINT_TOLERANCE) return;
+            float safeY = displacement.y;
+            foreach (RaycastHit hit in Physics.BoxCastAll(bounds.center, castHalf,
+                displacement / distance, Quaternion.identity, distance,
+                contactDetectorParameter.TerrainLayers, QueryTriggerInteraction.Ignore))
+            {
+                // 開始時の重なりは支持面から求めた目標高さで解消する。
+                if (hit.collider == null || IsOwner(hit.collider) || hit.distance <= 0f ||
+                    hit.normal.y > -ResolvedSurfaceNormalThreshold || Mathf.Abs(hit.normal.z) > 0.5f)
+                    continue;
+                Vector3 normal = hit.normal.normalized;
+                float radius = Mathf.Abs(normal.x) * bounds.extents.x +
+                    Mathf.Abs(normal.y) * bounds.extents.y + Mathf.Abs(normal.z) * bounds.extents.z;
+                float gap = Vector3.Dot(bounds.center - hit.point, normal) - radius;
+                // 実際に経路へ当たった面に対し、本体全体が接触余白の外側に残るYを求める。
+                float requiredY = (GetCeilingClearance(hit.collider) - gap -
+                    normal.x * displacement.x - normal.z * displacement.z) / normal.y;
+                safeY = Mathf.Min(safeY, requiredY);
+            }
+            if (safeY >= displacement.y - 0.00001f) return;
+            displacement.y = safeY;
+        }
+    }
+
+    // 天井に沿う移動速度を求め、経路上の角を避ける上下補正だけを加える。
+    public bool TryGetCeilingFollowVelocity(SensorChainsawContact support, float moveSpeed,
+        float stickSpeed, float deltaTime, out Vector3 velocity)
+    {
+        velocity = default;
+        if (deltaTime <= 0f || support.Collider == null ||
+            support.Surface != ChainsawSurface.Ceiling || !support.HasCeilingBodyTarget ||
+            !TryGetCeilingBodyBounds(out Bounds bounds)) return false;
+        Vector3 displacement = support.CeilingBodyTarget - bounds.center;
+        // Xは直前の接線から求めた移動先をそのまま使い、押し付け速度のX成分を加算しない。
+        float correctionLimit = Mathf.Max(Mathf.Abs(moveSpeed), Mathf.Max(0f, stickSpeed));
+        displacement.y = Mathf.Min(displacement.y, correctionLimit * deltaTime);
+        ResolveCeilingPath(bounds, GetCeilingClearance(support.Collider), ref displacement);
+        velocity.x = displacement.x / deltaTime;
+        // 角を避ける下向き補正まで制限すると、本体が角に残り続けるため再制限しない。
+        velocity.y = displacement.y / deltaTime;
+        // 一定の上向き押し付けを重ねない。角で接触反力が横移動を阻害することを防ぐ。
+        return true;
     }
 
     // 床を検出した場合、または床食い込み継続中だけ、実際の支持面を共有する。

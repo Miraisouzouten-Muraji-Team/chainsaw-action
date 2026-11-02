@@ -7,7 +7,8 @@ using UnityEngine.Rendering.Universal;
 [RequireComponent(typeof(Volume))]
 public sealed class PlayerDamageScreenEffect : MonoBehaviour
 {
-    private const float LOW_HEALTH_RATIO = 0.2f;
+    [Tooltip("被弾後の残りHPがこの割合以下のときに赤い縁を表示します。20なら最大HPの20%以下、100なら生存中のすべての被弾が対象です。0なら表示しません。")]
+    [SerializeField, Range(0f, 100f)] private float lowHealthPercent = 20f;
 
     [Tooltip("赤い縁の表示条件を判定するプレイヤーのPlayerHealthを指定します。未指定の場合は自分または親から取得します。独立したVolumeの場合は必ず指定してください。")]
     [SerializeField] private PlayerHealth playerHealth;
@@ -65,7 +66,7 @@ public sealed class PlayerDamageScreenEffect : MonoBehaviour
         initialized = true;
     }
 
-    // 被ダメージ適用後に呼び、残りHPが最大HPの20%以下の場合だけ演出を開始する。
+    // 被ダメージ適用後に呼び、残りHPがInspectorの指定割合以下の場合だけ演出を開始する。
     public void PlayDamageEffect()
     {
         if (!initialized || !isActiveAndEnabled || screenData == null ||
@@ -87,12 +88,13 @@ public sealed class PlayerDamageScreenEffect : MonoBehaviour
         damageVolume.weight = 1f;
     }
 
-    // 有効なHP情報を使い、20%ちょうどを含む低HP状態か判定する。
+    // 有効なHP情報を使い、指定割合ちょうどを含む低HP状態か判定する。
     private bool CanShowDamageEffect()
     {
         return playerHealth != null && playerHealth.isActiveAndEnabled &&
             playerHealth.MaxHealth > 0f && !playerHealth.IsDead &&
-            playerHealth.CurrentHealth <= playerHealth.MaxHealth * LOW_HEALTH_RATIO;
+            playerHealth.CurrentHealth <= playerHealth.MaxHealth *
+                (Mathf.Clamp(lowHealthPercent, 0f, 100f) / 100f);
     }
 
     // ゲーム内時間で表示とフェードを進め、回復・死亡・参照喪失時は表示を解除する。

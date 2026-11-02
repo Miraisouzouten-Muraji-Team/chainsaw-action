@@ -1,8 +1,43 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 public class SensorPlayerController : MonoBehaviour
 {
+    [System.Serializable]
+    private sealed class MovementEffectSetting
+    {
+        [Tooltip("生成するエフェクトのPrefabです。未設定ならこの種類のエフェクトを出しません。")]
+        public GameObject Prefab;
+        [Tooltip("プレイヤーの子に配置した、エフェクトの出現位置と向きを決める空オブジェクトです。")]
+        public Transform SpawnPoint;
+        [Tooltip("生成から削除までの秒数です。エフェクトが消えるまでの長さ以上に設定してください。")]
+        [Min(0.01f)] public float Lifetime = 2f;
+    }
+
+    [Header("移動エフェクト：Prefabと出現位置")]
+    [SerializeField] private MovementEffectSetting walkEffect = new MovementEffectSetting();
+    [SerializeField] private MovementEffectSetting jumpEffect = new MovementEffectSetting();
+    [SerializeField] private MovementEffectSetting doubleJumpEffect = new MovementEffectSetting();
+    [SerializeField] private MovementEffectSetting landingEffect = new MovementEffectSetting();
+    [Header("移動エフェクト：歩行と着地の判定")]
+    [Tooltip("歩行中に再生されるAnimationClipを登録してください。ステート名ではなく実際のクリップで確認します。未登録なら歩行エフェクトを出しません。")]
+    [SerializeField] private AnimationClip[] walkEffectClips = new AnimationClip[0];
+    [Tooltip("歩行アニメーションを再生するAnimatorのレイヤー番号です。通常の基本レイヤーは0です。")]
+    [SerializeField, Min(0)] private int walkEffectAnimatorLayer;
+    [Tooltip("歩行エフェクトを生成する間隔です。小さいほど密に出ます。")]
+    [SerializeField, Min(0.02f)] private float walkEffectInterval = 0.15f;
+    [Tooltip("ブレンド中の歩行クリップを再生中とみなす最小の重みです。")]
+    [SerializeField, Range(0.01f, 1f)] private float walkEffectMinimumWeight = 0.1f;
+    [Tooltip("着地エフェクトに必要な空中時間です。斜面の接地判定が短く途切れたときの連発を防ぎます。")]
+    [SerializeField, Min(0f)] private float landingEffectMinimumAirSeconds = 0.08f;
+    private Animator movementEffectAnimator;
+    private readonly List<AnimatorClipInfo> movementEffectClipInfos = new List<AnimatorClipInfo>();
+    private float walkEffectRemaining;
+    private bool effectGroundStateInitialized;
+    private bool effectWasSupported;
+    private float effectAirStartedAt;
+
     [Header("ジャンプの跳び出し・長押し")]
     [Tooltip("既存のジャンプと同じボタンに割り当てたButton型InputActionを指定します。未設定では長押し調整を行いません。")]
     [SerializeField] private InputActionReference jumpHoldAction;
@@ -95,6 +130,22 @@ public class SensorPlayerController : MonoBehaviour
     [SerializeField] private float wallTravelSpeed;
     // 床からの速度引き継ぎと、直接開始時の回転速度連動を区別する。
     private bool useDirectWallSpeed;
+    // 最後に上昇速度を初期化した壁食い込みの開始番号。
+    private uint handledWallEntryVersion;
+
+    private const float WALL_SPEED_EPSILON = 0.001f;
+    private const float WALL_STALL_SECONDS = 0.3f;
+    private const float WALL_PROGRESS_RATIO = 0.1f;
+
+    [Header("壁登り停止の原因調査")]
+    [Tooltip("壁登り中に上昇が止まった場合、指示速度・実際の移動速度・位置の固定設定をConsoleに一度出します。原因確認後はオフにしてください。")]
+    [SerializeField] private bool logWallStallDiagnostics = true;
+    private bool wallMotionSamplePending;
+    private uint wallMotionSampleVersion;
+    private Vector3 wallMotionSamplePosition;
+    private Vector3 wallMotionRequestedVelocity;
+    private float wallStallElapsed;
+    private bool wallStallReported;
 
     private float knockbackVelocity;
 
@@ -230,6 +281,7 @@ public class SensorPlayerController : MonoBehaviour
     {
         input = GetComponent<PlayerInputHandler>();
         playerAnimator = GetComponent<PlayerAnimator>();
+        movementEffectAnimator = GetComponent<Animator>();
         playerRigidbody = GetComponent<Rigidbody>();
 
         // Rayの発射位置は専用Transformのみで決める。物理Colliderは参照しない。
@@ -388,6 +440,13 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        // 前回の本体衝突による接触攻撃は、敵とプレイヤー双方の衝突通知後に確定する。
+        // 被弾硬直による早期returnより先に実行する。
+        if (chainsawDigging != null) chainsawDigging.FlushMovementCollisionHits();
+
+        // 前回指示した上昇速度と、物理更新後の実移動を比較する。
+        CheckWallClimbProgress(deltaTime);
+
         // 被弾硬直中は入力による移動を止め、落下と硬直時間だけを進める。
         if (TickDamageStun(deltaTime))
         {
@@ -396,6 +455,7 @@ public class SensorPlayerController : MonoBehaviour
 
         // 実接触と補助判定で着地を確認し、空中ジャンプ回数を回復する。
         RefreshGroundRayState();
+        TickWalkEffect(deltaTime);
 
         if (chainsawAccelerator.isActiveAndEnabled)
         {
@@ -456,13 +516,20 @@ public class SensorPlayerController : MonoBehaviour
             knockbackHopPending = true;
         }
 
+        // Update内で既に壁食い込みが成立していても、開始番号で取りこぼさず初期化する。
         bool enteredWall =
-            previousSurface != ChainsawSurface.Wall &&
-            chainsawDigging.Surface == ChainsawSurface.Wall;
+            chainsawDigging.Surface == ChainsawSurface.Wall &&
+            (previousSurface != ChainsawSurface.Wall ||
+             handledWallEntryVersion != chainsawDigging.WallEntryVersion);
 
         if (enteredWall)
         {
-            useDirectWallSpeed = previousSurface != ChainsawSurface.Floor;
+            handledWallEntryVersion = chainsawDigging.WallEntryVersion;
+            // 床からの速度が0なら、通常の壁登り速度を使う。
+            // 正の床移動速度を引き継ぐ従来の挙動は維持する。
+            useDirectWallSpeed =
+                previousSurface != ChainsawSurface.Floor ||
+                previousMoveSpeed <= WALL_SPEED_EPSILON;
             wallTravelSpeed =
                 useDirectWallSpeed
                     ? CalculateDirectWallSpeed()
@@ -699,16 +766,88 @@ public class SensorPlayerController : MonoBehaviour
                 $"回数={jumpsUsed} 設定初速={pendingJumpPower:F3} 最終速度={velocity}", this);
         }
         playerRigidbody.linearVelocity = velocity;
+        RecordWallClimbMotion(velocity);
 
         playerAnimator.SetSpeed(
             knockbackVelocity != 0f ? 0f : currentSpeed
         );
+
+        // 最終移動量で敵への接触攻撃を照会する。貫通中もTrigger通知に依存しない。
+        // 命中先から被弾などが再入しても、ここより後で速度を上書きしない。
+        chainsawDigging.HitMovementEnemies(velocity * deltaTime);
     }
 
-    // 被弾時に攻撃・食い込み・移動予約を終了し、指定時間の操作硬直を開始する。
+    // 次の物理更新で比較するため、壁登りの開始番号・位置・最終指示速度を保存する。
+    private void RecordWallClimbMotion(Vector3 velocity)
+    {
+        wallMotionSamplePending =
+            logWallStallDiagnostics && chainsawDigging.Surface == ChainsawSurface.Wall;
+        if (!wallMotionSamplePending) return;
+
+        wallMotionSampleVersion = chainsawDigging.WallEntryVersion;
+        wallMotionSamplePosition = playerRigidbody.position;
+        wallMotionRequestedVelocity = velocity;
+    }
+
+    // 上昇停止が続いた場合だけ診断を出す。速度や位置、衝突判定は変更しない。
+    private void CheckWallClimbProgress(float deltaTime)
+    {
+        bool canCompare =
+            logWallStallDiagnostics && wallMotionSamplePending && deltaTime > 0f &&
+            chainsawDigging != null && chainsawDigging.Surface == ChainsawSurface.Wall &&
+            wallMotionSampleVersion == chainsawDigging.WallEntryVersion &&
+            !IsDamageStunned && !IsImpactStunned && wallJumpStunRemaining <= 0f;
+        wallMotionSamplePending = false;
+        if (!canCompare)
+        {
+            wallStallElapsed = 0f;
+            wallStallReported = false;
+            return;
+        }
+
+        float measuredSpeed =
+            (playerRigidbody.position.y - wallMotionSamplePosition.y) / deltaTime;
+        float requestedSpeed = wallMotionRequestedVelocity.y;
+        bool hasUpwardCommand = requestedSpeed > WALL_SPEED_EPSILON;
+        bool hasProgress = hasUpwardCommand &&
+            measuredSpeed >= requestedSpeed * WALL_PROGRESS_RATIO;
+        if (hasProgress)
+        {
+            wallStallElapsed = 0f;
+            wallStallReported = false;
+            return;
+        }
+
+        wallStallElapsed += deltaTime;
+        if (wallStallReported || wallStallElapsed < WALL_STALL_SECONDS) return;
+        wallStallReported = true;
+
+        string reason = hasUpwardCommand
+            ? "上昇指示あり・実移動不足（衝突、摩擦、固定設定、別処理の上書きを確認）"
+            : "上昇指示なし（速度設定、引き継ぎ、面の法線を確認）";
+        Debug.LogWarning(
+            $"[壁登り停止] {reason}\n" +
+            $"壁速度={wallTravelSpeed:F4} 通常速度方式={useDirectWallSpeed} " +
+            $"指示速度={wallMotionRequestedVelocity.ToString("F4")} " +
+            $"実測上下速度={measuredSpeed:F4} " +
+            $"物理速度={playerRigidbody.linearVelocity.ToString("F4")} " +
+            $"法線={chainsawDigging.SurfaceNormal.ToString("F4")} " +
+            $"固定={playerRigidbody.constraints}", this);
+    }
+
+    // 通常時は被弾硬直を開始する。成立済みの食い込み中は姿勢・移動・接続を維持する。
     public void BeginDamageStun(float duration)
     {
         if (!isActiveAndEnabled || playerRigidbody == null || playerAnimator == null)
+        {
+            return;
+        }
+
+        // HP減少・被弾後の無敵・点滅は受信側で処理するため、ここでは取り消さない。
+        // 床・壁・天井・敵への食い込み中は、やられ遷移と速度リセット、食い込み解除を行わない。
+        // 未接触の空中待機はIsDiggingがfalseなので、従来どおり被弾硬直に入る。
+        if (chainsawDigging != null &&
+            chainsawDigging.isActiveAndEnabled && chainsawDigging.IsDigging)
         {
             return;
         }
@@ -927,6 +1066,7 @@ public class SensorPlayerController : MonoBehaviour
             playerRigidbody.linearVelocity = Vector3.zero;
             // 壁ジャンプ専用アニメーションを再生する。硬直と跳躍処理は変更しない。
             playerAnimator.PlayWallJump();
+            SpawnMovementEffect(jumpEffect);
             return;
         }
 
@@ -979,6 +1119,7 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         jumpPending = true;
+        SpawnMovementEffect(pendingJumpCount >= MAX_JUMP_COUNT ? doubleJumpEffect : jumpEffect);
         LogJumpDiagnostics("予約確定", isGrounded, canUseCoyoteTime);
 
         // 予約時点で猶予を消費し、初段を連続使用できないようにする。
@@ -1034,6 +1175,7 @@ public class SensorPlayerController : MonoBehaviour
 
         // 下り追従や前方の先読みだけでは回数を戻さず、本体の支持確認を必要とする。
         if (HasJumpGroundSupport()) jumpsUsed = 0;
+        ObserveLandingEffect();
     }
 
     // 移動補助用の接地と区別し、ジャンプ回数を回復できる支持面かを返す。
@@ -1287,6 +1429,8 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        // 被弾側の通知が先に食い込みを解除していても、移動を指示した時点の接触攻撃を記録する。
+        if (chainsawDigging != null) chainsawDigging.QueueMovementEnemyCollision(collision);
         // 移動を止める処理より先に、実際に触れた地形の面を記録する。
         if (groundProbe != null) groundProbe.RecordContact(collision);
         if (IsDamageStunned) return;
@@ -1306,6 +1450,8 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        // 被弾側の通知が先に食い込みを解除していても、移動を指示した時点の接触攻撃を記録する。
+        if (chainsawDigging != null) chainsawDigging.QueueMovementEnemyCollision(collision);
         // 移動を止める処理より先に、実際に触れた地形の面を記録する。
         if (groundProbe != null) groundProbe.RecordContact(collision);
         if (IsDamageStunned) return;
@@ -2174,6 +2320,8 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
+        walkEffectRemaining = 0f;
+        effectGroundStateInitialized = false;
         variableJumpActive = false;
         jumpReleased = false;
         jumpHoldElapsed = 0f;
@@ -2241,5 +2389,103 @@ public class SensorPlayerController : MonoBehaviour
         {
             input.ResetInput();
         }
+    }
+
+    // 設定した空オブジェクトからワールド空間へ生成し、再生と寿命を設定する。
+    private void SpawnMovementEffect(MovementEffectSetting setting)
+    {
+        if (setting == null || setting.Prefab == null || setting.SpawnPoint == null)
+            return;
+
+        GameObject instance = Instantiate(setting.Prefab, setting.SpawnPoint.position,
+            setting.SpawnPoint.rotation * setting.Prefab.transform.rotation);
+        instance.SetActive(true);
+        // Play On AwakeがオフのParticleSystemにも対応する。子の非表示設定は維持する。
+        foreach (ParticleSystem particles in instance.GetComponentsInChildren<ParticleSystem>())
+        {
+            if (!particles.isPlaying) particles.Play(false);
+        }
+        Destroy(instance, Mathf.Max(0.01f, setting.Lifetime));
+    }
+
+    // 登録した歩行クリップが再生され、地面上を移動している間だけ一定間隔で生成する。
+    private void TickWalkEffect(float deltaTime)
+    {
+        bool canEmit = !IsAttacking && !IsDamageStunned && !IsImpactStunned &&
+            wallJumpStunRemaining <= 0f && !wallJumpLaunchPending && !jumpPending &&
+            chainsawDigging != null && !chainsawDigging.IsDigging &&
+            HasJumpGroundSupport() && Time.time >= ignoreGroundUntil &&
+            Mathf.Abs(playerRigidbody.linearVelocity.x) > 0.01f && IsWalkEffectAnimationPlaying();
+        if (!canEmit)
+        {
+            walkEffectRemaining = 0f;
+            return;
+        }
+
+        walkEffectRemaining -= deltaTime;
+        if (walkEffectRemaining > 0f) return;
+        SpawnMovementEffect(walkEffect);
+        walkEffectRemaining = Mathf.Max(0.02f, walkEffectInterval);
+    }
+
+    // 現在と遷移先のクリップを確認し、名前を推測せず登録済み歩行モーションを判別する。
+    private bool IsWalkEffectAnimationPlaying()
+    {
+        if (movementEffectAnimator == null || !movementEffectAnimator.isActiveAndEnabled ||
+            movementEffectAnimator.runtimeAnimatorController == null || movementEffectAnimator.speed <= 0f ||
+            walkEffectAnimatorLayer < 0 || walkEffectAnimatorLayer >= movementEffectAnimator.layerCount ||
+            walkEffectClips == null || walkEffectClips.Length == 0)
+            return false;
+
+        if (walkEffectAnimatorLayer > 0 &&
+            movementEffectAnimator.GetLayerWeight(walkEffectAnimatorLayer) < walkEffectMinimumWeight)
+            return false;
+
+        AnimatorStateInfo current = movementEffectAnimator.GetCurrentAnimatorStateInfo(walkEffectAnimatorLayer);
+        movementEffectAnimator.GetCurrentAnimatorClipInfo(walkEffectAnimatorLayer, movementEffectClipInfos);
+        if (Mathf.Abs(current.speed * current.speedMultiplier) > 0.001f && ContainsWalkEffectClip())
+            return true;
+
+        if (!movementEffectAnimator.IsInTransition(walkEffectAnimatorLayer)) return false;
+        AnimatorStateInfo next = movementEffectAnimator.GetNextAnimatorStateInfo(walkEffectAnimatorLayer);
+        movementEffectAnimator.GetNextAnimatorClipInfo(walkEffectAnimatorLayer, movementEffectClipInfos);
+        return Mathf.Abs(next.speed * next.speedMultiplier) > 0.001f && ContainsWalkEffectClip();
+    }
+
+    // ブレンドの重みが十分あるクリップが、歩行用として登録されているか確認する。
+    private bool ContainsWalkEffectClip()
+    {
+        foreach (AnimatorClipInfo info in movementEffectClipInfos)
+        {
+            if (info.clip == null || info.weight < walkEffectMinimumWeight) continue;
+            foreach (AnimationClip clip in walkEffectClips)
+                if (clip != null && clip == info.clip) return true;
+        }
+        return false;
+    }
+
+    // 実際のジャンプ用支持が空中から接地へ戻った瞬間だけ着地エフェクトを出す。
+    // 複数回の接地照会でも経過時間を重複加算せず、初期配置や復活では出さない。
+    private void ObserveLandingEffect()
+    {
+        bool supported = HasJumpGroundSupport();
+        if (!effectGroundStateInitialized)
+        {
+            effectGroundStateInitialized = true;
+            effectWasSupported = supported;
+            effectAirStartedAt = Time.time;
+            return;
+        }
+
+        if (!supported && effectWasSupported)
+            effectAirStartedAt = Time.time;
+
+        if (supported && !effectWasSupported &&
+            Time.time - effectAirStartedAt >= landingEffectMinimumAirSeconds &&
+            !jumpPending && !wallJumpLaunchPending && wallJumpStunRemaining <= 0f &&
+            chainsawDigging != null && !chainsawDigging.IsDigging)
+            SpawnMovementEffect(landingEffect);
+
+        effectWasSupported = supported;
     }
 }

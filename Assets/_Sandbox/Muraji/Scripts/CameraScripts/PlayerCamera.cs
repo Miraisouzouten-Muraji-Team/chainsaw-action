@@ -1,6 +1,6 @@
-using TMPro;
 using UnityEngine;
 
+[DefaultExecutionOrder(100)]
 public class PlayerCamera : MonoBehaviour
 {
     private const float MIN_FOLLOW_PERCENT = 0.01f;
@@ -131,8 +131,8 @@ public class PlayerCamera : MonoBehaviour
         transform.position = initialPosition;
     }
 
-    // 状態別設定をSOから読み取り、左右の視野とカメラ位置を物理更新する。
-    private void FixedUpdate()
+    // 描画前にプレイヤーの表示位置へ追従する。パララックスカメラはこの後に更新する。
+    private void LateUpdate()
     {
         if (cameraData == null ||
             playerController == null ||
@@ -151,7 +151,7 @@ public class PlayerCamera : MonoBehaviour
         float directionInterpolation =
             CalculateInterpolation(
                 cameraData.directionChangePercent,
-                Time.fixedDeltaTime);
+                Time.deltaTime);
 
         smoothedFacingDirection = Mathf.Lerp(
             smoothedFacingDirection,
@@ -165,7 +165,7 @@ public class PlayerCamera : MonoBehaviour
         float positionInterpolation =
             CalculateInterpolation(
                 followPercent,
-                Time.fixedDeltaTime);
+                Time.deltaTime);
 
         transform.position = Vector3.Lerp(
             transform.position,

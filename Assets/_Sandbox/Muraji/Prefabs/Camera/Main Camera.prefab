@@ -15,6 +15,7 @@ GameObject:
   - component: {fileID: 8887377629267839132}
   - component: {fileID: 5245455651298504968}
   - component: {fileID: -1970471577715036284}
+  - component: {fileID: 3381278303653516269}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -205,3 +206,25 @@ MonoBehaviour:
   _captureRendererIndex: 1
   _pixelRendererIndex: 2
   _pixelRenderingEnabled: 0
+--- !u!114 &3381278303653516269
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5595252880141617915}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 232b45769b20d5c47a5a915bf587b3b6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ParallaxLayerRig
+  targetCamera: {fileID: 3915223971674057238}
+  far:
+    root: {fileID: 0}
+    scrollMultiplier: {x: 0.08, y: 0.08}
+  middle:
+    root: {fileID: 0}
+    scrollMultiplier: {x: 0.4, y: 0.4}
+  foreground:
+    root: {fileID: 0}
+    scrollMultiplier: {x: 1.15, y: 1.15}

@@ -56,8 +56,36 @@ ModelImporter:
       bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
       curves: []
       events:
-      - time: 0.48466262
-        functionName: HoldDiggingAnimation
+      - time: 0
+        functionName: OnAirDiggingFrame
+        data: 
+        objectReferenceParameter: {instanceID: 0}
+        floatParameter: 0
+        intParameter: 0
+        messageOptions: 0
+      - time: 0.13935685
+        functionName: OnCeilingDiggingFrame
+        data: 
+        objectReferenceParameter: {instanceID: 0}
+        floatParameter: 0
+        intParameter: 0
+        messageOptions: 0
+      - time: 0.19142419
+        functionName: OnWallDiggingFrame
+        data: 
+        objectReferenceParameter: {instanceID: 0}
+        floatParameter: 0
+        intParameter: 0
+        messageOptions: 0
+      - time: 0.25267994
+        functionName: OnFloorDiggingFrame
+        data: 
+        objectReferenceParameter: {instanceID: 0}
+        floatParameter: 0
+        intParameter: 0
+        messageOptions: 0
+      - time: 0.25574273
+        functionName: OnEnemyDiggingFrame
         data: 
         objectReferenceParameter: {instanceID: 0}
         floatParameter: 0

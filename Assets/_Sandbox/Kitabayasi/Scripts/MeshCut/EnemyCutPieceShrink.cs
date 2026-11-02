@@ -11,6 +11,7 @@ using UnityEngine;
 /// </remarks>
 public sealed class EnemyCutPieceShrink : MonoBehaviour
 {
+
     private readonly List<Transform> pieceTransforms =
         new List<Transform>();
 

@@ -123,19 +123,13 @@ Shader "Custom/PixelOpaqueMetadataComposite"
                 if (selectedLayer < 0) return output;
 
                 // 選択した描画層のWorld Normalを取得する。
-                // float3 normalWS = SampleSelectedNormal(uv, selectedLayer);
-                // output.Normal = float4(normalWS, 1.0);
+                float3 normalWS = SampleSelectedNormal(uv, selectedLayer);
 
-                // return output;
-                
-// 選択した描画層のWorld Normalを取得する。
-float3 normalWS = SampleSelectedNormal(uv, selectedLayer);
+                // RGBにはWorld Normal、Aには描画層IDを格納する。
+                // 0：描画対象なし、1：Near、2：Middle、3：Far。
+                output.Normal = float4(normalWS, (float)(selectedLayer + 1));
 
-// RGBにはWorld Normal、Aには描画層IDを格納する。
-// 0：描画対象なし、1：Near、2：Middle、3：Far。
-output.Normal = float4(normalWS, (float)(selectedLayer + 1));
-
-return output;
+                return output;
 
             }
 

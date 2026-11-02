@@ -1272,6 +1272,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 776dc5136991bf548905828379b952e4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerDamageScreenEffect
+  playerHealth: {fileID: 4747396505095716884}
   screenData: {fileID: 11400000, guid: 40da88de0547b0c459193a624d717edf, type: 2}
   volumePriority: 100
 --- !u!1 &7736900866004463327

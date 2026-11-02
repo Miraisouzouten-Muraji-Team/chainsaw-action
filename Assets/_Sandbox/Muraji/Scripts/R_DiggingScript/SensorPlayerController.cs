@@ -626,8 +626,22 @@ public class SensorPlayerController : MonoBehaviour
                         break;
                     }
 
-                case ChainsawSurface.Floor:
                 case ChainsawSurface.Ceiling:
+                    {
+                        // 天井は本体幅の支持判定と距離補正を使い、斜面や凸の継ぎ目で落下しないよう追従する。
+                        if (!chainsawDigging.TryGetCeilingFollowVelocity(currentSpeed,
+                            playerParameter.surfaceStickSpeed, deltaTime, out velocity))
+                        {
+                            // 実際に天井が終わった場合は、空中に固定せず通常の落下へ戻す。
+                            chainsawDigging.Cancel(false);
+                            suppressGravity = false;
+                            velocity = playerRigidbody.linearVelocity;
+                            velocity.x = currentSpeed;
+                        }
+                        break;
+                    }
+
+                case ChainsawSurface.Floor:
                     {
                         Vector3 normal = chainsawDigging.SurfaceNormal;
                         Vector3 tangent = new Vector3(normal.y, -normal.x, 0f).normalized;
@@ -1730,6 +1744,12 @@ public class SensorPlayerController : MonoBehaviour
 
     private bool ApplyWallMovementBlock(ref Vector3 velocity)
     {
+        // 本体幅の照会で天井の支持を確定した場合、角接触で残った壁停止を重ねない。
+        // 凸の先端では法線が真下になる場合もあるため、法線Xの大きさで判定しない。
+        // Rigidbodyの実衝突は維持するため、実際の垂直壁をすり抜けることはない。
+        if (chainsawDigging.HasCeilingBodySupport)
+            return false;
+
         // 硬直・壁登り・敵への食い込みは既存の専用処理を優先する。
         if (playerMidCollider == null ||
             IsImpactStunned ||

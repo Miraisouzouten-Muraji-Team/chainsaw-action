@@ -24,6 +24,10 @@ public class HealthBarController : MonoBehaviour
     [Tooltip("HPの現在値や最大値を管理するPlayerHealthコンポーネントを指定してください。")]
     [SerializeField] private PlayerHealth playerHealth;
 
+    // ゲージの初期スケール
+    private Vector3 currentHPBarInitialScale;
+    private Vector3 damageBarInitialScale;
+
     // 現在HPの割合
     private float currentRatio = 1f;
 
@@ -38,12 +42,26 @@ public class HealthBarController : MonoBehaviour
     private float damageDelayElapsed = 0f;
     private bool isDamageDelayWaiting = false;
 
+    private void Awake()
+    {
+        // 初期スケールを保存
+        if (currentHPBar != null)
+        {
+            currentHPBarInitialScale = currentHPBar.rectTransform.localScale;
+        }
+
+        if (damageBar != null)
+        {
+            damageBarInitialScale = damageBar.rectTransform.localScale;
+        }
+    }
+
     private void Start()
     {
-        if (playerHealth == null)
+        if (playerHealth == null || currentHPBar == null || damageBar == null)
         {
             Debug.LogError(
-                "PlayerHealthが設定されていません。",
+                "PlayerHealth、CurrentHPBar、DamageBarを設定してください。",
                 this);
             enabled = false;
             return;
@@ -168,15 +186,20 @@ public class HealthBarController : MonoBehaviour
 
     private void UpdateBars()
     {
-        // HP本体とダメージゲージの表示割合を反映
         if (currentHPBar != null)
         {
-            currentHPBar.fillAmount = currentRatio;
+            DiagonalClipImage image = currentHPBar.GetComponent<DiagonalClipImage>();
+
+            if (image != null)
+                image.SetVisibleRatio(currentRatio);
         }
 
         if (damageBar != null)
         {
-            damageBar.fillAmount = damageEndRatio;
+            DiagonalClipImage image = damageBar.GetComponent<DiagonalClipImage>();
+
+            if (image != null)
+                image.SetVisibleRatio(damageEndRatio);
         }
     }
 }

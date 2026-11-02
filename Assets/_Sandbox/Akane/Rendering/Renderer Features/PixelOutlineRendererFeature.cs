@@ -19,6 +19,17 @@ namespace Project.Rendering.Pixel
         private static readonly int COMPOSITE_DEPTH_ID = Shader.PropertyToID("_PixelCompositeDepthTex");
         private static readonly int COMPOSITE_NORMAL_ID = Shader.PropertyToID("_PixelCompositeNormalTex");
 
+
+        // 各Captureの解像度をShaderへ渡すためのProperty ID。
+        private static readonly int NEAR_RESOLUTION_ID =
+            Shader.PropertyToID("_PixelOutlineNearResolution");
+
+        private static readonly int MIDDLE_RESOLUTION_ID =
+            Shader.PropertyToID("_PixelOutlineMiddleResolution");
+
+        private static readonly int FAR_RESOLUTION_ID =
+            Shader.PropertyToID("_PixelOutlineFarResolution");
+
         [Header("Outline Material")]
         [SerializeField] private Material _outlineMaterial;
 
@@ -64,13 +75,20 @@ namespace Project.Rendering.Pixel
             /// <summary>
             /// Render Graphの描画時に使用するデータ。
             /// </summary>
+
             private sealed class PassData
             {
                 public Material Material;
                 public TextureHandle Color;
                 public TextureHandle Depth;
                 public TextureHandle Normal;
+
+                // Near / Middle / Farの元解像度。
+                public Vector2Int NearResolution;
+                public Vector2Int MiddleResolution;
+                public Vector2Int FarResolution;
             }
+
 
             public OutlinePass(Material material)
             {
@@ -112,6 +130,11 @@ namespace Project.Rendering.Pixel
                     passData.Depth = opaqueData.Depth;
                     passData.Normal = opaqueData.Normal;
 
+                    // Opaque合成で記録した元解像度をOutline Passへ渡す。
+                    passData.NearResolution = opaqueData.NearResolution;
+                    passData.MiddleResolution = opaqueData.MiddleResolution;
+                    passData.FarResolution = opaqueData.FarResolution;
+
                     // Color・Depth・Normalの読み取り依存関係を明示する。
                     builder.UseTexture(passData.Color, AccessFlags.Read);
                     builder.UseTexture(passData.Depth, AccessFlags.Read);
@@ -128,6 +151,29 @@ namespace Project.Rendering.Pixel
                         data.Material.SetTexture(COMPOSITE_NORMAL_ID, data.Normal);
                         data.Material.SetVector(BLIT_SCALE_BIAS_ID, new Vector4(1f, 1f, 0f, 0f));
                         data.Material.SetFloat(BLIT_MIP_LEVEL_ID, 0f);
+
+
+                        // 各描画層のCapture解像度を設定する。
+                        data.Material.SetVector(
+                            NEAR_RESOLUTION_ID,
+                            new Vector4(
+                                data.NearResolution.x,
+                                data.NearResolution.y,
+                                0f, 0f));
+
+                        data.Material.SetVector(
+                            MIDDLE_RESOLUTION_ID,
+                            new Vector4(
+                                data.MiddleResolution.x,
+                                data.MiddleResolution.y,
+                                0f, 0f));
+
+                        data.Material.SetVector(
+                            FAR_RESOLUTION_ID,
+                            new Vector4(
+                                data.FarResolution.x,
+                                data.FarResolution.y,
+                                0f, 0f));
 
                         // 既存のOutline Shaderでフルスクリーントライアングルを描画する。
                         context.cmd.DrawProcedural(Matrix4x4.identity, data.Material, 0, MeshTopology.Triangles, 3, 1);

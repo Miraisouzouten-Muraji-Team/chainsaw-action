@@ -15,9 +15,6 @@ EditorBuildSettings:
     path: Assets/_Sandbox/Yonekura/Scenes/TitleScene.unity
     guid: 48dbd7c0696588e45b730ec47aaccd5b
   - enabled: 1
-    path: Assets/_Sandbox/Sigemori/Scenes/Alpha-Stage.unity
-    guid: 71ecbe1ce7549384d9d6666651486ef9
-  - enabled: 1
     path: Assets/_Sandbox/Yonekura/Scenes/StageSelectScene1.unity
     guid: a6053b63e74b99b48bed0e5f030bd185
   - enabled: 1

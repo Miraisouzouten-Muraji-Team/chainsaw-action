@@ -170,6 +170,15 @@ public sealed class ChargeEnemySearchStrategy :
                 ? Mathf.Sign(deltaToPatrolStart)
                 : GetPatrolEndDirectionSign();
 
+        Debug.Log(
+            $"[ChargeEnemyReturnDebug] Search開始。 " +
+            $"patrolStartX={patrolStartPosition.x:F3}, " +
+            $"currentX={enemyRigidbody.position.x:F3}, " +
+            $"deltaX={deltaToPatrolStart:F3}, " +
+            $"isReturning={isReturningToPatrolStart}, " +
+            $"returnDirection={currentMoveDirectionSign:F0}",
+            enemyObject);
+
         AlignVisualWithCurrentMoveDirection();
 
         turnElapsedTime = 0f;
@@ -329,9 +338,11 @@ public sealed class ChargeEnemySearchStrategy :
                 AbortReturnToPatrolStart();
 
                 Debug.LogWarning(
-                    $"{nameof(ChargeEnemySearchStrategy)}: " +
+                    $"[ChargeEnemyReturnDebug] {nameof(ChargeEnemySearchStrategy)}: " +
                     "初期巡回位置への帰還経路を壁に塞がれたため、" +
-                    "このSearch中の帰還と巡回を中断し、Player索敵を継続します。",
+                    "このSearch中の帰還と巡回を中断します。 " +
+                    $"collider={collision.collider.name}, layer={collision.collider.gameObject.layer}, " +
+                    $"currentX={enemyRigidbody.position.x:F3}, patrolStartX={patrolStartPosition.x:F3}",
                     enemyObject);
             }
 
@@ -365,7 +376,10 @@ public sealed class ChargeEnemySearchStrategy :
     private bool IsWallBlockingCurrentMoveDirection(
         Collision collision)
     {
-        if (Mathf.Abs(currentMoveDirectionSign) <=
+        if (collision == null ||
+            collision.collider == null ||
+            !IsStageCollider(collision.collider) ||
+            Mathf.Abs(currentMoveDirectionSign) <=
             DIRECTION_EPSILON)
         {
             return false;
@@ -380,6 +394,16 @@ public sealed class ChargeEnemySearchStrategy :
             moveDirection,
             WALL_NORMAL_X_THRESHOLD,
             out _);
+    }
+
+    private bool IsStageCollider(
+        Collider targetCollider)
+    {
+        int targetLayerMask =
+            1 << targetCollider.gameObject.layer;
+
+        return (enemyData.StageLayerMask.value &
+                targetLayerMask) != 0;
     }
 
     /// <summary>
@@ -459,9 +483,10 @@ public sealed class ChargeEnemySearchStrategy :
             AbortReturnToPatrolStart();
 
             Debug.LogWarning(
-                $"{nameof(ChargeEnemySearchStrategy)}: " +
-                "PatrolMoveSpeedが0以下のため初期巡回位置へ帰還できません。" +
-                "このSearch中の帰還と巡回を中断し、Player索敵を継続します。",
+                $"[ChargeEnemyReturnDebug] {nameof(ChargeEnemySearchStrategy)}: " +
+                "PatrolMoveSpeedが0以下のため初期巡回位置へ帰還できません。 " +
+                $"PatrolMoveSpeed={moveSpeed:F3}, currentX={enemyRigidbody.position.x:F3}, " +
+                $"patrolStartX={patrolStartPosition.x:F3}",
                 enemyObject);
 
             return;
@@ -490,9 +515,12 @@ public sealed class ChargeEnemySearchStrategy :
             AbortReturnToPatrolStart();
 
             Debug.LogWarning(
-                $"{nameof(ChargeEnemySearchStrategy)}: " +
+                $"[ChargeEnemyReturnDebug] {nameof(ChargeEnemySearchStrategy)}: " +
                 "初期巡回位置への帰還方向に安全な地面がないため、" +
-                "このSearch中の帰還と巡回を中断し、Player索敵を継続します。",
+                "このSearch中の帰還と巡回を中断します。 " +
+                $"reason={groundChecker.LastFailureReason}, " +
+                $"direction={currentMoveDirectionSign:F0}, expectedMove={expectedMovementDistance:F3}, " +
+                $"currentX={enemyRigidbody.position.x:F3}, patrolStartX={patrolStartPosition.x:F3}",
                 enemyObject);
 
             return;
@@ -537,6 +565,11 @@ public sealed class ChargeEnemySearchStrategy :
 
         currentMoveDirectionSign =
             GetPatrolEndDirectionSign();
+
+        Debug.Log(
+            $"[ChargeEnemyReturnDebug] 初期巡回位置への帰還完了。 " +
+            $"currentX={enemyRigidbody.position.x:F3}, patrolStartX={patrolStartPosition.x:F3}",
+            enemyObject);
 
         AlignVisualWithCurrentMoveDirection();
     }

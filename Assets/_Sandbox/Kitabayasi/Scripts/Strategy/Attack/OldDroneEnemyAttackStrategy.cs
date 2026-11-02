@@ -4,9 +4,9 @@ using UnityEngine.Scripting.APIUpdating;
 
 /// <summary>
 /// 旧型ドローンエネミーのAttack State中に、必要ならA*でPlayerへ直接突進できる地点まで移動し、
-/// 初回突進前の待機、ホーミング突進、急ブレーキ、停止、後退を繰り返す攻撃Strategy。
-/// 突進中に障害物へ阻まれた場合や進行不能が続いた場合は、
-/// 現在の突進を失敗として回復シーケンスへ移行する。
+/// 攻撃前の待機を完了してから、1回分のホーミング突進・急ブレーキ・停止・後退を実行する攻撃Strategy。
+/// 突進中に障害物へ阻まれた場合や進行不能が続いた場合も、
+/// 現在の突進を安全に終了する回復シーケンスへ移行し、その1攻撃を完了する。
 /// Search / Attackを通した実移動はDroneEnemyPlanarMotorへ委譲し、
 /// 障害物への新しい侵入防止と、既存の重なりからの復帰を共通化する。
 /// </summary>
@@ -57,14 +57,17 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
     private float retreatElapsedTime;
     private float expectedRetreatDuration;
     private float effectiveRetreatEaseDuration;
+    private bool isPreparationActive;
+    private bool isPreparationComplete;
     private bool isAttackActive;
+    private bool isAttackCycleComplete;
     private bool isHomingActive;
     private bool isRetreatActive;
     private bool hasDamagedPlayerThisPass;
     private bool hasWarnedMissingPlayerReceiver;
     private bool hasWarnedMissingPlayer;
     private bool hasWarnedMissingPlayerTargetCollider;
-    private bool navigationCompletesWithInitialPreparation;
+    private bool navigationCompletesWithPreparationDelay;
 
     public void Initialize(
         EnemyData enemyData,
@@ -143,32 +146,65 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
             out _);
     }
 
-    public void BeginAttack(float initialAttackDirectionSign)
+    public void BeginPreparation(float initialAttackDirectionSign)
     {
         ResetRuntimeState();
 
-        isAttackActive = true;
+        isPreparationActive = true;
         this.initialAttackDirectionSign =
             NormalizeDirectionSign(initialAttackDirectionSign);
 
         if (!TryBeginPlayerApproach(
-                useInitialPreparation: true))
+                usePreparationDelay: true))
         {
             StopPlanarMovement();
-            SetPhase(UpdateWaitingForInitialPlayerLock);
+            SetPhase(UpdateWaitingForPreparationPlayerLock);
         }
+    }
+
+    public bool UpdatePreparation()
+    {
+        if (isPreparationComplete)
+        {
+            return true;
+        }
+
+        if (isPreparationActive)
+        {
+            updateCurrentPhase?.Invoke();
+        }
+
+        return isPreparationComplete;
+    }
+
+    public void BeginAttack()
+    {
+        if (!isPreparationComplete)
+        {
+            return;
+        }
+
+        isPreparationActive = false;
+        isPreparationComplete = false;
+        isAttackActive = true;
+        isAttackCycleComplete = false;
+
+        BeginHomingAttackPass();
     }
 
     public bool UpdateAttack()
     {
+        if (isAttackCycleComplete)
+        {
+            return true;
+        }
+
         if (isAttackActive)
         {
             updateCurrentPhase?.Invoke();
         }
 
-        // 旧型DroneはAttack State内で攻撃ループを継続するため、
-        // StateMachineへ攻撃サイクル完了を要求しない。
-        return false;
+        return isAttackCycleComplete;
     }
 
     public void HandleCollisionEnter(Collision collision)
@@ -191,20 +227,20 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
         ResetRuntimeState();
     }
 
-    private void UpdateWaitingForInitialPlayerLock()
+    private void UpdateWaitingForPreparationPlayerLock()
     {
         StopPlanarMovement();
 
         TryBeginPlayerApproach(
-            useInitialPreparation: true);
+            usePreparationDelay: true);
     }
 
     /// <summary>
-    /// 現在Playerへ直接突進できるなら従来攻撃へ進み、
+    /// 現在Playerへ直接突進できるなら攻撃予備動作を進め、
     /// 壁に阻まれている場合だけA*経路追従を開始する。
     /// </summary>
     private bool TryBeginPlayerApproach(
-        bool useInitialPreparation)
+        bool usePreparationDelay)
     {
         if (!TryGetCurrentPlayerNavigationTarget(
                 out Vector3 playerTarget))
@@ -220,20 +256,20 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
                 return false;
             }
 
-            if (useInitialPreparation)
+            if (usePreparationDelay)
             {
-                BeginInitialPreparation();
+                BeginAttackPreparationDelay();
             }
             else
             {
-                BeginHomingAttackPass();
+                CompleteAttackPreparation();
             }
 
             return true;
         }
 
-        navigationCompletesWithInitialPreparation =
-            useInitialPreparation;
+        navigationCompletesWithPreparationDelay =
+            usePreparationDelay;
 
         BeginNavigationToPlayer(
             playerTarget);
@@ -298,20 +334,20 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
         if (!TryLockCurrentPlayerPosition())
         {
             SetPhase(
-                navigationCompletesWithInitialPreparation
-                    ? UpdateWaitingForInitialPlayerLock
+                navigationCompletesWithPreparationDelay
+                    ? UpdateWaitingForPreparationPlayerLock
                     : UpdateWaitingForPlayerRelock);
 
             return;
         }
 
-        if (navigationCompletesWithInitialPreparation)
+        if (navigationCompletesWithPreparationDelay)
         {
-            BeginInitialPreparation();
+            BeginAttackPreparationDelay();
         }
         else
         {
-            BeginHomingAttackPass();
+            CompleteAttackPreparation();
         }
     }
 
@@ -334,21 +370,21 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
         return true;
     }
 
-    private void BeginInitialPreparation()
+    private void BeginAttackPreparationDelay()
     {
         StopPlanarMovement();
 
         preparationElapsedTime = 0f;
-        SetPhase(UpdateInitialPreparation);
+        SetPhase(UpdateAttackPreparationDelay);
 
-        if (enemyData.InitialPreparationDuration <=
+        if (enemyData.AttackPreparationDuration <=
             DIRECTION_EPSILON)
         {
-            CompleteInitialPreparation();
+            CompleteAttackPreparationDelay();
         }
     }
 
-    private void UpdateInitialPreparation()
+    private void UpdateAttackPreparationDelay()
     {
         StopPlanarMovement();
 
@@ -356,22 +392,36 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
             Time.fixedDeltaTime;
 
         if (preparationElapsedTime >=
-            enemyData.InitialPreparationDuration)
+            enemyData.AttackPreparationDuration)
         {
-            CompleteInitialPreparation();
+            CompleteAttackPreparationDelay();
         }
     }
 
-    private void CompleteInitialPreparation()
+    private void CompleteAttackPreparationDelay()
     {
-        // 初回突進前の待機中にもPlayerは移動できるため、
+        // 攻撃前の待機中にもPlayerは移動できるため、
         // 突進開始直前に現在位置への直接経路をもう一度確認する。
         if (!TryBeginPlayerApproach(
-                useInitialPreparation: false))
+                usePreparationDelay: false))
         {
             SetPhase(
                 UpdateWaitingForPlayerRelock);
         }
+    }
+
+    /// <summary>
+    /// A*移動と待機を含む攻撃予備動作を完了し、
+    /// EnemyAttackStateが攻撃本体を開始できる状態へする。
+    /// </summary>
+    private void CompleteAttackPreparation()
+    {
+        StopPlanarMovement();
+        pathNavigator.Reset();
+
+        updateCurrentPhase = null;
+        isPreparationActive = false;
+        isPreparationComplete = true;
     }
 
     /// <summary>
@@ -855,15 +905,10 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
     private void CompleteRetreatPreparation()
     {
         isRetreatActive = false;
-
         StopPlanarMovement();
 
-        if (!TryBeginPlayerApproach(
-                useInitialPreparation: false))
-        {
-            SetPhase(
-                UpdateWaitingForPlayerRelock);
-        }
+        // 後退は次の攻撃開始処理ではなく、現在の1攻撃を安全に終える回復処理として扱う。
+        CompleteAttackCycle();
     }
 
     private void UpdateWaitingForPlayerRelock()
@@ -871,7 +916,24 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
         StopPlanarMovement();
 
         TryBeginPlayerApproach(
-            useInitialPreparation: false);
+            usePreparationDelay: false);
+    }
+
+    private void CompleteAttackCycle()
+    {
+        if (isAttackCycleComplete)
+        {
+            return;
+        }
+
+        StopPlanarMovement();
+        pathNavigator.Reset();
+
+        updateCurrentPhase = null;
+        isHomingActive = false;
+        isRetreatActive = false;
+        isAttackActive = false;
+        isAttackCycleComplete = true;
     }
 
     private void HandleCollision(
@@ -924,8 +986,8 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
             return;
         }
 
-        // Player以外のColliderが現在の突進方向を塞いだ場合は、
-        // Attack State自体は維持しつつ今回の突進だけを失敗扱いにする。
+        // Player以外のColliderが現在の突進方向を塞いだ場合も、
+        // 現在の1攻撃を安全に終了する回復シーケンスへ移る。
         BeginFailedAttackRecovery();
     }
 
@@ -991,7 +1053,7 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
 
     /// <summary>
     /// 攻撃失敗時も通常の突進終了と同じブレーキ・停止・後退を経由し、
-    /// 後退完了後に現在のPlayer位置を取り直して次の突進を開始する。
+    /// 後退完了後は現在の1攻撃を完了してStateMachineの再索敵へ返す。
     /// </summary>
     private void BeginFailedAttackRecovery()
     {
@@ -1221,6 +1283,10 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
     private void ResetRuntimeState()
     {
         updateCurrentPhase = null;
+        isPreparationActive = false;
+        isPreparationComplete = false;
+        isAttackActive = false;
+        isAttackCycleComplete = false;
         isHomingActive = false;
         isRetreatActive = false;
 
@@ -1233,7 +1299,7 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
         retreatStartPosition = Vector2.zero;
         retreatDirection = Vector2.zero;
         pathNavigator?.Reset();
-        navigationCompletesWithInitialPreparation = false;
+        navigationCompletesWithPreparationDelay = false;
 
         baseAttackAngle = 0f;
         currentAttackAngle = 0f;

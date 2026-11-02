@@ -19,6 +19,8 @@ MonoBehaviour:
   alertContactDamagePercent: 60
   damageFlashDuration: 0.1
   hitTiltDuration: 0.5
+  hitTiltRecoveryDuration: 0.15
+  hitTiltRecoveryGroundDistance: 0.75
   hitTiltAngle: 0
   deathShrinkDelay: 3
   deathShrinkDuration: 3
@@ -36,14 +38,14 @@ MonoBehaviour:
   navigationStallDetectionDuration: 0.5
   navigationObstacleMask:
     serializedVersion: 2
-    m_Bits: 512
+    m_Bits: 128
   attackMoveSpeed: 15
   homingStrength: 50
   maximumTurnSpeed: 180
   attackStallMinimumMoveSpeed: 0.1
   attackStallDetectionDuration: 0.25
   attackContactDamagePercent: 100
-  initialPreparationDuration: 0.75
+  attackPreparationDuration: 0.75
   homingEndThreshold: 0.25
   brakingDeceleration: 60
   brakePauseDuration: 0.15

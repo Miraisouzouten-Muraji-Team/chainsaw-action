@@ -11,7 +11,8 @@ using UnityEngine;
 ///
 /// 巡回時の反転や突進停止など、
 /// 移動不可判定後の行動は各Strategyへ委ねる。
-/// 特定のステージ領域や特定Colliderへの参照は保持しない。
+/// Stage Geometryの対象LayerはChargeEnemyDataから受け取り、
+/// 判定対象をStage系Colliderへ限定する。
 /// </remarks>
 public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
 {
@@ -27,6 +28,12 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
     private readonly EnemyDebugRay[] debugRays;
 
     private int debugRayCount;
+
+    /// <summary>
+    /// 直近の移動可否判定が失敗した理由。成功時は空文字。
+    /// 帰還・突進側の診断ログで使用する。
+    /// </summary>
+    public string LastFailureReason { get; private set; } = string.Empty;
 
     public ChargeEnemyGroundChecker(
         ChargeEnemyData enemyData,
@@ -74,10 +81,13 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         // 1回の移動可否判定で実際に投げるRayだけを残す。
         // Gizmo側で位置や距離を再計算しないため、判定開始時に前回分を破棄する。
         ClearDebugRays();
+        LastFailureReason = string.Empty;
 
         if (Mathf.Abs(moveDirectionSign) <=
             DIRECTION_EPSILON)
         {
+            LastFailureReason =
+                $"移動方向が0に近いため判定できません。 moveDirectionSign={moveDirectionSign:F4}";
             return false;
         }
 
@@ -87,6 +97,8 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         if (bounds.size.sqrMagnitude <=
             DIRECTION_EPSILON)
         {
+            LastFailureReason =
+                $"Enemy ColliderのBoundsが無効です。 bounds.size={bounds.size}";
             return false;
         }
 
@@ -111,9 +123,26 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         if (!TryGetNearestGroundHit(
                 currentGroundRayOrigin,
                 rayDistance,
-                out RaycastHit currentGroundHit) ||
-            !IsSlopeAllowed(currentGroundHit.normal))
+                out RaycastHit currentGroundHit))
         {
+            LastFailureReason =
+                $"現在足元の地面RayがStage LayerにHitしませんでした。 " +
+                $"origin={currentGroundRayOrigin}, distance={rayDistance:F3}, " +
+                $"stageLayerMask={enemyData.StageLayerMask.value}";
+            return false;
+        }
+
+        if (!IsSlopeAllowed(currentGroundHit.normal))
+        {
+            float currentSlopeAngle =
+                Vector3.Angle(
+                    currentGroundHit.normal,
+                    Vector3.up);
+
+            LastFailureReason =
+                $"現在足元の傾斜角が許容値を超えています。 " +
+                $"angle={currentSlopeAngle:F2}, max={enemyData.MaxGroundSlopeAngle:F2}, " +
+                $"collider={currentGroundHit.collider?.name}";
             return false;
         }
 
@@ -174,11 +203,24 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
                 rayDistance,
                 out RaycastHit targetGroundHit))
         {
+            LastFailureReason =
+                $"進行方向の地面RayがStage LayerにHitしませんでした。 " +
+                $"origin={targetRayOrigin}, distance={rayDistance:F3}, " +
+                $"stageLayerMask={enemyData.StageLayerMask.value}";
             return false;
         }
 
         if (!IsSlopeAllowed(targetGroundHit.normal))
         {
+            float targetSlopeAngle =
+                Vector3.Angle(
+                    targetGroundHit.normal,
+                    Vector3.up);
+
+            LastFailureReason =
+                $"進行方向の傾斜角が許容値を超えています。 " +
+                $"angle={targetSlopeAngle:F2}, max={enemyData.MaxGroundSlopeAngle:F2}, " +
+                $"collider={targetGroundHit.collider?.name}";
             return false;
         }
 
@@ -187,8 +229,17 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
                 targetGroundHit.point.y -
                 currentGroundHit.point.y);
 
-        return heightDifference <=
-               enemyData.MaxGroundHeightDifference;
+        if (heightDifference >
+            enemyData.MaxGroundHeightDifference)
+        {
+            LastFailureReason =
+                $"現在足元と進行方向の地面高さ差が許容値を超えています。 " +
+                $"difference={heightDifference:F3}, max={enemyData.MaxGroundHeightDifference:F3}, " +
+                $"currentY={currentGroundHit.point.y:F3}, targetY={targetGroundHit.point.y:F3}";
+            return false;
+        }
+
+        return true;
     }
 
     private bool TryGetNearestGroundHit(
@@ -207,7 +258,7 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
                 Vector3.down,
                 raycastHitBuffer,
                 rayDistance,
-                Physics.DefaultRaycastLayers,
+                enemyData.StageLayerMask,
                 QueryTriggerInteraction.Ignore);
 
         float nearestDistance =

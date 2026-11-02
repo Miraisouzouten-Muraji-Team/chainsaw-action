@@ -220,7 +220,7 @@ MonoBehaviour:
   visualRoot: {fileID: 6351129882097626863}
   deathStrategy:
     rid: 2559746817728970819
-  showPatrolDebugVisualization: 0
+  showPatrolDebugVisualization: 1
   references:
     version: 2
     RefIds:
@@ -249,6 +249,8 @@ MonoBehaviour:
     - rid: 2559746817728970823
       type: {class: ChargeEnemyAttackStrategy, ns: , asm: Assembly-CSharp}
       data:
+        chargeDistance: 5
+        hasChargeDistanceBeenInitialized: 1
         collisionEffectPrefab: {fileID: 0}
 --- !u!114 &4679851848841308727
 MonoBehaviour:

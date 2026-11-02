@@ -450,26 +450,70 @@ public class EnemyStateMachine : MonoBehaviour
     /// </summary>
     private void RequestAttackCycleCompletion()
     {
+        bool isChargeEnemy =
+            attackStrategy is ChargeEnemyAttackStrategy;
+
+        if (isChargeEnemy)
+        {
+            Debug.Log(
+                $"[ChargeEnemyReturnDebug] AttackCycleCompletion要求を受信。 " +
+                $"active={isActiveAndEnabled}, dead={enemyHealth.IsDead}, " +
+                $"currentState={CurrentState?.GetType().Name ?? "null"}",
+                gameObject);
+        }
+
         if (!isActiveAndEnabled ||
             enemyHealth.IsDead ||
             !ReferenceEquals(
                 CurrentState,
                 attackState))
         {
+            if (isChargeEnemy)
+            {
+                Debug.LogWarning(
+                    "[ChargeEnemyReturnDebug] AttackCycleCompletion要求はState条件不一致のため破棄されました。",
+                    gameObject);
+            }
+
             return;
         }
 
-        if (searchStrategy.TryDetectPlayer(
-                out float detectedPlayerDirectionSign))
+        bool hasDetectedPlayer =
+            searchStrategy.TryDetectPlayer(
+                out float detectedPlayerDirectionSign);
+
+        if (isChargeEnemy)
+        {
+            Debug.Log(
+                $"[ChargeEnemyReturnDebug] 攻撃後の再索敵結果。 " +
+                $"detected={hasDetectedPlayer}, direction={detectedPlayerDirectionSign:F0}",
+                gameObject);
+        }
+
+        if (hasDetectedPlayer)
         {
             attackState.SetInitialAttackDirection(
                 detectedPlayerDirectionSign);
+
+            if (isChargeEnemy)
+            {
+                Debug.Log(
+                    "[ChargeEnemyReturnDebug] Playerを再検知したためAttack Stateへ入り直します。",
+                    gameObject);
+            }
 
             // 同じStateへのChangeStateは無視されるため、
             // 1サイクル分のStrategy状態を確実に終了してからAttackへ入り直す。
             ExitCurrentState();
             ChangeState(attackState);
             return;
+        }
+
+        if (isChargeEnemy)
+        {
+            Debug.Log(
+                "[ChargeEnemyReturnDebug] Player未検知のためSearch Stateへ戻します。",
+                gameObject);
         }
 
         ChangeState(searchState);
@@ -594,9 +638,21 @@ public class EnemyStateMachine : MonoBehaviour
             return;
         }
 
+        IEnemyState previousState =
+            CurrentState;
+
         ExitCurrentState();
 
         CurrentState = nextState;
+
+        if (searchStrategy is ChargeEnemySearchStrategy ||
+            attackStrategy is ChargeEnemyAttackStrategy)
+        {
+            Debug.Log(
+                $"[ChargeEnemyReturnDebug] State遷移: " +
+                $"{previousState?.GetType().Name ?? "null"} -> {CurrentState.GetType().Name}",
+                gameObject);
+        }
 
         CurrentState.Enter();
     }

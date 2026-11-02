@@ -7,18 +7,16 @@ using UnityEngine;
 /// </summary>
 /// <remarks>
 /// 責務:
-/// ・攻撃方向を確定し、VisualRootだけをその方向へ向ける。
-/// ・Attack開始時は、確定済みの方向へそのまま突進する。
-/// ・Player接触時に攻撃情報を送信し、次回攻撃方向を確定する。
-/// ・Player命中後のみ、次回突進前の予備動作として逆方向へ指定時間かけて後退する。
-/// ・壁接触時は衝突Effectを生成し、Chargingを維持したまま移動だけを止める。
-/// ・段差、穴、坂など移動不可地形ではChargingを維持したまま停止し、進入しない。
-/// ・進行不能中にPlayerが反対側へ移動した場合、移動可能性を再評価して攻撃方向を更新する。
+/// ・Preparation中は停止し、設定時間経過後に1回分の突進を開始できる状態へする。
+/// ・突進開始地点からChargeDistanceまでを1回の攻撃として扱う。
+/// ・Player命中、Stage壁による進行阻害、崖・段差等の進行不能で現在の攻撃を終了する。
+/// ・Player命中時に攻撃情報を1回だけ送信する。
 ///
 /// 担当しない責務:
 /// ・Stateの保持やState遷移。
+/// ・攻撃完了後に次の攻撃を継続するかの判定。
 /// ・PlayerのHP変更。
-/// ・設定値そのものの保持。
+/// ・共通のEnemy設定値の保持。
 /// </remarks>
 [Serializable]
 public sealed class ChargeEnemyAttackStrategy :
@@ -26,10 +24,23 @@ public sealed class ChargeEnemyAttackStrategy :
     IEnemyDebugRayProvider
 {
     private const float DIRECTION_EPSILON = 0.001f;
+    private const float CHARGE_ARRIVAL_TOLERANCE = 0.2f;
     private const float BLOCKING_NORMAL_THRESHOLD = 0.5f;
 
     [Tooltip(
-        "Playerまたは壁へ衝突した位置に生成するEffect。" +
+        "1回の突進開始地点から進める最大距離。" +
+        "初回はChargeEnemyDataのCharge Distanceを初期値として使用し、" +
+        "以降はこのEnemy個体の設定値として保持する。")]
+    [SerializeField]
+    [Min(0f)]
+    private float chargeDistance;
+
+    [SerializeField]
+    [HideInInspector]
+    private bool hasChargeDistanceBeenInitialized;
+
+    [Tooltip(
+        "PlayerまたはStage壁へ衝突した位置に生成するEffect。" +
         "未設定の場合はEffectを生成しない。")]
     [SerializeField]
     private GameObject collisionEffectPrefab;
@@ -37,31 +48,22 @@ public sealed class ChargeEnemyAttackStrategy :
     private ChargeEnemyData enemyData;
 
     private GameObject enemyObject;
-    private Transform enemyTransform;
     private Transform visualRoot;
     private Rigidbody enemyRigidbody;
     private Collider enemyCollider;
 
     private EnemyPlayerReference playerReference;
-
     private ChargeEnemyGroundChecker groundChecker;
 
-    private AttackPhase currentPhase;
-
     private float preparationElapsedTime;
-    private float preparationStartPositionX;
     private float attackDirectionSign = 1f;
+    private float chargeStartPositionX;
 
+    private bool isPreparationActive;
     private bool isAttackActive;
-    private bool isPreparationMovementBlocked;
-    private bool hasDamagedPlayerThisCycle;
+    private bool isAttackComplete;
+    private bool hasDamagedPlayerThisAttack;
     private bool hasWarnedMissingPlayerReceiver;
-
-    private enum AttackPhase
-    {
-        Preparation,
-        Charging
-    }
 
     public void Initialize(
         EnemyData enemyData,
@@ -73,18 +75,18 @@ public sealed class ChargeEnemyAttackStrategy :
                 $"{nameof(ChargeEnemyAttackStrategy)}には" +
                 $"{nameof(ChargeEnemyData)}が必要です。");
 
+        InitializeChargeDistanceIfNeeded(
+            this.enemyData.ChargeDistance);
+
         this.enemyObject = enemyObject
             ? enemyObject
             : throw new ArgumentNullException(nameof(enemyObject));
-
-        enemyTransform = enemyObject.transform;
 
         this.visualRoot = visualRoot
             ? visualRoot
             : throw new InvalidOperationException(
                 $"{nameof(ChargeEnemyAttackStrategy)}を使用するEnemyには" +
                 "VisualRootの設定が必要です。");
-
 
         enemyRigidbody =
             enemyObject.GetComponent<Rigidbody>();
@@ -119,7 +121,7 @@ public sealed class ChargeEnemyAttackStrategy :
         groundChecker =
             new ChargeEnemyGroundChecker(
                 this.enemyData,
-                enemyTransform,
+                enemyObject.transform,
                 enemyRigidbody,
                 enemyCollider);
 
@@ -127,46 +129,95 @@ public sealed class ChargeEnemyAttackStrategy :
             out _);
     }
 
-    public void BeginAttack(
+    public void BeginPreparation(
         float initialAttackDirectionSign)
     {
+        ResetRuntimeState();
         groundChecker?.ClearDebugRays();
 
-        isAttackActive = true;
-        hasWarnedMissingPlayerReceiver = false;
+        attackDirectionSign =
+            NormalizeDirectionSign(
+                initialAttackDirectionSign);
+
+        isPreparationActive = true;
 
         playerReference.TryGetPlayerTransform(
             out _);
 
-        BeginCharge(
-            NormalizeDirectionSign(
-                initialAttackDirectionSign));
+        FaceAttackDirection();
+        StopHorizontalMovement();
+    }
+
+    public bool UpdatePreparation()
+    {
+        StopHorizontalMovement();
+
+        if (!isPreparationActive)
+        {
+            return true;
+        }
+
+        float preparationDuration =
+            enemyData.AttackPreparationDuration;
+
+        if (preparationDuration <=
+            DIRECTION_EPSILON)
+        {
+            isPreparationActive = false;
+            return true;
+        }
+
+        preparationElapsedTime +=
+            Time.fixedDeltaTime;
+
+        if (preparationElapsedTime <
+                preparationDuration &&
+            !Mathf.Approximately(
+                preparationElapsedTime,
+                preparationDuration))
+        {
+            return false;
+        }
+
+        isPreparationActive = false;
+        return true;
+    }
+
+    public void BeginAttack()
+    {
+        isPreparationActive = false;
+        isAttackActive = true;
+        isAttackComplete = false;
+        hasDamagedPlayerThisAttack = false;
+        hasWarnedMissingPlayerReceiver = false;
+
+        chargeStartPositionX =
+            enemyRigidbody.position.x;
+
+        Debug.Log(
+            $"[ChargeEnemyReturnDebug] 突進開始。 " +
+            $"startX={chargeStartPositionX:F3}, direction={attackDirectionSign:F0}, " +
+            $"chargeDistance={chargeDistance:F3}",
+            enemyObject);
+
+        FaceAttackDirection();
+        enemyRigidbody.WakeUp();
     }
 
     public bool UpdateAttack()
     {
+        if (isAttackComplete)
+        {
+            return true;
+        }
+
         if (!isAttackActive)
         {
             return false;
         }
 
-        switch (currentPhase)
-        {
-            case AttackPhase.Preparation:
-                UpdatePreparation();
-                break;
-
-            case AttackPhase.Charging:
-                UpdateCharge();
-                break;
-
-            default:
-                throw new ArgumentOutOfRangeException();
-        }
-
-        // ChargeEnemyはAttack State内で突進を継続するため、
-        // StateMachineへ攻撃サイクル完了を要求しない。
-        return false;
+        UpdateCharge();
+        return isAttackComplete;
     }
 
     public void HandleCollisionEnter(
@@ -190,21 +241,9 @@ public sealed class ChargeEnemyAttackStrategy :
         bool spawnBlockingCollisionEffect)
     {
         if (!isAttackActive ||
+            isAttackComplete ||
             collision == null ||
             collision.collider == null)
-        {
-            return;
-        }
-
-        if (currentPhase == AttackPhase.Preparation)
-        {
-            HandlePreparationCollision(
-                collision);
-
-            return;
-        }
-
-        if (currentPhase != AttackPhase.Charging)
         {
             return;
         }
@@ -214,11 +253,12 @@ public sealed class ChargeEnemyAttackStrategy :
         {
             HandlePlayerCollision(
                 collision);
-
             return;
         }
 
-        if (!TryGetBlockingContact(
+        if (!IsStageCollider(
+                collision.collider) ||
+            !TryGetBlockingContact(
                 collision,
                 attackDirectionSign,
                 out ContactPoint blockingContact))
@@ -226,10 +266,10 @@ public sealed class ChargeEnemyAttackStrategy :
             return;
         }
 
-        // 壁などPlayer以外に阻まれても予備動作へは移らない。
-        // Playerが反対側へ移動していれば、その側へ突進可能かをここで再評価する。
-        StopHorizontalMovement();
-        TryReevaluateChargeDirection();
+        // Stage Layerへの接触だけでは床接触も含まれるため、
+        // 現在の突進方向を実際に塞ぐContactがある場合だけ攻撃終了とする。
+        CompleteAttack(
+            $"Stage壁で進行阻害: collider={collision.collider.name}, layer={collision.collider.gameObject.layer}");
 
         if (spawnBlockingCollisionEffect)
         {
@@ -242,20 +282,12 @@ public sealed class ChargeEnemyAttackStrategy :
     {
         groundChecker?.ClearDebugRays();
 
-        isAttackActive = false;
-
-        preparationElapsedTime = 0f;
-        preparationStartPositionX = 0f;
-
-        isPreparationMovementBlocked = false;
-        hasDamagedPlayerThisCycle = false;
-        hasWarnedMissingPlayerReceiver = false;
-
         StopHorizontalMovement();
+        ResetRuntimeState();
     }
 
     /// <summary>
-    /// 突進・予備動作で実際に使用した地面判定Rayを提供する。
+    /// 突進で実際に使用した地面判定Rayを提供する。
     /// </summary>
     public void CollectDebugRays(
         List<EnemyDebugRay> debugRays)
@@ -271,234 +303,100 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     /// <summary>
-    /// 指定方向への突進を開始する。
-    /// Player命中後の予備動作を経由した場合も、初回Attack開始時も同じ入口を使用する。
+    /// 個体側の突進距離がまだ初期化されていない場合だけ、
+    /// ChargeEnemyDataの値を初期値としてコピーする。
     /// </summary>
-    private void BeginCharge(
-        float directionSign)
+    /// <remarks>
+    /// 初期化後はScriptableObjectを継続参照せず、
+    /// Enemy個体にシリアライズされた値を攻撃距離として使用する。
+    /// </remarks>
+    private void InitializeChargeDistanceIfNeeded(
+        float defaultChargeDistance)
     {
-        attackDirectionSign =
-            NormalizeDirectionSign(
-                directionSign);
-
-        currentPhase =
-            AttackPhase.Charging;
-
-        isPreparationMovementBlocked = false;
-        hasDamagedPlayerThisCycle = false;
-
-        FaceAttackDirection();
-
-        enemyRigidbody.WakeUp();
-
-        UpdateCharge();
-    }
-
-    /// <summary>
-    /// 確定した次回攻撃方向を保持したまま、
-    /// その逆方向への予備動作を開始する。
-    /// </summary>
-    private void BeginPreparation(
-        float directionSign)
-    {
-        attackDirectionSign =
-            NormalizeDirectionSign(
-                directionSign);
-
-        preparationElapsedTime = 0f;
-
-        preparationStartPositionX =
-            enemyRigidbody.position.x;
-
-        isPreparationMovementBlocked = false;
-
-        currentPhase =
-            AttackPhase.Preparation;
-
-        StopHorizontalMovement();
-
-        enemyRigidbody.WakeUp();
-    }
-
-    private void UpdatePreparation()
-    {
-        float preparationDuration =
-            enemyData.AttackPreparationDuration;
-
-        if (preparationDuration <=
-            DIRECTION_EPSILON)
-        {
-            CompletePreparation();
-            return;
-        }
-
-        preparationElapsedTime +=
-            Time.fixedDeltaTime;
-
-        if (preparationElapsedTime >=
-                preparationDuration ||
-            Mathf.Approximately(
-                preparationElapsedTime,
-                preparationDuration))
-        {
-            CompletePreparation();
-            return;
-        }
-
-        if (isPreparationMovementBlocked)
-        {
-            StopHorizontalMovement();
-            return;
-        }
-
-        UpdatePreparationRetreat(
-            preparationDuration);
-    }
-
-    /// <summary>
-    /// 予備動作時間内に設定距離を後退できる速度を算出し、
-    /// 確定済みの攻撃方向とは逆へ移動する。
-    /// </summary>
-    private void UpdatePreparationRetreat(
-        float preparationDuration)
-    {
-        float retreatDistance =
-            enemyData.AttackPreparationRetreatDistance;
-
-        if (retreatDistance <=
-            DIRECTION_EPSILON)
-        {
-            StopHorizontalMovement();
-            return;
-        }
-
-        float movedDistance =
-            Mathf.Abs(
-                enemyRigidbody.position.x -
-                preparationStartPositionX);
-
-        float remainingDistance =
-            retreatDistance -
-            movedDistance;
-
-        if (remainingDistance <=
-            DIRECTION_EPSILON)
-        {
-            StopHorizontalMovement();
-            return;
-        }
-
-        float retreatDirectionSign =
-            -attackDirectionSign;
-
-        float retreatSpeed =
-            retreatDistance /
-            preparationDuration;
-
-        // FixedUpdate単位で設定距離を大きく超えないよう、
-        // 最後の移動だけ残距離に合わせて速度を抑える。
-        retreatSpeed =
-            Mathf.Min(
-                retreatSpeed,
-                remainingDistance /
-                Time.fixedDeltaTime);
-
-        float expectedMovementDistance =
-            retreatSpeed *
-            Time.fixedDeltaTime;
-
-        if (!groundChecker.CanMoveInDirection(
-                retreatDirectionSign,
-                expectedMovementDistance))
-        {
-            // 平坦面から外れる場合は後退だけを停止する。
-            // 予備動作時間自体は継続し、時間終了後に突進へ移る。
-            isPreparationMovementBlocked = true;
-
-            StopHorizontalMovement();
-            return;
-        }
-
-        SetHorizontalVelocity(
-            retreatDirectionSign *
-            retreatSpeed);
-    }
-
-    private void CompletePreparation()
-    {
-        StopHorizontalMovement();
-
-        BeginCharge(
-            attackDirectionSign);
-    }
-
-    private void HandlePreparationCollision(
-        Collision collision)
-    {
-        if (isPreparationMovementBlocked)
+        if (hasChargeDistanceBeenInitialized)
         {
             return;
         }
 
-        float retreatDirectionSign =
-            -attackDirectionSign;
+        chargeDistance =
+            Mathf.Max(
+                0f,
+                defaultChargeDistance);
 
-        if (!TryGetBlockingContact(
-                collision,
-                retreatDirectionSign,
-                out _))
-        {
-            return;
-        }
-
-        // 後退側に壁などがある場合、そこへ押し続けず
-        // 残りの予備動作時間はその場で待機する。
-        isPreparationMovementBlocked = true;
-
-        StopHorizontalMovement();
+        hasChargeDistanceBeenInitialized = true;
     }
 
     private void UpdateCharge()
     {
-        if (CanContinueCharge())
+        if (enemyData.AttackMoveSpeed <=
+            DIRECTION_EPSILON)
         {
-            ApplyChargeVelocity();
+            CompleteAttack("AttackMoveSpeedが0以下");
             return;
         }
 
-        // 崖・段差・坂などで現在方向へ進めない場合もChargingは終了しない。
-        // Playerが反対側へ移動しており、その方向へ移動可能なら攻撃方向だけを更新する。
-        StopHorizontalMovement();
+        float traveledDistance =
+            Mathf.Max(
+                0f,
+                (enemyRigidbody.position.x -
+                 chargeStartPositionX) *
+                attackDirectionSign);
 
-        if (!TryReevaluateChargeDirection())
+        float remainingDistance =
+            chargeDistance -
+            traveledDistance;
+
+        if (remainingDistance <=
+            CHARGE_ARRIVAL_TOLERANCE)
         {
+            CompleteAttack("ChargeDistance到達");
             return;
         }
 
-        ApplyChargeVelocity();
-    }
+        float maximumStepDistance =
+            enemyData.AttackMoveSpeed *
+            Time.fixedDeltaTime;
 
-    private void ApplyChargeVelocity()
-    {
-        float targetVelocityX =
-            attackDirectionSign *
+        float expectedMovementDistance =
+            Mathf.Min(
+                maximumStepDistance,
+                remainingDistance);
+
+        if (!groundChecker.CanMoveInDirection(
+                attackDirectionSign,
+                expectedMovementDistance))
+        {
+            // 崖・段差・許容外の坂など、既存GroundCheckerが進行不能とした時点で
+            // 同一Attack内の方向再評価は行わず再索敵へ返す。
+            CompleteAttack(
+                $"GroundChecker移動不可: {groundChecker.LastFailureReason}");
+            return;
+        }
+
+        float targetSpeed =
             enemyData.AttackMoveSpeed;
 
+        if (Time.fixedDeltaTime >
+            DIRECTION_EPSILON)
+        {
+            targetSpeed =
+                Mathf.Min(
+                    targetSpeed,
+                    remainingDistance /
+                    Time.fixedDeltaTime);
+        }
+
         SetHorizontalVelocity(
-            targetVelocityX);
+            attackDirectionSign *
+            targetSpeed);
     }
 
     private void HandlePlayerCollision(
         Collision collision)
     {
-        // Player側の被弾処理やノックバックで位置が変化する前に、
-        // 次の突進方向を確定する。
-        float nextAttackDirectionSign =
-            GetCurrentPlayerDirectionSign();
-
-        if (!hasDamagedPlayerThisCycle)
+        if (!hasDamagedPlayerThisAttack)
         {
-            hasDamagedPlayerThisCycle = true;
+            hasDamagedPlayerThisAttack = true;
 
             if (playerReference.TryGetAttackHitReceiver(
                     requireActiveAndEnabled: true,
@@ -529,31 +427,34 @@ public sealed class ChargeEnemyAttackStrategy :
             GetCollisionEffectPosition(
                 collision));
 
-        // ここで確定した方向は予備動作中に更新しない。
-        // その逆方向へ後退したあと、同じ方向へ突進する。
-        BeginPreparation(
-            nextAttackDirectionSign);
+        // Player命中は現在の1回分の突進完了条件。
+        // 次の突進はStateMachineの再索敵と新しいPreparationを必ず経由する。
+        CompleteAttack("Player衝突");
     }
 
-    private float GetCurrentPlayerDirectionSign()
+    private void CompleteAttack(
+        string completionReason)
     {
-        if (!playerReference.TryGetPlayerTransform(
-                out Transform playerTransform))
+        if (isAttackComplete)
         {
-            return attackDirectionSign;
+            return;
         }
 
-        float deltaX =
-            playerTransform.position.x -
-            enemyRigidbody.position.x;
+        StopHorizontalMovement();
 
-        if (Mathf.Abs(deltaX) <=
-            DIRECTION_EPSILON)
-        {
-            return attackDirectionSign;
-        }
+        float traveledDistance =
+            Mathf.Abs(
+                enemyRigidbody.position.x -
+                chargeStartPositionX);
 
-        return Mathf.Sign(deltaX);
+        Debug.Log(
+            $"[ChargeEnemyReturnDebug] 突進完了。 " +
+            $"reason={completionReason}, startX={chargeStartPositionX:F3}, " +
+            $"currentX={enemyRigidbody.position.x:F3}, traveled={traveledDistance:F3}",
+            enemyObject);
+
+        isAttackActive = false;
+        isAttackComplete = true;
     }
 
     private void FaceAttackDirection()
@@ -577,68 +478,6 @@ public sealed class ChargeEnemyAttackStrategy :
                 Vector3.up);
     }
 
-    /// <summary>
-    /// 現在の攻撃方向が移動不能になった場合だけPlayer位置を再評価し、
-    /// 反対側へ突進可能なら攻撃方向を更新する。
-    /// </summary>
-    /// <remarks>
-    /// 通常の突進中はPlayerを追尾するように方向変更しない。
-    /// 壁・崖などで停止した時だけ再評価することで、
-    /// 突進開始時に確定した方向へ走り切る攻撃性質を維持する。
-    /// </remarks>
-    private bool TryReevaluateChargeDirection()
-    {
-        float playerDirectionSign =
-            GetCurrentPlayerDirectionSign();
-
-        if (Mathf.Sign(playerDirectionSign) ==
-            attackDirectionSign)
-        {
-            return false;
-        }
-
-        if (!CanChargeInDirection(
-                playerDirectionSign))
-        {
-            return false;
-        }
-
-        attackDirectionSign =
-            NormalizeDirectionSign(
-                playerDirectionSign);
-
-        FaceAttackDirection();
-        enemyRigidbody.WakeUp();
-
-        return true;
-    }
-
-    /// <summary>
-    /// 次の物理更新分だけ現在の攻撃方向へ突進しても、
-    /// 現在の平坦面上に留まれるか判定する。
-    /// </summary>
-    private bool CanContinueCharge()
-    {
-        return CanChargeInDirection(
-            attackDirectionSign);
-    }
-
-    /// <summary>
-    /// 指定方向へ次の物理更新分だけ突進しても、
-    /// 現在の平坦面上に留まれるか判定する。
-    /// </summary>
-    private bool CanChargeInDirection(
-        float directionSign)
-    {
-        float expectedMovementDistance =
-            enemyData.AttackMoveSpeed *
-            Time.fixedDeltaTime;
-
-        return groundChecker.CanMoveInDirection(
-            directionSign,
-            expectedMovementDistance);
-    }
-
     private bool TryGetBlockingContact(
         Collision collision,
         float moveDirectionSign,
@@ -654,6 +493,16 @@ public sealed class ChargeEnemyAttackStrategy :
             moveDirection,
             BLOCKING_NORMAL_THRESHOLD,
             out blockingContact);
+    }
+
+    private bool IsStageCollider(
+        Collider targetCollider)
+    {
+        int targetLayerMask =
+            1 << targetCollider.gameObject.layer;
+
+        return (enemyData.StageLayerMask.value &
+                targetLayerMask) != 0;
     }
 
     private void SpawnCollisionEffect(
@@ -730,6 +579,18 @@ public sealed class ChargeEnemyAttackStrategy :
                 0f,
                 0f),
             ForceMode.VelocityChange);
+    }
+
+    private void ResetRuntimeState()
+    {
+        isPreparationActive = false;
+        isAttackActive = false;
+        isAttackComplete = false;
+        hasDamagedPlayerThisAttack = false;
+        hasWarnedMissingPlayerReceiver = false;
+
+        preparationElapsedTime = 0f;
+        chargeStartPositionX = 0f;
     }
 
     private static float NormalizeDirectionSign(

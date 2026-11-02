@@ -69,6 +69,21 @@ namespace UnityEngine.Rendering.Universal
         }
 #endif
 
+        /// <summary>
+        /// VisibleLightの番号から、追加ライト用Shadow Mapの参照番号を取得する。
+        /// 影が存在しない場合は-1を返す。
+        /// </summary>
+        public int GetVolumetricShadowLightIndex(int visibleLightIndex)
+        {
+            if (m_AdditionalLightsShadowCasterPass == null)
+            {
+                return -1;
+            }
+
+            return m_AdditionalLightsShadowCasterPass
+                .GetShadowLightIndexFromLightIndex(visibleLightIndex);
+        }
+
         /// <inheritdoc/>
         public override int SupportedCameraStackingTypes()
         {

@@ -207955,7 +207955,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1167590c12a273043a926dcdb5492ac6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelRenderOverride
-  _group: 2
+  _group: 1
 --- !u!1 &1740404540
 GameObject:
   m_ObjectHideFlags: 0

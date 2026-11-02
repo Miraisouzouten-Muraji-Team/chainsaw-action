@@ -116,7 +116,7 @@ Material:
     - _Cutoff: 0.5
     - _DebugView: 0
     - _DepthStrength: 1
-    - _DepthThreshold: 0.08
+    - _DepthThreshold: 0.15
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
@@ -127,8 +127,8 @@ Material:
     - _GlossyReflections: 0
     - _Metallic: 0
     - _NormalDepthThreshold: 0.1
-    - _NormalStrength: 0.5
-    - _NormalThreshold: 0.2
+    - _NormalStrength: 0.2
+    - _NormalThreshold: 0.4
     - _OcclusionStrength: 1
     - _OutlineWidthPixels: 2
     - _Parallax: 0.005

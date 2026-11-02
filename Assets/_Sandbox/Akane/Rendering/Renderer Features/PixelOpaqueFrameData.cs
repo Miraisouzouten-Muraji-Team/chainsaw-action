@@ -1,3 +1,4 @@
+using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
 
@@ -12,8 +13,13 @@ namespace Project.Rendering.Pixel
         // Near / Middle / Farを統合したDepth。
         public TextureHandle Depth = TextureHandle.nullHandle;
 
-        // Near / Middle / Farを統合したWorld Normal。
+        // Near / Middle / Farを統合したWorld Normalと描画層ID。
         public TextureHandle Normal = TextureHandle.nullHandle;
+
+        // 各Capture Cameraの描画解像度。
+        public Vector2Int NearResolution;
+        public Vector2Int MiddleResolution;
+        public Vector2Int FarResolution;
 
         /// <summary>
         /// フレーム終了時に参照を初期化する。
@@ -22,6 +28,10 @@ namespace Project.Rendering.Pixel
         {
             Depth = TextureHandle.nullHandle;
             Normal = TextureHandle.nullHandle;
+
+            NearResolution = Vector2Int.zero;
+            MiddleResolution = Vector2Int.zero;
+            FarResolution = Vector2Int.zero;
         }
     }
 }

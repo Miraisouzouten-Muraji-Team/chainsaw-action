@@ -20380,6 +20380,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 5667644167212863587, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+      propertyPath: _group
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 5775481317145259899, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_RenderingLayerMask
       value: 33554433
@@ -207838,6 +207842,7 @@ GameObject:
   - component: {fileID: 1738209272}
   - component: {fileID: 1738209271}
   - component: {fileID: 1738209270}
+  - component: {fileID: 1738209274}
   m_Layer: 0
   m_Name: Sphere
   m_TagString: Untagged
@@ -207938,6 +207943,19 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1738209274
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1738209269}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1167590c12a273043a926dcdb5492ac6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelRenderOverride
+  _group: 2
 --- !u!1 &1740404540
 GameObject:
   m_ObjectHideFlags: 0

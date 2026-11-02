@@ -88,6 +88,18 @@ public class SensorChainsawDigging : MonoBehaviour
         return detector.TryGetCeilingFollowVelocity(contact, moveSpeed, stickSpeed, deltaTime, out velocity);
     }
 
+    // 床継続中だけ、今回の速度で支持高さを調べ直してControllerへ追従速度を渡す。
+    public bool TryGetFloorFollowVelocity(float moveSpeed, float deltaTime, out Vector3 velocity)
+    {
+        velocity = default;
+        if (!isActiveAndEnabled || !IsRequested || Surface != ChainsawSurface.Floor ||
+            detector == null || !detector.TryGetFloorBodySupport(
+                moveSpeed, deltaTime, contact.Normal, out SensorChainsawContact support))
+            return false;
+        contact = support;
+        return detector.TryGetFloorFollowVelocity(contact, deltaTime, out velocity);
+    }
+
     public float MoveSpeedBonus =>
         !IsDigging || accelerator == null
             ? 0f

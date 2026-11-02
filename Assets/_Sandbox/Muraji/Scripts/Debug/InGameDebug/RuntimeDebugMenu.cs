@@ -19,6 +19,14 @@ public sealed class RuntimeDebugMenu : MonoBehaviour
     [SerializeField] private ChainsawAccelerator accelerator;
     [Tooltip("メニューを閉じている間も、画面上部にアクセルの現在値・最大値・割合を表示します。")]
     [SerializeField] private bool showAccelerator = true;
+
+    [Header("デバッグ表示の一括切り替え")]
+    [Tooltip("インゲーム・グラフィック両方のデバッグ表示をまとめて切り替えるキー。初期設定はF3です。")]
+#if ENABLE_INPUT_SYSTEM
+    [SerializeField] private Key debugVisibilityKey = Key.F3;
+#else
+    [SerializeField] private KeyCode debugVisibilityKey = KeyCode.F3;
+#endif
     private readonly List<GameObject> spawned = new List<GameObject>();
     private readonly HashSet<string> visibleGroups = new HashSet<string>();
     private static RuntimeDebugMenu instance;
@@ -27,13 +35,11 @@ public sealed class RuntimeDebugMenu : MonoBehaviour
     private int frames;
     private Vector2 scroll;
     private string message = "";
-    private CursorLockMode previousLock;
-    private bool previousVisible;
 
     // 指定グループの当たり判定・Ray表示が有効か確認する。
     public static bool IsGroupVisible(string group)
     {
-        return instance != null && instance.isActiveAndEnabled &&
+        return DebugDisplayVisibility.IsVisible && instance != null && instance.isActiveAndEnabled &&
             instance.visibleGroups.Contains(group ?? "");
     }
 
@@ -46,19 +52,22 @@ public sealed class RuntimeDebugMenu : MonoBehaviour
         { enabled = false; return; }
         instance = this;
         showFPS = settings.showFPS;
+        DebugDisplayVisibility.ToggleKey = debugVisibilityKey;
         ResolveAccelerator();
     }
 
     // メニュー入力とFPSを更新し、対象が破棄された場合はFPS更新時にアクセルを再取得する。
     private void Update()
     {
+        DebugDisplayVisibility.ProcessInput();
         bool toggle = false;
 #if ENABLE_INPUT_SYSTEM
         toggle = Keyboard.current != null && Keyboard.current.f1Key.wasPressedThisFrame;
 #elif ENABLE_LEGACY_INPUT_MANAGER
         toggle = Input.GetKeyDown(KeyCode.F1);
 #endif
-        if (toggle) SetOpen(!opened);
+        if (toggle && DebugDisplayVisibility.IsVisible && !DebugDisplayVisibility.ToggledThisFrame)
+            SetOpen(!opened);
         elapsed += Time.unscaledDeltaTime;
         frames++;
         if (elapsed >= Mathf.Max(0.1f, settings.fpsInterval))
@@ -75,12 +84,7 @@ public sealed class RuntimeDebugMenu : MonoBehaviour
     {
         if (opened == value) return;
         opened = value;
-        if (opened)
-        {
-            previousLock = Cursor.lockState; previousVisible = Cursor.visible;
-            Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
-        }
-        else { Cursor.lockState = previousLock; Cursor.visible = previousVisible; }
+        DebugDisplayVisibility.SetMenuOpen(this, opened);
     }
 
     // メニューを閉じてカーソルを戻し、このメニューの共有参照を解除する。
@@ -93,7 +97,7 @@ public sealed class RuntimeDebugMenu : MonoBehaviour
     // FPS・アクセル値と、敵召喚・当たり判定・シーン移動の操作欄を描画する。
     private void OnGUI()
     {
-        if (settings == null) return;
+        if (settings == null || !DebugDisplayVisibility.IsVisible) return;
         if (showFPS) GUI.Box(new Rect(12, 12, 240, 28), $"FPS {fps:F1} / {milliseconds:F2} ms");
         if (showAccelerator)
             GUI.Box(new Rect(showFPS ? 264 : 12, 12, 300, 28), GetAcceleratorStatus());

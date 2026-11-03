@@ -16561,8 +16561,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 71.491844, y: 30.19923, z: 1.7813678}
-  m_Center: {x: 31.672688, y: 17.564154, z: 0.13391662}
+  m_Size: {x: 71.491844, y: 30.19923, z: 1}
+  m_Center: {x: 31.672688, y: 17.564154, z: 0}
 --- !u!1 &340048200
 GameObject:
   m_ObjectHideFlags: 0
@@ -16693,8 +16693,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 72.06185, y: 31.044258, z: 0}
-  m_Center: {x: 115.89763, y: 30.134563, z: 1.0246005}
+  m_Size: {x: 71.19112, y: 31.044258, z: 1}
+  m_Center: {x: 115.23701, y: 30.134563, z: 0}
 --- !u!1 &369947417
 GameObject:
   m_ObjectHideFlags: 0
@@ -22977,12 +22977,12 @@ Transform:
   - {fileID: 207036281}
   - {fileID: 999679371}
   - {fileID: 1283402625}
-  - {fileID: 342630519}
   - {fileID: 1523995034}
   - {fileID: 1159837961}
   - {fileID: 105511944}
   - {fileID: 116569325}
   - {fileID: 291135031}
+  - {fileID: 342630519}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &591367739
@@ -43684,7 +43684,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: cameraAreas.Array.size
-      value: 2
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: 'cameraAreas.Array.data[0]'
@@ -43697,7 +43697,7 @@ PrefabInstance:
     - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: 'cameraAreas.Array.data[2]'
       value: 
-      objectReference: {fileID: 342630520}
+      objectReference: {fileID: 1859444436}
     - target: {fileID: 2840198925962737462, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.z
       value: 0
@@ -106929,7 +106929,6 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 304093200}
   - {fileID: 1964002569}
   - {fileID: 1521349680}
   - {fileID: 873231323}
@@ -106953,6 +106952,7 @@ Transform:
   - {fileID: 340048203}
   - {fileID: 1234238406}
   - {fileID: 1953325248}
+  - {fileID: 304093200}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1682334685

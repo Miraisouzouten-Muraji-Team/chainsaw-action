@@ -875,6 +875,7 @@ GameObject:
   - component: {fileID: 1203193980578457020}
   - component: {fileID: 3327013363795973915}
   - component: {fileID: 3846418490811467109}
+  - component: {fileID: 2355374143254767553}
   m_Layer: 0
   m_Name: Player 1
   m_TagString: Player
@@ -976,6 +977,7 @@ MonoBehaviour:
   groundCheckTransform: {fileID: 4866853695070243676}
   isGroundedByRay: 0
   visualRoot: {fileID: 4814178263090608376}
+  alignFloorDiggingVisual: 1
   debugRotationSpeed: 0
   debugSpeedBonus: 0
   debugTargetSpeed: 0
@@ -1128,11 +1130,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerRespawn
   stageData: {fileID: 11400000, guid: e8bfaa789d57e8547a102d33b7421ced, type: 2}
   playerController: {fileID: 4996046773718306232}
+  playerParameter: {fileID: 0}
+  enemyRespawnManager: {fileID: 0}
   playerCamera: {fileID: 0}
   fadeGroup: {fileID: 0}
   deathState: Base Layer.Slash1
   respawnState: Base Layer.Slash1
   idleState: Base Layer.Idle
+  useInitialFacingOnRespawn: 1
+  deathGroundTolerance: 0.05
+  maximumDeathFallSeconds: 10
   deathEffectPrefab: {fileID: 0}
   respawnEffectPrefab: {fileID: 0}
   effectLifetime: 5
@@ -1210,6 +1217,25 @@ MonoBehaviour:
   rays: []
   segments: 24
   drawingLayer: 0
+--- !u!114 &2355374143254767553
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7542431373430556866}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 917b0ed0b511b7b47ac281b2b85df853, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPlayer
+  hideTutorialBehindPlayer: 1
+  tutorialOccluders: []
+  flipTutorialMaskY: 0
+  inputBehaviours: []
+  clearBufferedInput:
+    m_PersistentCalls:
+      m_Calls: []
 --- !u!1 &7674304533746313249
 GameObject:
   m_ObjectHideFlags: 0
@@ -1272,6 +1298,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 776dc5136991bf548905828379b952e4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerDamageScreenEffect
+  lowHealthPercent: 20
   playerHealth: {fileID: 4747396505095716884}
   screenData: {fileID: 11400000, guid: 40da88de0547b0c459193a624d717edf, type: 2}
   volumePriority: 100
@@ -1858,11 +1885,6 @@ MonoBehaviour:
   playerController: {fileID: 4996046773718306232}
   particlePrefab: {fileID: 7044623282841772800, guid: 837e8e5252d7c7e4baa5ea5980ed9e2a, type: 3}
   emissionPoint: {fileID: 7464963693528972124}
-  groundContactPoint: {fileID: 7464963693528972124}
-  groundContactRadius: 0.03
-  groundContactLayers:
-    serializedVersion: 2
-    m_Bits: 1
   floorAngle: 135
   wallAngle: 225
   ceilingAngle: 225

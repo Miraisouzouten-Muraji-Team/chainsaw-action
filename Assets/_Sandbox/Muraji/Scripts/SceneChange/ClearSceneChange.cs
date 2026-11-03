@@ -46,7 +46,6 @@ public class ClearSceneChange : MonoBehaviour
                 behaviour.enabled = false;
             }
             StartCoroutine(ChangeScene());
-            
         }
     }
 

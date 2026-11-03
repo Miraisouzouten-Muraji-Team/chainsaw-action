@@ -15,7 +15,7 @@ public class LoadScene : MonoBehaviour
     public void LoadSceneNext(string sceneName)
     {
         isPlaying = true;
-        loadScene = sceneName; 
+        loadScene = sceneName;
         //if (ts) { ts.Close(); }
     }
 

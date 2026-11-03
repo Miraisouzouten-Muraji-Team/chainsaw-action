@@ -28,7 +28,7 @@ Material:
   - _ALPHA_TRANSITION_MAP_MODE_2D
   - _BASE_MAP_MODE_2D
   - _EMISSION_AREA_ALL
-  - _EMISSION_COLOR_COLOR
+  - _EMISSION_COLOR_BASECOLOR
   - _EMISSION_MAP_MODE_2D
   - _PARALLAX_MAP_MODE_2D
   - _TINT_AREA_ALL
@@ -260,8 +260,8 @@ Material:
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _EmissionAreaType: 1
-    - _EmissionColorType: 0
-    - _EmissionIntensity: 3
+    - _EmissionColorType: 1
+    - _EmissionIntensity: 5
     - _EmissionIntensityCoord: 0
     - _EmissionMapChannelsX: 0
     - _EmissionMapMode: 0

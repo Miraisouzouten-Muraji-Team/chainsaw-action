@@ -53,6 +53,12 @@ public sealed class MeshPlaneSplitter
     internal const byte TRIANGLE_CLASSIFICATION_NEGATIVE = 2;
     internal const byte TRIANGLE_CLASSIFICATION_INTERSECTING = 3;
 
+    private const byte PLANE_TOUCHING_EDGE_POSITIVE_SIDE_MASK = 1;
+    private const byte PLANE_TOUCHING_EDGE_NEGATIVE_SIDE_MASK = 2;
+    private const byte PLANE_TOUCHING_EDGE_BOTH_SIDES_MASK =
+        PLANE_TOUCHING_EDGE_POSITIVE_SIDE_MASK |
+        PLANE_TOUCHING_EDGE_NEGATIVE_SIDE_MASK;
+
     private const int MAX_BOUNDARY_DIAGNOSTIC_NODE_DETAILS = 20;
     private const int MAX_DEGENERATE_SEGMENT_DIAGNOSTIC_DETAILS = 30;
     private const int MAX_NEARBY_ENDPOINT_DIAGNOSTIC_DETAILS = 20;
@@ -172,6 +178,7 @@ public sealed class MeshPlaneSplitter
             "MeshPlaneSplit_SecondPiece",
             null,
             false,
+            false,
             out firstPieceMesh,
             out secondPieceMesh,
             out failureReason);
@@ -183,6 +190,7 @@ public sealed class MeshPlaneSplitter
     /// <remarks>
     /// 境界検証はCutSegment生成後かつCap生成前に行う。通常攻撃のCut Rangeのような
     /// 利用側固有ルールをMesh分割アルゴリズムへ依存させず、従来の失敗タイミングを維持するための内部入口。
+    /// Plane上頂点fan対応はShieldのEditor事前生成だけで有効化し、既存Runtime経路では無効のまま使用する。
     /// </remarks>
     internal bool TrySplit(
         Mesh sourceMesh,
@@ -192,6 +200,7 @@ public sealed class MeshPlaneSplitter
         string secondPieceMeshName,
         Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
         bool enableDiagnostics,
+        bool enablePlaneTouchingVertexFanHandling,
         out Mesh firstPieceMesh,
         out Mesh secondPieceMesh,
         out string failureReason)
@@ -209,6 +218,7 @@ public sealed class MeshPlaneSplitter
             secondPieceMeshName,
             cutBoundaryValidator,
             enableDiagnostics,
+            enablePlaneTouchingVertexFanHandling,
             false,
             out firstPieceMesh,
             out secondPieceMesh,
@@ -254,6 +264,7 @@ public sealed class MeshPlaneSplitter
             cutBoundaryValidator,
             enableDiagnostics,
             false,
+            false,
             out firstPieceMesh,
             out secondPieceMesh,
             out _,
@@ -297,6 +308,7 @@ public sealed class MeshPlaneSplitter
                 secondSideMeshNamePrefix,
                 cutBoundaryValidator,
                 enableDiagnostics,
+                false,
                 true,
                 out _,
                 out _,
@@ -324,6 +336,7 @@ public sealed class MeshPlaneSplitter
         string secondPieceMeshName,
         Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
         bool enableDiagnostics,
+        bool enablePlaneTouchingVertexFanHandling,
         bool splitConnectedComponents,
         out Mesh firstPieceMesh,
         out Mesh secondPieceMesh,
@@ -398,6 +411,7 @@ public sealed class MeshPlaneSplitter
             secondPieceMeshName,
             cutBoundaryValidator,
             enableDiagnostics,
+            enablePlaneTouchingVertexFanHandling,
             splitConnectedComponents,
             out firstPieceMesh,
             out secondPieceMesh,
@@ -560,6 +574,7 @@ public sealed class MeshPlaneSplitter
         string secondPieceMeshName,
         Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
         bool enableDiagnostics,
+        bool enablePlaneTouchingVertexFanHandling,
         bool splitConnectedComponents,
         out Mesh firstPieceMesh,
         out Mesh secondPieceMesh,
@@ -1100,6 +1115,20 @@ public sealed class MeshPlaneSplitter
             ReleaseSourceVertexDataBuffer(
                 sourceVertexDataByIndex,
                 returnSourceVertexDataBufferToPool);
+        }
+
+        // Plane上頂点を含むfanでは、Plane上Edgeが正負両側のTriangleを隔てる場合がある。
+        // 通常Runtime分割は従来挙動を維持するため、この追加Topology走査は明示的にONのときだけ行う。
+        if (enablePlaneTouchingVertexFanHandling &&
+            !TryAddPlaneTouchingVertexFanBoundarySegments(
+                sourceMesh,
+                sourceVertices,
+                cutPlane,
+                geometryEpsilon,
+                cutSegments,
+                out failureReason))
+        {
+            return false;
         }
 
         if (enableDiagnostics)
@@ -1982,6 +2011,601 @@ public sealed class MeshPlaneSplitter
             connectivityVertexId);
 
         return connectivityVertexId;
+    }
+
+    /// <summary>
+    /// Plane上Edgeを含むTriangle fanを確認し、正側と負側のSurfaceを隔てるEdgeだけを
+    /// Cut Boundaryへ補完する。
+    /// </summary>
+    /// <remarks>
+    /// Planeへ接しているだけのTriangleを一律Boundary化せず、同一の幾何Edgeに
+    /// strict positive側とstrict negative側の隣接Triangleが実在するときだけ追加する。
+    /// UV seam等でSource Vertex indexが分離されている場合はConnectivity IDを候補検索に使うが、
+    /// 最終的なEdge同一性は既存SourceOrigin判定と同等のより厳しい位置許容値で再確認する。
+    /// </remarks>
+    private static bool TryAddPlaneTouchingVertexFanBoundarySegments(
+        Mesh sourceMesh,
+        IReadOnlyList<Vector3> sourceVertices,
+        Plane cutPlane,
+        float geometryEpsilon,
+        List<CutSegment> cutSegments,
+        out string failureReason)
+    {
+        if (sourceMesh == null ||
+            sourceVertices == null ||
+            cutSegments == null)
+        {
+            failureReason =
+                "Plane上頂点fan解析に必要なSource Mesh情報が不足しています。";
+            return false;
+        }
+
+        if (sourceVertices.Count != sourceMesh.vertexCount)
+        {
+            failureReason =
+                "Plane上頂点fan解析のSource Vertex数がMeshと一致していません。";
+            return false;
+        }
+
+        float sourceSplitVertexMatchEpsilon =
+            geometryEpsilon *
+            SOURCE_SPLIT_VERTEX_MATCH_EPSILON_SCALE;
+
+        // UV seam / hard edgeでindexが分かれていても同じ幾何Edgeを候補として探せるようにする。
+        // このIDだけでEdgeを確定せず、下の位置比較で既存Boundaryと同等の厳しい条件へ絞り込む。
+        int[] sourceConnectivityVertexIds =
+            MeshConnectedComponentSplitter.BuildConnectedVertexIds(
+                sourceVertices,
+                sourceMesh.bounds);
+
+        var sourceVertexPlaneDistances =
+            new float[sourceVertices.Count];
+
+        for (int vertexIndex = 0;
+             vertexIndex < sourceVertices.Count;
+             vertexIndex++)
+        {
+            float distance =
+                cutPlane.GetDistanceToPoint(
+                    sourceVertices[vertexIndex]);
+
+            if (!IsFinite(distance))
+            {
+                failureReason =
+                    "Plane上頂点fan解析中の距離計算でNaN / Infinityを検出しました。";
+                return false;
+            }
+
+            sourceVertexPlaneDistances[vertexIndex] =
+                distance;
+        }
+
+        var candidateSegments =
+            new List<CutSegment>();
+
+        var candidateSideMasks =
+            new List<byte>();
+
+        var candidateHasCoplanarNeighbor =
+            new List<bool>();
+
+        var candidateIndicesByConnectivityEdge =
+            new Dictionary<long, List<int>>();
+
+        var triangleIndices =
+            new List<int>();
+
+        for (int subMeshIndex = 0;
+             subMeshIndex < sourceMesh.subMeshCount;
+             subMeshIndex++)
+        {
+            if (sourceMesh.GetTopology(subMeshIndex) !=
+                MeshTopology.Triangles)
+            {
+                failureReason =
+                    $"SubMesh {subMeshIndex} がTriangles topologyではありません。";
+                return false;
+            }
+
+            triangleIndices.Clear();
+            sourceMesh.GetTriangles(
+                triangleIndices,
+                subMeshIndex);
+
+            if (triangleIndices.Count % 3 != 0)
+            {
+                failureReason =
+                    $"SubMesh {subMeshIndex} のTriangle index数が不正です。";
+                return false;
+            }
+
+            for (int triangleIndexBufferOffset = 0;
+                 triangleIndexBufferOffset < triangleIndices.Count;
+                 triangleIndexBufferOffset += 3)
+            {
+                int indexA =
+                    triangleIndices[triangleIndexBufferOffset];
+
+                int indexB =
+                    triangleIndices[triangleIndexBufferOffset + 1];
+
+                int indexC =
+                    triangleIndices[triangleIndexBufferOffset + 2];
+
+                if (!IsValidVertexIndex(
+                        indexA,
+                        sourceVertices.Count) ||
+                    !IsValidVertexIndex(
+                        indexB,
+                        sourceVertices.Count) ||
+                    !IsValidVertexIndex(
+                        indexC,
+                        sourceVertices.Count))
+                {
+                    failureReason =
+                        $"SubMesh {subMeshIndex} に範囲外の頂点indexがあります。";
+                    return false;
+                }
+
+                RecordPlaneTouchingEdgeCandidate(
+                    indexA,
+                    indexB,
+                    indexC,
+                    sourceVertexPlaneDistances[indexA],
+                    sourceVertexPlaneDistances[indexB],
+                    sourceVertexPlaneDistances[indexC],
+                    subMeshIndex,
+                    triangleIndexBufferOffset,
+                    geometryEpsilon,
+                    sourceSplitVertexMatchEpsilon,
+                    sourceVertices,
+                    sourceConnectivityVertexIds,
+                    candidateSegments,
+                    candidateSideMasks,
+                    candidateHasCoplanarNeighbor,
+                    candidateIndicesByConnectivityEdge);
+
+                RecordPlaneTouchingEdgeCandidate(
+                    indexB,
+                    indexC,
+                    indexA,
+                    sourceVertexPlaneDistances[indexB],
+                    sourceVertexPlaneDistances[indexC],
+                    sourceVertexPlaneDistances[indexA],
+                    subMeshIndex,
+                    triangleIndexBufferOffset,
+                    geometryEpsilon,
+                    sourceSplitVertexMatchEpsilon,
+                    sourceVertices,
+                    sourceConnectivityVertexIds,
+                    candidateSegments,
+                    candidateSideMasks,
+                    candidateHasCoplanarNeighbor,
+                    candidateIndicesByConnectivityEdge);
+
+                RecordPlaneTouchingEdgeCandidate(
+                    indexC,
+                    indexA,
+                    indexB,
+                    sourceVertexPlaneDistances[indexC],
+                    sourceVertexPlaneDistances[indexA],
+                    sourceVertexPlaneDistances[indexB],
+                    subMeshIndex,
+                    triangleIndexBufferOffset,
+                    geometryEpsilon,
+                    sourceSplitVertexMatchEpsilon,
+                    sourceVertices,
+                    sourceConnectivityVertexIds,
+                    candidateSegments,
+                    candidateSideMasks,
+                    candidateHasCoplanarNeighbor,
+                    candidateIndicesByConnectivityEdge);
+            }
+        }
+
+        for (int candidateIndex = 0;
+             candidateIndex < candidateSegments.Count;
+             candidateIndex++)
+        {
+            if (candidateSideMasks[candidateIndex] !=
+                PLANE_TOUCHING_EDGE_BOTH_SIDES_MASK)
+            {
+                continue;
+            }
+
+            // このPlane上Edgeは正側Surfaceと負側Surfaceの境界なので、
+            // Intersecting Triangle由来のSegmentと同じCut Boundaryへ接続する。
+            cutSegments.Add(
+                candidateSegments[candidateIndex]);
+        }
+
+        AddCoplanarBridgeSegmentsBetweenDegreeOneBoundaryNodes(
+            sourceVertices,
+            geometryEpsilon,
+            sourceSplitVertexMatchEpsilon,
+            cutSegments,
+            candidateSegments,
+            candidateSideMasks,
+            candidateHasCoplanarNeighbor);
+
+        failureReason = null;
+        return true;
+    }
+
+    private static void RecordPlaneTouchingEdgeCandidate(
+        int firstVertexIndex,
+        int secondVertexIndex,
+        int oppositeVertexIndex,
+        float firstDistance,
+        float secondDistance,
+        float oppositeDistance,
+        int sourceSubMeshIndex,
+        int sourceTriangleIndexBufferOffset,
+        float geometryEpsilon,
+        float sourceSplitVertexMatchEpsilon,
+        IReadOnlyList<Vector3> sourceVertices,
+        IReadOnlyList<int> sourceConnectivityVertexIds,
+        List<CutSegment> candidateSegments,
+        List<byte> candidateSideMasks,
+        List<bool> candidateHasCoplanarNeighbor,
+        Dictionary<long, List<int>> candidateIndicesByConnectivityEdge)
+    {
+        if (Mathf.Abs(firstDistance) > geometryEpsilon ||
+            Mathf.Abs(secondDistance) > geometryEpsilon)
+        {
+            return;
+        }
+
+        byte sideMask;
+        bool hasCoplanarNeighbor;
+
+        if (oppositeDistance > geometryEpsilon)
+        {
+            sideMask =
+                PLANE_TOUCHING_EDGE_POSITIVE_SIDE_MASK;
+
+            hasCoplanarNeighbor = false;
+        }
+        else if (oppositeDistance < -geometryEpsilon)
+        {
+            sideMask =
+                PLANE_TOUCHING_EDGE_NEGATIVE_SIDE_MASK;
+
+            hasCoplanarNeighbor = false;
+        }
+        else
+        {
+            // 全頂点がepsilon帯に入るTriangle自体では正負を確定できない。
+            // ただし隣接するstrict側Triangleと組み合わさったとき、
+            // Degree1同士をTopology上の実Edgeで閉じるための候補として保持する。
+            sideMask = 0;
+            hasCoplanarNeighbor = true;
+        }
+
+        int firstConnectivityVertexId =
+            sourceConnectivityVertexIds[firstVertexIndex];
+
+        int secondConnectivityVertexId =
+            sourceConnectivityVertexIds[secondVertexIndex];
+
+        if (firstConnectivityVertexId ==
+            secondConnectivityVertexId)
+        {
+            return;
+        }
+
+        long connectivityEdgeKey =
+            CreateEdgeKey(
+                firstConnectivityVertexId,
+                secondConnectivityVertexId);
+
+        if (!candidateIndicesByConnectivityEdge.TryGetValue(
+                connectivityEdgeKey,
+                out List<int> candidateIndices))
+        {
+            candidateIndices =
+                new List<int>(1);
+
+            candidateIndicesByConnectivityEdge.Add(
+                connectivityEdgeKey,
+                candidateIndices);
+        }
+
+        Vector3 firstPosition =
+            sourceVertices[firstVertexIndex];
+
+        Vector3 secondPosition =
+            sourceVertices[secondVertexIndex];
+
+        for (int candidateListIndex = 0;
+             candidateListIndex < candidateIndices.Count;
+             candidateListIndex++)
+        {
+            int candidateIndex =
+                candidateIndices[candidateListIndex];
+
+            CutSegment candidateSegment =
+                candidateSegments[candidateIndex];
+
+            if (!AreEquivalentPlaneTouchingEdges(
+                    candidateSegment,
+                    firstPosition,
+                    secondPosition,
+                    sourceSplitVertexMatchEpsilon))
+            {
+                continue;
+            }
+
+            candidateSideMasks[candidateIndex] =
+                (byte)(candidateSideMasks[candidateIndex] |
+                       sideMask);
+
+            if (hasCoplanarNeighbor)
+            {
+                candidateHasCoplanarNeighbor[candidateIndex] =
+                    true;
+            }
+
+            return;
+        }
+
+        int newCandidateIndex =
+            candidateSegments.Count;
+
+        // Connectivity IDはUV seamをまたぐ候補検索だけに使う。
+        // 生成Segmentへは持ち込まず、既存2Mesh分割のBoundary / Cap側のConnectivity意味を変えない。
+        candidateSegments.Add(
+            new CutSegment(
+                firstPosition,
+                secondPosition,
+                firstVertexIndex,
+                firstVertexIndex,
+                secondVertexIndex,
+                secondVertexIndex,
+                -1,
+                -1,
+                sourceSubMeshIndex,
+                sourceTriangleIndexBufferOffset / 3,
+                sourceTriangleIndexBufferOffset,
+                firstVertexIndex,
+                secondVertexIndex,
+                oppositeVertexIndex));
+
+        candidateSideMasks.Add(
+            sideMask);
+
+        candidateHasCoplanarNeighbor.Add(
+            hasCoplanarNeighbor);
+
+        candidateIndices.Add(
+            newCandidateIndex);
+    }
+
+    /// <summary>
+    /// strict片側TriangleとCoplanarWithinEpsilon Triangleが共有するPlane上Edgeのうち、
+    /// 既存BoundaryでDegree1になっている2頂点を直接結ぶ実Edgeだけを補完する。
+    /// </summary>
+    /// <remarks>
+    /// Coplanar Triangleの全EdgeをBoundary化すると分岐を作るため、
+    /// すでに形成済みのBoundary終端2点を同時に解消できるEdgeだけに限定する。
+    /// この処理はPlane上頂点fan対応ON時にしか呼ばれない。
+    /// </remarks>
+    private static void AddCoplanarBridgeSegmentsBetweenDegreeOneBoundaryNodes(
+        IReadOnlyList<Vector3> sourceVertices,
+        float geometryEpsilon,
+        float sourceSplitVertexMatchEpsilon,
+        List<CutSegment> cutSegments,
+        IReadOnlyList<CutSegment> candidateSegments,
+        IReadOnlyList<byte> candidateSideMasks,
+        IReadOnlyList<bool> candidateHasCoplanarNeighbor)
+    {
+        if (cutSegments.Count == 0 ||
+            candidateSegments.Count == 0)
+        {
+            return;
+        }
+
+        var nodes =
+            new List<BoundaryNode>();
+
+        var uniqueEdges =
+            new HashSet<long>();
+
+        for (int segmentIndex = 0;
+             segmentIndex < cutSegments.Count;
+             segmentIndex++)
+        {
+            CutSegment cutSegment =
+                cutSegments[segmentIndex];
+
+            int firstNodeIndex =
+                FindOrCreateBoundaryNode(
+                    nodes,
+                    0,
+                    cutSegment.First,
+                    cutSegment.FirstSourceEdgeVertexIndexA,
+                    cutSegment.FirstSourceEdgeVertexIndexB,
+                    cutSegment.FirstConnectivityVertexId,
+                    sourceVertices,
+                    geometryEpsilon,
+                    sourceSplitVertexMatchEpsilon);
+
+            int secondNodeIndex =
+                FindOrCreateBoundaryNode(
+                    nodes,
+                    0,
+                    cutSegment.Second,
+                    cutSegment.SecondSourceEdgeVertexIndexA,
+                    cutSegment.SecondSourceEdgeVertexIndexB,
+                    cutSegment.SecondConnectivityVertexId,
+                    sourceVertices,
+                    geometryEpsilon,
+                    sourceSplitVertexMatchEpsilon);
+
+            if (firstNodeIndex == secondNodeIndex)
+            {
+                continue;
+            }
+
+            long edgeKey =
+                CreateEdgeKey(
+                    firstNodeIndex,
+                    secondNodeIndex);
+
+            if (!uniqueEdges.Add(edgeKey))
+            {
+                continue;
+            }
+
+            nodes[firstNodeIndex]
+                .Neighbors
+                .Add(secondNodeIndex);
+
+            nodes[secondNodeIndex]
+                .Neighbors
+                .Add(firstNodeIndex);
+        }
+
+        var repairedNodeIndices =
+            new HashSet<int>();
+
+        for (int candidateIndex = 0;
+             candidateIndex < candidateSegments.Count;
+             candidateIndex++)
+        {
+            byte sideMask =
+                candidateSideMasks[candidateIndex];
+
+            if (!candidateHasCoplanarNeighbor[candidateIndex] ||
+                sideMask == 0 ||
+                sideMask == PLANE_TOUCHING_EDGE_BOTH_SIDES_MASK)
+            {
+                continue;
+            }
+
+            CutSegment candidateSegment =
+                candidateSegments[candidateIndex];
+
+            int firstNodeIndex =
+                FindMatchingDegreeOneBoundaryNode(
+                    nodes,
+                    candidateSegment.First,
+                    candidateSegment.FirstSourceEdgeVertexIndexA,
+                    sourceVertices,
+                    geometryEpsilon,
+                    sourceSplitVertexMatchEpsilon);
+
+            int secondNodeIndex =
+                FindMatchingDegreeOneBoundaryNode(
+                    nodes,
+                    candidateSegment.Second,
+                    candidateSegment.SecondSourceEdgeVertexIndexA,
+                    sourceVertices,
+                    geometryEpsilon,
+                    sourceSplitVertexMatchEpsilon);
+
+            if (firstNodeIndex < 0 ||
+                secondNodeIndex < 0 ||
+                firstNodeIndex == secondNodeIndex ||
+                repairedNodeIndices.Contains(firstNodeIndex) ||
+                repairedNodeIndices.Contains(secondNodeIndex))
+            {
+                continue;
+            }
+
+            long edgeKey =
+                CreateEdgeKey(
+                    firstNodeIndex,
+                    secondNodeIndex);
+
+            if (!uniqueEdges.Add(edgeKey))
+            {
+                continue;
+            }
+
+            // strict片側だけではBoundaryと断定しない。
+            // Coplanar隣接を持ち、かつ現在のDegree1終端2点を同時に閉じる実Edgeだけを採用する。
+            cutSegments.Add(candidateSegment);
+
+            nodes[firstNodeIndex]
+                .Neighbors
+                .Add(secondNodeIndex);
+
+            nodes[secondNodeIndex]
+                .Neighbors
+                .Add(firstNodeIndex);
+
+            repairedNodeIndices.Add(firstNodeIndex);
+            repairedNodeIndices.Add(secondNodeIndex);
+        }
+    }
+
+    private static int FindMatchingDegreeOneBoundaryNode(
+        IReadOnlyList<BoundaryNode> nodes,
+        Vector3 position,
+        int sourceVertexIndex,
+        IReadOnlyList<Vector3> sourceVertices,
+        float geometryEpsilon,
+        float sourceSplitVertexMatchEpsilon)
+    {
+        for (int nodeIndex = 0;
+             nodeIndex < nodes.Count;
+             nodeIndex++)
+        {
+            BoundaryNode node =
+                nodes[nodeIndex];
+
+            if (node.Neighbors.Count != 1)
+            {
+                continue;
+            }
+
+            if (IsMatchingBoundaryNode(
+                    node,
+                    position,
+                    sourceVertexIndex,
+                    sourceVertexIndex,
+                    sourceVertices,
+                    geometryEpsilon,
+                    sourceSplitVertexMatchEpsilon))
+            {
+                return nodeIndex;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool AreEquivalentPlaneTouchingEdges(
+        CutSegment candidateSegment,
+        Vector3 firstPosition,
+        Vector3 secondPosition,
+        float sourceSplitVertexMatchEpsilon)
+    {
+        bool sameDirection =
+            ArePositionsClose(
+                candidateSegment.First,
+                firstPosition,
+                sourceSplitVertexMatchEpsilon) &&
+            ArePositionsClose(
+                candidateSegment.Second,
+                secondPosition,
+                sourceSplitVertexMatchEpsilon);
+
+        if (sameDirection)
+        {
+            return true;
+        }
+
+        return
+            ArePositionsClose(
+                candidateSegment.First,
+                secondPosition,
+                sourceSplitVertexMatchEpsilon) &&
+            ArePositionsClose(
+                candidateSegment.Second,
+                firstPosition,
+                sourceSplitVertexMatchEpsilon);
     }
 
     private static bool TryGetCutSegment(

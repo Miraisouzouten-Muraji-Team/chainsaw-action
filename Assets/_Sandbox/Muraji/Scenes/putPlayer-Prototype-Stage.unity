@@ -128110,6 +128110,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 1056591878068572313, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_Interpolate
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 1065567314792741323, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.z
       value: 0
@@ -128454,6 +128458,10 @@ PrefabInstance:
       propertyPath: m_Color.a
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: visualRoot
+      value: 
+      objectReference: {fileID: 1432210667}
     - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: jumpHoldAction
       value: 
@@ -129226,6 +129234,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+--- !u!4 &1432210667 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3762828488659218931, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1441358661
 GameObject:
   m_ObjectHideFlags: 0

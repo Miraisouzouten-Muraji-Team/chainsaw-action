@@ -120,6 +120,10 @@ public class SensorPlayerController : MonoBehaviour
 
     private Quaternion rightFacingRotation;
 
+    [Tooltip("床に食い込んでいる間、見た目を地面の傾きに合わせます。見た目の親には物理判定を含まない子オブジェクトを指定してください。")]
+    [SerializeField] private bool alignFloorDiggingVisual = true;
+    private bool floorDiggingVisualApplied;
+
     // 空中で開始した攻撃は重力変動
     private bool isAirAttackCombo;
 
@@ -1798,6 +1802,26 @@ public class SensorPlayerController : MonoBehaviour
         return blocked;
     }
 
+    // アニメーション更新後に床食い込みの傾きを反映し、解除時には通常の向きへ戻す。
+    private void LateUpdate()
+    {
+        bool shouldAlign = alignFloorDiggingVisual &&
+            chainsawDigging != null && chainsawDigging.isActiveAndEnabled &&
+            chainsawDigging.IsDigging && chainsawDigging.Surface == ChainsawSurface.Floor;
+
+        if (shouldAlign && visualRoot != null && visualRoot != transform)
+        {
+            ApplyFacingRotation();
+            floorDiggingVisualApplied = true;
+        }
+        else if (floorDiggingVisualApplied)
+        {
+            floorDiggingVisualApplied = false;
+            ApplyFacingRotation();
+        }
+    }
+
+    // 初期姿勢と左右の向きを合成し、床食い込み中だけワールド空間の坂の傾きを加える。
     private void ApplyFacingRotation()
     {
         if (visualRoot == null)
@@ -1807,9 +1831,23 @@ public class SensorPlayerController : MonoBehaviour
 
         float angle = facingDirection < 0f ? 180f : 0f;
 
-        visualRoot.localRotation =
-            rightFacingRotation *
-            Quaternion.Euler(0f, angle, 0f);
+        Quaternion facingRotation = rightFacingRotation * Quaternion.Euler(0f, angle, 0f);
+        visualRoot.localRotation = facingRotation;
+
+        if (!alignFloorDiggingVisual || !isActiveAndEnabled ||
+            visualRoot == transform || chainsawDigging == null ||
+            !chainsawDigging.isActiveAndEnabled || !chainsawDigging.IsDigging ||
+            chainsawDigging.Surface != ChainsawSurface.Floor)
+            return;
+
+        Vector3 normal = chainsawDigging.SurfaceNormal;
+        normal.z = 0f;
+        if (normal.sqrMagnitude <= 0.0001f || normal.y <= 0f)
+            return;
+
+        // 左右反転より外側で傾けるため、左向きでも坂の上下が逆転しない。
+        Quaternion slopeRotation = Quaternion.FromToRotation(Vector3.up, normal.normalized);
+        visualRoot.rotation = slopeRotation * visualRoot.rotation;
     }
 
     void Slash()
@@ -2469,6 +2507,12 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
+        // 死亡などでControllerが停止しても、床の傾きを見た目に残さない。
+        if (floorDiggingVisualApplied)
+        {
+            floorDiggingVisualApplied = false;
+            ApplyFacingRotation();
+        }
         ResetCeilingFallGrace(true);
         walkEffectRemaining = 0f;
         effectGroundStateInitialized = false;

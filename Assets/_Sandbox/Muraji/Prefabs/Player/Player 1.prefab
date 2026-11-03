@@ -1890,9 +1890,9 @@ MonoBehaviour:
   mediumAcceleratorThreshold: 20
   strongAcceleratorThreshold: 34
   emissionPoint: {fileID: 7464963693528972124}
-  floorAngle: 135
-  wallAngle: 225
-  ceilingAngle: 225
+  floorAngle: 180
+  wallAngle: 180
+  ceilingAngle: 270
   enemyAngle: 160
 --- !u!114 &6024355022737477912
 MonoBehaviour:

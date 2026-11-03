@@ -60691,6 +60691,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ClearSceneChange
   nextSceneName: Alpha-Stage
+  fadeCanvasGroup: {fileID: 0}
+  fadeDuration: 3
+  behaviours: []
 --- !u!65 &693689483
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -128283,20 +128286,36 @@ PrefabInstance:
       value: 180
       objectReference: {fileID: 0}
     - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: accelerator
+      value: 
+      objectReference: {fileID: 1460914066}
+    - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: ceilingAngle
       value: 270
       objectReference: {fileID: 0}
     - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: particlePrefab
       value: 
-      objectReference: {fileID: 7044623282841772800, guid: 837e8e5252d7c7e4baa5ea5980ed9e2a, type: 3}
+      objectReference: {fileID: -8463674177795780162, guid: 837e8e5252d7c7e4baa5ea5980ed9e2a, type: 3}
     - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: groundContactPoint
       value: 
       objectReference: {fileID: 1376630537}
     - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: mediumParticlePrefab
+      value: 
+      objectReference: {fileID: 8177517891552390736, guid: d3c0841f362468d418c2b3b0481f8bc9, type: 3}
+    - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: strongParticlePrefab
+      value: 
+      objectReference: {fileID: 174813603635813635, guid: 1d614d472e959864e8572e2fa84f5965, type: 3}
+    - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: groundContactLayers.m_Bits
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: strongAcceleratorThreshold
+      value: 34
       objectReference: {fileID: 0}
     - target: {fileID: 4275880465371736696, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_UiScaleMode
@@ -128524,7 +128543,7 @@ PrefabInstance:
       objectReference: {fileID: 1420853011}
     - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: doubleJumpEffect.Lifetime
-      value: 0.75
+      value: 0.01
       objectReference: {fileID: 0}
     - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: walkEffectClips.Array.size

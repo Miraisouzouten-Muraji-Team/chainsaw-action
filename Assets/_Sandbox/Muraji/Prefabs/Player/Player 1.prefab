@@ -957,7 +957,7 @@ MonoBehaviour:
   doubleJumpEffect:
     Prefab: {fileID: 4026887684143952547, guid: 098f157927a3abf4ea8488589f6bf67f, type: 3}
     SpawnPoint: {fileID: 2818282200944578263}
-    Lifetime: 0.75
+    Lifetime: 0.2
   landingEffect:
     Prefab: {fileID: 1475400350550726891, guid: 873007ee2dffc354e95a1110312d3377, type: 3}
     SpawnPoint: {fileID: 2818282200944578263}
@@ -1883,7 +1883,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawDiggingParticles
   chainsawDigging: {fileID: 4166513584750343507}
   playerController: {fileID: 4996046773718306232}
-  particlePrefab: {fileID: 7044623282841772800, guid: 837e8e5252d7c7e4baa5ea5980ed9e2a, type: 3}
+  particlePrefab: {fileID: -8463674177795780162, guid: 837e8e5252d7c7e4baa5ea5980ed9e2a, type: 3}
+  accelerator: {fileID: 3199202209234272052}
+  mediumParticlePrefab: {fileID: 8177517891552390736, guid: d3c0841f362468d418c2b3b0481f8bc9, type: 3}
+  strongParticlePrefab: {fileID: 174813603635813635, guid: 1d614d472e959864e8572e2fa84f5965, type: 3}
+  mediumAcceleratorThreshold: 20
+  strongAcceleratorThreshold: 34
   emissionPoint: {fileID: 7464963693528972124}
   floorAngle: 135
   wallAngle: 225

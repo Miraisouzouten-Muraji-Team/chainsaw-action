@@ -14,6 +14,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/_Project/Scenes/TitleScene.unity
     guid: 42083b80d552a5d4997e2a6292915c7c
+  - enabled: 1
+    path: Assets/_Sandbox/Honjo/LoadSystem/LoadScene.unity
+    guid: fa0b71deb6cd1d146b2247766046c629
   - enabled: 0
     path: Assets/_Sandbox/Honjo/Scenes/putPlayer-Prototype-Stage.unity
     guid: 2db757d421ce50241818df8662101582

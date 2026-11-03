@@ -245,6 +245,9 @@ MonoBehaviour:
   spawnPoint: {fileID: 2169967592454498387}
   spawnOffset: {x: 0, y: 0, z: 0}
   maximumSpawnedEnemies: 50
+  accelerator: {fileID: 0}
+  showAccelerator: 1
+  debugVisibilityKey: 96
 --- !u!114 &308753024967130316
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2777,14 +2780,30 @@ PrefabInstance:
       propertyPath: playerHealth
       value: 
       objectReference: {fileID: 8019025389977450252}
+    - target: {fileID: 3243297647830683665, guid: faf750e57e389604f9f73c3d1c5bf329, type: 3}
+      propertyPath: m_Material
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 3398174303649395758, guid: faf750e57e389604f9f73c3d1c5bf329, type: 3}
+      propertyPath: accelerator
+      value: 
+      objectReference: {fileID: 202300903155648556}
     - target: {fileID: 3548893518217535033, guid: faf750e57e389604f9f73c3d1c5bf329, type: 3}
       propertyPath: accelerator
       value: 
       objectReference: {fileID: 202300903155648556}
+    - target: {fileID: 4832819846134775821, guid: faf750e57e389604f9f73c3d1c5bf329, type: 3}
+      propertyPath: playerHealth
+      value: 
+      objectReference: {fileID: 8019025389977450252}
     - target: {fileID: 6237320448212304883, guid: faf750e57e389604f9f73c3d1c5bf329, type: 3}
       propertyPath: m_AnchorMax.y
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 6488002262647717956, guid: faf750e57e389604f9f73c3d1c5bf329, type: 3}
+      propertyPath: accelerator
+      value: 
+      objectReference: {fileID: 202300903155648556}
     - target: {fileID: 7219073780597730696, guid: faf750e57e389604f9f73c3d1c5bf329, type: 3}
       propertyPath: m_Name
       value: InGameCanvas
@@ -2881,6 +2900,10 @@ PrefabInstance:
       propertyPath: chainsawAccelerator
       value: 
       objectReference: {fileID: 202300903155648556}
+    - target: {fileID: 9197544916680224889, guid: faf750e57e389604f9f73c3d1c5bf329, type: 3}
+      propertyPath: playerHealth
+      value: 
+      objectReference: {fileID: 8019025389977450252}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -2961,7 +2984,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6930742646086974981, guid: 222bfb40d9d8c07429223c6c89cc414f, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -0.7
+      value: -10
       objectReference: {fileID: 0}
     - target: {fileID: 6930742646086974981, guid: 222bfb40d9d8c07429223c6c89cc414f, type: 3}
       propertyPath: m_LocalRotation.w

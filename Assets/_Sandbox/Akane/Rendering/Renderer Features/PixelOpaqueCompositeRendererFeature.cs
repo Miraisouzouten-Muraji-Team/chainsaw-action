@@ -214,6 +214,20 @@ namespace Project.Rendering.Pixel
 
                 // 同じCameraの後続Passが参照できるようにTextureHandleを共有する。
                 PixelOpaqueFrameData opaqueFrameData = frameData.GetOrCreate<PixelOpaqueFrameData>();
+
+                // Near / Middle / Farの元解像度を後続のOutline Passへ共有する。
+                opaqueFrameData.NearResolution = new Vector2Int(
+                    inputTextures[0].width,
+                    inputTextures[0].height);
+
+                opaqueFrameData.MiddleResolution = new Vector2Int(
+                    inputTextures[1].width,
+                    inputTextures[1].height);
+
+                opaqueFrameData.FarResolution = new Vector2Int(
+                    inputTextures[2].width,
+                    inputTextures[2].height);
+
                 opaqueFrameData.Depth = depthOutput;
                 opaqueFrameData.Normal = normalOutput;
 

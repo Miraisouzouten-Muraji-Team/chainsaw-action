@@ -129,7 +129,7 @@ Material:
     - _NormalStrength: 0.5
     - _NormalThreshold: 0.2
     - _OcclusionStrength: 1
-    - _OutlineWidthPixels: 2
+    - _OutlineWidthPixels: 1
     - _Parallax: 0.005
     - _QueueOffset: 0
     - _ReceiveShadows: 1
@@ -149,6 +149,9 @@ Material:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _OutlineColor: {r: 0, g: 0, b: 0, a: 1}
+    - _PixelOutlineFarResolution: {r: 160, g: 90, b: 0, a: 0}
+    - _PixelOutlineMiddleResolution: {r: 320, g: 180, b: 0, a: 0}
+    - _PixelOutlineNearResolution: {r: 640, g: 360, b: 0, a: 0}
     - _SpecColor: {r: 0.2, g: 0.2, b: 0.2, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

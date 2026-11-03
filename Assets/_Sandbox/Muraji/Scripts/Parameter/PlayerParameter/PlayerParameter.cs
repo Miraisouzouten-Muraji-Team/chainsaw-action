@@ -66,6 +66,13 @@ public class PlayerParameter : ScriptableObject
     [Tooltip("通常・二段ジャンプ後の落下重力倍率です。1より小さいと落下加速が緩やかになります。")]
     [SerializeField, Range(0.05f, 1f)] public float jumpFallGravityScale = 0.75f;
 
+    [Header("通常ジャンプの天井接触：落下までの猶予")]
+    // 猶予の設定だけを管理する。残り時間や接触状態はController側で管理する。
+    [Tooltip("通常ジャンプ・二段ジャンプで天井に当たったとき、残っている上昇の勢いがなくなるまで落下を待ちます。食い込み・壁ジャンプ・被弾には適用しません。")]
+    [SerializeField] public bool enableCeilingFallGrace = true;
+    [Tooltip("天井に当たってから落下を待つ最大秒数です。0なら無効です。実際の猶予は衝突直前の上昇速度と既存のジャンプ重力・長押し設定で短くなります。")]
+    [SerializeField, Min(0f)] public float ceilingFallGraceMaxSeconds = 0.25f;
+
     [Header("ジャンプ：3本Ray接地判定")]
     [Tooltip("接地を判定する地形レイヤー。Nothingなら食い込み衝突判定の地形レイヤーを使用します。")]
     public LayerMask groundRayLayers;

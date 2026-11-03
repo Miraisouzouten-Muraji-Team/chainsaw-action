@@ -13,7 +13,7 @@ public class DiagonalClipImage : Image
     [Tooltip("切断線の傾き。右端の斜め部分に合わせて調整してください。")]
     [SerializeField] private float edgeSlope = 0.2f;
 
-    [Tooltip("表示する割合。1で全表示、0で全非表示になります。")]
+    [Tooltip("表示する割合。斜め線の傾きを合わせるため使用します。基本は１(全表示)に設定してください。")]
     [SerializeField, Range(0f, 1f)] private float visibleRatio = 1f;
 
     //private readonly List<UIVertex> vertices = new();

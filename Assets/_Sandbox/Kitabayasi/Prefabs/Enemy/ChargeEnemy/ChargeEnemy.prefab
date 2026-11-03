@@ -252,12 +252,11 @@ MonoBehaviour:
     - rid: 2559746817728970823
       type: {class: ChargeEnemyAttackStrategy, ns: , asm: Assembly-CSharp}
       data:
+        preparationAnimationStateName: Base Layer.rush_enemy_yobi
+        attackAnimationStateName: Base Layer.rush_enemy_attack
         chargeDistance: 5
         hasChargeDistanceBeenInitialized: 1
         collisionEffectPrefab: {fileID: 0}
-        walkAnimationClip: {fileID: 0}
-        preparationAnimationClip: {fileID: 0}
-        attackAnimationClip: {fileID: 0}
 --- !u!114 &4679851848841308727
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -8,8 +8,20 @@ public class ChainsawDiggingParticles : MonoBehaviour
     [SerializeField] private SensorChainsawDigging chainsawDigging;
     [SerializeField] private SensorPlayerController playerController;
 
-    [Tooltip("Project内のParticle SystemのPrefabを設定")]
+    [Tooltip("第1段階のParticle SystemのPrefabです。従来のPrefab設定をそのまま引き継ぎます。")]
     [SerializeField] private ParticleSystem particlePrefab;
+
+    [Header("アクセルによる3段階の強さ")]
+    [Tooltip("アクセル値を参照するコンポーネントです。未設定ならプレイヤーの子から非表示のものも含めて取得します。")]
+    [SerializeField] private ChainsawAccelerator accelerator;
+    [Tooltip("第2段階のPrefabです。未設定の場合は第1段階を使用します。")]
+    [SerializeField] private ParticleSystem mediumParticlePrefab;
+    [Tooltip("第3段階のPrefabです。未設定の場合は第2段階、続いて第1段階を使用します。")]
+    [SerializeField] private ParticleSystem strongParticlePrefab;
+    [Tooltip("このアクセル値以上で第2段階になります。割合ではなくアクセルの数値で指定します。")]
+    [SerializeField, Min(0f)] private float mediumAcceleratorThreshold = 20f;
+    [Tooltip("このアクセル値以上で第3段階になります。第2段階のしきい値より大きい値を指定してください。")]
+    [SerializeField, Min(0f)] private float strongAcceleratorThreshold = 35f;
 
     [Tooltip("刃に置いた発生位置用の空オブジェクト")]
     [SerializeField] private Transform emissionPoint;
@@ -30,6 +42,7 @@ public class ChainsawDiggingParticles : MonoBehaviour
 
     private ParticleSystem particleInstance;
     private bool isEmitting;
+    private ParticleSystem activeParticlePrefab;
 
     // 放出終了後も、生存中の粒子が自然に消えるまで生成物を保持する。
     private readonly List<ParticleSystem> finishingParticles = new List<ParticleSystem>();
@@ -48,6 +61,12 @@ public class ChainsawDiggingParticles : MonoBehaviour
             playerController =
                 GetComponentInParent<SensorPlayerController>();
         }
+
+        if (accelerator == null && playerController != null)
+            accelerator = playerController.GetComponentInChildren<ChainsawAccelerator>(true);
+
+        if (accelerator == null)
+            Debug.LogWarning("食い込みエフェクト：アクセル参照がないため第1段階のみ使用します。", this);
 
         if (chainsawDigging == null ||
             playerController == null ||
@@ -133,10 +152,17 @@ public class ChainsawDiggingParticles : MonoBehaviour
 
         Vector3 position = emissionPoint.position;
 
-        // 食い込み開始ごとに生成する。継続中だけ同じインスタンスを使う。
+        ParticleSystem selectedPrefab = SelectParticlePrefab();
+        if (particleInstance != null && activeParticlePrefab != selectedPrefab)
+        {
+            // 旧段階の粒子は消去せず、その場で寿命まで再生させる。
+            StopEmission();
+        }
+
+        // 段階が変わったときだけ作り直し、旧粒子が残る間に新しい放出を開始する。
         if (particleInstance == null)
         {
-            CreateParticles(position, rotation);
+            CreateParticles(selectedPrefab, position, rotation);
         }
 
         particleInstance.transform.SetPositionAndRotation(
@@ -150,17 +176,39 @@ public class ChainsawDiggingParticles : MonoBehaviour
         }
     }
 
+    // 実際のアクセル値で段階を選び、Prefab未設定時は下の段階へ戻す。
+    private ParticleSystem SelectParticlePrefab()
+    {
+        float acceleratorValue = accelerator != null ? accelerator.CurrentSpeed : 0f;
+        float mediumThreshold = Mathf.Max(0f, mediumAcceleratorThreshold);
+        float strongThreshold = Mathf.Max(mediumThreshold + 0.01f, strongAcceleratorThreshold);
+        if (accelerator != null && acceleratorValue >= strongThreshold && strongParticlePrefab != null)
+            return strongParticlePrefab;
+        if (accelerator != null && acceleratorValue >= mediumThreshold && mediumParticlePrefab != null)
+            return mediumParticlePrefab;
+        return particlePrefab;
+    }
+
+    // Inspectorでしきい値の逆転を防ぎ、第1→第2→第3の順序を維持する。
+    private void OnValidate()
+    {
+        mediumAcceleratorThreshold = Mathf.Max(0f, mediumAcceleratorThreshold);
+        strongAcceleratorThreshold = Mathf.Max(mediumAcceleratorThreshold + 0.01f, strongAcceleratorThreshold);
+    }
+
     // 食い込み専用のインスタンスを作り、ループ再生の準備をする。
     private void CreateParticles(
+        ParticleSystem selectedPrefab,
         Vector3 position,
         Quaternion rotation)
     {
         // 見た目の左右反転やスケールの影響を避けるため、
         // Playerの子にはせず生成する。
         particleInstance = Instantiate(
-            particlePrefab,
+            selectedPrefab,
             position,
             rotation);
+        activeParticlePrefab = selectedPrefab;
 
         ParticleSystem.MainModule main = particleInstance.main;
 
@@ -190,6 +238,7 @@ public class ChainsawDiggingParticles : MonoBehaviour
     private void StopEmission()
     {
         isEmitting = false;
+        activeParticlePrefab = null;
         if (particleInstance == null) return;
 
         ParticleSystem instance = particleInstance;

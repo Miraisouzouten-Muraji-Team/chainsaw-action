@@ -23,6 +23,12 @@ public sealed class ChargeEnemySearchStrategy :
     private const float ARRIVAL_TOLERANCE = 0.05f;
     private const float DIRECTION_EPSILON = 0.001f;
     private const float WALL_NORMAL_X_THRESHOLD = 0.7f;
+    private const int ANIMATION_BASE_LAYER_INDEX = 0;
+    private const float ANIMATION_SPEED_EPSILON = 0.0001f;
+    private const float WALK_STALL_WARNING_SECONDS = 0.75f;
+    private const float WALK_PROGRESS_EPSILON = 0.0001f;
+    private const float WALK_REPLAY_WINDOW_SECONDS = 1f;
+    private const int WALK_REPLAY_WARNING_COUNT = 12;
 
     [Header("個体設定")]
     [Tooltip("このChargeEnemyがPlayerを検知する半径。ChargeEnemyDataのDetectionRadiusは使用しない。")]
@@ -35,6 +41,11 @@ public sealed class ChargeEnemySearchStrategy :
     [SerializeField]
     private float patrolOffset;
 
+    [Header("巡回アニメーション")]
+    [Tooltip("帰還・巡回中に再生するAnimator Stateのフルパス（例: Base Layer.Walk）。")]
+    [SerializeField]
+    private string walkAnimationStateName = "Base Layer.Walk";
+
     private ChargeEnemyData enemyData;
 
     private GameObject enemyObject;
@@ -42,6 +53,18 @@ public sealed class ChargeEnemySearchStrategy :
     private Transform visualRoot;
     private Rigidbody enemyRigidbody;
     private Collider enemyCollider;
+    private Animator animator;
+    private int walkAnimationStateHash;
+
+    // Walkの再生位置が止まった場合、Animator側の状態を1度だけ記録する。
+    private bool hasWalkProgressSample;
+    private bool hasReportedWalkStall;
+    private float lastWalkNormalizedTime;
+    private float lastWalkProgressTime;
+    private float walkReplayWindowStartTime;
+    private int walkReplayCount;
+    private bool hasReportedRepeatedWalkReplay;
+    private bool hasRestoredStoppedAnimatorSpeed;
 
     private ChargeEnemyGroundChecker groundChecker;
 
@@ -138,6 +161,9 @@ public sealed class ChargeEnemySearchStrategy :
                 enemyRigidbody,
                 enemyCollider);
 
+        InitializeWalkAnimation();
+        ResetWalkProgressSample();
+
         // 巡回開始位置はSearchStateへ入るたびではなく、
         // ゲーム開始時の位置として固定する。
         patrolStartPosition = enemyRigidbody.position;
@@ -180,6 +206,15 @@ public sealed class ChargeEnemySearchStrategy :
             enemyObject);
 
         AlignVisualWithCurrentMoveDirection();
+
+        // 攻撃後はAttack Stateのまま残り得るため、Searchへ戻った時点で歩行を再生する。
+        // 以降の移動中は、別Stateへの切り替わりや非ループ終端時だけ再指定する。
+        if (enemyData.PatrolMoveSpeed > DIRECTION_EPSILON &&
+            (isReturningToPatrolStart ||
+             Mathf.Abs(patrolOffset) > DIRECTION_EPSILON))
+        {
+            EnsureWalkAnimation();
+        }
 
         turnElapsedTime = 0f;
 
@@ -534,6 +569,7 @@ public sealed class ChargeEnemySearchStrategy :
 
         SetHorizontalVelocity(
             targetVelocityX);
+        EnsureWalkAnimation();
     }
 
     /// <summary>
@@ -572,6 +608,18 @@ public sealed class ChargeEnemySearchStrategy :
             enemyObject);
 
         AlignVisualWithCurrentMoveDirection();
+
+        // このログが出なければ、帰還完了の分岐に到達していない。
+        LogWalkAnimationSnapshot("帰還完了・巡回へ切り替え");
+
+        // 帰還終了後は同じSearch State内で巡回を開始する。
+        // WalkのStateに留まったまま再生が終了している場合にも対応するため、
+        // この切り替え時だけ再生位置を先頭に戻す。
+        if (enemyData.PatrolMoveSpeed > DIRECTION_EPSILON &&
+            Mathf.Abs(patrolOffset) > DIRECTION_EPSILON)
+        {
+            PlayWalkAnimationFromStart();
+        }
     }
 
     /// <summary>
@@ -620,6 +668,10 @@ public sealed class ChargeEnemySearchStrategy :
 
         SetHorizontalVelocity(
             targetVelocityX);
+        if (Mathf.Abs(targetVelocityX) > DIRECTION_EPSILON)
+        {
+            EnsureWalkAnimation();
+        }
     }
 
     /// <summary>
@@ -781,6 +833,242 @@ public sealed class ChargeEnemySearchStrategy :
             !isMovingToPatrolEnd;
 
         currentMoveDirectionSign *= -1f;
+    }
+
+    /// <summary>
+    /// 既存のAnimator Controllerから帰還・巡回用のWalk Stateを取得する。
+    /// </summary>
+    private void InitializeWalkAnimation()
+    {
+        animator = visualRoot.GetComponent<Animator>();
+        if (animator == null)
+        {
+            animator = visualRoot.GetComponentInChildren<Animator>(true);
+        }
+
+        if (animator == null || animator.runtimeAnimatorController == null)
+        {
+            Debug.LogWarning(
+                $"{nameof(ChargeEnemySearchStrategy)}: VisualRoot以下に" +
+                "AnimatorとAnimator Controllerを設定してください。" +
+                "Walkモーションを再生せず、巡回処理は継続します。",
+                enemyObject);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(walkAnimationStateName))
+        {
+            Debug.LogWarning(
+                $"{nameof(ChargeEnemySearchStrategy)}: " +
+                "Walk用Animator State名が空です。",
+                enemyObject);
+            return;
+        }
+
+        int stateHash = Animator.StringToHash(walkAnimationStateName);
+        if (!animator.HasState(ANIMATION_BASE_LAYER_INDEX, stateHash))
+        {
+            Debug.LogWarning(
+                $"{nameof(ChargeEnemySearchStrategy)}: " +
+                $"AnimatorにState '{walkAnimationStateName}' が見つかりません。" +
+                "Animator ControllerとState名を確認してください。",
+                enemyObject);
+            return;
+        }
+
+        walkAnimationStateHash = stateHash;
+    }
+
+    /// <summary>
+    /// 巡回移動中にWalkを維持する。再生が停止した原因を隠さないよう、
+    /// State遷移や再生位置の停滞はログで確認できるようにする。
+    /// </summary>
+    private void EnsureWalkAnimation()
+    {
+        if (!CanPlayWalkAnimation())
+        {
+            return;
+        }
+
+        // 準備モーションではAnimator全体の速度を変更する。
+        // Searchでは停止速度を引き継がず、移動中のWalkを再開させる。
+        if (Mathf.Abs(animator.speed) <= ANIMATION_SPEED_EPSILON)
+        {
+            if (!hasRestoredStoppedAnimatorSpeed)
+            {
+                LogWalkAnimationSnapshot(
+                    "Animator.speedが0付近のため、移動中のWalk再生速度を1に復旧");
+                hasRestoredStoppedAnimatorSpeed = true;
+            }
+
+            animator.speed = 1f;
+            ResetWalkProgressSample();
+        }
+
+        if (animator.IsInTransition(ANIMATION_BASE_LAYER_INDEX))
+        {
+            AnimatorStateInfo nextState =
+                animator.GetNextAnimatorStateInfo(ANIMATION_BASE_LAYER_INDEX);
+
+            if (nextState.fullPathHash == walkAnimationStateHash)
+            {
+                // 遷移中の再生時刻は進まない場合があるため、ここでは停滞を判定しない。
+                ResetWalkProgressSample();
+                return;
+            }
+        }
+        else
+        {
+            AnimatorStateInfo currentState =
+                animator.GetCurrentAnimatorStateInfo(ANIMATION_BASE_LAYER_INDEX);
+
+            if (currentState.fullPathHash == walkAnimationStateHash &&
+                (currentState.loop || currentState.normalizedTime < 1f))
+            {
+                MonitorWalkProgress(currentState);
+                return;
+            }
+        }
+
+        // 遷移先がWalk以外、または非ループWalkが終了した場合だけ再生を指示する。
+        PlayWalkAnimationFromStart();
+    }
+
+    /// <summary>
+    /// 帰還完了・Walk以外への遷移など、再生開始を指示する必要がある場合だけ使用する。
+    /// </summary>
+    private void PlayWalkAnimationFromStart()
+    {
+        if (!CanPlayWalkAnimation())
+        {
+            return;
+        }
+
+        TrackWalkReplayCount();
+        ResetWalkProgressSample();
+        animator.Play(walkAnimationStateHash, ANIMATION_BASE_LAYER_INDEX, 0f);
+    }
+
+    private bool CanPlayWalkAnimation()
+    {
+        return walkAnimationStateHash != 0 &&
+               animator != null &&
+               animator.isActiveAndEnabled;
+    }
+
+    /// <summary>
+    /// WalkのStateに留まったままnormalizedTimeが進まないケースを検出する。
+    /// ループStateにいるだけでは正常再生中とは判断できないための診断処理。
+    /// </summary>
+    private void MonitorWalkProgress(AnimatorStateInfo stateInfo)
+    {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        float currentTime = Time.realtimeSinceStartup;
+
+        if (!hasWalkProgressSample)
+        {
+            lastWalkNormalizedTime = stateInfo.normalizedTime;
+            lastWalkProgressTime = currentTime;
+            hasWalkProgressSample = true;
+            return;
+        }
+
+        if (Mathf.Abs(stateInfo.normalizedTime - lastWalkNormalizedTime) >
+            WALK_PROGRESS_EPSILON)
+        {
+            lastWalkNormalizedTime = stateInfo.normalizedTime;
+            lastWalkProgressTime = currentTime;
+            hasReportedWalkStall = false;
+            return;
+        }
+
+        if (!hasReportedWalkStall &&
+            currentTime - lastWalkProgressTime >= WALK_STALL_WARNING_SECONDS)
+        {
+            hasReportedWalkStall = true;
+            LogWalkAnimationSnapshot(
+                "Walk State中なのにnormalizedTimeが0.75秒以上進んでいない");
+        }
+#endif
+    }
+
+    private void ResetWalkProgressSample()
+    {
+        hasWalkProgressSample = false;
+        hasReportedWalkStall = false;
+    }
+
+    /// <summary>
+    /// Walkを繰り返し指定しなければ維持できない場合、
+    /// Animator Controllerの意図しない遷移を疑えるようにする。
+    /// </summary>
+    private void TrackWalkReplayCount()
+    {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        float currentTime = Time.realtimeSinceStartup;
+        if (currentTime - walkReplayWindowStartTime > WALK_REPLAY_WINDOW_SECONDS)
+        {
+            walkReplayWindowStartTime = currentTime;
+            walkReplayCount = 0;
+            hasReportedRepeatedWalkReplay = false;
+        }
+
+        walkReplayCount++;
+        if (!hasReportedRepeatedWalkReplay &&
+            walkReplayCount >= WALK_REPLAY_WARNING_COUNT)
+        {
+            hasReportedRepeatedWalkReplay = true;
+            LogWalkAnimationSnapshot(
+                "Walkを1秒間に12回以上再指示している。Controller遷移の上書きを疑う");
+        }
+#endif
+    }
+
+    /// <summary>
+    /// 停止原因を絞るため、State・速度・再生Clip・カリング状態をまとめて記録する。
+    /// </summary>
+    private void LogWalkAnimationSnapshot(string reason)
+    {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        if (animator == null)
+        {
+            Debug.LogWarning($"[ChargeEnemyWalkDebug] {reason}: Animatorが見つかりません。", enemyObject);
+            return;
+        }
+
+        if (!animator.isActiveAndEnabled)
+        {
+            Debug.LogWarning($"[ChargeEnemyWalkDebug] {reason}: Animatorが無効です。", enemyObject);
+            return;
+        }
+
+        AnimatorStateInfo currentState =
+            animator.GetCurrentAnimatorStateInfo(ANIMATION_BASE_LAYER_INDEX);
+        bool isTransitioning =
+            animator.IsInTransition(ANIMATION_BASE_LAYER_INDEX);
+        int nextStateHash = isTransitioning
+            ? animator.GetNextAnimatorStateInfo(ANIMATION_BASE_LAYER_INDEX).fullPathHash
+            : 0;
+
+        AnimatorClipInfo[] clips =
+            animator.GetCurrentAnimatorClipInfo(ANIMATION_BASE_LAYER_INDEX);
+        string clipName = clips.Length > 0 && clips[0].clip != null
+            ? clips[0].clip.name
+            : "(なし)";
+
+        Debug.LogWarning(
+            $"[ChargeEnemyWalkDebug] {reason}. " +
+            $"Animator={animator.name}, Controller={animator.runtimeAnimatorController?.name ?? "null"}, " +
+            $"WalkState={walkAnimationStateName}, " +
+            $"CurrentStateHash={currentState.fullPathHash}, " +
+            $"WalkHash={walkAnimationStateHash}, NextStateHash={nextStateHash}, " +
+            $"normalizedTime={currentState.normalizedTime:F3}, " +
+            $"loop={currentState.loop}, stateSpeed={currentState.speed:F3}, " +
+            $"animatorSpeed={animator.speed:F3}, " +
+            $"transition={isTransitioning}, clip={clipName}, " +
+            $"updateMode={animator.updateMode}, cullingMode={animator.cullingMode}",
+            enemyObject);
+#endif
     }
 
     /// <summary>

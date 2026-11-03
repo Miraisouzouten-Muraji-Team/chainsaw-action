@@ -12,7 +12,8 @@ Material:
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
-  m_InvalidKeywords: []
+  m_InvalidKeywords:
+  - _POINTLIGHTVOLUMEENABLED_ON
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -135,14 +136,14 @@ Material:
     - _GlossyReflections: 0
     - _Height: 0
     - _HeightFalloff: 0.03
-    - _LightIntensity: 1
+    - _LightIntensity: 0
     - _MaxDistance: 100
     - _Metallic: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.005
     - _PixelEffectEnabled: 1
-    - _PointLightScatteringIntensity: 1
-    - _PointLightVolumeEnabled: 0
+    - _PointLightScatteringIntensity: 2
+    - _PointLightVolumeEnabled: 1
     - _QueueOffset: 0
     - _ReceiveShadows: 1
     - _SampleCount: 32

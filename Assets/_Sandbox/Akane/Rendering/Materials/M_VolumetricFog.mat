@@ -136,7 +136,7 @@ Material:
     - _GlossyReflections: 0
     - _Height: 0
     - _HeightFalloff: 0.03
-    - _LightIntensity: 1
+    - _LightIntensity: 0
     - _MaxDistance: 100
     - _Metallic: 0
     - _OcclusionStrength: 1

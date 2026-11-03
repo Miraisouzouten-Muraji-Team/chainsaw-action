@@ -135,6 +135,9 @@ bool IntersectsTile(
     uint2 tile,
     VolumetricLightData light)
 {
+    // デバッグ：距離や画面範囲の判定を無効化する。
+    // 登録されたすべてのライトを全画面領域へ割り当てる。
+    return true;
     float2 gridSize = _PointVolumeGrid.xy;
 
     float2 uvMin = float2(tile) / gridSize;
@@ -314,15 +317,27 @@ void InjectFroxels(uint3 id : SV_DispatchThreadID)
     [loop]
     for (uint i = 0; i < lightCount; ++i)
     {
-        uint lightIndex = _TileIndicesRead[
-            tileIndex * MAX_LIGHTS_PER_TILE + i];
+        //uint lightIndex = _TileIndicesRead[
+        //    tileIndex * MAX_LIGHTS_PER_TILE + i];
 
-        VolumetricLightData light = _PointLights[lightIndex];
+        //VolumetricLightData light = _PointLights[lightIndex];
 
-        lighting += EvaluateLight(
-            light,
-            samplePositionWS,
-            shadowChecks);
+        //lighting += EvaluateLight(
+        //    light,
+        //    samplePositionWS,
+        //    shadowChecks);
+
+        uint tileIndex =
+    id.y * (uint) _PointVolumeGrid.x + id.x;
+
+        uint lightCount = min(
+    _TileCountsRead[tileIndex],
+    (uint) MAX_LIGHTS_PER_TILE);
+
+// ライトが1個でも入っていたら赤くする
+        float value = lightCount > 0 ? 1.0 : 0.0;
+
+        _PointVolumeTex[id] = float4(value, 0.0, 0.0, 1.0);
     }
 
     _PointVolumeTex[id] = float4(lighting, 0.0);

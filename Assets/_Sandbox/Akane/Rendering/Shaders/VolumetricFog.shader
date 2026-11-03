@@ -266,6 +266,15 @@ Shader "Custom/VolumetricFog"
                     sampler_LinearClamp,
                     colorUv,
                     _BlitMipLevel);
+                    float2 uv = input.texcoord;
+
+float3 debugLighting = SAMPLE_TEXTURE3D_LOD(
+    _PointLightVolumeTex,
+    sampler_LinearClamp,
+    float3(uv, 0.5),
+    0).rgb;
+
+return half4(debugLighting, 1.0);
 
                 // Sceneビューの通常プレビューでは重複適用しない。
                 if (_SceneNormalPreviewEnabled > 0.5)

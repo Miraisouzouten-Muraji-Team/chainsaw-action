@@ -93,6 +93,10 @@ public class StageSelectController : MonoBehaviour
     [Tooltip("ロック中のエリアを決定したときに理由を表示するTextMeshProを設定します。")]
     [SerializeField] private TMP_Text lockMessageText;
 
+    [Header("ページインジケーター")]
+    [Tooltip("エリアの選択位置を表示するUI")]
+    [SerializeField] private AreaPageIndicator pageIndicator;
+
     private Vector3 leftArrowBaseScale;
     private Vector3 rightArrowBaseScale;
 
@@ -145,6 +149,7 @@ public class StageSelectController : MonoBehaviour
         rightArrow.gameObject.SetActive(currentIndex < areas.Length - 1);
     }
 
+    //初期化
     private void Start()
     {
         if (areas == null || areas.Length == 0)
@@ -187,6 +192,10 @@ public class StageSelectController : MonoBehaviour
 
         UpdateCardData();
         SetInitialPositions();
+
+        // ページインジケーターを初期化する。
+        pageIndicator.Initialize(areas.Length);
+        pageIndicator.SetCurrentIndex(currentIndex, false);
 
         if (lockMessageText != null)
         {
@@ -409,6 +418,9 @@ public class StageSelectController : MonoBehaviour
 
         currentIndex--;
 
+        // ページインジケーターを更新する。
+        pageIndicator.SetCurrentIndex(currentIndex);
+
         RefreshRectReferences();
         UpdateCardData();
 
@@ -456,6 +468,9 @@ public class StageSelectController : MonoBehaviour
         nextCard = oldPrevious;
 
         currentIndex++;
+
+        // ページインジケーターを更新する。
+        pageIndicator.SetCurrentIndex(currentIndex);
 
         RefreshRectReferences();
         UpdateCardData();
@@ -652,7 +667,7 @@ public class StageSelectController : MonoBehaviour
             if (lockMessageText != null)
             {
                 lockMessageText.text =
-                    "前のエリアをクリアすると開放されます。";
+                    "前のエリアをクリアすると開放されます";
 
                 lockMessageText.gameObject.SetActive(true);
             }

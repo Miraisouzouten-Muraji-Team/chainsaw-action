@@ -27,7 +27,8 @@ public class LoadScene : MonoBehaviour
         if (Keyboard.current != null &&
             Keyboard.current.rKey.wasPressedThisFrame)
         {
-            ReLoad();
+            isPlaying = true;
+            loadScene = "Stage1";
         }
 
         if (!isPlaying) return;

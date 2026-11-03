@@ -70,6 +70,17 @@ public class SensorChainsawDigging : MonoBehaviour
     public Vector3 SurfaceNormal =>
         contact.Normal;
 
+    private ChainsawSurface particleFrameSurface = ChainsawSurface.None;
+
+    // 面別の停止キーフレームへ到達した食い込みだけ、パーティクルの継続放出を許可する。
+    public bool IsParticleFrameActive =>
+        isActiveAndEnabled && IsRequested && IsDigging &&
+        particleFrameSurface != ChainsawSurface.None && Surface == particleFrameSurface &&
+        playerAnimator != null && playerAnimator.IsDiggingAnimationActive;
+
+    // 固定フレームへの到達・解除を通知し、同じタイミングでパーティクルの放出を切り替える。
+    public event System.Action DiggingParticleFrameChanged;
+
     // 凸の角で法線が真下になった場合も、本体幅による天井支持が確定しているかを返す。
     public bool HasCeilingBodySupport => isActiveAndEnabled && IsRequested &&
         Surface == ChainsawSurface.Ceiling && contact.HasCeilingBodyTarget;
@@ -86,6 +97,18 @@ public class SensorChainsawDigging : MonoBehaviour
         // Controllerが今回確定した速度でも照会し、加速やボーナス直後の移動先と判定位置を揃える。
         contact = support;
         return detector.TryGetCeilingFollowVelocity(contact, moveSpeed, stickSpeed, deltaTime, out velocity);
+    }
+
+    // 床継続中だけ、今回の速度で支持高さを調べ直してControllerへ追従速度を渡す。
+    public bool TryGetFloorFollowVelocity(float moveSpeed, float deltaTime, out Vector3 velocity)
+    {
+        velocity = default;
+        if (!isActiveAndEnabled || !IsRequested || Surface != ChainsawSurface.Floor ||
+            detector == null || !detector.TryGetFloorBodySupport(
+                moveSpeed, deltaTime, contact.Normal, out SensorChainsawContact support))
+            return false;
+        contact = support;
+        return detector.TryGetFloorFollowVelocity(contact, deltaTime, out velocity);
     }
 
     public float MoveSpeedBonus =>
@@ -304,6 +327,8 @@ public class SensorChainsawDigging : MonoBehaviour
     // 入力時に接触を確認し、接触中ならその場で成立、空中なら接触待機を開始する。
     private void BeginRequest(float facingDirection, bool waitForContact)
     {
+        particleFrameSurface = ChainsawSurface.None;
+        DiggingParticleFrameChanged?.Invoke();
         detector.SetFacingDirection(facingDirection);
         // 天井専用センサーの接触を優先し、それ以外は既存の面選択を使用する。
         bool hasContact = detector.TryGetCeilingContact(out SensorChainsawContact initialContact);
@@ -377,6 +402,8 @@ public class SensorChainsawDigging : MonoBehaviour
             playerAnimator != null && playerAnimator.IsDiggingAnimationActive)
         {
             playerAnimator.HoldDiggingAnimationImmediately();
+            particleFrameSurface = surface;
+            DiggingParticleFrameChanged?.Invoke();
         }
     }
 
@@ -813,6 +840,10 @@ public class SensorChainsawDigging : MonoBehaviour
         Surface =
             contact.Surface;
 
+        // 面が切り替わった場合も、新しい面の停止キーフレームに到達するまでは放出しない。
+        particleFrameSurface = ChainsawSurface.None;
+        DiggingParticleFrameChanged?.Invoke();
+
         // 地面→壁の切り替え時は呼び出し元が一旦Noneにするため、
         // 壁へ食い込み成立した時点で必ず進入バージョンを更新する。
         if (Surface == ChainsawSurface.Wall)
@@ -1080,6 +1111,8 @@ public class SensorChainsawDigging : MonoBehaviour
     public void Cancel(
         bool immediate)
     {
+        particleFrameSurface = ChainsawSurface.None;
+        DiggingParticleFrameChanged?.Invoke();
         // 被弾で解除されても、直前の物理衝突で成立した命中は次の物理更新まで残す。
         normalMovementHitEnemies.Clear();
         // 攻撃・ジャンプ・無効化でも、接触待ちを残さない。

@@ -117,7 +117,28 @@ public class ChainsawAccelerator : MonoBehaviour
             enabled = false;
             return;
         }
+        ResetForRespawn();
+    }
+
+    // 復活用に起動時の最低回転数へ戻し、前回の加減速・ボーナス減速の途中状態もすべて破棄する。
+    public void ResetForRespawn()
+    {
+        if (accelerationParameter == null) return;
         CurrentSpeed = minSpeed;
+        transitionTime = 0f;
+        transitionRange = 0f;
+        previousLimit = 0f;
+        wasDigging = false;
+        transitionInitialized = false;
+        transitionMode = TransitionMode.Accelerating;
+        isDiggingLimitPending = false;
+        pendingDiggingLimit = 0f;
+        isBonusDecelerating = false;
+        bonusDecelerationElapsed = 0f;
+        bonusDecelerationDuration = 0f;
+        bonusDecelerationStartSpeed = 0f;
+        bonusDecelerationTargetSpeed = 0f;
+        lastBonusDecelerationFixedTime = float.NegativeInfinity;
     }
 
     // 通常の加減速とボーナス減速を更新し、確定した減速目標への到達をアクセル入力より優先する。

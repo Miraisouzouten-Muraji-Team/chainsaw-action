@@ -643,13 +643,20 @@ public class SensorPlayerController : MonoBehaviour
 
                 case ChainsawSurface.Floor:
                     {
-                        Vector3 normal = chainsawDigging.SurfaceNormal;
-                        Vector3 tangent = new Vector3(normal.y, -normal.x, 0f).normalized;
-                        if (tangent.x < 0f) tangent = -tangent;
-                        // currentSpeedは斜面に沿った速度として使う。
-                        velocity = tangent * currentSpeed - normal * playerParameter.surfaceStickSpeed;
-                        if (chainsawDigging.Surface == ChainsawSurface.Floor)
+                        // 次の本体位置を支える床へ追従し、坂の頂点でも上向き速度を持ち越さない。
+                        if (chainsawDigging.TryGetFloorFollowVelocity(currentSpeed,
+                            deltaTime, out velocity))
+                        {
                             jumpsUsed = 0;
+                        }
+                        else
+                        {
+                            // 本当に床が途切れた場合は、空中で固定せず通常の落下へ戻す。
+                            chainsawDigging.Cancel(false);
+                            suppressGravity = false;
+                            velocity = playerRigidbody.linearVelocity;
+                            velocity.x = currentSpeed;
+                        }
                         break;
                     }
 

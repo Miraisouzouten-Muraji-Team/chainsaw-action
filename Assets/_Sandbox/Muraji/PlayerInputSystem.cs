@@ -551,6 +551,219 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                     ""isPartOfComposite"": false
                 }
             ]
+        },
+        {
+            ""name"": ""Tutorial"",
+            ""id"": ""14c08cca-add6-4838-b24e-7f8711dc7f41"",
+            ""actions"": [
+                {
+                    ""name"": ""Open"",
+                    ""type"": ""Button"",
+                    ""id"": ""0ebd9dbc-6869-43a8-9dab-8523e6beb847"",
+                    ""expectedControlType"": """",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false,
+                    ""priority"": 0
+                },
+                {
+                    ""name"": ""Close"",
+                    ""type"": ""Button"",
+                    ""id"": ""42970409-4c56-46f5-b3a9-166ef36101c4"",
+                    ""expectedControlType"": ""Button"",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false,
+                    ""priority"": 0
+                },
+                {
+                    ""name"": ""Navigate"",
+                    ""type"": ""Value"",
+                    ""id"": ""eb4797cf-0f6c-4f9f-a0be-a7465ab3533b"",
+                    ""expectedControlType"": ""Axis"",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": true,
+                    ""priority"": 0
+                },
+                {
+                    ""name"": ""ReleaseGuard"",
+                    ""type"": ""Button"",
+                    ""id"": ""34d1dec8-658d-4d22-9580-ec9cd099035b"",
+                    ""expectedControlType"": ""Button"",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false,
+                    ""priority"": 0
+                }
+            ],
+            ""bindings"": [
+                {
+                    ""name"": """",
+                    ""id"": ""5acc8604-3704-47fb-933d-c11cc236ab79"",
+                    ""path"": ""<Keyboard>/f"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Open"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""a5122143-d17a-4375-8778-a914179af7ff"",
+                    ""path"": ""<Gamepad>/start"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Open"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""010b3512-1c44-48ee-8721-da5a00001006"",
+                    ""path"": ""<Keyboard>/escape"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Close"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""4a5b226e-1ac3-4804-8839-37488e189d14"",
+                    ""path"": ""<Gamepad>/buttonEast"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Close"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""42cb5f34-5905-49ad-b691-8a8c2f5ef5b4"",
+                    ""path"": ""<Gamepad>/leftStick/x"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Navigate"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""39c70290-6a9d-4767-87f2-9ad2cdaa1d2e"",
+                    ""path"": ""<Gamepad>/dpad/x"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Navigate"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""8c18f082-ed40-4e60-90d7-b6d092a4386c"",
+                    ""path"": ""<Keyboard>/space"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""ReleaseGuard"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""1593dd65-d602-4176-a882-4d69bbcd8ad4"",
+                    ""path"": ""<Gamepad>/buttonSouth"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""ReleaseGuard"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""f6ff8b09-b1f3-41a0-ae27-ef4d1567001f"",
+                    ""path"": ""<Gamepad>/buttonNorth"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""ReleaseGuard"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": ""Keyboard"",
+                    ""id"": ""f44050d8-c679-472a-b0b6-93ba25e27a93"",
+                    ""path"": ""1DAxis"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Navigate"",
+                    ""isComposite"": true,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": ""negative"",
+                    ""id"": ""e0670a40-7d5a-4ab7-a906-e83400c91139"",
+                    ""path"": ""<Keyboard>/leftArrow"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Navigate"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": true
+                },
+                {
+                    ""name"": ""positive"",
+                    ""id"": ""2a4b6983-0581-45fd-b469-bba0101b5a9a"",
+                    ""path"": ""<Keyboard>/rightArrow"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Navigate"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": true
+                },
+                {
+                    ""name"": ""Keyboard"",
+                    ""id"": ""ed1154cb-858a-4e6a-9a24-a8001f3ce233"",
+                    ""path"": ""1DAxis"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Navigate"",
+                    ""isComposite"": true,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": ""negative"",
+                    ""id"": ""3ccca5a4-3a45-4362-a840-79ded3587dd3"",
+                    ""path"": ""<Keyboard>/a"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Navigate"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": true
+                },
+                {
+                    ""name"": ""positive"",
+                    ""id"": ""0a7f5c47-b825-459a-a495-1f5ff05900d6"",
+                    ""path"": ""<Keyboard>/d"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Navigate"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": true
+                }
+            ]
         }
     ],
     ""controlSchemes"": []
@@ -563,11 +776,18 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
         m_Player_Jump = m_Player.FindAction("Jump", throwIfNotFound: true);
         m_Player_Slash = m_Player.FindAction("Slash", throwIfNotFound: true);
         m_Player_Accelerate = m_Player.FindAction("Accelerate", throwIfNotFound: true);
+        // Tutorial
+        m_Tutorial = asset.FindActionMap("Tutorial", throwIfNotFound: true);
+        m_Tutorial_Open = m_Tutorial.FindAction("Open", throwIfNotFound: true);
+        m_Tutorial_Close = m_Tutorial.FindAction("Close", throwIfNotFound: true);
+        m_Tutorial_Navigate = m_Tutorial.FindAction("Navigate", throwIfNotFound: true);
+        m_Tutorial_ReleaseGuard = m_Tutorial.FindAction("ReleaseGuard", throwIfNotFound: true);
     }
 
     ~@PlayerInputSystem()
     {
         UnityEngine.Debug.Assert(!m_Player.enabled, "This will cause a leak and performance issues, PlayerInputSystem.Player.Disable() has not been called.");
+        UnityEngine.Debug.Assert(!m_Tutorial.enabled, "This will cause a leak and performance issues, PlayerInputSystem.Tutorial.Disable() has not been called.");
     }
 
     /// <summary>
@@ -790,6 +1010,135 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
     /// Provides a new <see cref="PlayerActions" /> instance referencing this action map.
     /// </summary>
     public PlayerActions @Player => new PlayerActions(this);
+
+    // Tutorial
+    private readonly InputActionMap m_Tutorial;
+    private List<ITutorialActions> m_TutorialActionsCallbackInterfaces = new List<ITutorialActions>();
+    private readonly InputAction m_Tutorial_Open;
+    private readonly InputAction m_Tutorial_Close;
+    private readonly InputAction m_Tutorial_Navigate;
+    private readonly InputAction m_Tutorial_ReleaseGuard;
+    /// <summary>
+    /// Provides access to input actions defined in input action map "Tutorial".
+    /// </summary>
+    public struct TutorialActions
+    {
+        private @PlayerInputSystem m_Wrapper;
+
+        /// <summary>
+        /// Construct a new instance of the input action map wrapper class.
+        /// </summary>
+        public TutorialActions(@PlayerInputSystem wrapper) { m_Wrapper = wrapper; }
+        /// <summary>
+        /// Provides access to the underlying input action "Tutorial/Open".
+        /// </summary>
+        public InputAction @Open => m_Wrapper.m_Tutorial_Open;
+        /// <summary>
+        /// Provides access to the underlying input action "Tutorial/Close".
+        /// </summary>
+        public InputAction @Close => m_Wrapper.m_Tutorial_Close;
+        /// <summary>
+        /// Provides access to the underlying input action "Tutorial/Navigate".
+        /// </summary>
+        public InputAction @Navigate => m_Wrapper.m_Tutorial_Navigate;
+        /// <summary>
+        /// Provides access to the underlying input action "Tutorial/ReleaseGuard".
+        /// </summary>
+        public InputAction @ReleaseGuard => m_Wrapper.m_Tutorial_ReleaseGuard;
+        /// <summary>
+        /// Provides access to the underlying input action map instance.
+        /// </summary>
+        public InputActionMap Get() { return m_Wrapper.m_Tutorial; }
+        /// <inheritdoc cref="UnityEngine.InputSystem.InputActionMap.Enable()" />
+        public void Enable() { Get().Enable(); }
+        /// <inheritdoc cref="UnityEngine.InputSystem.InputActionMap.Disable()" />
+        public void Disable() { Get().Disable(); }
+        /// <inheritdoc cref="UnityEngine.InputSystem.InputActionMap.enabled" />
+        public bool enabled => Get().enabled;
+        /// <summary>
+        /// Implicitly converts an <see ref="TutorialActions" /> to an <see ref="InputActionMap" /> instance.
+        /// </summary>
+        public static implicit operator InputActionMap(TutorialActions set) { return set.Get(); }
+        /// <summary>
+        /// Adds <see cref="InputAction.started"/>, <see cref="InputAction.performed"/> and <see cref="InputAction.canceled"/> callbacks provided via <param cref="instance" /> on all input actions contained in this map.
+        /// </summary>
+        /// <param name="instance">Callback instance.</param>
+        /// <remarks>
+        /// If <paramref name="instance" /> is <c>null</c> or <paramref name="instance"/> have already been added this method does nothing.
+        /// </remarks>
+        /// <seealso cref="TutorialActions" />
+        public void AddCallbacks(ITutorialActions instance)
+        {
+            if (instance == null || m_Wrapper.m_TutorialActionsCallbackInterfaces.Contains(instance)) return;
+            m_Wrapper.m_TutorialActionsCallbackInterfaces.Add(instance);
+            @Open.started += instance.OnOpen;
+            @Open.performed += instance.OnOpen;
+            @Open.canceled += instance.OnOpen;
+            @Close.started += instance.OnClose;
+            @Close.performed += instance.OnClose;
+            @Close.canceled += instance.OnClose;
+            @Navigate.started += instance.OnNavigate;
+            @Navigate.performed += instance.OnNavigate;
+            @Navigate.canceled += instance.OnNavigate;
+            @ReleaseGuard.started += instance.OnReleaseGuard;
+            @ReleaseGuard.performed += instance.OnReleaseGuard;
+            @ReleaseGuard.canceled += instance.OnReleaseGuard;
+        }
+
+        /// <summary>
+        /// Removes <see cref="InputAction.started"/>, <see cref="InputAction.performed"/> and <see cref="InputAction.canceled"/> callbacks provided via <param cref="instance" /> on all input actions contained in this map.
+        /// </summary>
+        /// <remarks>
+        /// Calling this method when <paramref name="instance" /> have not previously been registered has no side-effects.
+        /// </remarks>
+        /// <seealso cref="TutorialActions" />
+        private void UnregisterCallbacks(ITutorialActions instance)
+        {
+            @Open.started -= instance.OnOpen;
+            @Open.performed -= instance.OnOpen;
+            @Open.canceled -= instance.OnOpen;
+            @Close.started -= instance.OnClose;
+            @Close.performed -= instance.OnClose;
+            @Close.canceled -= instance.OnClose;
+            @Navigate.started -= instance.OnNavigate;
+            @Navigate.performed -= instance.OnNavigate;
+            @Navigate.canceled -= instance.OnNavigate;
+            @ReleaseGuard.started -= instance.OnReleaseGuard;
+            @ReleaseGuard.performed -= instance.OnReleaseGuard;
+            @ReleaseGuard.canceled -= instance.OnReleaseGuard;
+        }
+
+        /// <summary>
+        /// Unregisters <param cref="instance" /> and unregisters all input action callbacks via <see cref="TutorialActions.UnregisterCallbacks(ITutorialActions)" />.
+        /// </summary>
+        /// <seealso cref="TutorialActions.UnregisterCallbacks(ITutorialActions)" />
+        public void RemoveCallbacks(ITutorialActions instance)
+        {
+            if (m_Wrapper.m_TutorialActionsCallbackInterfaces.Remove(instance))
+                UnregisterCallbacks(instance);
+        }
+
+        /// <summary>
+        /// Replaces all existing callback instances and previously registered input action callbacks associated with them with callbacks provided via <param cref="instance" />.
+        /// </summary>
+        /// <remarks>
+        /// If <paramref name="instance" /> is <c>null</c>, calling this method will only unregister all existing callbacks but not register any new callbacks.
+        /// </remarks>
+        /// <seealso cref="TutorialActions.AddCallbacks(ITutorialActions)" />
+        /// <seealso cref="TutorialActions.RemoveCallbacks(ITutorialActions)" />
+        /// <seealso cref="TutorialActions.UnregisterCallbacks(ITutorialActions)" />
+        public void SetCallbacks(ITutorialActions instance)
+        {
+            foreach (var item in m_Wrapper.m_TutorialActionsCallbackInterfaces)
+                UnregisterCallbacks(item);
+            m_Wrapper.m_TutorialActionsCallbackInterfaces.Clear();
+            AddCallbacks(instance);
+        }
+    }
+    /// <summary>
+    /// Provides a new <see cref="TutorialActions" /> instance referencing this action map.
+    /// </summary>
+    public TutorialActions @Tutorial => new TutorialActions(this);
     /// <summary>
     /// Interface to implement callback methods for all input action callbacks associated with input actions defined by "Player" which allows adding and removing callbacks.
     /// </summary>
@@ -839,5 +1188,41 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnAccelerate(InputAction.CallbackContext context);
+    }
+    /// <summary>
+    /// Interface to implement callback methods for all input action callbacks associated with input actions defined by "Tutorial" which allows adding and removing callbacks.
+    /// </summary>
+    /// <seealso cref="TutorialActions.AddCallbacks(ITutorialActions)" />
+    /// <seealso cref="TutorialActions.RemoveCallbacks(ITutorialActions)" />
+    public interface ITutorialActions
+    {
+        /// <summary>
+        /// Method invoked when associated input action "Open" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnOpen(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Close" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnClose(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "Navigate" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnNavigate(InputAction.CallbackContext context);
+        /// <summary>
+        /// Method invoked when associated input action "ReleaseGuard" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
+        /// </summary>
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
+        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
+        void OnReleaseGuard(InputAction.CallbackContext context);
     }
 }

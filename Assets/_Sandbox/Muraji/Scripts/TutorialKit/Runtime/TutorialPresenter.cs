@@ -12,15 +12,6 @@ namespace Project.Tutorial
     {
         [Tooltip("日本語対応のDynamic Font推奨。未指定時はUnity標準フォント。")]
         public Font uiFont;
-        [Header("チュートリアルのInput Actions")]
-        [Tooltip("説明を開くButton型Actionです。未設定ならEキー・ゲームパッドの西ボタンを使用します。")]
-        [SerializeField] private InputActionReference tutorialOpen;
-        [Tooltip("説明を閉じるButton型Actionです。未設定ならEscapeキー・ゲームパッドの東ボタンを使用します。")]
-        [SerializeField] private InputActionReference tutorialClose;
-        [Tooltip("ページ切替用のValue型・AxisのActionです。負の値で前、正の値で次へ進みます。未設定なら左右キー・A/D・左スティック・十字キーを使用します。")]
-        [SerializeField] private InputActionReference tutorialNavigate;
-        [Tooltip("閉じた直後の誤操作を防ぐため、離されるまで再開を待つButton型Actionです。未設定ならSpace・ゲームパッドの南／北ボタンを確認します。開閉ボタンは別途自動確認します。")]
-        [SerializeField] private InputActionReference tutorialReleaseGuard;
         private InputAction openAction, closeAction, navigateAction, releaseGuardAction;
 
         private static TutorialPresenter instance;
@@ -56,15 +47,12 @@ namespace Project.Tutorial
             // 専用のルートオブジェクトに配置する。
             transform.SetParent(null);
             DontDestroyOnLoad(gameObject);
-            InitializeTutorialInput();
             BuildUI();
         }
         // UI入力を有効化し、シーン変更を監視する。
         private void OnEnable()
         {
             if (instance != this) return;
-            openAction?.Enable(); closeAction?.Enable();
-            navigateAction?.Enable(); releaseGuardAction?.Enable();
             if (canvas != null) canvas.gameObject.SetActive(true);
             SceneManager.activeSceneChanged += SceneChanged;
             SceneManager.sceneUnloaded += SceneUnloaded;
@@ -97,7 +85,7 @@ namespace Project.Tutorial
             signOcclusion = sign.root.gameObject.AddComponent<TutorialSignOcclusion>();
             prompt = TutorialView.Label(canvasRect, font, "Interact Prompt", 28, Color.cyan);
             prompt.rectTransform.sizeDelta = new Vector2(520, 56);
-            prompt.text = $"[ {GetInputLabel(tutorialOpen, openAction, "E / Xbox X / PS □")} ] 説明を見る"; prompt.gameObject.SetActive(false);
+            prompt.gameObject.SetActive(false);
             var shadeRect = TutorialView.Rect("Modal Backdrop", canvasRect, Vector2.zero);
             TutorialView.Place(shadeRect, Vector2.zero, Vector2.one);
             var backdrop = shadeRect.gameObject.AddComponent<Image>(); backdrop.color = new Color(0, 0, 0, .72f);
@@ -118,7 +106,7 @@ namespace Project.Tutorial
 
         private struct InputState
         {
-            internal bool open, close, actionHeld;
+            internal bool close, actionHeld;
             internal float horizontal;
         }
         // UI専用Actionから入力を取得する。停止中も動く既存Updateで使用する。
@@ -126,7 +114,6 @@ namespace Project.Tutorial
         {
             return new InputState
             {
-                open = openAction != null && openAction.WasPressedThisFrame(),
                 close = closeAction != null && closeAction.WasPressedThisFrame(),
                 horizontal = navigateAction != null ? navigateAction.ReadValue<float>() : 0f,
                 actionHeld = (openAction != null && openAction.IsPressed()) ||
@@ -135,58 +122,24 @@ namespace Project.Tutorial
             };
         }
 
-        // 登録Actionを複製してUI専用に使用し、ゲーム側の有効・無効状態と分離する。
-        private void InitializeTutorialInput()
+        // 選択中のプレイヤーが所有する入力アセットからチュートリアル操作を取得する。
+        private void BindTutorialInput(TutorialPlayer player)
         {
-            openAction = tutorialOpen != null && tutorialOpen.action != null
-                ? tutorialOpen.action.Clone() : new InputAction("TutorialOpen", InputActionType.Button);
-            if (tutorialOpen == null || tutorialOpen.action == null)
-            {
-                openAction.AddBinding("<Keyboard>/e");
-                openAction.AddBinding("<Gamepad>/buttonWest");
-            }
-            closeAction = tutorialClose != null && tutorialClose.action != null
-                ? tutorialClose.action.Clone() : new InputAction("TutorialClose", InputActionType.Button);
-            if (tutorialClose == null || tutorialClose.action == null)
-            {
-                closeAction.AddBinding("<Keyboard>/escape");
-                closeAction.AddBinding("<Gamepad>/buttonEast");
-            }
-            navigateAction = tutorialNavigate != null && tutorialNavigate.action != null
-                ? tutorialNavigate.action.Clone() : new InputAction("TutorialNavigate", InputActionType.Value, expectedControlType: "Axis");
-            if (tutorialNavigate == null || tutorialNavigate.action == null)
-            {
-                navigateAction.AddBinding("<Gamepad>/leftStick/x");
-                navigateAction.AddBinding("<Gamepad>/dpad/x");
-                navigateAction.AddCompositeBinding("1DAxis")
-                    .With("Negative", "<Keyboard>/leftArrow").With("Positive", "<Keyboard>/rightArrow");
-                navigateAction.AddCompositeBinding("1DAxis")
-                    .With("Negative", "<Keyboard>/a").With("Positive", "<Keyboard>/d");
-            }
-            releaseGuardAction = tutorialReleaseGuard != null && tutorialReleaseGuard.action != null
-                ? tutorialReleaseGuard.action.Clone() : new InputAction("TutorialReleaseGuard", InputActionType.Button);
-            if (tutorialReleaseGuard == null || tutorialReleaseGuard.action == null)
-            {
-                releaseGuardAction.AddBinding("<Keyboard>/space");
-                releaseGuardAction.AddBinding("<Gamepad>/buttonSouth");
-                releaseGuardAction.AddBinding("<Gamepad>/buttonNorth");
-            }
-        }
-
-        // 既定入力は両機種のボタン名を表示し、独自設定時は登録済みの割り当てを表示する。
-        private static string GetInputLabel(InputActionReference reference, InputAction action, string defaultLabel)
-        {
-            return reference != null && reference.action != null
-                ? action.GetBindingDisplayString()
-                : defaultLabel;
+            var map = player != null
+                ? player.InputHandler?.SharedInputActions?.FindActionMap("Tutorial")
+                : null;
+            openAction = map?.FindAction("Open");
+            closeAction = map?.FindAction("Close");
+            navigateAction = map?.FindAction("Navigate");
+            releaseGuardAction = map?.FindAction("ReleaseGuard");
         }
 
         private void Update()
         {
             if (instance != this || canvas == null) return;
-            var input = ReadInput();
             if (paused)
             {
+                var input = ReadInput();
                 if (modalZone == null || !modalZone.isActiveAndEnabled || modalPlayer == null || !modalPlayer.isActiveAndEnabled)
                 { CloseImmediately(); return; }
                 if (closing)
@@ -217,11 +170,14 @@ namespace Project.Tutorial
             if (shownSign != null && sign.root.gameObject.activeSelf)
             { signClock += Time.unscaledDeltaTime; sign.Tick(signClock); Position(sign.root, shownSign); }
             bool interactive = selected != null && selected.definition.mode == TutorialMode.InteractiveSlides;
+            BindTutorialInput(interactive ? selectedPlayer : null);
+            interactive = interactive && openAction != null && openAction.enabled && closeAction != null && navigateAction != null;
             prompt.gameObject.SetActive(interactive);
             if (interactive)
             {
+                prompt.text = "[ F / Xbox Menu / PS Options ] 説明を見る";
                 Position(prompt.rectTransform, selected);
-                if (input.open && Time.timeScale > 0f) Open();
+                if (openAction.WasPressedThisFrame() && Time.timeScale > 0f) Open();
             }
         }
         private void SelectZone()
@@ -279,7 +235,7 @@ namespace Project.Tutorial
             modalClock = 0f;
             modal.SetPage(modalDefinition.pages[pageIndex] ?? new TutorialPage { title = "未設定", description = "このページの内容を設定してください。" });
             modal.Tick(0f);
-            modal.footer.text = $"{pageIndex + 1} / {modalDefinition.pages.Length}　 {GetInputLabel(tutorialNavigate, navigateAction, "← → / 左スティック・十字キー")}：切替　 {GetInputLabel(tutorialClose, closeAction, "Esc / Xbox B / PS ○")}：閉じる";
+            modal.footer.text = $"{pageIndex + 1} / {modalDefinition.pages.Length}　 ← → / 左スティック・十字キー：切替　 Esc / Xbox B / PS ○：閉じる";
             modal.previous.interactable = pageIndex > 0;
             modal.next.interactable = pageIndex < modalDefinition.pages.Length - 1;
         }
@@ -300,21 +256,17 @@ namespace Project.Tutorial
             if (modal != null) modal.root.gameObject.SetActive(false);
             if (shade != null) shade.SetActive(false);
         }
-        // 専用Actionを無効化して、説明表示中ならゲームを再開する。
+        // シーン通知を解除し、説明表示中ならゲームを再開する。
         private void OnDisable()
         {
-            openAction?.Disable(); closeAction?.Disable();
-            navigateAction?.Disable(); releaseGuardAction?.Disable();
             SceneManager.activeSceneChanged -= SceneChanged;
             SceneManager.sceneUnloaded -= SceneUnloaded;
             CloseImmediately();
             if (canvas != null) canvas.gameObject.SetActive(false);
         }
-        // 複製したActionのリソースを解放する。
+        // 破棄時にゲームを再開し、Presenterの参照を解除する。
         private void OnDestroy()
         {
-            openAction?.Dispose(); closeAction?.Dispose();
-            navigateAction?.Dispose(); releaseGuardAction?.Dispose();
             CloseImmediately(); if (instance == this) instance = null;
         }
     }

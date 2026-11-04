@@ -54,6 +54,10 @@ public class ChainsawAttack : MonoBehaviour
         new Dictionary<(AttackData, int), AttackData>();
 
     private AttackData currentData;
+    [Header("3段目の画像インパクト")]
+    [SerializeField] private AttackData thirdAttackData;
+    [SerializeField] private ImpactImageSequence impactImageSequence;
+    private bool impactPlayed;
     private float attackHitStopTime;
     private float attackShakeMagnitude;
 
@@ -108,6 +112,7 @@ public class ChainsawAttack : MonoBehaviour
         }
 
         currentData = data;
+        impactPlayed = false;
 
         // 各段の開始時点で演出値を保存する。
         attackHitStopTime = Mathf.Max(0f, data.hitStopTime);
@@ -354,6 +359,14 @@ public class ChainsawAttack : MonoBehaviour
             // 送信できなかった場合は、次の接触通知で再試行できるようにする。
             hitEnemies.Remove(receiver);
             return;
+        }
+
+        if (!impactPlayed && thirdAttackData != null && attackData == thirdAttackData)
+        {
+            impactPlayed = true;
+            PlayerThirdAttackImpact.PlayOnHit(point);
+            if (impactImageSequence != null)
+                impactImageSequence.Play();
         }
 
         // 通常攻撃だけに適用する。食い込みの既存の押し出しとは重複させない。

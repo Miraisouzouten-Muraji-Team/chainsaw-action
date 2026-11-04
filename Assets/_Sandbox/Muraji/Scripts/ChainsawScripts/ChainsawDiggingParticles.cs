@@ -11,6 +11,9 @@ public class ChainsawDiggingParticles : MonoBehaviour
     [Tooltip("第1段階のParticle SystemのPrefabです。従来のPrefab設定をそのまま引き継ぎます。")]
     [SerializeField] private ParticleSystem particlePrefab;
 
+    [Tooltip("敵への食い込み中に使用する専用のParticle SystemのPrefabです。未設定なら通常のアクセル段階に従います。")]
+    [SerializeField] private ParticleSystem enemyParticlePrefab;
+
     [Header("アクセルによる3段階の強さ")]
     [Tooltip("アクセル値を参照するコンポーネントです。未設定ならプレイヤーの子から非表示のものも含めて取得します。")]
     [SerializeField] private ChainsawAccelerator accelerator;
@@ -176,9 +179,14 @@ public class ChainsawDiggingParticles : MonoBehaviour
         }
     }
 
-    // 実際のアクセル値で段階を選び、Prefab未設定時は下の段階へ戻す。
+    // 敵専用Prefabを優先し、それ以外はアクセル値で段階を選ぶ。
     private ParticleSystem SelectParticlePrefab()
     {
+        if (chainsawDigging.Surface == ChainsawSurface.Enemy && enemyParticlePrefab != null)
+        {
+            return enemyParticlePrefab;
+        }
+
         float acceleratorValue = accelerator != null ? accelerator.CurrentSpeed : 0f;
         float mediumThreshold = Mathf.Max(0f, mediumAcceleratorThreshold);
         float strongThreshold = Mathf.Max(mediumThreshold + 0.01f, strongAcceleratorThreshold);

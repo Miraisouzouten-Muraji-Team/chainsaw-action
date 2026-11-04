@@ -24,24 +24,9 @@ public class StageProgressTestTool : MonoBehaviour
     }
 
     /// <summary>
-    /// テスト用にすべてのエリアをロックする。
-    /// </summary>
-    [ContextMenu("テスト/すべてのエリアをロック")]
-    private void TestLockAll()
-    {
-        if (!Application.isPlaying)
-            return;
-
-        StageProgressManager.ResetProgress();
-        RefreshDisplay();
-
-        Debug.Log("テスト：すべてのエリアをロックしました。");
-    }
-
-    /// <summary>
     /// 保存された進行状況を初期状態に戻す。
     /// </summary>
-    [ContextMenu("テスト/進行状況を初期化")]
+    [ContextMenu("テスト/進行状況を初期化（全エリアをロック）")]
     private void TestResetProgress()
     {
         if (!Application.isPlaying)

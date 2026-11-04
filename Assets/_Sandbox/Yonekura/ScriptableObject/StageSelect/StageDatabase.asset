@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ecb8fd0df512e4a47aaf4833d80698e8, type: 3}
+  m_Name: StageDatabase
+  m_EditorClassIdentifier: Assembly-CSharp::StageDatabase
+  areas:
+  - displayName: 'STAGE1
+
+      AREA1'
+    screenshot: {fileID: 6000318604131738775, guid: 6241d1a0777ebe449a8b297e24c2fd18, type: 3}
+    sceneName: Stage1Area1
+  - displayName: 'STAGE1
+
+      AREA2'
+    screenshot: {fileID: 7034877445000775692, guid: 499d4a846061bdb44a21d16b09fb74cb, type: 3}
+    sceneName: Stage1Area2
+  - displayName: 'STAGE1
+
+      AREA3'
+    screenshot: {fileID: 681335512958062064, guid: fa776f90272ba8648b677806ca5f02d7, type: 3}
+    sceneName: Stage1Area3

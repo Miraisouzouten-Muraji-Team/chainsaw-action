@@ -7,16 +7,16 @@ using UnityEngine;
 [Serializable]
 public class StageAreaData
 {
-    [Tooltip("ステージ名")]
-    public string stageName;
+    [Header("カード表示")]
+    [Tooltip("カードに表示するステージ名。改行して複数行で表示できます。")]
+    [TextArea(1, 4)]
+    public string displayName;
 
-    [Tooltip("エリア番号")]
-    public string areaNumber;
-
-    [Tooltip("ステージのスクリーンショット")]
+    [Tooltip("カードに表示するステージのスクリーンショット。")]
     public Sprite screenshot;
 
-    [Tooltip("遷移先のシーン名")]
+    [Header("遷移後のシーン")]
+    [Tooltip("ステージ決定時に読み込む遷移先のシーン名。")]
     public string sceneName;
 }
 

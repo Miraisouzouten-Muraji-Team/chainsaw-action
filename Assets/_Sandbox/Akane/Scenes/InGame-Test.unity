@@ -53813,7 +53813,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 024c06de20f57dd43a0f59caf380dfd6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.VolumetricPointLightSource
-  _volumetricIntensity: 2
+  _volumetricIntensity: 10
   _castVolumetricShadows: 0
 --- !u!114 &396143614
 MonoBehaviour:
@@ -53855,8 +53855,8 @@ Light:
   serializedVersion: 12
   m_Type: 0
   m_Color: {r: 1, g: 0, b: 0, a: 1}
-  m_Intensity: 10
-  m_Range: 20
+  m_Intensity: 100
+  m_Range: 200
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
   m_CookieSize2D: {x: 0.5, y: 0.5}
@@ -53917,13 +53917,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 396143612}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.3558373, y: -0, z: -0, w: 0.93454796}
-  m_LocalPosition: {x: 11.63, y: 6.75, z: -1.48}
+  m_LocalRotation: {x: 0.63270235, y: -0, z: -0, w: 0.77439505}
+  m_LocalPosition: {x: 11.63, y: 5.67, z: 0.07}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 41.69, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 78.5, y: 0, z: 0}
 --- !u!1 &397262841
 GameObject:
   m_ObjectHideFlags: 0
@@ -157251,7 +157251,7 @@ Light:
   serializedVersion: 12
   m_Type: 1
   m_Color: {r: 1, g: 0.95686275, b: 0.8392157, a: 1}
-  m_Intensity: 1
+  m_Intensity: 0
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
@@ -173552,7 +173552,7 @@ MonoBehaviour:
   version: 2
   globalVolume: 0
   mode: 0
-  size: {x: 178.51233, y: 44.75, z: 157.86626}
+  size: {x: 178.51233, y: 44.75, z: 157.86624}
   overrideRendererFilters: 0
   minRendererVolumeSize: 0.1
   objectLayerMask:
@@ -173561,7 +173561,7 @@ MonoBehaviour:
   lowestSubdivLevelOverride: 0
   highestSubdivLevelOverride: 7
   overridesSubdivLevels: 0
-  mightNeedRebaking: 0
+  mightNeedRebaking: 1
   cachedTransform:
     e00: 1
     e01: 0
@@ -173590,7 +173590,7 @@ Transform:
   m_GameObject: {fileID: 1385930352}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 83.637886, y: 19.875, z: -5.837204}
+  m_LocalPosition: {x: 83.637886, y: 19.875, z: -5.8372116}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

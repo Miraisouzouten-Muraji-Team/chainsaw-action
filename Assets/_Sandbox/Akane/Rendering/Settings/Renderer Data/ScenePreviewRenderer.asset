@@ -150,10 +150,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PointLightVolumeRendererFeature
   m_Active: 1
   _computeShader: {fileID: 7200000, guid: 4cc81d5e13b896346b7902c591f2e022, type: 3}
-  _pixelSize: 8
-  _depthSlices: 32
+  _pixelSize: 4
+  _depthSlices: 128
   _maxDistance: 100
   _anisotropy: 0.5
+  _enableDiagnosticLogs: 1
 --- !u!114 &4080925466021557763
 MonoBehaviour:
   m_ObjectHideFlags: 0

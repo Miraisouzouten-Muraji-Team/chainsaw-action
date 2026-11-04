@@ -11,8 +11,7 @@ namespace Project.Rendering.Pixel
 {
     /// <summary>
     /// Point / Spot Lightの体積照明を3Dテクスチャへ生成する。
-    /// 画面領域ごとに影響するライトを選別し、GPUで散乱光を計算する。
-    /// 現在は平行投影に対応する。
+    /// 平行投影と透視投影の両方に対応する。
     /// </summary>
     public sealed class PointLightVolumeRendererFeature : ScriptableRendererFeature
     {
@@ -20,7 +19,6 @@ namespace Project.Rendering.Pixel
         private const int MAX_LIGHTS_PER_TILE = 64;
         private const int LIGHT_STRIDE = sizeof(float) * 16;
 
-        // Compute ShaderのProperty ID。
         private static readonly int LIGHT_COUNT_ID =
             Shader.PropertyToID("_PointLightCount");
 
@@ -62,7 +60,7 @@ namespace Project.Rendering.Pixel
         [SerializeField, Range(4, 32)]
         private int _pixelSize = 8;
 
-        [SerializeField, Range(8, 64)]
+        [SerializeField, Range(8, 512)]
         private int _depthSlices = 32;
 
         [SerializeField, Min(1f)]
@@ -73,10 +71,12 @@ namespace Project.Rendering.Pixel
 
         [Header("Debug")]
         [SerializeField]
-        private bool _enableDiagnosticLogs = true;
+        private bool _enableDiagnosticLogs = false;
 
-        // GPUへ渡すPoint / Spot共通のライト情報。
-        // Vector4を4個使用するため64バイト。
+        /// <summary>
+        /// GPUへ転送するライト情報。
+        /// HLSL側のVolumetricLightDataと配置を合わせる。
+        /// </summary>
         [StructLayout(LayoutKind.Sequential)]
         private struct PointLightData
         {
@@ -88,21 +88,21 @@ namespace Project.Rendering.Pixel
 
         private PointLightData[] _staging;
 
+        private readonly Dictionary<Light, int> _shadowIndices = new();
+
         private GraphicsBuffer _lightBuffer;
         private GraphicsBuffer _tileCounts;
         private GraphicsBuffer _tileIndices;
 
         private int _tileCapacity;
-
         private VolumePass _pass;
 
 #if UNITY_EDITOR
-        // Editor上のログを2秒間隔に制限する。
         private double _nextEnqueueLogTime;
 #endif
 
         /// <summary>
-        /// GPUバッファと描画Passを初期化する。
+        /// 必要なバッファとPassを作成する。
         /// </summary>
         public override void Create()
         {
@@ -123,7 +123,7 @@ namespace Project.Rendering.Pixel
         }
 
         /// <summary>
-        /// 対象カメラに体積照明Passを登録する。
+        /// Game / Sceneカメラに描画Passを登録する。
         /// </summary>
         public override void AddRenderPasses(
             ScriptableRenderer renderer,
@@ -131,12 +131,8 @@ namespace Project.Rendering.Pixel
         {
             Camera camera = renderingData.cameraData.camera;
 
-            // Renderer Featureが呼ばれているか確認する。
 #if UNITY_EDITOR
-            if (_enableDiagnosticLogs &&
-                camera != null &&
-                (camera.cameraType == CameraType.Game ||
-                 camera.cameraType == CameraType.SceneView))
+            if (_enableDiagnosticLogs && camera != null)
             {
                 double currentTime =
                     UnityEditor.EditorApplication.timeSinceStartup;
@@ -147,35 +143,27 @@ namespace Project.Rendering.Pixel
 
                     Debug.Log(
                         $"[Volumetric][AddRenderPasses] " +
-                        $"Camera: {camera.name}, " +
-                        $"Type: {camera.cameraType}, " +
-                        $"Orthographic: {camera.orthographic}, " +
-                        $"Compute: {_computeShader != null}, " +
-                        $"Pass: {_pass != null}, " +
-                        $"SupportsCompute: {SystemInfo.supportsComputeShaders}");
+                        $"Camera={camera.name}, " +
+                        $"Type={camera.cameraType}, " +
+                        $"Orthographic={camera.orthographic}");
                 }
             }
 #endif
 
-            if (_computeShader == null ||
+            if (camera == null ||
+                _computeShader == null ||
                 _pass == null ||
                 !SystemInfo.supportsComputeShaders)
             {
                 return;
             }
 
-            if (camera == null)
-            {
-                return;
-            }
-
-            // Pixel Capture Cameraでは体積照明を重複計算しない。
+            // Pixel Capture Cameraでは重複計算しない。
             if (camera.GetComponent<PixelCaptureViewMarker>() != null)
             {
                 return;
             }
 
-            // Game / Sceneビュー以外では実行しない。
             if (camera.cameraType != CameraType.Game &&
                 camera.cameraType != CameraType.SceneView)
             {
@@ -186,21 +174,19 @@ namespace Project.Rendering.Pixel
         }
 
         /// <summary>
-        /// 有効なPoint / Spot Lightを収集し、GPU転送用データを作成する。
-        /// URPが割り当てた追加ライトの影番号も取得する。
+        /// Point / Spot Lightを収集してGPUへ転送する。
         /// </summary>
         private int CollectLights(
             UniversalLightData lightData,
             UniversalRenderer universalRenderer)
         {
-            // LightとURP内部の影番号を対応付ける。
-            Dictionary<Light, int> shadowIndices = new();
+            _shadowIndices.Clear();
 
+            // URPのVisibleLight番号と影番号を対応付ける。
             if (universalRenderer != null)
             {
                 for (int i = 0; i < lightData.visibleLights.Length; i++)
                 {
-                    // Main Lightは対象外。
                     if (i == lightData.mainLightIndex)
                     {
                         continue;
@@ -211,13 +197,9 @@ namespace Project.Rendering.Pixel
 
                     Light light = visibleLight.light;
 
-                    if (light == null)
-                    {
-                        continue;
-                    }
-
-                    if (light.type != LightType.Point &&
-                        light.type != LightType.Spot)
+                    if (light == null ||
+                        (light.type != LightType.Point &&
+                         light.type != LightType.Spot))
                     {
                         continue;
                     }
@@ -225,7 +207,7 @@ namespace Project.Rendering.Pixel
                     int shadowIndex =
                         universalRenderer.GetVolumetricShadowLightIndex(i);
 
-                    shadowIndices[light] = shadowIndex;
+                    _shadowIndices[light] = shadowIndex;
                 }
             }
 
@@ -254,22 +236,20 @@ namespace Project.Rendering.Pixel
                 float intensity =
                     light.intensity * source.VolumetricIntensity;
 
-                bool isSpot =
-                    light.type == LightType.Spot;
+                bool isSpot = light.type == LightType.Spot;
 
-                // 影がない場合は-1。
+                // 有効なShadow Mapがなければ-1。
                 int shadowIndex = -1;
 
                 if (source.CastVolumetricShadows &&
                     light.shadows != LightShadows.None &&
-                    shadowIndices.TryGetValue(
-                        light,
-                        out int foundIndex))
+                    _shadowIndices.TryGetValue(
+                        light, out int foundIndex))
                 {
                     shadowIndex = foundIndex;
                 }
 
-                // Spot Angleは円錐の全角なので半分にする。
+                // Spot Angleは円錐全体の角度。
                 float outerAngle = isSpot
                     ? light.spotAngle * 0.5f
                     : 180f;
@@ -286,7 +266,6 @@ namespace Project.Rendering.Pixel
                 float innerCos =
                     Mathf.Cos(innerAngle * Mathf.Deg2Rad);
 
-                // GPUへ転送するライト情報。
                 _staging[count] = new PointLightData
                 {
                     PositionRange = new Vector4(
@@ -307,7 +286,6 @@ namespace Project.Rendering.Pixel
                         direction.z,
                         isSpot ? 1f : 0f),
 
-                    // 影なしは0としてGPUへ渡す。
                     SpotParams = new Vector4(
                         innerCos,
                         outerCos,
@@ -318,21 +296,17 @@ namespace Project.Rendering.Pixel
                 count++;
             }
 
-            // 収集したライトのみGPUへ転送する。
             if (count > 0)
             {
                 _lightBuffer.SetData(
-                    _staging,
-                    0,
-                    0,
-                    count);
+                    _staging, 0, 0, count);
             }
 
             return count;
         }
 
         /// <summary>
-        /// 画面領域ごとのライト情報を保持するGPUバッファを確保する。
+        /// 画面領域ごとのライト一覧用バッファを確保する。
         /// </summary>
         private void EnsureTileBuffers(int tileCount)
         {
@@ -360,20 +334,16 @@ namespace Project.Rendering.Pixel
         }
 
         /// <summary>
-        /// 領域別のライト選別と3D体積照明の生成を実行するPass。
+        /// 領域別ライト選別と3D体積照明の生成を行う。
         /// </summary>
         private sealed class VolumePass : ScriptableRenderPass
         {
             private readonly PointLightVolumeRendererFeature _owner;
 
 #if UNITY_EDITOR
-            // RenderGraph側のログを2秒間隔に制限する。
             private double _nextLogTime;
 #endif
 
-            /// <summary>
-            /// ライト選別用のPassデータ。
-            /// </summary>
             private sealed class CullData
             {
                 public ComputeShader Compute;
@@ -392,9 +362,6 @@ namespace Project.Rendering.Pixel
                 public Vector4 Projection;
             }
 
-            /// <summary>
-            /// 3D体積照明の生成用Passデータ。
-            /// </summary>
             private sealed class InjectData
             {
                 public ComputeShader Compute;
@@ -425,7 +392,7 @@ namespace Project.Rendering.Pixel
             }
 
             /// <summary>
-            /// Compute Shaderによる体積照明処理をRender Graphに登録する。
+            /// Render GraphへCompute Passを登録する。
             /// </summary>
             public override void RecordRenderGraph(
                 RenderGraph renderGraph,
@@ -436,9 +403,35 @@ namespace Project.Rendering.Pixel
 
                 Camera camera = cameraData.camera;
 
-                // 現在のカメラ情報をログ出力する。
-                // 投影方式によるreturnより前に実行する。
-                bool shouldLog = false;
+                // 平行投影・透視投影の両方を処理する。
+                if (camera == null)
+                {
+                    return;
+                }
+
+                int width = Mathf.Max(
+                    cameraData.cameraTargetDescriptor.width, 1);
+
+                int height = Mathf.Max(
+                    cameraData.cameraTargetDescriptor.height, 1);
+
+                int gridX = Mathf.CeilToInt(
+                    (float)width / _owner._pixelSize);
+
+                int gridY = Mathf.CeilToInt(
+                    (float)height / _owner._pixelSize);
+
+                int gridZ = _owner._depthSlices;
+                int tileCount = gridX * gridY;
+
+                _owner.EnsureTileBuffers(tileCount);
+
+                UniversalLightData lightData =
+                    frameData.Get<UniversalLightData>();
+
+                int lightCount = _owner.CollectLights(
+                    lightData,
+                    cameraData.renderer as UniversalRenderer);
 
 #if UNITY_EDITOR
                 if (_owner._enableDiagnosticLogs)
@@ -449,61 +442,27 @@ namespace Project.Rendering.Pixel
                     if (currentTime >= _nextLogTime)
                     {
                         _nextLogTime = currentTime + 2.0;
-                        shouldLog = true;
 
                         Debug.Log(
-                            $"[Volumetric][RecordRenderGraph] " +
-                            $"Camera: {(camera != null ? camera.name : "null")}, " +
-                            $"Type: {(camera != null ? camera.cameraType.ToString() : "null")}, " +
-                            $"Orthographic: {(camera != null && camera.orthographic)}");
+                            $"[Volumetric] Camera={camera.name}, " +
+                            $"Orthographic={camera.orthographic}, " +
+                            $"Lights={lightCount}, " +
+                            $"Visible={lightData.visibleLights.Length}, " +
+                            $"Grid={gridX}x{gridY}x{gridZ}");
+
+                        for (int i = 0; i < lightCount; i++)
+                        {
+                            PointLightData light = _owner._staging[i];
+
+                            int shadowIndex =
+                                Mathf.RoundToInt(light.SpotParams.z) - 1;
+
+                            Debug.Log(
+                                $"[Volumetric] Light={i}, " +
+                                $"Type={(light.DirectionType.w > 0.5f ? "Spot" : "Point")}, " +
+                                $"ShadowIndex={shadowIndex}");
+                        }
                     }
-                }
-#endif
-
-                // 現在の3D格子計算は平行投影専用。
-                if (camera == null || !camera.orthographic)
-                {
-                    return;
-                }
-
-                int width =
-                    cameraData.cameraTargetDescriptor.width;
-
-                int height =
-                    cameraData.cameraTargetDescriptor.height;
-
-                // 画面をPixel Size単位の領域に分割する。
-                int gridX = Mathf.CeilToInt(
-                    (float)width / _owner._pixelSize);
-
-                int gridY = Mathf.CeilToInt(
-                    (float)height / _owner._pixelSize);
-
-                int gridZ = _owner._depthSlices;
-
-                int tileCount = gridX * gridY;
-
-                _owner.EnsureTileBuffers(tileCount);
-
-                // URPの可視ライトを取得する。
-                UniversalLightData lightData =
-                    frameData.Get<UniversalLightData>();
-
-                // Point / Spot LightをGPU転送用に収集する。
-                int lightCount = _owner.CollectLights(
-                    lightData,
-                    cameraData.renderer as UniversalRenderer);
-
-                // 登録ライト数と可視ライト数を確認する。
-#if UNITY_EDITOR
-                if (shouldLog)
-                {
-                    Debug.Log(
-                        $"[Volumetric][Lights] " +
-                        $"Camera: {camera.name}, " +
-                        $"Registered Lights: {lightCount}, " +
-                        $"Visible Lights: {lightData.visibleLights.Length}, " +
-                        $"Grid: {gridX}x{gridY}x{gridZ}");
                 }
 #endif
 
@@ -517,7 +476,7 @@ namespace Project.Rendering.Pixel
                 BufferHandle indices =
                     renderGraph.ImportBuffer(_owner._tileIndices);
 
-                // 3Dの照明テクスチャを作成する。
+                // 体積照明の3Dテクスチャを作成する。
                 TextureDesc volumeDesc = new(gridX, gridY)
                 {
                     name = "PointLightVolume",
@@ -534,66 +493,62 @@ namespace Project.Rendering.Pixel
                 TextureHandle volume =
                     renderGraph.CreateTexture(volumeDesc);
 
-                // 平行投影カメラの画面サイズをワールド単位で計算する。
-                float aspect =
-                    (float)width / Mathf.Max(height, 1);
+                // ----------------------------------------------------
+                // Camera Projection
+                // ----------------------------------------------------
 
-                float screenHeight =
-                    camera.orthographicSize * 2f;
+                float aspect = (float)width / height;
+                float viewHeight;
 
-                float screenWidth =
-                    screenHeight * aspect;
+                if (camera.orthographic)
+                {
+                    // 平行投影は奥行きによらず画面幅が一定。
+                    viewHeight =
+                        camera.orthographicSize * 2f;
+                }
+                else
+                {
+                    // 透視投影は奥行き1の視野幅を求める。
+                    float halfFovRadians =
+                        camera.fieldOfView *
+                        Mathf.Deg2Rad * 0.5f;
 
-                Transform cameraTransform =
-                    camera.transform;
+                    viewHeight =
+                        2f * Mathf.Tan(halfFovRadians);
+                }
 
-                Vector3 position =
-                    cameraTransform.position;
+                float viewWidth = viewHeight * aspect;
 
-                Vector3 right =
-                    cameraTransform.right;
+                Transform cameraTransform = camera.transform;
 
-                Vector3 up =
-                    cameraTransform.up;
-
-                Vector3 forward =
-                    cameraTransform.forward;
+                Vector3 position = cameraTransform.position;
+                Vector3 right = cameraTransform.right;
+                Vector3 up = cameraTransform.up;
+                Vector3 forward = cameraTransform.forward;
 
                 Vector4 grid = new(
-                    gridX,
-                    gridY,
-                    gridZ,
-                    0f);
+                    gridX, gridY, gridZ, 0f);
 
+                // x: 視野幅、y: 視野高さ。
+                // z: 最大計算距離。
+                // w: 0=平行投影、1=透視投影。
                 Vector4 projection = new(
-                    screenWidth,
-                    screenHeight,
+                    viewWidth,
+                    viewHeight,
                     _owner._maxDistance,
-                    0f);
+                    camera.orthographic ? 0f : 1f);
 
                 Vector4 cameraPosition = new(
-                    position.x,
-                    position.y,
-                    position.z,
-                    0f);
+                    position.x, position.y, position.z, 0f);
 
                 Vector4 cameraRight = new(
-                    right.x,
-                    right.y,
-                    right.z,
-                    0f);
+                    right.x, right.y, right.z, 0f);
 
                 Vector4 cameraUp = new(
-                    up.x,
-                    up.y,
-                    up.z,
-                    0f);
+                    up.x, up.y, up.z, 0f);
 
                 Vector4 cameraForward = new(
-                    forward.x,
-                    forward.y,
-                    forward.z,
-                    0f);
+                    forward.x, forward.y, forward.z, 0f);
 
                 // ----------------------------------------------------
                 // 1. Tile Culling
@@ -604,40 +559,25 @@ namespace Project.Rendering.Pixel
                         "Point Light Tile Culling",
                         out var passData))
                 {
-                    // Compute Shader。
-                    passData.Compute =
-                        _owner._computeShader;
+                    passData.Compute = _owner._computeShader;
 
-                    // GPUバッファ。
                     passData.Lights = lights;
                     passData.Counts = counts;
                     passData.Indices = indices;
 
                     passData.LightCount = lightCount;
 
-                    // 3D格子とカメラ情報。
                     passData.Grid = grid;
-
                     passData.CameraPosition = cameraPosition;
                     passData.CameraRight = cameraRight;
                     passData.CameraUp = cameraUp;
                     passData.CameraForward = cameraForward;
                     passData.Projection = projection;
 
-                    // GPUリソースへのアクセス。
-                    builder.UseBuffer(
-                        lights,
-                        AccessFlags.Read);
+                    builder.UseBuffer(lights, AccessFlags.Read);
+                    builder.UseBuffer(counts, AccessFlags.Write);
+                    builder.UseBuffer(indices, AccessFlags.Write);
 
-                    builder.UseBuffer(
-                        counts,
-                        AccessFlags.Write);
-
-                    builder.UseBuffer(
-                        indices,
-                        AccessFlags.Write);
-
-                    // 各画面領域に影響するライトを選別する。
                     builder.SetRenderFunc(static (
                         CullData data,
                         ComputeGraphContext context) =>
@@ -645,7 +585,6 @@ namespace Project.Rendering.Pixel
                         int kernel =
                             data.Compute.FindKernel("CullLights");
 
-                        // カメラ情報をCompute Shaderへ設定する。
                         SetCameraParameters(
                             context.cmd,
                             data.Compute,
@@ -656,34 +595,30 @@ namespace Project.Rendering.Pixel
                             data.CameraForward,
                             data.Projection);
 
-                        // 登録ライト数。
                         context.cmd.SetComputeIntParam(
                             data.Compute,
                             LIGHT_COUNT_ID,
                             data.LightCount);
 
-                        // ライト情報。
                         context.cmd.SetComputeBufferParam(
                             data.Compute,
                             kernel,
                             "_PointLights",
                             data.Lights);
 
-                        // 各領域のライト登録数。
                         context.cmd.SetComputeBufferParam(
                             data.Compute,
                             kernel,
                             "_TileCounts",
                             data.Counts);
 
-                        // 各領域に登録したライト番号。
                         context.cmd.SetComputeBufferParam(
                             data.Compute,
                             kernel,
                             "_TileIndices",
                             data.Indices);
 
-                        // 画面領域ごとに1グループ実行する。
+                        // 1領域につき1スレッドグループを実行。
                         context.cmd.DispatchCompute(
                             data.Compute,
                             kernel,
@@ -702,36 +637,24 @@ namespace Project.Rendering.Pixel
                         "Point Light Froxel Injection",
                         out var passData))
                 {
-                    // Compute Shader。
-                    passData.Compute =
-                        _owner._computeShader;
+                    passData.Compute = _owner._computeShader;
 
-                    // GPUバッファ。
                     passData.Lights = lights;
                     passData.Counts = counts;
                     passData.Indices = indices;
-
-                    // 3D照明テクスチャ。
                     passData.Volume = volume;
 
-                    // 格子設定。
                     passData.Grid = grid;
                     passData.DepthSlices = gridZ;
+                    passData.Anisotropy = _owner._anisotropy;
+                    passData.MaxDistance = _owner._maxDistance;
 
-                    passData.Anisotropy =
-                        _owner._anisotropy;
-
-                    passData.MaxDistance =
-                        _owner._maxDistance;
-
-                    // カメラ情報。
                     passData.CameraPosition = cameraPosition;
                     passData.CameraRight = cameraRight;
                     passData.CameraUp = cameraUp;
                     passData.CameraForward = cameraForward;
                     passData.Projection = projection;
 
-                    // GPUバッファの読み取り依存関係。
                     builder.UseBuffer(
                         passData.Lights,
                         AccessFlags.Read);
@@ -744,19 +667,17 @@ namespace Project.Rendering.Pixel
                         passData.Indices,
                         AccessFlags.Read);
 
-                    // 3D照明テクスチャへの書き込み。
                     builder.UseTexture(
                         passData.Volume,
                         AccessFlags.Write);
 
-                    // URPの追加ライトShadow Mapを取得する。
+                    // URPの追加ライトShadow Mapを参照する。
                     UniversalResourceData resourceData =
                         frameData.Get<UniversalResourceData>();
 
                     TextureHandle additionalShadows =
                         resourceData.additionalShadowsTexture;
 
-                    // Shadow Mapがある場合に読み取り依存関係を登録する。
                     if (additionalShadows.IsValid())
                     {
                         builder.UseTexture(
@@ -764,17 +685,16 @@ namespace Project.Rendering.Pixel
                             AccessFlags.Read);
                     }
 
-                    // URPのグローバルテクスチャを使用する。
+                    // URPの影用グローバルテクスチャを利用する。
                     builder.UseAllGlobalTextures(true);
 
-                    // 計算した3D照明テクスチャを後続のFogへ公開する。
+                    // 計算結果を後続のVolumetric Fogへ渡す。
                     builder.SetGlobalTextureAfterPass(
                         volume,
                         GLOBAL_VOLUME_ID);
 
                     builder.AllowGlobalStateModification(true);
 
-                    // 3D格子にPoint / Spot Lightの散乱光を生成する。
                     builder.SetRenderFunc(static (
                         InjectData data,
                         ComputeGraphContext context) =>
@@ -782,7 +702,6 @@ namespace Project.Rendering.Pixel
                         int kernel =
                             data.Compute.FindKernel("InjectFroxels");
 
-                        // カメラ情報をCompute Shaderへ設定する。
                         SetCameraParameters(
                             context.cmd,
                             data.Compute,
@@ -793,41 +712,35 @@ namespace Project.Rendering.Pixel
                             data.CameraForward,
                             data.Projection);
 
-                        // 散乱方向の設定。
                         context.cmd.SetComputeFloatParam(
                             data.Compute,
                             ANISOTROPY_ID,
                             data.Anisotropy);
 
-                        // ライト情報。
                         context.cmd.SetComputeBufferParam(
                             data.Compute,
                             kernel,
                             "_PointLights",
                             data.Lights);
 
-                        // 領域ごとのライト数。
                         context.cmd.SetComputeBufferParam(
                             data.Compute,
                             kernel,
                             "_TileCountsRead",
                             data.Counts);
 
-                        // 領域ごとのライト番号。
                         context.cmd.SetComputeBufferParam(
                             data.Compute,
                             kernel,
                             "_TileIndicesRead",
                             data.Indices);
 
-                        // 3D照明テクスチャの出力先。
                         context.cmd.SetComputeTextureParam(
                             data.Compute,
                             kernel,
                             VOLUME_ID,
                             data.Volume);
 
-                        // Fog側の参照距離と一致させる。
                         context.cmd.SetGlobalFloat(
                             GLOBAL_DISTANCE_ID,
                             data.MaxDistance);
@@ -844,7 +757,7 @@ namespace Project.Rendering.Pixel
             }
 
             /// <summary>
-            /// カメラ情報をCompute Shaderに設定する。
+            /// Compute Shaderへカメラ情報を設定する。
             /// </summary>
             private static void SetCameraParameters(
                 ComputeCommandBuffer cmd,
@@ -857,34 +770,22 @@ namespace Project.Rendering.Pixel
                 Vector4 projection)
             {
                 cmd.SetComputeVectorParam(
-                    compute,
-                    GRID_ID,
-                    grid);
+                    compute, GRID_ID, grid);
 
                 cmd.SetComputeVectorParam(
-                    compute,
-                    CAMERA_POSITION_ID,
-                    cameraPosition);
+                    compute, CAMERA_POSITION_ID, cameraPosition);
 
                 cmd.SetComputeVectorParam(
-                    compute,
-                    CAMERA_RIGHT_ID,
-                    cameraRight);
+                    compute, CAMERA_RIGHT_ID, cameraRight);
 
                 cmd.SetComputeVectorParam(
-                    compute,
-                    CAMERA_UP_ID,
-                    cameraUp);
+                    compute, CAMERA_UP_ID, cameraUp);
 
                 cmd.SetComputeVectorParam(
-                    compute,
-                    CAMERA_FORWARD_ID,
-                    cameraForward);
+                    compute, CAMERA_FORWARD_ID, cameraForward);
 
                 cmd.SetComputeVectorParam(
-                    compute,
-                    PROJECTION_ID,
-                    projection);
+                    compute, PROJECTION_ID, projection);
             }
         }
 
@@ -900,13 +801,9 @@ namespace Project.Rendering.Pixel
             _lightBuffer = null;
             _tileCounts = null;
             _tileIndices = null;
-
             _tileCapacity = 0;
         }
 
-        /// <summary>
-        /// Renderer Featureを破棄する際にリソースを解放する。
-        /// </summary>
         protected override void Dispose(bool disposing)
         {
             if (!disposing)

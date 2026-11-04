@@ -29,6 +29,10 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _BlitTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _BumpMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
@@ -114,10 +118,11 @@ Material:
     - _AddPrecomputedVelocity: 0
     - _AlphaClip: 0
     - _AlphaToMask: 0
-    - _AmbientIntensity: 0
+    - _AmbientIntensity: 0.05
     - _Anisotropy: 0.75
     - _Blend: 0
     - _BlendModePreserveSpecular: 1
+    - _BlitMipLevel: 0
     - _BumpScale: 1
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
@@ -126,31 +131,37 @@ Material:
     - _Density: 0.01
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
+    - _DirectionalShadowStrength: 1
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _EnvironmentReflections: 1
     - _FogHeight: 0
-    - _FogStartDistance: 2
+    - _FogStartDistance: 0.3
+    - _FogTransmittanceStrength: 1
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
     - _Height: 0
-    - _HeightFalloff: 0.03
-    - _LightIntensity: 0
+    - _HeightFalloff: 0
+    - _LightIntensity: 2
     - _MaxDistance: 100
     - _Metallic: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.005
     - _PixelEffectEnabled: 1
+    - _PointLightDebugDistance: 30
+    - _PointLightDebugGain: 5
+    - _PointLightDebugMode: 0
     - _PointLightScatteringIntensity: 2
     - _PointLightVolumeEnabled: 1
     - _QueueOffset: 0
+    - _RayStepLength: 1
     - _ReceiveShadows: 1
-    - _SampleCount: 32
-    - _ScatteringIntensity: 1
+    - _SampleCount: 128
+    - _ScatteringIntensity: 1.5
     - _SceneNormalPreviewEnabled: 0
-    - _SkyFogStrength: 0.4
-    - _SkyMaxDistance: 30
+    - _SkyFogStrength: 1
+    - _SkyMaxDistance: 100
     - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1

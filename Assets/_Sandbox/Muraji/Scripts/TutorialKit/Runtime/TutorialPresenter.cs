@@ -175,7 +175,7 @@ namespace Project.Tutorial
             prompt.gameObject.SetActive(interactive);
             if (interactive)
             {
-                prompt.text = "[ F / Xbox Menu / PS Options ] 説明を見る";
+                prompt.text = "[ F / X ] 説明を見る";
                 Position(prompt.rectTransform, selected);
                 if (openAction.WasPressedThisFrame() && Time.timeScale > 0f) Open();
             }

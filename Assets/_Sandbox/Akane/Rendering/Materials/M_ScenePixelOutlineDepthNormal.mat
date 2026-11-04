@@ -150,9 +150,9 @@ Material:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _OutlineColor: {r: 0, g: 0, b: 0, a: 1}
-    - _PixelOutlineFarResolution: {r: 114, g: 63, b: 0, a: 0}
-    - _PixelOutlineMiddleResolution: {r: 228, g: 125, b: 0, a: 0}
-    - _PixelOutlineNearResolution: {r: 455, g: 249, b: 0, a: 0}
+    - _PixelOutlineFarResolution: {r: 32, g: 37, b: 0, a: 0}
+    - _PixelOutlineMiddleResolution: {r: 63, g: 73, b: 0, a: 0}
+    - _PixelOutlineNearResolution: {r: 126, g: 145, b: 0, a: 0}
     - _SpecColor: {r: 0.2, g: 0.2, b: 0.2, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

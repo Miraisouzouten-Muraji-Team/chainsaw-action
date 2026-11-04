@@ -484,7 +484,7 @@
                     "name": "Close",
                     "type": "Button",
                     "id": "42970409-4c56-46f5-b3a9-166ef36101c4",
-                    "expectedControlType": "Button",
+                    "expectedControlType": "",
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": false,
@@ -536,6 +536,28 @@
                 },
                 {
                     "name": "",
+                    "id": "deedbd6f-fcfb-4019-a43d-c25f1de09ba5",
+                    "path": "<HID::Logicool Logicool Dual Action>/trigger",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Open",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "ba289c42-92be-493a-9c9c-6a561614106e",
+                    "path": "<Joystick>/trigger",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Open",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
                     "id": "010b3512-1c44-48ee-8721-da5a00001006",
                     "path": "<Keyboard>/escape",
                     "interactions": "",
@@ -549,6 +571,17 @@
                     "name": "",
                     "id": "4a5b226e-1ac3-4804-8839-37488e189d14",
                     "path": "<Gamepad>/buttonEast",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Close",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "f69c9388-a2b2-4594-bf99-76291186e27e",
+                    "path": "<HID::Logicool Logicool Dual Action>/button3",
                     "interactions": "",
                     "processors": "",
                     "groups": "",
@@ -604,6 +637,28 @@
                     "name": "",
                     "id": "f6ff8b09-b1f3-41a0-ae27-ef4d1567001f",
                     "path": "<Gamepad>/buttonNorth",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "ReleaseGuard",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "af3b6223-aec3-42bf-bafe-da9eced6a52e",
+                    "path": "<HID::Logicool Logicool Dual Action>/hat/up",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "ReleaseGuard",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "ef1a3f44-5e82-423c-8888-22fdfd28997c",
+                    "path": "<HID::Logicool Logicool Dual Action>/hat/down",
                     "interactions": "",
                     "processors": "",
                     "groups": "",
@@ -676,6 +731,28 @@
                     "action": "Navigate",
                     "isComposite": false,
                     "isPartOfComposite": true
+                },
+                {
+                    "name": "",
+                    "id": "417f4e05-8583-45db-8cb0-16c28779d5e6",
+                    "path": "<Joystick>/stick/right",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Navigate",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "145a04ff-5bf2-4682-a037-65d028ba7af2",
+                    "path": "<Joystick>/stick/left",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Navigate",
+                    "isComposite": false,
+                    "isPartOfComposite": false
                 }
             ]
         }

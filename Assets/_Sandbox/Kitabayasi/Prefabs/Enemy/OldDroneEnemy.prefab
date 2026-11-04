@@ -292,6 +292,7 @@ MonoBehaviour:
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
+  minimumCapsuleAspectRatio: 1.2
   preGeneratedPieceCount: 0
   cutDirectionSampleCount: 4
   cutRangeAxis: 1

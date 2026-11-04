@@ -63,6 +63,15 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     [Min(0.0001f)]
     private float maximumPieceMass = 10f;
 
+    [Header("分割片コライダー")]
+
+    [Tooltip(
+        "最長辺が、残り2軸の長い方の何倍以上ならCapsuleColliderを使うか。" +
+        "満たさない分割片はBoxColliderにする。")]
+    [SerializeField]
+    [Min(1.1f)]
+    private float minimumCapsuleAspectRatio = 1.5f;
+
     [Header("分割片事前生成")]
 
     [Tooltip(
@@ -393,7 +402,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 LogDiagnostic(
                     "Cutter-07 Complete",
                     $"元Rendererを無効化し、{pieceObjects.Count}個の物理切断片生成を完了しました。" +
-                    " 各切断片は個別のRigidbodyとCapsuleColliderを持ちます。");
+                    " 各切断片は個別のRigidbodyと形状に応じたColliderを持ちます。");
             }
 
             return true;
@@ -868,7 +877,18 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             null;
 
         pieceObject.AddComponent<MeshRenderer>();
-        pieceObject.AddComponent<CapsuleCollider>();
+
+        // 死亡時のAddComponentを避けるため、両方の候補を事前に用意する。
+        // 有効にするのはPieceのBoundsが確定した後の片方だけ。
+        CapsuleCollider capsuleCollider =
+            pieceObject.AddComponent<CapsuleCollider>();
+
+        BoxCollider boxCollider =
+            pieceObject.AddComponent<BoxCollider>();
+
+        capsuleCollider.enabled = false;
+        boxCollider.enabled = false;
+
         pieceObject.AddComponent<Rigidbody>();
 
         return pieceObject;
@@ -964,18 +984,35 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         Bounds meshBounds =
             mesh.bounds;
 
-        CapsuleCollider pieceCollider =
+        CapsuleCollider capsuleCollider =
             pieceObject.GetComponent<CapsuleCollider>();
 
-        // Mesh.boundsとColliderは同じローカル空間を使う。
-        // 分割片ごとに形状が異なるため、最長軸をカプセルの長辺へ合わせて
-        // BoxColliderの平らな底面で直立し続けやすい状態を避ける。
-        ConfigureCapsuleColliderFromBounds(
-            pieceCollider,
-            meshBounds);
+        BoxCollider boxCollider =
+            pieceObject.GetComponent<BoxCollider>();
 
-        pieceCollider.isTrigger =
-            false;
+        // 分割片ごとにBoundsの縦横比を判定する。
+        // 無効な方を物理判定へ参加させず、Rigidbodyの慣性計算前に形状を確定する。
+        capsuleCollider.enabled = false;
+        boxCollider.enabled = false;
+
+        Collider pieceCollider;
+
+        if (TryConfigureCapsuleColliderFromBounds(
+                capsuleCollider,
+                meshBounds))
+        {
+            pieceCollider = capsuleCollider;
+        }
+        else
+        {
+            // Mesh.boundsとBoxColliderは同じローカル空間を使う。
+            boxCollider.center = meshBounds.center;
+            boxCollider.size = meshBounds.size;
+            pieceCollider = boxCollider;
+        }
+
+        pieceCollider.isTrigger = false;
+        pieceCollider.enabled = true;
 
         Rigidbody pieceRigidbody =
             pieceObject.GetComponent<Rigidbody>();
@@ -1025,6 +1062,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 $"MeshBoundsSize={FormatVector3(mesh.bounds.size)}, " +
                 $"PseudoVolume={(meshBounds.size.x * meshBounds.size.y * meshBounds.size.z):F6}, " +
                 $"Mass={pieceRigidbody.mass:F6}, " +
+                $"Collider={pieceCollider.GetType().Name}, " +
                 $"LocalScale={FormatVector3(pieceTransform.localScale)}, " +
                 $"LossyScale={FormatVector3(pieceTransform.lossyScale)}, " +
                 $"Parent='{(pieceTransform.parent != null ? pieceTransform.parent.name : "null")}', " +
@@ -1127,13 +1165,13 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     }
 
     /// <summary>
-    /// 分割メッシュのローカルBoundsを単一のCapsuleColliderで近似する。
+    /// 分割メッシュが十分細長い場合だけ、ローカルBoundsをCapsuleColliderで近似する。
     /// </summary>
     /// <remarks>
-    /// 特定モデルのローカル軸を前提にせず、Boundsの最長軸をカプセルの長辺にする。
-    /// これにより、元Rendererの回転を引き継ぐ分割片でもColliderの向きを合わせやすくする。
+    /// 最長軸をカプセルの長辺にする。全高が直径に近いと球形になるため、
+    /// 最長辺と残りの最大辺の比率が設定値未満ならBoxColliderへ切り替える。
     /// </remarks>
-    private static void ConfigureCapsuleColliderFromBounds(
+    private bool TryConfigureCapsuleColliderFromBounds(
         CapsuleCollider capsuleCollider,
         Bounds meshBounds)
     {
@@ -1168,8 +1206,16 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 break;
         }
 
-        float radius =
-            Mathf.Max(transverseSizeA, transverseSizeB) * 0.5f;
+        float diameter =
+            Mathf.Max(transverseSizeA, transverseSizeB);
+
+        if (diameter <= 0f ||
+            height < diameter * Mathf.Max(1.1f, minimumCapsuleAspectRatio))
+        {
+            return false;
+        }
+
+        float radius = diameter * 0.5f;
 
         capsuleCollider.center =
             meshBounds.center;
@@ -1180,9 +1226,10 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         capsuleCollider.radius =
             radius;
 
-        // Capsuleの全高が直径未満にならないよう保証する。
-        capsuleCollider.height =
-            Mathf.Max(height, radius * 2f);
+        // ここに到達する時点で全高が直径の指定倍率以上ある。
+        capsuleCollider.height = height;
+
+        return true;
     }
 
     private static int GetLongestBoundsAxis(
@@ -1525,6 +1572,11 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 #if UNITY_EDITOR
     private void OnValidate()
     {
+        minimumCapsuleAspectRatio =
+            Mathf.Max(
+                1.1f,
+                minimumCapsuleAspectRatio);
+
         preGeneratedPieceCount =
             Mathf.Max(
                 0,

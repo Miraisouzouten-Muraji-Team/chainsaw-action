@@ -228,6 +228,7 @@ MonoBehaviour:
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
+  minimumCapsuleAspectRatio: 1.2
   preGeneratedPieceCount: 2
   cutDirectionSampleCount: 4
   cutRangeAxis: 1
@@ -463,6 +464,10 @@ PrefabInstance:
     - target: {fileID: -6492427307034431761, guid: cda8579f688b9ef44a3fb0f4d9b8ff0b, type: 3}
       propertyPath: m_LocalRotation.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -384212468332387948, guid: cda8579f688b9ef44a3fb0f4d9b8ff0b, type: 3}
+      propertyPath: m_RenderingLayerMask
+      value: 33554433
       objectReference: {fileID: 0}
     - target: {fileID: -384212468332387948, guid: cda8579f688b9ef44a3fb0f4d9b8ff0b, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'

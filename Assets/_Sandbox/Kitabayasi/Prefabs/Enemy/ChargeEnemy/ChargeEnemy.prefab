@@ -244,6 +244,7 @@ MonoBehaviour:
       data:
         detectionRadius: 3
         patrolOffset: 2
+        walkAnimationStateName: Base Layer.Walk
     - rid: 2559746817728970822
       type: {class: StandardEnemyAlertStrategy, ns: , asm: Assembly-CSharp}
       data:
@@ -287,6 +288,7 @@ MonoBehaviour:
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
+  minimumCapsuleAspectRatio: 1.2
   preGeneratedPieceCount: 2
   cutDirectionSampleCount: 4
   cutRangeAxis: 1

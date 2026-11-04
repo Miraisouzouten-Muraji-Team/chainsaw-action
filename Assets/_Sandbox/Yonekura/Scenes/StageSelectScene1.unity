@@ -317,12 +317,12 @@ RectTransform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 256040375}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 359026820}
+  m_Father: {fileID: 1130506455}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
@@ -732,8 +732,6 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1130506455}
-  - {fileID: 256040376}
-  - {fileID: 965853276}
   - {fileID: 1532089683}
   - {fileID: 1637045856}
   - {fileID: 1841714292}
@@ -1320,7 +1318,7 @@ RectTransform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 359026820}
+  m_Father: {fileID: 1130506455}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
@@ -1846,6 +1844,8 @@ RectTransform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 965853276}
+  - {fileID: 256040376}
   - {fileID: 574821849}
   m_Father: {fileID: 359026820}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -1867,7 +1867,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 0.661647, g: 0.5990566, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
@@ -1900,7 +1900,7 @@ CanvasGroup:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1130506454}
   m_Enabled: 1
-  m_Alpha: 0.8
+  m_Alpha: 0.9
   m_Interactable: 1
   m_BlocksRaycasts: 1
   m_IgnoreParentGroups: 0
@@ -2352,36 +2352,21 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b81e4a9e2402aae479d3c6dbbaf56119, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StageSelectController
-  areas:
-  - displayName: 'STAGE1
-
-      AREA1'
-    screenshot: {fileID: -6616500621307276426, guid: 3a0efd56fd6dff9488b2e6b4338375ff, type: 3}
-    sceneName: Stage1Area1
-  - displayName: 'STAGE1
-
-      AREA2'
-    screenshot: {fileID: -8990990517769548674, guid: 662fa8fb8107c2e47bc69073620e473b, type: 3}
-    sceneName: Stage1Area2
-  - displayName: 'STAGE1
-
-      AREA3'
-    screenshot: {fileID: -5110826189495050274, guid: 88120473315a54a45af06b3df97e2430, type: 3}
-    sceneName: Stage1Area3
+  stageDatabase: {fileID: 11400000, guid: 410f898dbfb2fb148ac6d742e6d2c4a7, type: 2}
   transitionManager: {fileID: 1112817900}
   transitionType: 3
-  currentIndex: 0
   previousCard: {fileID: 2023482141}
   currentCard: {fileID: 1804489732}
   nextCard: {fileID: 1065998535}
+  currentIndex: 0
   leftArrow: {fileID: 973603141}
   rightArrow: {fileID: 2123577503}
   cardSpacing: 800
   cardScale: 1
   sideCardScale: 0.65
-  slideDuration: 0.4
+  slideDuration: 0.5
   arrowScaleMultiplier: 1.3
-  arrowAnimationDuration: 0.12
+  arrowAnimationDuration: 0.2
   stickThreshold: 0.5
   resetThreshold: 0.2
   lockMessageText: {fileID: 1841714294}

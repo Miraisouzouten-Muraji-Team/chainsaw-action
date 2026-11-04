@@ -128282,6 +128282,10 @@ PrefabInstance:
       value: 180
       objectReference: {fileID: 0}
     - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: enemyAngle
+      value: 180
+      objectReference: {fileID: 0}
+    - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: floorAngle
       value: 180
       objectReference: {fileID: 0}

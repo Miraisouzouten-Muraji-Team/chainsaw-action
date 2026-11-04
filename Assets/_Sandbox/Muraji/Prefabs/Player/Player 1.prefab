@@ -467,7 +467,7 @@ MonoBehaviour:
   hitBox: {fileID: 6651475171482002204}
   slashKnockbackPriorityDuration: 10
   damagePopupPresenter: {fileID: 0}
-  hitParticle: {fileID: 6176228616533195752, guid: 8b653b8ed8f598c42baa0eca3fd64bea, type: 3}
+  hitParticle: {fileID: 0}
   cameraShake: {fileID: 0}
   duration: 0.05
   hitStopSystem: {fileID: 4024298612769009824}
@@ -1884,6 +1884,7 @@ MonoBehaviour:
   chainsawDigging: {fileID: 4166513584750343507}
   playerController: {fileID: 4996046773718306232}
   particlePrefab: {fileID: -8463674177795780162, guid: 837e8e5252d7c7e4baa5ea5980ed9e2a, type: 3}
+  enemyParticlePrefab: {fileID: 1015358492388607712, guid: 96e8b8b94590fa84e989a735a1ae3b66, type: 3}
   accelerator: {fileID: 3199202209234272052}
   mediumParticlePrefab: {fileID: 8177517891552390736, guid: d3c0841f362468d418c2b3b0481f8bc9, type: 3}
   strongParticlePrefab: {fileID: 174813603635813635, guid: 1d614d472e959864e8572e2fa84f5965, type: 3}
@@ -1893,7 +1894,7 @@ MonoBehaviour:
   floorAngle: 180
   wallAngle: 180
   ceilingAngle: 270
-  enemyAngle: 160
+  enemyAngle: 0
 --- !u!114 &6024355022737477912
 MonoBehaviour:
   m_ObjectHideFlags: 0

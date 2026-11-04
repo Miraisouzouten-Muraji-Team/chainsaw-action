@@ -97,7 +97,7 @@ namespace Project.Tutorial
             signOcclusion = sign.root.gameObject.AddComponent<TutorialSignOcclusion>();
             prompt = TutorialView.Label(canvasRect, font, "Interact Prompt", 28, Color.cyan);
             prompt.rectTransform.sizeDelta = new Vector2(520, 56);
-            prompt.text = $"[ {openAction.GetBindingDisplayString()} ] 説明を見る"; prompt.gameObject.SetActive(false);
+            prompt.text = $"[ {GetInputLabel(tutorialOpen, openAction, "E / Xbox X / PS □")} ] 説明を見る"; prompt.gameObject.SetActive(false);
             var shadeRect = TutorialView.Rect("Modal Backdrop", canvasRect, Vector2.zero);
             TutorialView.Place(shadeRect, Vector2.zero, Vector2.one);
             var backdrop = shadeRect.gameObject.AddComponent<Image>(); backdrop.color = new Color(0, 0, 0, .72f);
@@ -171,6 +171,14 @@ namespace Project.Tutorial
                 releaseGuardAction.AddBinding("<Gamepad>/buttonSouth");
                 releaseGuardAction.AddBinding("<Gamepad>/buttonNorth");
             }
+        }
+
+        // 既定入力は両機種のボタン名を表示し、独自設定時は登録済みの割り当てを表示する。
+        private static string GetInputLabel(InputActionReference reference, InputAction action, string defaultLabel)
+        {
+            return reference != null && reference.action != null
+                ? action.GetBindingDisplayString()
+                : defaultLabel;
         }
 
         private void Update()
@@ -271,7 +279,7 @@ namespace Project.Tutorial
             modalClock = 0f;
             modal.SetPage(modalDefinition.pages[pageIndex] ?? new TutorialPage { title = "未設定", description = "このページの内容を設定してください。" });
             modal.Tick(0f);
-            modal.footer.text = $"{pageIndex + 1} / {modalDefinition.pages.Length}　 {navigateAction.GetBindingDisplayString()}：切替　 {closeAction.GetBindingDisplayString()}：閉じる";
+            modal.footer.text = $"{pageIndex + 1} / {modalDefinition.pages.Length}　 {GetInputLabel(tutorialNavigate, navigateAction, "← → / 左スティック・十字キー")}：切替　 {GetInputLabel(tutorialClose, closeAction, "Esc / Xbox B / PS ○")}：閉じる";
             modal.previous.interactable = pageIndex > 0;
             modal.next.interactable = pageIndex < modalDefinition.pages.Length - 1;
         }

@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cf69c5f2a86e46e40a097e7a08d2e39d, type: 3}
   m_Name: OldDroneEnemyData
   m_EditorClassIdentifier: Assembly-CSharp::OldDroneEnemyData
-  maxHealth: 20
+  maxHealth: 1
   attackPower: 10
   detectionRadius: 2
   alertDuration: 1

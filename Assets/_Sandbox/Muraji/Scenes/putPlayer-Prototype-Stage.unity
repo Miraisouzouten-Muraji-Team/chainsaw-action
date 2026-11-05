@@ -43718,11 +43718,6 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_RenderingLayers: 1
   m_ShadowRenderingLayers: 1
---- !u!137 &434974449 stripped
-SkinnedMeshRenderer:
-  m_CorrespondingSourceObject: {fileID: 3117738715657247664, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
-  m_PrefabInstance: {fileID: 936107083}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &452936784
 GameObject:
   m_ObjectHideFlags: 0
@@ -71469,7 +71464,7 @@ GameObject:
   - component: {fileID: 781179962}
   - component: {fileID: 781179961}
   - component: {fileID: 781179960}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -129186,10 +129181,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPresenter
   uiFont: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
-  tutorialOpen: {fileID: 0}
-  tutorialClose: {fileID: 0}
-  tutorialNavigate: {fileID: 0}
-  tutorialReleaseGuard: {fileID: 0}
 --- !u!65 &1416235475 stripped
 BoxCollider:
   m_CorrespondingSourceObject: {fileID: 7824983804689355250, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
@@ -171159,7 +171150,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialEnemyOccluder
   tutorialOccluders:
-  - {fileID: 434974449}
+  - {fileID: 0}
 --- !u!1 &1607248832
 GameObject:
   m_ObjectHideFlags: 0
@@ -224313,7 +224304,7 @@ GameObject:
   - component: {fileID: 2014870024}
   - component: {fileID: 2014870023}
   - component: {fileID: 2014870022}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -240425,10 +240416,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPresenter
   uiFont: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
-  tutorialOpen: {fileID: 0}
-  tutorialClose: {fileID: 0}
-  tutorialNavigate: {fileID: 0}
-  tutorialReleaseGuard: {fileID: 0}
 --- !u!1 &2085156841
 GameObject:
   m_ObjectHideFlags: 0

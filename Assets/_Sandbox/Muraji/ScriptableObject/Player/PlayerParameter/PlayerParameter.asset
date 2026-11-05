@@ -31,9 +31,11 @@ MonoBehaviour:
   jumpHoldGravityScale: 0.05
   jumpReleaseSpeedRatio: 0.9
   jumpFallGravityScale: 1
+  enableCeilingFallGrace: 1
+  ceilingFallGraceMaxSeconds: 0.25
   groundRayLayers:
     serializedVersion: 2
-    m_Bits: 1
+    m_Bits: 128
   groundRaySideOffset: 0.4
   groundRayStartHeight: 0.1
   groundRayDistance: 1

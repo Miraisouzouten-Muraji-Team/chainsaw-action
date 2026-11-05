@@ -453,9 +453,20 @@ public sealed class OldDroneEnemySearchStrategy :
         Vector3 detectionCenter =
             GetCurrentDetectionCenter();
 
+        // 距離判定はPlayer Colliderの最近接点を使う。
+        // XY平面の索敵でZ方向の位置差を距離に含めないため、
+        // 最近接点の検索位置はPlayer Colliderの中心Zへ揃える。
+        Vector3 playerDistancePosition =
+            playerTargetCollider.ClosestPoint(
+                new Vector3(
+                    detectionCenter.x,
+                    detectionCenter.y,
+                    playerPosition.z));
+
+        // LOSは従来どおりMid_Colliderの中心へ向ける。
         if (!playerDetectionSensor.CanDetectPlayer(
                 detectionCenter,
-                playerPosition,
+                playerDistancePosition,
                 detectionRadius,
                 playerPosition,
                 playerColliderEndsLineOfSight: true))
@@ -475,9 +486,9 @@ public sealed class OldDroneEnemySearchStrategy :
     }
 
     /// <summary>
-    /// 索敵距離判定とLOS判定に使用するPlayer側の代表位置を取得する。
-    /// Player Rootは所属判定とDamage Receiver探索に使用し、
-    /// 索敵位置だけをPlayer Root直下のMid_ColliderのBounds中心へ統一する。
+    /// LOSの終点と検知後の向きに使用するPlayer側の代表位置を取得する。
+    /// 距離判定には別途Mid_Collider上の最近接点を使用する。
+    /// Player Rootは所属判定とDamage Receiver探索に使用する。
     /// </summary>
     private bool TryGetCurrentPlayerTargetPosition(
         out Vector3 targetWorldPosition)

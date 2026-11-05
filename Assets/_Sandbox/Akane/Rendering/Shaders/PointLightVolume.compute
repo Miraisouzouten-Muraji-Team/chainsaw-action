@@ -26,7 +26,7 @@
 
 // 1: Shadow Mapの判定を無効化する。
 // 0: 通常の影判定を使用する。
-#define DEBUG_DISABLE_SHADOWS 1
+#define DEBUG_DISABLE_SHADOWS 0
 
 // 0: 通常の散乱光を出力する。
 // 1: 領域にライトがあれば赤、なければ青を出力する。

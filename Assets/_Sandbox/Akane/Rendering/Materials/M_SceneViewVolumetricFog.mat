@@ -118,7 +118,7 @@ Material:
     - _AddPrecomputedVelocity: 0
     - _AlphaClip: 0
     - _AlphaToMask: 0
-    - _AmbientIntensity: 0.05
+    - _AmbientIntensity: 0.01
     - _Anisotropy: 0.75
     - _Blend: 0
     - _BlendModePreserveSpecular: 1
@@ -136,14 +136,14 @@ Material:
     - _DstBlendAlpha: 0
     - _EnvironmentReflections: 1
     - _FogHeight: 0
-    - _FogStartDistance: 0.3
+    - _FogStartDistance: 2
     - _FogTransmittanceStrength: 1
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
     - _Height: 0
-    - _HeightFalloff: 0
-    - _LightIntensity: 2
+    - _HeightFalloff: 0.03
+    - _LightIntensity: 1
     - _MaxDistance: 100
     - _Metallic: 0
     - _OcclusionStrength: 1
@@ -160,8 +160,8 @@ Material:
     - _SampleCount: 128
     - _ScatteringIntensity: 1.5
     - _SceneNormalPreviewEnabled: 0
-    - _SkyFogStrength: 1
-    - _SkyMaxDistance: 100
+    - _SkyFogStrength: 0.4
+    - _SkyMaxDistance: 30
     - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1

@@ -151,7 +151,7 @@ Material:
     - _PixelEffectEnabled: 1
     - _PointLightDebugDistance: 30
     - _PointLightDebugGain: 5
-    - _PointLightDebugMode: 2
+    - _PointLightDebugMode: 0
     - _PointLightScatteringIntensity: 2
     - _PointLightVolumeEnabled: 1
     - _QueueOffset: 0

@@ -68,6 +68,8 @@ public class EnemyStateMachine : MonoBehaviour
     private Rigidbody enemyRigidbody;
     private EnemyKnockbackMotor enemyKnockbackMotor;
 
+    private const float MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE = 0.000001f;
+
     private EnemySearchState searchState;
     private EnemyAlertState alertState;
     private EnemyAttackState attackState;
@@ -438,7 +440,10 @@ public class EnemyStateMachine : MonoBehaviour
         attackState.SetInitialAttackDirection(
             initialAttackDirectionSign);
 
-        ChangeState(alertState);
+        // 発見方向へ即時に向いてから、既存のAlertを開始する。
+        FacePlayerAndChangeState(
+            alertState,
+            initialAttackDirectionSign);
     }
 
     /// <summary>
@@ -516,10 +521,11 @@ public class EnemyStateMachine : MonoBehaviour
                     gameObject);
             }
 
-            // 同じStateへのChangeStateは無視されるため、
-            // 1サイクル分のStrategy状態を確実に終了してからAttackへ入り直す。
-            ExitCurrentState();
-            ChangeState(attackState);
+            // 攻撃後はAlertを挟まない既存仕様を維持し、
+            // 前回のAttackを終了して即時に向き直してから再攻撃する。
+            FacePlayerAndChangeState(
+                attackState,
+                detectedPlayerDirectionSign);
             return;
         }
 
@@ -570,7 +576,9 @@ public class EnemyStateMachine : MonoBehaviour
             attackState.SetInitialAttackDirection(
                 detectedPlayerDirectionSign);
 
-            ChangeState(attackState);
+            FacePlayerAndChangeState(
+                attackState,
+                detectedPlayerDirectionSign);
             return;
         }
 
@@ -578,6 +586,79 @@ public class EnemyStateMachine : MonoBehaviour
         // Search Strategy側で初期配置位置への帰還を開始し、
         // 帰還中も通常の索敵を継続する。
         ChangeState(searchState);
+    }
+
+    /// <summary>
+    /// Playerを検知した時点の方向をVisualRootへ即時設定してから次のStateへ移る。
+    /// Damage StateのExitによる見た目の復元が先に行われるよう、Exit後に回転を設定する。
+    /// </summary>
+    private void FacePlayerAndChangeState(
+        IEnemyState nextState,
+        float detectedPlayerDirectionSign)
+    {
+        // Damage StateのExitでは被弾時の傾きを戻すため、
+        // 元Stateの終了後に発見方向を設定する。
+        ExitCurrentState();
+
+        if (TryGetDetectedPlayerFacingRotation(
+                detectedPlayerDirectionSign,
+                out Quaternion targetRotation))
+        {
+            // プレイヤー発見時は補間せず、VisualRootの向きを即座に確定する。
+            visualRoot.rotation = targetRotation;
+        }
+
+        // TurretEnemyなどの対象外Strategyは向きを変えずに遷移する。
+        ChangeState(nextState);
+    }
+
+    private bool TryGetDetectedPlayerFacingRotation(
+        float detectedPlayerDirectionSign,
+        out Quaternion targetRotation)
+    {
+        targetRotation = Quaternion.identity;
+
+        if (visualRoot == null)
+        {
+            return false;
+        }
+
+        Vector3 facingDirection;
+
+        if (searchStrategy is ChargeEnemySearchStrategy)
+        {
+            // ChargeEnemyの移動・攻撃は水平方向に限定される。
+            facingDirection =
+                Vector3.right * (detectedPlayerDirectionSign < 0f ? -1f : 1f);
+        }
+        else if (searchStrategy is OldDroneEnemySearchStrategy droneSearchStrategy)
+        {
+            // Droneは索敵時に確定したPlayer代表位置へのXY方向を利用する。
+            // 左右符号だけで向くと、Playerが上下にいる場合にずれてしまう。
+            Vector2 planarDirection =
+                droneSearchStrategy.DetectedPlayerPlanarDirection;
+
+            if (planarDirection.sqrMagnitude <=
+                MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE)
+            {
+                planarDirection =
+                    Vector2.right *
+                    (detectedPlayerDirectionSign < 0f ? -1f : 1f);
+            }
+
+            facingDirection =
+                new Vector3(planarDirection.x, planarDirection.y, 0f);
+        }
+        else
+        {
+            // TurretEnemyや未対応Strategyの向きは変更しない。
+            return false;
+        }
+
+        targetRotation =
+            Quaternion.LookRotation(facingDirection, Vector3.up);
+
+        return true;
     }
 
     /// <summary>

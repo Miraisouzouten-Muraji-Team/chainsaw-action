@@ -56,6 +56,12 @@ public sealed class OldDroneEnemySearchStrategy :
     /// </summary>
     public float DetectionRadius => detectionRadius;
 
+    /// <summary>
+    /// 最後にPlayerを検知した瞬間の、EnemyからPlayer代表位置へのXY方向。
+    /// 検知に失敗した場合はVector2.zero。
+    /// </summary>
+    public Vector2 DetectedPlayerPlanarDirection { get; private set; }
+
     public void Initialize(
         EnemyData enemyData,
         GameObject enemyObject,
@@ -244,12 +250,21 @@ public sealed class OldDroneEnemySearchStrategy :
         out float detectedPlayerDirectionSign)
     {
         detectedPlayerDirectionSign = 0f;
+        DetectedPlayerPlanarDirection = Vector2.zero;
 
         if (!CanDetectPlayer(
                 out Vector3 detectedPlayerPosition))
         {
             return false;
         }
+
+        // 索敵に使用したMid_Colliderの中心をそのまま採用する。
+        // StateMachine側でPlayer階層を再探索すると、異なる位置を向く恐れがある。
+        Vector3 planarDelta =
+            detectedPlayerPosition - enemyRigidbody.position;
+
+        DetectedPlayerPlanarDirection =
+            new Vector2(planarDelta.x, planarDelta.y);
 
         detectedPlayerDirectionSign =
             GetDetectedPlayerDirectionSign(

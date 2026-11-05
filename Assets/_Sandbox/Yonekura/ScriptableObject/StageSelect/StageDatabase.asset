@@ -13,18 +13,21 @@ MonoBehaviour:
   m_Name: StageDatabase
   m_EditorClassIdentifier: Assembly-CSharp::StageDatabase
   areas:
-  - displayName: 'STAGE1
-
-      AREA1'
+  - displayName: STAGE1-1
     screenshot: {fileID: 6000318604131738775, guid: 6241d1a0777ebe449a8b297e24c2fd18, type: 3}
     sceneName: Stage1Area1
-  - displayName: 'STAGE1
-
-      AREA2'
+  - displayName: STAGE1-2
     screenshot: {fileID: 7034877445000775692, guid: 499d4a846061bdb44a21d16b09fb74cb, type: 3}
     sceneName: Stage1Area2
-  - displayName: 'STAGE1
-
-      AREA3'
+  - displayName: STAGE1-3
     screenshot: {fileID: 681335512958062064, guid: fa776f90272ba8648b677806ca5f02d7, type: 3}
     sceneName: Stage1Area3
+  - displayName: STAGE1-4
+    screenshot: {fileID: 6000318604131738775, guid: 6241d1a0777ebe449a8b297e24c2fd18, type: 3}
+    sceneName: Stage1Area4
+  - displayName: STAGE1-5
+    screenshot: {fileID: 681335512958062064, guid: fa776f90272ba8648b677806ca5f02d7, type: 3}
+    sceneName: Stage1Area5
+  - displayName: STAGE1-6
+    screenshot: {fileID: 7034877445000775692, guid: 499d4a846061bdb44a21d16b09fb74cb, type: 3}
+    sceneName: Stage1Area6

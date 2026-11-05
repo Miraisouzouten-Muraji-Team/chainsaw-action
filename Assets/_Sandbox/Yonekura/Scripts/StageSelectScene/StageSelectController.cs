@@ -3,6 +3,8 @@ using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using System.Collections;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// ステージセレクトのカード移動、入力、シーン遷移を管理する。
@@ -30,6 +32,9 @@ public class StageSelectController : MonoBehaviour
     [Tooltip("現在選択しているステージより1つ後のステージを表示するカードです。")]
     [SerializeField] private StageCardView nextCard;
 
+    [Tooltip("新しく登場するステージを表示するカードです。")]
+    [SerializeField] private StageCardView additionalCard;
+
     [Tooltip("初期化後に中央に表示するエリアの配列番号です。\n最初のステージは0です。")]
     [SerializeField] private int currentIndex = 0;
 
@@ -52,6 +57,14 @@ public class StageSelectController : MonoBehaviour
     [SerializeField, Min(0.05f)]
     private float slideDuration = 0.3f;
 
+    [Tooltip("中央に到着したときの最大拡大倍率です。")]
+    [SerializeField, Min(1f)]
+    private float centerPeakScaleMultiplier = 1.12f;
+
+    [Tooltip("最大サイズから通常の中央サイズに戻るまでの時間です。")]
+    [SerializeField, Min(0f)]
+    private float centerScaleDownDuration = 0.15f;
+
     [Tooltip("矢印アニメーション時の最大拡大倍率です。")]
     [SerializeField, Range(1f, 2f)]
     private float arrowScaleMultiplier = 1.3f;
@@ -63,11 +76,25 @@ public class StageSelectController : MonoBehaviour
     [Header("入力")]
     [Tooltip("スティックを倒したと判定する入力値のしきい値です。")]
     [SerializeField, Range(0.1f, 1f)]
-    private float stickThreshold = 0.5f;
+    private float stickThreshold = 0.7f;
 
     [Tooltip("スティックをニュートラルに戻したと判定する入力値のしきい値です。")]
     [SerializeField, Range(0f, 0.5f)]
-    private float resetThreshold = 0.2f;
+    private float resetThreshold = 0.3f;
+
+    [Header("連続入力")]
+    [Tooltip("長押ししてから連続移動を開始するまでの時間です。")]
+    [SerializeField, Min(0f)]
+    private float holdStartDelay = 0.35f;
+
+    [Tooltip("連続移動するときの入力間隔です。")]
+    [SerializeField, Min(0.01f)]
+    private float repeatInterval = 0.15f;
+
+    [Header("長押し加速")]
+    [Tooltip("長押し時に使用するスライド速度の最大倍率です。")]
+    [SerializeField, Range(1f, 5f)]
+    private float holdMaxSpeedMultiplier = 2.5f;
 
     [Header("ロックメッセージ")]
     [Tooltip("ロック中のエリアを決定したときに理由を表示するTextMeshProを設定します。")]
@@ -77,11 +104,61 @@ public class StageSelectController : MonoBehaviour
     [Tooltip("エリアの選択位置を表示するUI")]
     [SerializeField] private AreaPageIndicator pageIndicator;
 
+    [Header("インジケーター開始タイミング")]
+    [Tooltip("エリア名インジケーターの開始遅延")]
+    [SerializeField] private float infoStartDelay = 0f;
+
+    [Tooltip("ページインジケーターの開始遅延")]
+    [SerializeField] private float pageStartDelay = 0f;
+
+    [Header("ワープ演出")]
+    [Tooltip("ステージ決定後のワープ演出を管理する。")]
+    [SerializeField] private StageWarpController stageWarpController;
+
+    [Header("エリア・シーン名表示")]
+    [SerializeField] private StageInfoTransition stageInfoTransition;
+
     private Vector3 leftArrowBaseScale;
     private Vector3 rightArrowBaseScale;
 
-    private bool canReadStick = true;
+    // 現在押されている方向。左は-1、右は1、未入力は0。
+    private int heldDirection;
+
+    // 長押しと連続入力の時間管理。
+    private float repeatTimer;
+
+    // スティックが入力状態に入っているか。
+    private bool isStickEngaged;
+
+    // 長押し判定後に移動した回数。
+    private int holdSlideCount;
+
+    // 長押しによる連続入力中かどうか。
+    private bool isHoldRepeating;
+
+    // 現在のカード移動に使用する時間。
+    private float currentSlideDuration;
+
+    // 現在実行中のカード移動アニメーション。
+    private Sequence cardSlideSequence;
+
+    // 現在実行中の移動方向。左は-1、右は1。
+    private int activeSlideDirection;
+
+    // 4枚のカードをまとめて管理する。
+    private StageCardView[] cards;
+
+    // 各カードに現在割り当てているステージ番号。
+    private int[] cardStageIndices;
+
+    // 現在の移動先。アニメーション完了前でも更新する。
+    private int targetIndex;
+
+    //カード移動中やワープ演出中の入力制御
     private bool isAnimating;
+
+    // ステージのシーンを読み込み中かどうか。
+    private bool isLoadingScene;
 
     private RectTransform previousRect;
     private RectTransform currentRect;
@@ -103,73 +180,170 @@ public class StageSelectController : MonoBehaviour
     /// </summary>
     public void RefreshProgressDisplay()
     {
-        UpdateCardData();
+        for (int i = 0; i < cards.Length; i++)
+        {
+            UpdateCardData(cards[i], cardStageIndices[i]);
+        }
     }
 
-    // カードを少し内側から定位置まで滑らかに移動させる。
-    private void AnimateSideCard(
-        RectTransform rect,
-        StageCardView card,
-        float targetX,
-        float targetAlpha)
+    // 指定方向のステージ配置へ4枚のカードを移動させる。
+    private void PlayCardSlide(int destinationIndex, int direction)
     {
-        Sequence sequence = DOTween.Sequence();
+        cardSlideSequence?.Kill();
 
-        sequence.Join(rect.DOAnchorPosX(targetX, slideDuration));
-        sequence.Join(rect.DOScale(sideCardScale, slideDuration));
-        sequence.Join(card.Group.DOFade(targetAlpha, slideDuration));
+        // 右移動なら選択位置の左側から右側まで、
+        // 左移動なら左側に新しいカードが登場する配置にする。
+        int[] desiredIndices = direction > 0
+            ? new[]
+            {
+            destinationIndex - 1,
+            destinationIndex,
+            destinationIndex + 1,
+            destinationIndex + 2
+            }
+            : new[]
+            {
+            destinationIndex - 2,
+            destinationIndex - 1,
+            destinationIndex,
+            destinationIndex + 1
+            };
 
-        sequence.SetEase(Ease.OutCubic);
-    }
+        bool[] usedCards = new bool[cards.Length];
+        int[] assignedCards = new int[cards.Length];
 
-    // 3枚のカードの移動・拡大縮小・透明度変更をまとめて実行する。
-    private void PlayCardSlide(
-        float previousX,
-        float currentX,
-        float nextX,
-        float previousScale,
-        float currentScale,
-        float nextScale,
-        float previousAlpha,
-        float currentAlpha,
-        float nextAlpha,
-        TweenCallback onComplete)
-    {
-        Sequence sequence = DOTween.Sequence();
+        // すでに表示しているステージのカードは、そのまま再利用する。
+        for (int i = 0; i < desiredIndices.Length; i++)
+        {
+            assignedCards[i] = -1;
 
-        // カードの位置を変更する。
-        sequence.Join(previousRect.DOAnchorPosX(previousX, slideDuration));
-        sequence.Join(currentRect.DOAnchorPosX(currentX, slideDuration));
-        sequence.Join(nextRect.DOAnchorPosX(nextX, slideDuration));
+            for (int j = 0; j < cards.Length; j++)
+            {
+                if (!usedCards[j] &&
+                    cardStageIndices[j] == desiredIndices[i])
+                {
+                    assignedCards[i] = j;
+                    usedCards[j] = true;
+                    break;
+                }
+            }
+        }
 
-        // カードの大きさを変更する。
-        sequence.Join(previousRect.DOScale(previousScale, slideDuration));
-        sequence.Join(currentRect.DOScale(currentScale, slideDuration));
-        sequence.Join(nextRect.DOScale(nextScale, slideDuration));
+        // 表示されていないステージは、余っているカードに割り当てる。
+        for (int i = 0; i < desiredIndices.Length; i++)
+        {
+            if (assignedCards[i] >= 0)
+                continue;
 
-        // カードの透明度を変更する。
-        sequence.Join(previousCard.Group.DOFade(previousAlpha, slideDuration));
-        sequence.Join(currentCard.Group.DOFade(currentAlpha, slideDuration));
-        sequence.Join(nextCard.Group.DOFade(nextAlpha, slideDuration));
+            for (int j = 0; j < cards.Length; j++)
+            {
+                if (!usedCards[j])
+                {
+                    assignedCards[i] = j;
+                    usedCards[j] = true;
+                    break;
+                }
+            }
+        }
 
-        sequence.SetEase(Ease.OutCubic);
-        sequence.OnComplete(onComplete);
-    }
+        cardSlideSequence = DOTween.Sequence();
 
-    // カードの入れ替え後に表示情報を更新する。
-    private void RefreshCardsAfterTransition()
-    {
-        pageIndicator.SetCurrentIndex(currentIndex);
+        RectTransform centerCardRect = null;
+        float centerTargetScale = 1f;
 
-        RefreshRectReferences();
-        UpdateCardData();
+        // 各カードの移動先を設定する。
+        for (int i = 0; i < desiredIndices.Length; i++)
+        {
+            int cardSlot = assignedCards[i];
+            int stageIndex = desiredIndices[i];
+
+            StageCardView card = cards[cardSlot];
+            RectTransform rect = card.GetComponent<RectTransform>();
+
+            bool isNewCard = cardStageIndices[cardSlot] != stageIndex;
+
+            // 新しいステージを割り当てる場合は,透明にしてから表示情報を変更する。
+            if (isNewCard)
+            {
+                card.Group.alpha = 0f;
+
+                cardStageIndices[cardSlot] = stageIndex;
+                UpdateCardData(card, stageIndex);
+
+                // 画面外から登場する位置に配置する。
+                float startX = direction > 0
+                    ? (stageIndex - currentIndex) * cardSpacing
+                    : (stageIndex - currentIndex - 1) * cardSpacing;
+
+                rect.anchoredPosition = new Vector2(startX, 0f);
+                rect.localScale = Vector3.one * sideCardScale;
+            }
+
+            float targetX =
+                (stageIndex - destinationIndex) * cardSpacing;
+
+            int distance = Mathf.Abs(stageIndex - destinationIndex);
+
+            float targetScale = distance == 0
+                ? cardScale
+                : sideCardScale;
+
+            float targetAlpha =
+                GetCardAlpha(stageIndex, destinationIndex);
+
+            cardSlideSequence.Join(
+                rect.DOAnchorPosX(targetX, currentSlideDuration)
+                    .SetEase(Ease.OutCubic));
+
+            if (distance == 0)
+            {
+                float peakScale = targetScale * centerPeakScaleMultiplier;
+
+                centerCardRect = rect;
+                centerTargetScale = targetScale;
+
+                cardSlideSequence.Join(
+                    rect.DOScale(peakScale, currentSlideDuration)
+                        .SetEase(Ease.OutCubic)
+                            );
+            }
+            else
+            {
+                cardSlideSequence.Join(
+                    rect.DOScale(targetScale, currentSlideDuration)
+                );
+            }
+            cardSlideSequence.Join(
+                card.Group.DOFade(targetAlpha, currentSlideDuration)
+                .SetEase(Ease.OutCubic));
+        }
+
+        // 中央到着後、通常サイズに縮小する。
+        if (centerCardRect != null)
+        {
+            cardSlideSequence.Append(
+                centerCardRect.DOScale(cardScale, centerScaleDownDuration)
+                    .SetEase(Ease.OutCubic)
+            );
+        }
+
+        cardSlideSequence
+            .OnComplete(() => CompleteCardTransition(destinationIndex));
     }
 
     // カード移動の完了処理を行う。
-    private void CompleteCardTransition()
+    private void CompleteCardTransition(int destinationIndex)
     {
+        currentIndex = destinationIndex;
+        targetIndex = destinationIndex;
+
+        RefreshCardRoles();
         UpdateArrowVisibility();
+
         isAnimating = false;
+        activeSlideDirection = 0;
+        cardSlideSequence = null;
+
     }
 
     // 選択可能なステージがある方向だけ矢印を表示する。
@@ -194,6 +368,7 @@ public class StageSelectController : MonoBehaviour
         if (previousCard == null ||
             currentCard == null ||
             nextCard == null ||
+            additionalCard == null ||
             leftArrow == null ||
             rightArrow == null)
         {
@@ -207,6 +382,31 @@ public class StageSelectController : MonoBehaviour
         previousRect = previousCard.GetComponent<RectTransform>();
         currentRect = currentCard.GetComponent<RectTransform>();
         nextRect = nextCard.GetComponent<RectTransform>();
+
+        cards = new StageCardView[]
+        {
+            previousCard,
+            currentCard,
+            nextCard,
+            additionalCard
+　　　　　};
+
+        cardStageIndices = new int[cards.Length];
+
+        for (int i = 0; i < cards.Length; i++)
+        {
+            if (cards[i] == null || cards[i].Group == null)
+            {
+                Debug.LogError(
+                    "4枚すべてのカードとCanvasGroupを設定してください。",
+                    this);
+
+                enabled = false;
+                return;
+            }
+        }
+
+        targetIndex = currentIndex;
 
         if (previousRect == null ||
             currentRect == null ||
@@ -222,8 +422,12 @@ public class StageSelectController : MonoBehaviour
         leftArrowBaseScale = leftArrow.localScale;
         rightArrowBaseScale = rightArrow.localScale;
 
-        UpdateCardData();
-        SetInitialPositions();
+        InitializeCards();
+
+        StageAreaData initialArea = stageDatabase.Areas[currentIndex];
+        stageInfoTransition.Initialize(initialArea.displayName);
+
+        //SetInitialPositions();
 
         // ページインジケーターを初期化する。
         pageIndicator.Initialize(stageDatabase.Areas.Length);
@@ -235,26 +439,68 @@ public class StageSelectController : MonoBehaviour
         }
     }
 
-    private void Update()
+    // 長押しによる移動回数に応じてスライド時間を計算する。
+    private float GetSlideDuration()
     {
-        if (isAnimating)
+        // 長押し中でなければ通常速度にする。
+        if (!isHoldRepeating)
         {
-            return;
+            return slideDuration;
         }
 
+        // 長押しによる移動回数を加算する。
+        holdSlideCount = Mathf.Min(holdSlideCount + 1, 4);
+
+        // 1枚目から4枚目にかけて速度を段階的に上げる。
+        float progress = (holdSlideCount - 1) / 3f;
+
+        float speedMultiplier = Mathf.Lerp(
+            1f,
+            holdMaxSpeedMultiplier,
+            progress
+        );
+
+        // 速度倍率に応じて移動時間を短くする。
+        return slideDuration / speedMultiplier;
+    }
+
+    private void Update()
+    {
+        // カード移動中も左右入力は読み取る。
         ReadDirectionInput();
-        ReadConfirmInput();
+
+        // 決定入力はカード移動中には受け付けない。
+        if (!isAnimating)
+        {
+            ReadConfirmInput();
+        }
     }
 
     private void OnDestroy()
     {
-        // オブジェクト破棄時にアニメーションを停止する。
-        if (previousRect != null) previousRect.DOKill();
-        if (currentRect != null) currentRect.DOKill();
-        if (nextRect != null) nextRect.DOKill();
+        cardSlideSequence?.Kill();
 
-        if (leftArrow != null) leftArrow.DOKill();
-        if (rightArrow != null) rightArrow.DOKill();
+        if (cards != null)
+        {
+            foreach (StageCardView card in cards)
+            {
+                if (card == null)
+                    continue;
+
+                card.transform.DOKill();
+
+                if (card.Group != null)
+                    card.Group.DOKill();
+            }
+        }
+
+        if (leftArrow != null)
+            leftArrow.DOKill();
+
+        if (rightArrow != null)
+            rightArrow.DOKill();
+
+        stageInfoTransition?.KillTransition();
     }
 
     // スティックとキーボードの左右入力を読み取る。
@@ -263,46 +509,154 @@ public class StageSelectController : MonoBehaviour
         Gamepad gamepad = Gamepad.current;
         Keyboard keyboard = Keyboard.current;
 
-        float horizontal = gamepad != null
-            ? gamepad.leftStick.ReadValue().x
-            : 0f;
+        int direction = 0;
 
+        // キーボード入力を優先する。
         bool leftPressed = keyboard != null &&
             (keyboard.leftArrowKey.isPressed || keyboard.aKey.isPressed);
 
         bool rightPressed = keyboard != null &&
             (keyboard.rightArrowKey.isPressed || keyboard.dKey.isPressed);
 
-        if (leftPressed)
+        if (leftPressed != rightPressed)
         {
-            horizontal = -1f;
+            direction = leftPressed ? -1 : 1;
         }
-        else if (rightPressed)
+        else if (!leftPressed && !rightPressed && gamepad != null)
         {
-            horizontal = 1f;
+            float horizontal = gamepad.leftStick.ReadValue().x;
+            float absHorizontal = Mathf.Abs(horizontal);
+
+            if (isStickEngaged)
+            {
+                // 入力解除のしきい値を下回るまで入力状態を維持する。
+                if (absHorizontal <= resetThreshold)
+                {
+                    isStickEngaged = false;
+                }
+                else
+                {
+                    direction = horizontal < 0f ? -1 : 1;
+                }
+            }
+            else if (absHorizontal >= stickThreshold)
+            {
+                // 入力開始のしきい値を超えたら入力状態にする。
+                isStickEngaged = true;
+                direction = horizontal < 0f ? -1 : 1;
+            }
         }
 
-        if (Mathf.Abs(horizontal) <= resetThreshold)
+        // 移動できない方向への入力は無効にする。
+        if ((direction < 0 && targetIndex <= 0) ||
+            (direction > 0 && targetIndex >= stageDatabase.Areas.Length - 1))
         {
-            canReadStick = true;
+            heldDirection = 0;
+            repeatTimer = 0f;
+            //bufferedDirection = 0;
+
+            isHoldRepeating = false;
+            holdSlideCount = 0;
+
             return;
         }
 
-        if (!canReadStick || Mathf.Abs(horizontal) < stickThreshold)
+        // 入力が解除されたら長押し時間をリセットする。
+        if (direction == 0)
         {
+            heldDirection = 0;
+            repeatTimer = 0f;
+
+            isHoldRepeating = false;
+            holdSlideCount = 0;
+
             return;
         }
 
-        canReadStick = false;
-
-        if (horizontal < 0f)
+        // 入力方向が変わった瞬間に1回移動する。
+        if (heldDirection != direction)
         {
-            SelectPrevious();
+            heldDirection = direction;
+            repeatTimer = holdStartDelay;
+
+            // 新しい方向への入力なので加速状態をリセットする。
+            isHoldRepeating = false;
+            holdSlideCount = 0;
+
+            RequestDirection(direction);
+            return;
         }
+
+        // 同じ方向の入力が続いている場合、連続入力の時間を計測する。
+        repeatTimer -= Time.deltaTime;
+
+        if (repeatTimer <= 0f)
+        {
+            repeatTimer = repeatInterval;
+
+            // 長押し判定を開始する。
+            isHoldRepeating = true;
+
+            RequestDirection(direction);
+        }
+    }
+
+    // 指定された方向への移動を要求する。
+    private void RequestDirection(int direction)
+    {
+        // 現在の移動先を基準に、次の移動先を決める
+        int destination = targetIndex + direction;
+
+        // ステージの範囲外なら移動しない
+        if (destination < 0 || destination >= stageDatabase.Areas.Length)
+            return;
+
+        StartCardTransition(destination, direction);
+    }
+
+    // カード、エリア名、ページインジケーターの移動を開始する。
+    private void StartCardTransition(int destinationIndex, int direction)
+    {
+        // 現在のカードTweenを停止する。
+        cardSlideSequence?.Kill();
+
+        isAnimating = true;
+        activeSlideDirection = direction;
+        targetIndex = destinationIndex;
+
+        currentSlideDuration = GetSlideDuration();
+
+        // ロックメッセージを非表示にする。
+        if (lockMessageText != null)
+            lockMessageText.gameObject.SetActive(false);
+
+        // 確定済みのエリア名に戻してから、最新の移動先へ切り替える。
+        string currentAreaName =
+            stageDatabase.Areas[currentIndex].displayName;
+
+        stageInfoTransition.ResetTo(currentAreaName);
+
+        if (destinationIndex != currentIndex)
+        {
+            stageInfoTransition.PlayTransition(
+                stageDatabase.Areas[destinationIndex].displayName,
+                direction,
+                infoStartDelay);
+        }
+
+        // ページインジケーターを最新の移動先へ切り替える。
+        pageIndicator.SetCurrentIndex(
+            destinationIndex,
+            true,
+            pageStartDelay);
+
+        // 移動方向の矢印をアニメーションさせる。
+        if (direction < 0)
+            PlayArrowAnimation(leftArrow, leftArrowBaseScale);
         else
-        {
-            SelectNext();
-        }
+            PlayArrowAnimation(rightArrow, rightArrowBaseScale);
+
+        PlayCardSlide(destinationIndex, direction);
     }
 
     // 決定ボタンを読み取る。
@@ -329,26 +683,7 @@ public class StageSelectController : MonoBehaviour
     /// </summary>
     public void SelectPrevious()
     {
-        if (lockMessageText != null)
-            lockMessageText.gameObject.SetActive(false);
-
-        if (isAnimating || currentIndex <= 0)
-            return;
-
-        isAnimating = true;
-        PlayArrowAnimation(leftArrow, leftArrowBaseScale);
-
-        PlayCardSlide(
-            0f,
-            cardSpacing,
-            cardSpacing * 2f,
-            cardScale,
-            sideCardScale,
-            sideCardScale,
-            1f,
-            0.5f,
-            0f,
-            FinishPreviousTransition);
+        RequestDirection(-1);
     }
 
     /// <summary>
@@ -356,120 +691,7 @@ public class StageSelectController : MonoBehaviour
     /// </summary>
     public void SelectNext()
     {
-        if (lockMessageText != null)
-            lockMessageText.gameObject.SetActive(false);
-
-        if (isAnimating || currentIndex >= stageDatabase.Areas.Length - 1)
-            return;
-
-        isAnimating = true;
-        PlayArrowAnimation(rightArrow, rightArrowBaseScale);
-
-        PlayCardSlide(
-            -cardSpacing * 2f,
-            -cardSpacing,
-            0f,
-            sideCardScale,
-            sideCardScale,
-            cardScale,
-            0f,
-            0.5f,
-            1f,
-            FinishNextTransition);
-    }
-
-    // 前のステージへの移動完了後、カードを並べ直す。
-    private void FinishPreviousTransition()
-    {
-        StageCardView oldPrevious = previousCard;
-        StageCardView oldCurrent = currentCard;
-        StageCardView oldNext = nextCard;
-
-        previousCard = oldNext;
-        currentCard = oldPrevious;
-        nextCard = oldCurrent;
-
-        currentIndex--;
-
-        RefreshCardsAfterTransition();
-
-        // 選択中のカードと右側のカードを定位置に置く。
-        SetCardPosition(currentRect, 0f, cardScale, 1f);
-
-        SetCardPosition(
-            nextRect,
-            cardSpacing,
-            sideCardScale,
-            currentIndex < stageDatabase.Areas.Length - 1 ? 0.5f : 0f);
-
-        // 新しく左側に登場するカードは、透明な状態から移動させる。
-        if (currentIndex > 0)
-        {
-            SetCardPosition(
-                previousRect,
-                -cardSpacing * 0.55f,
-                sideCardScale * 0.75f,
-                0f);
-
-            AnimateSideCard(
-                previousRect,
-                previousCard,
-                -cardSpacing,
-                0.5f);
-        }
-        else
-        {
-            SetCardPosition(previousRect, -cardSpacing, sideCardScale, 0f);
-        }
-
-        CompleteCardTransition();
-    }
-
-    // 次のステージへの移動完了後、カードを並べ直す。
-    private void FinishNextTransition()
-    {
-        StageCardView oldPrevious = previousCard;
-        StageCardView oldCurrent = currentCard;
-        StageCardView oldNext = nextCard;
-
-        previousCard = oldCurrent;
-        currentCard = oldNext;
-        nextCard = oldPrevious;
-
-        currentIndex++;
-
-        RefreshCardsAfterTransition();
-
-        // 選択中のカードと左側のカードを定位置に置く。
-        SetCardPosition(
-            previousRect,
-            -cardSpacing,
-            sideCardScale,
-            currentIndex > 0 ? 0.5f : 0f);
-
-        SetCardPosition(currentRect, 0f, cardScale, 1f);
-
-        // 新しく右側に登場するカードは、透明な状態から移動させる。
-        if (currentIndex < stageDatabase.Areas.Length - 1)
-        {
-            SetCardPosition(
-                nextRect,
-                cardSpacing * 0.15f,
-                sideCardScale * 0.5f,
-                0f);
-
-            AnimateSideCard(
-                nextRect,
-                nextCard,
-                cardSpacing,
-                0.5f);
-        }
-        else
-        {
-            SetCardPosition(nextRect, cardSpacing, sideCardScale, 0f);
-        }
-
-        CompleteCardTransition();
+        RequestDirection(1);
     }
 
     // カードの役割を入れ替えた後、RectTransformを取得し直す。
@@ -480,89 +702,92 @@ public class StageSelectController : MonoBehaviour
         nextRect = nextCard.GetComponent<RectTransform>();
     }
 
-    // 現在の選択位置に合わせて3枚のカードを更新する。
-    // 範囲外のステージは空欄にする。
-    private void UpdateCardData()
+    // 4枚のカードにステージ情報を割り当て、初期配置する。
+    private void InitializeCards()
     {
-        string[] sceneNames = GetSceneNames();
-
-        // 左側のカード。
-        if (currentIndex > 0)
+        for (int i = 0; i < cards.Length; i++)
         {
-            int index = currentIndex - 1;
-            StageAreaData area = stageDatabase.Areas[index];
+            int stageIndex = currentIndex + i - 1;
 
-            StageAreaStatus status =
-                StageProgressManager.GetAreaStatus(index, sceneNames);
+            cardStageIndices[i] = stageIndex;
 
-            previousCard.SetData(
-                area.displayName,
-                area.screenshot,
-                status);
+            UpdateCardData(cards[i], stageIndex);
+
+            RectTransform rect = cards[i].GetComponent<RectTransform>();
+
+            float x = (stageIndex - currentIndex) * cardSpacing;
+            float alpha = GetCardAlpha(stageIndex, currentIndex);
+
+            SetCardPosition(
+                rect,
+                x,
+                Mathf.Abs(stageIndex - currentIndex) == 0
+                    ? cardScale
+                    : sideCardScale,
+                alpha);
         }
-        else
-        {
-            previousCard.SetData("", null, StageAreaStatus.Unplayed);
-        }
 
-        // 中央のカード。
-        StageAreaData currentArea = stageDatabase.Areas[currentIndex];
-
-        StageAreaStatus currentStatus =
-            StageProgressManager.GetAreaStatus(currentIndex, sceneNames);
-
-        currentCard.SetData(
-            currentArea.displayName,
-            currentArea.screenshot,
-            currentStatus);
-
-        // 右側のカード。
-        if (currentIndex < stageDatabase.Areas.Length - 1)
-        {
-            int index = currentIndex + 1;
-            StageAreaData area = stageDatabase.Areas[index];
-
-            StageAreaStatus status =
-                StageProgressManager.GetAreaStatus(index, sceneNames);
-
-            nextCard.SetData(
-                area.displayName,
-                area.screenshot,
-                status);
-        }
-        else
-        {
-            nextCard.SetData("", null, StageAreaStatus.Unplayed);
-        }
+        RefreshCardRoles();
+        UpdateArrowVisibility();
     }
 
-    // 各カードの位置、大きさ、透明度と矢印の表示を設定する。
-    private void SetInitialPositions()
+    // 指定したステージの情報をカードに設定する。
+    private void UpdateCardData(StageCardView card, int stageIndex)
     {
-        bool hasPrevious = currentIndex > 0;
-        bool hasNext = currentIndex < stageDatabase.Areas.Length - 1;
+        if (stageIndex < 0 || stageIndex >= stageDatabase.Areas.Length)
+        {
+            card.SetData("", null, StageAreaStatus.Unplayed);
+            return;
+        }
 
-        // カードを配置する。
-        SetCardPosition(
-            previousRect,
-            -cardSpacing,
-            sideCardScale,
-            hasPrevious ? 0.5f : 0f);
+        StageAreaData area = stageDatabase.Areas[stageIndex];
 
-        SetCardPosition(
-            currentRect,
-            0f,
-            cardScale,
-            1f);
+        StageAreaStatus status =
+            StageProgressManager.GetAreaStatus(stageIndex, GetSceneNames());
 
-        SetCardPosition(
-            nextRect,
-            cardSpacing,
-            sideCardScale,
-            hasNext ? 0.5f : 0f);
+        card.SetData(
+            area.displayName,
+            area.screenshot,
+            status);
+    }
 
-        // 選択できるステージがない方向の矢印を非表示にする。
-        UpdateArrowVisibility();
+    // 中央は不透明、左右は半透明、画面外の予備カードは透明にする。
+    private float GetCardAlpha(int stageIndex, int centerIndex)
+    {
+        if (stageIndex < 0 || stageIndex >= stageDatabase.Areas.Length)
+            return 0f;
+
+        int distance = Mathf.Abs(stageIndex - centerIndex);
+
+        if (distance == 0)
+            return 1f;
+
+        if (distance == 1)
+            return 0.5f;
+
+        return 0f;
+    }
+
+    // 現在の選択位置に合わせてカードの役割を更新する。
+    private void RefreshCardRoles()
+    {
+        previousCard = FindCard(currentIndex - 1);
+        currentCard = FindCard(currentIndex);
+        nextCard = FindCard(currentIndex + 1);
+
+        RefreshRectReferences();
+    }
+
+    // 指定ステージを表示しているカードを取得する。
+    private StageCardView FindCard(int stageIndex)
+    {
+        for (int i = 0; i < cards.Length; i++)
+        {
+            if (cardStageIndices[i] == stageIndex)
+                return cards[i];
+        }
+
+        return null;
     }
 
     // カードの位置、大きさ、透明度を設定する。
@@ -599,13 +824,56 @@ public class StageSelectController : MonoBehaviour
     }
 
     /// <summary>
+    /// ステージのシーンを事前読み込みし、読み込み完了後に切り替える。
+    /// </summary>
+    private IEnumerator LoadStageScene(string sceneName)
+    {
+        isLoadingScene = true;
+
+        // 遷移先のシーンを非同期で読み込む。
+        AsyncOperation operation =
+            SceneManager.LoadSceneAsync(sceneName);
+
+        if (operation == null)
+        {
+            Debug.LogError(
+                $"シーンの読み込みを開始できませんでした: {sceneName}",
+                this);
+
+            isLoadingScene = false;
+            isAnimating = false;
+            yield break;
+        }
+
+        // 読み込み完了後もシーンの切り替えを一時停止する。
+        operation.allowSceneActivation = false;
+
+        // 読み込みが90%に達するまで待機する。
+        while (operation.progress < 0.9f)
+        {
+            yield return null;
+        }
+
+        // 読み込み完了後、シーンを有効化する。
+        operation.allowSceneActivation = true;
+
+        // シーンの切り替えが完了するまで待機する。
+        yield return new WaitUntil(() => operation.isDone);
+    }
+
+    /// <summary>
+    /// 中央に表示されているエリアのシーンへ遷移する。
+    /// </summary>
+    /// <summary>
     /// 中央に表示されているエリアのシーンへ遷移する。
     /// </summary>
     public void ConfirmSelection()
     {
-        if (stageDatabase.Areas == null ||
+        if (stageDatabase == null ||
+            stageDatabase.Areas == null ||
             stageDatabase.Areas.Length == 0 ||
-            isAnimating)
+            isAnimating ||
+            isLoadingScene)
         {
             return;
         }
@@ -626,16 +894,17 @@ public class StageSelectController : MonoBehaviour
             return;
         }
 
-        // TransitionManagerの設定を確認する。
-        if (transitionManager == null)
+        // ワープ演出の設定を確認する。
+        if (stageWarpController == null)
         {
             Debug.LogError(
-                "TransitionManagerが設定されていません。",
+                "StageWarpControllerが設定されていません。",
                 this);
             return;
         }
 
-        string sceneName = stageDatabase.Areas[currentIndex].sceneName;
+        string sceneName =
+            stageDatabase.Areas[currentIndex].sceneName;
 
         if (string.IsNullOrWhiteSpace(sceneName))
         {
@@ -650,11 +919,16 @@ public class StageSelectController : MonoBehaviour
             lockMessageText.gameObject.SetActive(false);
         }
 
+        // 決定後の入力を受け付けない。
         isAnimating = true;
 
-        transitionManager.TransitionToScene(
-            sceneName,
-            transitionType);
+        // CurrentCardのワープ演出を開始する。
+        stageWarpController.PlayWarp(
+            currentCard.GetComponent<RectTransform>(),
+            () =>
+            {
+                // 拡大完了後にステージの読み込みを開始する。
+                StartCoroutine(LoadStageScene(sceneName));
+            });
     }
-
 }

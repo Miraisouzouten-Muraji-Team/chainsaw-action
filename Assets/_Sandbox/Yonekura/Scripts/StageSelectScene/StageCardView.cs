@@ -25,6 +25,11 @@ public class StageCardView : MonoBehaviour
     public CanvasGroup Group => canvasGroup;
 
     /// <summary>
+    /// カードに表示しているスクリーンショット画像を取得する。
+    /// </summary>
+    public Image ScreenshotImage => screenshotImage;
+
+    /// <summary>
     /// ステージ情報と進行状態をカードに反映する。
     /// </summary>
     public void SetData(

@@ -68,7 +68,13 @@ public class AreaPageIndicator : MonoBehaviour
     /// <summary>
     /// 選択中のエリア番号を設定する。
     /// </summary>
-    public void SetCurrentIndex(int index, bool animate = true)
+    /// <param name="index">選択するエリア番号。</param>
+    /// <param name="animate">アニメーションを再生するか。</param>
+    /// <param name="startDelay">アニメーション開始までの待機時間。</param>
+    public void SetCurrentIndex(
+        int index,
+        bool animate = true,
+        float startDelay = 0f)
     {
         if (index < 0 || index >= dots.Count)
             return;
@@ -83,7 +89,10 @@ public class AreaPageIndicator : MonoBehaviour
             Image dot = dots[i];
 
             if (activeTweens[i] != null)
+            {
                 activeTweens[i].Kill();
+                activeTweens[i] = null;
+            }
 
             if (i == currentIndex)
             {
@@ -92,6 +101,8 @@ public class AreaPageIndicator : MonoBehaviour
                 if (animate)
                 {
                     Sequence sequence = DOTween.Sequence();
+
+                    sequence.AppendInterval(startDelay);
 
                     sequence.Append(
                         dot.rectTransform.DOScale(
@@ -119,10 +130,17 @@ public class AreaPageIndicator : MonoBehaviour
 
                 if (animate)
                 {
-                    activeTweens[i] =
+                    Sequence sequence = DOTween.Sequence();
+
+                    sequence.AppendInterval(startDelay);
+
+                    sequence.Append(
                         dot.rectTransform.DOScale(
                             unselectedScale, shrinkDuration
-                        ).SetEase(animationEase);
+                        ).SetEase(animationEase)
+                    );
+
+                    activeTweens[i] = sequence;
                 }
                 else
                 {

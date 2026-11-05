@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Rendering;
 
 /// <summary>
 /// Third weak attack: threshold, inverse, threshold, inverse, slash, black.
@@ -59,16 +60,94 @@ public sealed class PlayerThirdAttackImpact : MonoBehaviour
     [SerializeField, Range(0f, 1f)] private float outlineStrength = 0.7f;
     private Vector3 hitPoint;
 
+    private enum RawImageEffect { Threshold, Outline }
+
     [Header("RawImage方式")]
+    [SerializeField] private RawImageEffect rawImageEffect = RawImageEffect.Threshold;
+    [Tooltip("閾値変換用のカメラ背景色。")]
+    [SerializeField] private Color thresholdBackground = Color.white;
+
     [SerializeField] private bool useRawImage = true;
     [SerializeField] private Camera gameplayCamera;
     [SerializeField] private Camera actorCaptureCamera;
+    [Tooltip("ゲームカメラに対する演出カメラの倍率。1.5ならキャラが約1.5倍に映ります。")]
+    [SerializeField, Min(1f)] private float actorCaptureZoom = 1.5f;
     [SerializeField] private RawImage actorRawImage;
     [SerializeField] private Shader actorCanvasShader;
     private Material canvasMaterial;
     [SerializeField] private int actorCanvasSortingOrder = 1000;
     private Canvas actorCanvas;
     private RawImage actorOutput;
+    [Header("メッシュ塗りつぶし")]
+    [SerializeField] private Shader silhouetteCaptureShader;
+    [Tooltip("プラットフォームの自動補正後、さらに上下反転させる場合のみON。")]
+    [SerializeField] private bool invertCaptureY;
+    private Material silhouetteMaterial;
+    private RenderTexture silhouetteTexture;
+
+    private bool RenderSolidActors()
+    {
+        if (silhouetteMaterial == null)
+        {
+            Shader shader = silhouetteCaptureShader != null ? silhouetteCaptureShader
+                : Shader.Find("Project/Impact/SolidCapture");
+            if (shader == null || !shader.isSupported) return false;
+            silhouetteMaterial = new Material(shader);
+        }
+        RenderTexture source = actorCaptureCamera.targetTexture;
+        if (silhouetteTexture == null || silhouetteTexture.width != source.width ||
+            silhouetteTexture.height != source.height)
+        {
+            if (silhouetteTexture != null)
+            {
+                silhouetteTexture.Release();
+                Destroy(silhouetteTexture);
+            }
+            silhouetteTexture = new RenderTexture(source.width, source.height, 0,
+                RenderTextureFormat.ARGB32)
+            { name = "Impact Solid Actors" };
+            silhouetteTexture.Create();
+        }
+        CommandBuffer cmd = CommandBufferPool.Get("Impact Solid Actors");
+        try
+        {
+            cmd.SetRenderTarget(silhouetteTexture);
+            cmd.ClearRenderTarget(false, true, Color.green);
+            // 専用行列を渡し、URPが設定するカメラのグローバル行列に依存しない。
+            Matrix4x4 projection = GL.GetGPUProjectionMatrix(
+                actorCaptureCamera.projectionMatrix, false);
+            cmd.SetGlobalMatrix("_ImpactCaptureVP",
+                projection * actorCaptureCamera.worldToCameraMatrix);
+            cmd.SetGlobalFloat("_ImpactCaptureY", SystemInfo.graphicsUVStartsAtTop ? -1f : 1f);
+            Plane[] planes = GeometryUtility.CalculateFrustumPlanes(actorCaptureCamera);
+            foreach (Renderer renderer in FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+            {
+                if (renderer == null || !renderer.enabled || renderer.forceRenderingOff ||
+                    (actorCaptureCamera.cullingMask & (1 << renderer.gameObject.layer)) == 0 ||
+                    !GeometryUtility.TestPlanesAABB(planes, renderer.bounds))
+                    continue;
+                Mesh sourceMesh = null;
+                if (renderer is SkinnedMeshRenderer skinned)
+                {
+                    sourceMesh = skinned.sharedMesh;
+                }
+                else if (renderer is MeshRenderer)
+                {
+                    MeshFilter filter = renderer.GetComponent<MeshFilter>();
+                    if (filter != null) sourceMesh = filter.sharedMesh;
+                }
+                if (sourceMesh == null) continue;
+                // Renderer自身に描画させ、スキニングとスケールをUnityに適用させる。
+                for (int sub = 0; sub < sourceMesh.subMeshCount; sub++)
+                    cmd.DrawRenderer(renderer, silhouetteMaterial, sub, 0);
+            }
+            cmd.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+            Graphics.ExecuteCommandBuffer(cmd);
+        }
+        finally { CommandBufferPool.Release(cmd); }
+        actorOutput.texture = silhouetteTexture;
+        return true;
+    }
 
     private void UpdatePresentation()
     {
@@ -79,6 +158,10 @@ public sealed class PlayerThirdAttackImpact : MonoBehaviour
         }
 
         bool show = previewThreshold || (activeStep >= 0 && activeStep < 4);
+        if (actorCanvasShader == null ||
+            actorCanvasShader.name != "Project/Impact/ThirdAttackImpactCanvas")
+            actorCanvasShader = Shader.Find("Project/Impact/ThirdAttackImpactCanvas");
+
         if (actorCaptureCamera == null || gameplayCamera == null ||
             actorCaptureCamera == gameplayCamera ||
             actorCaptureCamera.targetTexture == null || actorCanvasShader == null ||
@@ -112,6 +195,14 @@ public sealed class PlayerThirdAttackImpact : MonoBehaviour
             actorOutput.raycastTarget = false;
         }
 
+        if (!canvasMaterial.HasProperty("_ImpactCanvasVersion") ||
+            !canvasMaterial.HasProperty("_UseThreshold"))
+        {
+            SetCaptureVisible(false);
+            renderStatus = "旧Canvasシェーダーです。ThirdAttackImpactCanvas.shaderを同梱版に上書きしてください。";
+            return;
+        }
+
         actorCaptureCamera.transform.SetPositionAndRotation(gameplayCamera.transform.position,
             gameplayCamera.transform.rotation);
         actorCaptureCamera.orthographic = gameplayCamera.orthographic;
@@ -121,14 +212,46 @@ public sealed class PlayerThirdAttackImpact : MonoBehaviour
         // 透明度を書き込まないキャラのマテリアルでも輪郭を取れるよう、
         // 専用カメラの背景を緑で塗り、合成時に色で抜く。
         actorCaptureCamera.clearFlags = CameraClearFlags.SolidColor;
+        bool simpleThreshold = rawImageEffect == RawImageEffect.Threshold;
         actorCaptureCamera.backgroundColor = Color.green;
         actorOutput.texture = actorCaptureCamera.targetTexture;
         Vector4 settings = GetOutlineSettings(actorCaptureCamera);
         bool inverse = previewThreshold ? previewInverted : ((activeStep & 1) == 1) ^ invertFirstStep;
         canvasMaterial.SetFloat("_ActorWhite", inverse ? 1f : 0f);
-        canvasMaterial.SetVector("_ImpactOutline", settings);
+        canvasMaterial.SetFloat("_UseThreshold", simpleThreshold ? 1f : 0f);
+        canvasMaterial.SetFloat("_Threshold", Mathf.Clamp01(threshold));
+        canvasMaterial.SetFloat("_ThresholdSilhouette", 1f);
+        canvasMaterial.SetColor("_ThresholdBackground", thresholdBackground);
+        // 拡大の中心を命中点に合わせる。プレビューではプレイヤーを中心にする。
+        Vector3 focus = previewThreshold || !triggerOnHit
+            ? actorCaptureCamera.WorldToViewportPoint(transform.position)
+            : actorCaptureCamera.WorldToViewportPoint(hitPoint);
+        Vector2 center = focus.z > 0f
+            ? new Vector2(Mathf.Clamp01(focus.x), Mathf.Clamp01(focus.y))
+            : new Vector2(0.5f, 0.5f);
+        float zoom = Mathf.Max(1f, actorCaptureZoom);
+        float span = 1f / zoom;
+        if (zoom <= 1f) center = new Vector2(0.5f, 0.5f);
+        center.x = Mathf.Clamp(center.x, span * 0.5f, 1f - span * 0.5f);
+        center.y = Mathf.Clamp(center.y, span * 0.5f, 1f - span * 0.5f);
+        actorOutput.uvRect = new Rect(center.x - span * 0.5f,
+            center.y - span * 0.5f, span, span);
+        // シェーダー側の拡大は等倍にし、RawImageのUVだけで拡大する。
+        canvasMaterial.SetVector("_ImpactZoom", new Vector4(0.5f, 0.5f, 1f, 0f));
+        canvasMaterial.SetVector("_ImpactOutline",
+            new Vector4(center.x, center.y, settings.z * span, settings.w));
+        bool solid = true;
+        bool flipY = invertCaptureY;
+        canvasMaterial.SetFloat("_CaptureFlipY", flipY ? 1f : 0f);
+        if (solid && !RenderSolidActors())
+        {
+            SetCaptureVisible(false);
+            renderStatus = "Silhouette Capture ShaderにImpactSolidCapture.shaderを指定してください。";
+            return;
+        }
         SetCaptureVisible(true);
-        renderStatus = "RawImageで表示中";
+        if (solid) actorCaptureCamera.enabled = false;
+        renderStatus = $"Canvas v2 | Mode {rawImageEffect} | Applied {canvasMaterial.GetFloat("_UseThreshold"):F0} | Zoom {zoom:F2} | Shader {canvasMaterial.shader.name}";
     }
 
     private void SetCaptureVisible(bool visible)
@@ -369,6 +492,12 @@ public sealed class PlayerThirdAttackImpact : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (silhouetteMaterial != null) Destroy(silhouetteMaterial);
+        if (silhouetteTexture != null)
+        {
+            silhouetteTexture.Release();
+            Destroy(silhouetteTexture);
+        }
         if (canvasMaterial != null)
         {
             Destroy(canvasMaterial);

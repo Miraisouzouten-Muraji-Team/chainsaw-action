@@ -797,7 +797,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayeMidCollider
   wallLayers:
     serializedVersion: 2
-    m_Bits: 1
+    m_Bits: 128
   surfaceNormalThreshold: 0.7
 --- !u!114 &4747396505095716884
 MonoBehaviour:
@@ -996,7 +996,7 @@ MonoBehaviour:
   enableDiggingImpact: 1
   impactTerrainLayers:
     serializedVersion: 2
-    m_Bits: 1
+    m_Bits: 128
   impactCameraShake: {fileID: 0}
   logDiggingImpact: 1
   enableCornerCorrection: 1

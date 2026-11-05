@@ -694,34 +694,47 @@ Shader "Custom/VolumetricFog"
                         continue;
                     }
 
-                    // -----------------------------------------------
-                    // Directional Light Scattering
-                    // -----------------------------------------------
 
+                    // ----------------------------------------------------
+                    // Directional Light Scattering
+                    // ----------------------------------------------------
+
+                    // Directional Lightの散乱光。
                     float3 directScattering =
                         float3(0.0, 0.0, 0.0);
 
+                    // Directionalの散乱を使う場合だけ処理する。
                     if (directionalEnabled)
                     {
-                        // 現在の位置でShadow Mapを参照する。
-                        float4 shadowCoord =
-                            TransformWorldToShadowCoord(
-                                samplePositionWS);
+                        // 初期状態では影による減衰なし。
+                        float shadowAttenuation = 1.0;
 
-                        float shadowAttenuation =
-                            GetMainLight(
-                                shadowCoord).shadowAttenuation;
+                        // 影の強さが0の場合はShadow Mapを参照しない。
+                        if (_DirectionalShadowStrength > 0.0001)
+                        {
+                            // 現在のサンプル位置をShadow Map座標に変換する。
+                            float4 shadowCoord =
+                                TransformWorldToShadowCoord(
+                                    samplePositionWS);
 
-                        // 影の強さを調整する。
-                        shadowAttenuation = lerp(
-                            1.0,
-                            shadowAttenuation,
-                            saturate(_DirectionalShadowStrength));
+                            // Directional Lightのリアルタイム影を取得する。
+                            float sampledShadow =
+                                GetMainLight(
+                                    shadowCoord).shadowAttenuation;
 
+                            // 0では影なし、1ではShadow Mapの結果を使用。
+                            shadowAttenuation = lerp(
+                                1.0,
+                                sampledShadow,
+                                saturate(_DirectionalShadowStrength));
+                        }
+
+                        // 影を反映してDirectionalの散乱光を計算する。
                         directScattering =
                             directionalBaseScattering *
                             shadowAttenuation;
                     }
+
 
                     // -----------------------------------------------
                     // Point / Spot Light Scattering

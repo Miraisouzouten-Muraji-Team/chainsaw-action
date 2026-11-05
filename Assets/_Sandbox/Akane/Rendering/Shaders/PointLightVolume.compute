@@ -380,39 +380,51 @@ void CullLights(
 // ----------------------------------------------------
 
 
+
+
+// ----------------------------------------------------
+// Light Evaluation
+// ----------------------------------------------------
+
 // Point / Spot Lightの散乱光を計算する。
-// 距離減衰・照射角・散乱方向・Shadow Mapに対応する。
+// 距離減衰、照射角、散乱方向、Shadow Mapに対応する。
 float3 EvaluateLight(
     VolumetricLightData light,
     float3 samplePositionWS,
     inout uint shadowChecks)
 {
-    // -----------------------------------------------
+    // ----------------------------------------------------
     // 1. Light Position / Distance
-    // -----------------------------------------------
+    // ----------------------------------------------------
 
     // 現在のサンプル位置からライトへの方向。
     float3 toLight =
         light.PositionRange.xyz - samplePositionWS;
 
-    float distanceSq = dot(toLight, toLight);
-    float range = light.PositionRange.w;
+    float distanceSq =
+        dot(toLight, toLight);
 
-    // ライトの到達範囲外なら計算しない。
+    float range =
+        light.PositionRange.w;
+
+    // ライトの到達範囲外は計算しない。
     if (range <= 0.0 ||
         distanceSq >= range * range)
     {
         return float3(0.0, 0.0, 0.0);
     }
 
-    float distance = sqrt(max(distanceSq, 0.0001));
-    float3 directionToLight = toLight / distance;
+    float distance =
+        sqrt(max(distanceSq, 0.0001));
 
-    // -----------------------------------------------
+    float3 directionToLight =
+        toLight / distance;
+
+    // ----------------------------------------------------
     // 2. Distance Attenuation
-    // -----------------------------------------------
+    // ----------------------------------------------------
 
-    // ライトからの距離による減衰。
+    // ライトからの距離による減衰を計算する。
     float distanceAttenuation =
         GetDistanceAttenuation(
             distanceSq,
@@ -423,11 +435,12 @@ float3 EvaluateLight(
         return float3(0.0, 0.0, 0.0);
     }
 
-    // -----------------------------------------------
+    // ----------------------------------------------------
     // 3. Spot Attenuation
-    // -----------------------------------------------
+    // ----------------------------------------------------
 
-    // Point Lightは1、Spot Lightは照射角で減衰する。
+    // Spot Lightは照射角に応じて減衰する。
+    // Point Lightでは1が返る。
     float spotAttenuation =
         GetSpotAttenuation(
             light,
@@ -438,21 +451,23 @@ float3 EvaluateLight(
         return float3(0.0, 0.0, 0.0);
     }
 
-    // -----------------------------------------------
+    // ----------------------------------------------------
     // 4. View Direction
-    // -----------------------------------------------
+    // ----------------------------------------------------
 
-    // 平行投影では視線方向が一定。
+    // 平行投影では全画素で同じ視線方向。
     float3 viewDirectionWS =
         normalize(_PointCameraForward.xyz);
 
-    // 透視投影ではカメラからサンプルへの方向を使う。
+    // 透視投影ではサンプル位置ごとに視線方向を計算する。
     if (_PointProjection.w > 0.5)
     {
         float3 cameraToSample =
-            samplePositionWS - _PointCameraPosition.xyz;
+            samplePositionWS -
+            _PointCameraPosition.xyz;
 
-        float distanceToSample = length(cameraToSample);
+        float distanceToSample =
+            length(cameraToSample);
 
         if (distanceToSample > 0.0001)
         {
@@ -461,40 +476,51 @@ float3 EvaluateLight(
         }
     }
 
-    // -----------------------------------------------
+    // ----------------------------------------------------
     // 5. Scattering Phase
-    // -----------------------------------------------
+    // ----------------------------------------------------
 
-    // 視線とライト方向の角度。
+    // 視線方向とライト方向の角度。
     float cosTheta = clamp(
         dot(viewDirectionWS, directionToLight),
         -1.0,
         1.0);
 
-    // 光の散乱方向による強度。
-    float phaseRatio = GetPhaseRatio(cosTheta);
+    // 散乱方向による光の強さ。
+    float phaseRatio =
+        GetPhaseRatio(cosTheta);
 
-    // -----------------------------------------------
+    // ----------------------------------------------------
     // 6. Shadow Attenuation
-    // -----------------------------------------------
+    // ----------------------------------------------------
 
-    // 初期状態は影なし。
+    // 影なしライトでは1を使用する。
     float shadowAttenuation = 1.0;
 
 #if !DEBUG_DISABLE_SHADOWS
 
-    // 0は影なしとしているため1を引く。
+    // C#側ではShadow Indexに1を足して転送している。
+    // 0は影なし。
     int shadowIndex =
         (int)round(light.SpotParams.z) - 1;
 
-    // 有効なShadow Indexだけ参照する。
-    // 1格子内で影を確認するライト数には上限がある。
-    if (shadowIndex >= 0 &&
-        shadowChecks < MAX_SHADOW_CHECKS_PER_FROXEL)
+    // リアルタイムの影を持つライトだけ影判定する。
+    if (shadowIndex >= 0)
     {
+        // Shadow Mapの参照上限に達したライトは
+        // 散乱光を加算しない。
+        //
+        // 影を無視して加算すると、
+        // 壁の裏側まで光が貫通するため。
+        if (shadowChecks >= MAX_SHADOW_CHECKS_PER_FROXEL)
+        {
+            return float3(0.0, 0.0, 0.0);
+        }
+
+        // このサンプル位置での影参照回数を加算する。
         shadowChecks++;
 
-        // URPのリアルタイムShadow Mapを参照する。
+        // URPの追加ライトShadow Mapを参照する。
         shadowAttenuation =
             AdditionalLightRealtimeShadow(
                 shadowIndex,
@@ -504,23 +530,24 @@ float3 EvaluateLight(
 
 #endif
 
-    // -----------------------------------------------
+    // ----------------------------------------------------
     // 7. Final Attenuation
-    // -----------------------------------------------
+    // ----------------------------------------------------
 
     float attenuation =
         distanceAttenuation *
         spotAttenuation *
         shadowAttenuation;
 
-    // -----------------------------------------------
+    // ----------------------------------------------------
     // 8. Final Scattering
-    // -----------------------------------------------
+    // ----------------------------------------------------
 
     return light.ColorIntensity.rgb *
         attenuation *
         phaseRatio;
 }
+
 
 // ----------------------------------------------------
 // Froxel Injection

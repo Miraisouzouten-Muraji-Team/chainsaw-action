@@ -44,7 +44,7 @@ MonoBehaviour:
   _depthSlices: 128
   _maxDistance: 100
   _anisotropy: 0.5
-  _enableDiagnosticLogs: 1
+  _enableDiagnosticLogs: 0
 --- !u!114 &-2936922619579999956
 MonoBehaviour:
   m_ObjectHideFlags: 0

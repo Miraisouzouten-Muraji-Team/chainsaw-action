@@ -173,20 +173,33 @@ namespace Project.Rendering.Pixel
             renderer.EnqueuePass(_pass);
         }
 
+
+
         /// <summary>
         /// Point / Spot Lightを収集してGPUへ転送する。
+        /// 影が必要なライトは、リアルタイムShadow Mapが
+        /// 存在する場合のみ体積照明へ登録する。
         /// </summary>
         private int CollectLights(
             UniversalLightData lightData,
             UniversalRenderer universalRenderer)
         {
+            // 前回のカメラで収集した影番号を消去する。
             _shadowIndices.Clear();
 
-            // URPのVisibleLight番号と影番号を対応付ける。
+            // ----------------------------------------------------
+            // 1. Shadow Index Collection
+            // ----------------------------------------------------
+
+            // 現在のカメラで表示対象となるライトと、
+            // URPの追加ライトShadow Indexを対応付ける。
             if (universalRenderer != null)
             {
-                for (int i = 0; i < lightData.visibleLights.Length; i++)
+                for (int i = 0;
+                     i < lightData.visibleLights.Length;
+                     i++)
                 {
+                    // メインのDirectional Lightは除外する。
                     if (i == lightData.mainLightIndex)
                     {
                         continue;
@@ -197,30 +210,44 @@ namespace Project.Rendering.Pixel
 
                     Light light = visibleLight.light;
 
-                    if (light == null ||
-                        (light.type != LightType.Point &&
-                         light.type != LightType.Spot))
+                    if (light == null)
                     {
                         continue;
                     }
 
+                    // Point / Spot以外は対象外。
+                    if (light.type != LightType.Point &&
+                        light.type != LightType.Spot)
+                    {
+                        continue;
+                    }
+
+                    // リアルタイムShadow Mapが存在する場合だけ、
+                    // 有効な番号が返る。
                     int shadowIndex =
-                        universalRenderer.GetVolumetricShadowLightIndex(i);
+                        universalRenderer
+                            .GetVolumetricShadowLightIndex(i);
 
                     _shadowIndices[light] = shadowIndex;
                 }
             }
+
+            // ----------------------------------------------------
+            // 2. Volumetric Light Collection
+            // ----------------------------------------------------
 
             int count = 0;
 
             foreach (VolumetricPointLightSource source
                      in VolumetricPointLightSource.Sources)
             {
+                // 無効なライトは除外する。
                 if (source == null || !source.IsValid())
                 {
                     continue;
                 }
 
+                // GPUバッファの最大登録数。
                 if (count >= MAX_POINT_LIGHTS)
                 {
                     break;
@@ -228,28 +255,55 @@ namespace Project.Rendering.Pixel
 
                 Light light = source.SourceLight;
 
-                Vector3 position = light.transform.position;
-                Vector3 direction = light.transform.forward;
+                // ----------------------------------------------------
+                // 3. Shadow Validation
+                // ----------------------------------------------------
 
-                Color color = light.color;
+                // Shadow Mapを必要とするか判定する。
+                bool requiresShadows =
+                    source.CastVolumetricShadows &&
+                    light.shadows != LightShadows.None;
 
-                float intensity =
-                    light.intensity * source.VolumetricIntensity;
-
-                bool isSpot = light.type == LightType.Spot;
-
-                // 有効なShadow Mapがなければ-1。
+                // -1はリアルタイムの影なし。
                 int shadowIndex = -1;
 
-                if (source.CastVolumetricShadows &&
-                    light.shadows != LightShadows.None &&
-                    _shadowIndices.TryGetValue(
-                        light, out int foundIndex))
+                if (requiresShadows)
                 {
+                    // 影が必要なライトに有効な影番号がない場合、
+                    // 壁を貫通する散乱光を防ぐため登録しない。
+                    if (!_shadowIndices.TryGetValue(
+                            light,
+                            out int foundIndex) ||
+                        foundIndex < 0)
+                    {
+                        continue;
+                    }
+
                     shadowIndex = foundIndex;
                 }
 
-                // Spot Angleは円錐全体の角度。
+                // ----------------------------------------------------
+                // 4. Light Parameters
+                // ----------------------------------------------------
+
+                Vector3 position =
+                    light.transform.position;
+
+                Vector3 direction =
+                    light.transform.forward;
+
+                Color color = light.color;
+
+                // Unityのライト強度と、
+                // 体積照明専用の強度を掛け合わせる。
+                float intensity =
+                    light.intensity *
+                    source.VolumetricIntensity;
+
+                bool isSpot =
+                    light.type == LightType.Spot;
+
+                // Spot Angleは全角なので半分にする。
                 float outerAngle = isSpot
                     ? light.spotAngle * 0.5f
                     : 180f;
@@ -261,31 +315,48 @@ namespace Project.Rendering.Pixel
                     : 0f;
 
                 float outerCos =
-                    Mathf.Cos(outerAngle * Mathf.Deg2Rad);
+                    Mathf.Cos(
+                        outerAngle * Mathf.Deg2Rad);
 
                 float innerCos =
-                    Mathf.Cos(innerAngle * Mathf.Deg2Rad);
+                    Mathf.Cos(
+                        innerAngle * Mathf.Deg2Rad);
 
+                // ----------------------------------------------------
+                // 5. GPU Light Data
+                // ----------------------------------------------------
+
+                // HLSL側のVolumetricLightDataと
+                // 順序とサイズを一致させる。
                 _staging[count] = new PointLightData
                 {
+                    // xyz: Position
+                    // w: Range
                     PositionRange = new Vector4(
                         position.x,
                         position.y,
                         position.z,
                         light.range),
 
+                    // rgb: Color * Intensity
                     ColorIntensity = new Vector4(
                         color.r * intensity,
                         color.g * intensity,
                         color.b * intensity,
                         0f),
 
+                    // xyz: Direction
+                    // w: 0=Point / 1=Spot
                     DirectionType = new Vector4(
                         direction.x,
                         direction.y,
                         direction.z,
                         isSpot ? 1f : 0f),
 
+                    // x: Inner Angle Cos
+                    // y: Outer Angle Cos
+                    // z: Shadow Index + 1
+                    //    0は影なしを表す。
                     SpotParams = new Vector4(
                         innerCos,
                         outerCos,
@@ -296,14 +367,23 @@ namespace Project.Rendering.Pixel
                 count++;
             }
 
+            // ----------------------------------------------------
+            // 6. GPU Upload
+            // ----------------------------------------------------
+
+            // ライトがある場合のみデータを転送する。
             if (count > 0)
             {
                 _lightBuffer.SetData(
-                    _staging, 0, 0, count);
+                    _staging,
+                    0,
+                    0,
+                    count);
             }
 
             return count;
         }
+
 
         /// <summary>
         /// 画面領域ごとのライト一覧用バッファを確保する。

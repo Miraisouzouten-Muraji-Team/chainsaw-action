@@ -1386,7 +1386,7 @@ MonoBehaviour:
   stageNameText: {fileID: 1254941713}
   canvasGroup: {fileID: 1065998534}
   clearMark: {fileID: 397683893}
-  lockMark: {fileID: 993604505}
+  lockMark: {fileID: 0}
   lockedColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
 --- !u!1 &1112817895
 GameObject:
@@ -2122,17 +2122,17 @@ MonoBehaviour:
   - displayName: 'STAGE1
 
       AREA1'
-    screenshot: {fileID: -6616500621307276426, guid: ed1c2d7b836be064ba9ccb3501fc8c64, type: 3}
+    screenshot: {fileID: 681335512958062064, guid: fa776f90272ba8648b677806ca5f02d7, type: 3}
     sceneName: Stage1Area1
   - displayName: 'STAGE1
 
       AREA2'
-    screenshot: {fileID: -8990990517769548674, guid: 662fa8fb8107c2e47bc69073620e473b, type: 3}
+    screenshot: {fileID: 6000318604131738775, guid: 6241d1a0777ebe449a8b297e24c2fd18, type: 3}
     sceneName: Stage1Area2
   - displayName: 'STAGE1
 
       AREA3'
-    screenshot: {fileID: -5110826189495050274, guid: 88120473315a54a45af06b3df97e2430, type: 3}
+    screenshot: {fileID: 7034877445000775692, guid: 499d4a846061bdb44a21d16b09fb74cb, type: 3}
     sceneName: Stage1Area3
   transitionManager: {fileID: 1593801880}
   transitionType: 3
@@ -3172,7 +3172,7 @@ MonoBehaviour:
   stageNameText: {fileID: 1634633962}
   canvasGroup: {fileID: 1804489731}
   clearMark: {fileID: 397683893}
-  lockMark: {fileID: 993604505}
+  lockMark: {fileID: 0}
   lockedColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
 --- !u!1 &1841714291
 GameObject:
@@ -3572,7 +3572,7 @@ MonoBehaviour:
   stageNameText: {fileID: 2036035868}
   canvasGroup: {fileID: 2023482140}
   clearMark: {fileID: 397683893}
-  lockMark: {fileID: 993604505}
+  lockMark: {fileID: 0}
   lockedColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
 --- !u!1 &2036035866
 GameObject:

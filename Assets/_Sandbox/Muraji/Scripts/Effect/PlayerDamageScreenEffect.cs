@@ -7,6 +7,12 @@ using UnityEngine.Rendering.Universal;
 [RequireComponent(typeof(Volume))]
 public sealed class PlayerDamageScreenEffect : MonoBehaviour
 {
+    [Tooltip("被弾後の残りHPがこの割合以下のときに赤い縁を表示します。20なら最大HPの20%以下、100なら生存中のすべての被弾が対象です。0なら表示しません。")]
+    [SerializeField, Range(0f, 100f)] private float lowHealthPercent = 20f;
+
+    [Tooltip("赤い縁の表示条件を判定するプレイヤーのPlayerHealthを指定します。未指定の場合は自分または親から取得します。独立したVolumeの場合は必ず指定してください。")]
+    [SerializeField] private PlayerHealth playerHealth;
+
     [Tooltip("被弾演出の維持時間と、消えるまでの時間を設定したアセットです。色・濃さ・ぼかしは専用VolumeのProfileで設定します。")]
     [SerializeField] private PlayerDamageScreenData screenData;
 
@@ -24,6 +30,10 @@ public sealed class PlayerDamageScreenEffect : MonoBehaviour
     private void Awake()
     {
         damageVolume = GetComponent<Volume>();
+        if (playerHealth == null)
+            playerHealth = GetComponentInParent<PlayerHealth>();
+        if (playerHealth == null)
+            Debug.LogWarning("被弾画面演出：Player Healthに対象プレイヤーのPlayerHealthを指定してください。未設定の間は演出を表示しません。", this);
         if (screenData == null || damageVolume.sharedProfile == null)
         {
             Debug.LogError("被弾画面演出：Screen Dataと、被弾専用VolumeのProfileを設定してください。Profileは再生前にNewで作成します。", this);
@@ -56,12 +66,18 @@ public sealed class PlayerDamageScreenEffect : MonoBehaviour
         initialized = true;
     }
 
-    // 実際に受けた敵攻撃から呼び、専用Volumeを最大の強さで表示し直す。
+    // 被ダメージ適用後に呼び、残りHPがInspectorの指定割合以下の場合だけ演出を開始する。
     public void PlayDamageEffect()
     {
         if (!initialized || !isActiveAndEnabled || screenData == null ||
             damageVolume == null || !damageVolume.isActiveAndEnabled)
         {
+            return;
+        }
+
+        if (!CanShowDamageEffect())
+        {
+            ResetEffect();
             return;
         }
 
@@ -72,10 +88,25 @@ public sealed class PlayerDamageScreenEffect : MonoBehaviour
         damageVolume.weight = 1f;
     }
 
-    // ゲーム内時間で表示とフェードを進める。ヒットストップ中は表示を維持する。
+    // 有効なHP情報を使い、指定割合ちょうどを含む低HP状態か判定する。
+    private bool CanShowDamageEffect()
+    {
+        return playerHealth != null && playerHealth.isActiveAndEnabled &&
+            playerHealth.MaxHealth > 0f && !playerHealth.IsDead &&
+            playerHealth.CurrentHealth <= playerHealth.MaxHealth *
+                (Mathf.Clamp(lowHealthPercent, 0f, 100f) / 100f);
+    }
+
+    // ゲーム内時間で表示とフェードを進め、回復・死亡・参照喪失時は表示を解除する。
     private void FixedUpdate()
     {
         if (!isPlaying || damageVolume == null) return;
+
+        if (!CanShowDamageEffect())
+        {
+            ResetEffect();
+            return;
+        }
 
         elapsedTime += Time.fixedDeltaTime;
         if (elapsedTime < holdDuration) return;

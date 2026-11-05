@@ -116,9 +116,26 @@ public sealed class TurretEnemySearchStrategy :
         Vector3 searchOrigin =
             GetSearchOrigin();
 
+        Vector3 playerDistancePosition =
+            playerTargetPosition;
+
+        if (playerTargetCollider != null &&
+            playerTargetCollider.enabled &&
+            playerTargetCollider.gameObject.activeInHierarchy)
+        {
+            // XY平面上の索敵では、Colliderの中心ではなく最も近い位置で距離を測る。
+            // LOSの終点は従来どおりMid_Colliderの中心を使用する。
+            playerDistancePosition =
+                playerTargetCollider.ClosestPoint(
+                    new Vector3(
+                        searchOrigin.x,
+                        searchOrigin.y,
+                        playerTargetPosition.z));
+        }
+
         if (!playerDetectionSensor.CanDetectPlayer(
                 searchOrigin,
-                playerTargetPosition,
+                playerDistancePosition,
                 detectionRadius,
                 playerTargetPosition,
                 playerColliderEndsLineOfSight: true))
@@ -173,8 +190,9 @@ public sealed class TurretEnemySearchStrategy :
     }
 
     /// <summary>
-    /// 既存Droneと同じPlayer代表Colliderが存在する場合はその中心を使用し、
-    /// 存在しない場合だけPlayer Root位置へフォールバックする。
+    /// LOSの終点と検知後の向きに使うPlayer代表位置を取得する。
+    /// 距離判定には別途Colliderの最近接点を使用する。
+    /// Mid_Colliderがない場合はPlayer Root位置へフォールバックする。
     /// </summary>
     private bool TryGetCurrentPlayerTargetPosition(
         out Vector3 targetWorldPosition)

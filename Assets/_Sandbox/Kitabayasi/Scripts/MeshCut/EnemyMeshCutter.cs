@@ -63,6 +63,15 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     [Min(0.0001f)]
     private float maximumPieceMass = 10f;
 
+    [Header("分割片コライダー")]
+
+    [Tooltip(
+        "最長辺が、残り2軸の長い方の何倍以上ならCapsuleColliderを使うか。" +
+        "満たさない分割片はBoxColliderにする。")]
+    [SerializeField]
+    [Min(1.1f)]
+    private float minimumCapsuleAspectRatio = 1.5f;
+
     [Header("分割片事前生成")]
 
     [Tooltip(
@@ -215,6 +224,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         if (!TryGetCutSource(
                 out Mesh sourceMesh,
                 out Renderer sourceRenderer,
+                out Matrix4x4 sourceMeshLocalToWorldMatrix,
                 out bool destroySourceMeshAfterCut,
                 out failureReason))
         {
@@ -256,9 +266,9 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 return false;
             }
 
-            ConvertTrajectoryToRendererLocalSpace(
+            ConvertTrajectoryToSourceMeshLocalSpace(
                 trajectory,
-                sourceRenderer.transform,
+                sourceMeshLocalToWorldMatrix.inverse,
                 out List<Vector3> localTipPositions,
                 out List<Vector3> localRootPositions);
 
@@ -273,7 +283,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
             Matrix4x4 sourceToCutRangeSpace =
                 transform.worldToLocalMatrix
-                * sourceRenderer.transform.localToWorldMatrix;
+                * sourceMeshLocalToWorldMatrix;
 
             if (ShouldRunDiagnostics)
             {
@@ -393,7 +403,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 LogDiagnostic(
                     "Cutter-07 Complete",
                     $"元Rendererを無効化し、{pieceObjects.Count}個の物理切断片生成を完了しました。" +
-                    " 各切断片は個別のRigidbodyとCapsuleColliderを持ちます。");
+                    " 各切断片は個別のRigidbodyと形状に応じたColliderを持ちます。");
             }
 
             return true;
@@ -595,11 +605,13 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     private bool TryGetCutSource(
         out Mesh sourceMesh,
         out Renderer sourceRenderer,
+        out Matrix4x4 sourceMeshLocalToWorldMatrix,
         out bool destroySourceMeshAfterCut,
         out string failureReason)
     {
         sourceMesh = null;
         sourceRenderer = null;
+        sourceMeshLocalToWorldMatrix = Matrix4x4.identity;
         destroySourceMeshAfterCut = false;
 
         if (targetSkinnedMeshRenderer != null)
@@ -618,11 +630,9 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                         targetSkinnedMeshRenderer));
             }
 
-            // Processorへ渡すチェンソー軌跡はRenderer Local空間なので、
-            // Bake Meshも同じスケール感の座標へ揃える必要がある。
-            // Unity 6ではuseScale=falseにするとRendererのTransform Scaleに合わせた
-            // Meshが得られるため、軌跡と切断Meshの座標系を一致させる。
-            // 切断片生成時はRenderer自身のScaleを再適用しない配置にして二重Scaleを防ぐ。
+            // useScale=falseではRendererのTransform Scaleが頂点へ反映される。
+            // Scaleを含まない位置・回転だけの行列をMesh LocalToWorldとして使用し、
+            // 軌跡・Cut Range・Piece表示を同じScale焼き込み済み座標へ統一する。
             targetSkinnedMeshRenderer.BakeMesh(
                 bakedMesh,
                 false);
@@ -642,6 +652,9 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
             sourceMesh = bakedMesh;
             sourceRenderer = targetSkinnedMeshRenderer;
+            sourceMeshLocalToWorldMatrix =
+                CreateScaleBakedMeshLocalToWorldMatrix(
+                    targetSkinnedMeshRenderer.transform);
             destroySourceMeshAfterCut = true;
 
             failureReason = null;
@@ -668,6 +681,9 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             sourceRenderer =
                 meshRenderer;
 
+            sourceMeshLocalToWorldMatrix =
+                meshRenderer.transform.localToWorldMatrix;
+
             // sharedMeshはProject AssetまたはUnityが管理するMeshなので、
             // このEnemyMeshCutterからDestroyしてはいけない。
             destroySourceMeshAfterCut = false;
@@ -681,6 +697,19 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
         return false;
 
+    }
+
+    /// <summary>
+    /// BakeMesh(false)でScaleが頂点へ反映されたMeshをWorldへ戻す行列を作る。
+    /// BakeMeshが補正するRendererの位置・回転だけを再適用し、Scaleは重ねない。
+    /// </summary>
+    private static Matrix4x4 CreateScaleBakedMeshLocalToWorldMatrix(
+        Transform rendererTransform)
+    {
+        return Matrix4x4.TRS(
+            rendererTransform.position,
+            rendererTransform.rotation,
+            Vector3.one);
     }
 
     /// <summary>
@@ -737,11 +766,11 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
     /// <summary>
     /// World座標で記録されたチェンソー軌跡を、
-    /// 切断対象RendererのLocal座標へ変換する。
+    /// Processorへ渡すSource MeshのLocal座標へ変換する。
     /// </summary>
-    private void ConvertTrajectoryToRendererLocalSpace(
+    private void ConvertTrajectoryToSourceMeshLocalSpace(
         ChainsawAttackTrajectory trajectory,
-        Transform rendererTransform,
+        Matrix4x4 worldToSourceMeshLocalMatrix,
         out List<Vector3> localTipPositions,
         out List<Vector3> localRootPositions)
     {
@@ -760,11 +789,11 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 trajectory.Samples[i];
 
             localTipPositions.Add(
-                rendererTransform.InverseTransformPoint(
+                worldToSourceMeshLocalMatrix.MultiplyPoint3x4(
                     sample.TipPosition));
 
             localRootPositions.Add(
-                rendererTransform.InverseTransformPoint(
+                worldToSourceMeshLocalMatrix.MultiplyPoint3x4(
                     sample.RootPosition));
         }
 
@@ -868,7 +897,18 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             null;
 
         pieceObject.AddComponent<MeshRenderer>();
-        pieceObject.AddComponent<CapsuleCollider>();
+
+        // 死亡時のAddComponentを避けるため、両方の候補を事前に用意する。
+        // 有効にするのはPieceのBoundsが確定した後の片方だけ。
+        CapsuleCollider capsuleCollider =
+            pieceObject.AddComponent<CapsuleCollider>();
+
+        BoxCollider boxCollider =
+            pieceObject.AddComponent<BoxCollider>();
+
+        capsuleCollider.enabled = false;
+        boxCollider.enabled = false;
+
         pieceObject.AddComponent<Rigidbody>();
 
         return pieceObject;
@@ -902,30 +942,23 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             Transform sourceParent =
                 sourceTransform.parent;
 
-            // BakeMesh(false)はRendererのScaleに合わせた頂点を生成するため、
-            // 元Rendererの子にするとRenderer Scaleがもう一度適用されて巨大化する。
-            // 同じ親へ配置し、元Rendererの位置・回転だけを引き継ぐ。
+            // BakeMesh(false)の頂点にはRendererのTransform Scaleが既に含まれる。
+            // まずScale 1のWorld Transformへ置き、元の親へworldPositionStays=trueで
+            // 戻すことで、親Scaleを再適用せず既存の親子関係も維持する。
             pieceTransform.SetParent(
-                sourceParent,
+                null,
                 false);
 
-            if (sourceParent != null)
-            {
-                pieceTransform.localPosition =
-                    sourceTransform.localPosition;
-
-                pieceTransform.localRotation =
-                    sourceTransform.localRotation;
-            }
-            else
-            {
-                pieceTransform.SetPositionAndRotation(
-                    sourceTransform.position,
-                    sourceTransform.rotation);
-            }
+            pieceTransform.SetPositionAndRotation(
+                sourceTransform.position,
+                sourceTransform.rotation);
 
             pieceTransform.localScale =
                 Vector3.one;
+
+            pieceTransform.SetParent(
+                sourceParent,
+                true);
         }
         else
         {
@@ -964,18 +997,35 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         Bounds meshBounds =
             mesh.bounds;
 
-        CapsuleCollider pieceCollider =
+        CapsuleCollider capsuleCollider =
             pieceObject.GetComponent<CapsuleCollider>();
 
-        // Mesh.boundsとColliderは同じローカル空間を使う。
-        // 分割片ごとに形状が異なるため、最長軸をカプセルの長辺へ合わせて
-        // BoxColliderの平らな底面で直立し続けやすい状態を避ける。
-        ConfigureCapsuleColliderFromBounds(
-            pieceCollider,
-            meshBounds);
+        BoxCollider boxCollider =
+            pieceObject.GetComponent<BoxCollider>();
 
-        pieceCollider.isTrigger =
-            false;
+        // 分割片ごとにBoundsの縦横比を判定する。
+        // 無効な方を物理判定へ参加させず、Rigidbodyの慣性計算前に形状を確定する。
+        capsuleCollider.enabled = false;
+        boxCollider.enabled = false;
+
+        Collider pieceCollider;
+
+        if (TryConfigureCapsuleColliderFromBounds(
+                capsuleCollider,
+                meshBounds))
+        {
+            pieceCollider = capsuleCollider;
+        }
+        else
+        {
+            // Mesh.boundsとBoxColliderは同じローカル空間を使う。
+            boxCollider.center = meshBounds.center;
+            boxCollider.size = meshBounds.size;
+            pieceCollider = boxCollider;
+        }
+
+        pieceCollider.isTrigger = false;
+        pieceCollider.enabled = true;
 
         Rigidbody pieceRigidbody =
             pieceObject.GetComponent<Rigidbody>();
@@ -1025,6 +1075,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 $"MeshBoundsSize={FormatVector3(mesh.bounds.size)}, " +
                 $"PseudoVolume={(meshBounds.size.x * meshBounds.size.y * meshBounds.size.z):F6}, " +
                 $"Mass={pieceRigidbody.mass:F6}, " +
+                $"Collider={pieceCollider.GetType().Name}, " +
                 $"LocalScale={FormatVector3(pieceTransform.localScale)}, " +
                 $"LossyScale={FormatVector3(pieceTransform.lossyScale)}, " +
                 $"Parent='{(pieceTransform.parent != null ? pieceTransform.parent.name : "null")}', " +
@@ -1127,13 +1178,13 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     }
 
     /// <summary>
-    /// 分割メッシュのローカルBoundsを単一のCapsuleColliderで近似する。
+    /// 分割メッシュが十分細長い場合だけ、ローカルBoundsをCapsuleColliderで近似する。
     /// </summary>
     /// <remarks>
-    /// 特定モデルのローカル軸を前提にせず、Boundsの最長軸をカプセルの長辺にする。
-    /// これにより、元Rendererの回転を引き継ぐ分割片でもColliderの向きを合わせやすくする。
+    /// 最長軸をカプセルの長辺にする。全高が直径に近いと球形になるため、
+    /// 最長辺と残りの最大辺の比率が設定値未満ならBoxColliderへ切り替える。
     /// </remarks>
-    private static void ConfigureCapsuleColliderFromBounds(
+    private bool TryConfigureCapsuleColliderFromBounds(
         CapsuleCollider capsuleCollider,
         Bounds meshBounds)
     {
@@ -1168,8 +1219,16 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 break;
         }
 
-        float radius =
-            Mathf.Max(transverseSizeA, transverseSizeB) * 0.5f;
+        float diameter =
+            Mathf.Max(transverseSizeA, transverseSizeB);
+
+        if (diameter <= 0f ||
+            height < diameter * Mathf.Max(1.1f, minimumCapsuleAspectRatio))
+        {
+            return false;
+        }
+
+        float radius = diameter * 0.5f;
 
         capsuleCollider.center =
             meshBounds.center;
@@ -1180,9 +1239,10 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         capsuleCollider.radius =
             radius;
 
-        // Capsuleの全高が直径未満にならないよう保証する。
-        capsuleCollider.height =
-            Mathf.Max(height, radius * 2f);
+        // ここに到達する時点で全高が直径の指定倍率以上ある。
+        capsuleCollider.height = height;
+
+        return true;
     }
 
     private static int GetLongestBoundsAxis(
@@ -1525,6 +1585,11 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 #if UNITY_EDITOR
     private void OnValidate()
     {
+        minimumCapsuleAspectRatio =
+            Mathf.Max(
+                1.1f,
+                minimumCapsuleAspectRatio);
+
         preGeneratedPieceCount =
             Mathf.Max(
                 0,
@@ -1753,6 +1818,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
             return TryCalculateBoundsInCutRangeSpace(
                 targetMeshFilter.sharedMesh,
+                targetMeshFilter.transform.localToWorldMatrix,
                 targetMeshFilter.transform,
                 out sourceBounds,
                 out failureReason);
@@ -1794,7 +1860,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 // EnemyMeshCutterローカル空間へ変換してBoundsを求める。
                 targetSkinnedMeshRenderer.BakeMesh(
                     previewMesh,
-                    true);
+                    false);
 
                 previewMesh.RecalculateBounds();
 
@@ -1803,7 +1869,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 {
                     LogGizmoDiagnostic(
                         "Gizmo-02B BakeMesh",
-                        "BakeMesh(true)に成功しました。 " +
+                        "BakeMesh(false)に成功しました。 " +
                         BuildMeshSummary(previewMesh));
                 }
 #endif
@@ -1811,6 +1877,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 bool succeeded =
                     TryCalculateBoundsInCutRangeSpace(
                         previewMesh,
+                        CreateScaleBakedMeshLocalToWorldMatrix(
+                            targetSkinnedMeshRenderer.transform),
                         targetSkinnedMeshRenderer.transform,
                         out sourceBounds,
                         out failureReason);
@@ -1853,6 +1921,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     /// </summary>
     private bool TryCalculateBoundsInCutRangeSpace(
         Mesh mesh,
+        Matrix4x4 sourceMeshLocalToWorldMatrix,
         Transform sourceTransform,
         out Bounds bounds,
         out string failureReason)
@@ -1890,7 +1959,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
         Matrix4x4 sourceToCutRangeSpace =
             transform.worldToLocalMatrix
-            * sourceTransform.localToWorldMatrix;
+            * sourceMeshLocalToWorldMatrix;
 
 #if UNITY_EDITOR
         if (ShouldRunDiagnostics)

@@ -71,7 +71,7 @@ namespace Project.Rendering.Pixel
                     isActiveAndEnabled &&
                     _targetCamera != null)
                 {
-                    RefreshRenderer(renderer, _targetCamera.transform.position);
+                    RefreshRenderer(renderer, _targetCamera);
                 }
             }
         }
@@ -122,7 +122,7 @@ namespace Project.Rendering.Pixel
                     continue;
                 }
 
-                RefreshRenderer(renderer, cameraPosition);
+                RefreshRenderer(renderer, camera);
             }
 
             // 破棄されたRendererの参照を解放する。
@@ -136,7 +136,7 @@ namespace Project.Rendering.Pixel
         /// <summary>
         /// 単一Rendererの描画先を決定して適用する。
         /// </summary>
-        private void RefreshRenderer(Renderer renderer, Vector3 cameraPosition)
+        private void RefreshRenderer(Renderer renderer, Camera camera)
         {
             if (renderer == null) return;
 
@@ -152,7 +152,7 @@ namespace Project.Rendering.Pixel
             }
 
             PixelRenderOverride renderOverride = FindOverride(renderer.transform);
-            PixelRenderGroup group = ResolveGroup(renderer, renderOverride, cameraPosition);
+            PixelRenderGroup group = ResolveGroup(renderer, renderOverride, camera);
             ApplyRenderingLayer(renderer, group);
         }
 
@@ -181,24 +181,47 @@ namespace Project.Rendering.Pixel
         /// <summary>
         /// 手動指定を優先し、Autoの場合は距離で判定する。
         /// </summary>
+        /// <summary>
+        /// Rendererの描画グループを決定する。
+        /// 平行投影ではカメラの奥行き方向を基準に判定する。
+        /// </summary>
         private PixelRenderGroup ResolveGroup(
             Renderer renderer,
             PixelRenderOverride renderOverride,
-            Vector3 cameraPosition)
+            Camera camera)
         {
-            if (renderOverride != null && renderOverride.Group != PixelRenderGroup.Auto)
+            // 手動指定を優先する。
+            if (renderOverride != null &&
+                renderOverride.Group != PixelRenderGroup.Auto)
             {
                 return renderOverride.Group;
             }
 
-            Vector3 closestPoint = renderer.bounds.ClosestPoint(cameraPosition);
-            float distance = Vector3.Distance(cameraPosition, closestPoint);
+            Bounds bounds = renderer.bounds;
+            Vector3 forward = camera.transform.forward;
+            Vector3 extents = bounds.extents;
 
-            if (distance < _nearDistance) return PixelRenderGroup.Near;
-            if (distance < _farDistance) return PixelRenderGroup.Middle;
+            // RendererのBoundsをカメラの正面方向に投影する。
+            float radius =
+                Mathf.Abs(forward.x) * extents.x +
+                Mathf.Abs(forward.y) * extents.y +
+                Mathf.Abs(forward.z) * extents.z;
+
+            // カメラから最も手前にある面までの奥行きを取得する。
+            float centerDepth = Vector3.Dot(
+                bounds.center - camera.transform.position,
+                forward);
+
+            float depth = Mathf.Max(0f, centerDepth - radius);
+
+            if (depth < _nearDistance)
+                return PixelRenderGroup.Near;
+
+            if (depth < _farDistance)
+                return PixelRenderGroup.Middle;
+
             return PixelRenderGroup.Far;
         }
-
         /// <summary>
         /// Pixel専用ビットのみを更新する。
         /// Play中は変更前のビットを保存する。

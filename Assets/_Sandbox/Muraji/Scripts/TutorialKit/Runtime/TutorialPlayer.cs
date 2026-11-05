@@ -19,6 +19,19 @@ namespace Project.Tutorial
         public UnityEvent clearBufferedInput = new UnityEvent();
         private readonly Dictionary<Behaviour, bool> states = new Dictionary<Behaviour, bool>();
         private bool suspended;
+        private PlayerInputHandler inputHandler;
+
+        // 同じプレイヤーに付いている入力処理を参照する。
+        internal PlayerInputHandler InputHandler
+        {
+            get
+            {
+                if (inputHandler == null)
+                    inputHandler = GetComponentInParent<PlayerInputHandler>() ??
+                        GetComponentInChildren<PlayerInputHandler>(true);
+                return inputHandler;
+            }
+        }
 
         public void SuspendInput()
         {
@@ -26,12 +39,19 @@ namespace Project.Tutorial
             suspended = true;
             clearBufferedInput.Invoke();
             states.Clear();
+            SuspendBehaviour(InputHandler);
             foreach (var item in inputBehaviours)
             {
-                if (item == null || item == this || states.ContainsKey(item)) continue;
-                states.Add(item, item.enabled);
-                item.enabled = false;
+                SuspendBehaviour(item);
             }
+        }
+
+        // 入力コンポーネントの有効状態を保存してから停止する。
+        private void SuspendBehaviour(Behaviour item)
+        {
+            if (item == null || item == this || states.ContainsKey(item)) return;
+            states.Add(item, item.enabled);
+            item.enabled = false;
         }
 
         public void RestoreInput()

@@ -8,6 +8,7 @@
 
 using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
+using UnityEngine.Serialization;
 
 [CreateAssetMenu(
     fileName = "OldDroneEnemyData",
@@ -77,9 +78,9 @@ public sealed class OldDroneEnemyData : EnemyData
     [Min(0f)]
     private float navigationStallDetectionDuration = 0.5f;
 
-    [Tooltip("A*と経路通行判定で障害物として扱うLayer。暫定ではPixelNear、最終的にはStageColliderを想定。")]
+    [Tooltip("A*と経路通行判定でStage障害物として扱うLayer。現在のProjectのStage LayerをInspectorで設定してください。")]
     [SerializeField]
-    private LayerMask navigationObstacleMask = 1 << 9;
+    private LayerMask navigationObstacleMask;
 
     [Header("攻撃")]
     [Tooltip("ホーミング突進時の基本移動速度。")]
@@ -112,10 +113,11 @@ public sealed class OldDroneEnemyData : EnemyData
     [Range(0f, 100f)]
     private float attackContactDamagePercent = 100f;
 
-    [Tooltip("初回突進前に停止して待機する時間。")]
+    [Tooltip("各攻撃の突進開始前に停止して待機する予備動作時間。")]
+    [FormerlySerializedAs("initialPreparationDuration")]
     [SerializeField]
     [Min(0f)]
-    private float initialPreparationDuration = 0.75f;
+    private float attackPreparationDuration = 0.75f;
 
     [Tooltip("ロック地点の判定ライン手前を到達扱いにする距離。")]
     [SerializeField]
@@ -204,8 +206,8 @@ public sealed class OldDroneEnemyData : EnemyData
     public float AttackContactDamagePercent =>
         attackContactDamagePercent;
 
-    public float InitialPreparationDuration =>
-        initialPreparationDuration;
+    public float AttackPreparationDuration =>
+        attackPreparationDuration;
 
     public float HomingEndThreshold =>
         homingEndThreshold;

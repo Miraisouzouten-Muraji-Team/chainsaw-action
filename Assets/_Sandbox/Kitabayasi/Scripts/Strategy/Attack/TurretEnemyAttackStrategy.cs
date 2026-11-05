@@ -5,8 +5,8 @@ using UnityEngine;
 /// 固定射撃EnemyのAttack State中に、照準予告と1回分のProjectile連射を実行する。
 /// </summary>
 /// <remarks>
-/// 1回の連射が完了した時点でUpdateAttackからtrueを返し、
-/// 次の攻撃可否の再索敵はStateMachineとSearch Strategyへ委譲する。
+/// Preparationでは照準を更新し、Preparation完了後にだけ1回分のBurstを開始する。
+/// Burst完了後はUpdateAttackからtrueを返し、次の攻撃可否の再索敵をStateMachineへ委譲する。
 /// </remarks>
 [Serializable]
 public sealed class TurretEnemyAttackStrategy :
@@ -29,8 +29,7 @@ public sealed class TurretEnemyAttackStrategy :
     private float fallbackDirectionSign;
     private float preparationElapsedTime;
 
-    private bool isAttackActive;
-    private bool isPreparing;
+    private bool isPreparationActive;
     private bool isShooting;
     private bool hasAimTarget;
 
@@ -69,13 +68,12 @@ public sealed class TurretEnemyAttackStrategy :
             playerReference);
     }
 
-    public void BeginAttack(
+    public void BeginPreparation(
         float initialAttackDirectionSign)
     {
         ResetRuntimeState();
 
-        isAttackActive = true;
-        isPreparing = true;
+        isPreparationActive = true;
         fallbackDirectionSign =
             initialAttackDirectionSign < 0f
                 ? -1f
@@ -95,44 +93,57 @@ public sealed class TurretEnemyAttackStrategy :
 
         projectileShooter.ShowAim(
             lastAimTargetPosition);
-
-        if (this.enemyData.AttackPreparationDuration <= 0f)
-        {
-            BeginShooting();
-        }
     }
 
-    public bool UpdateAttack()
+    public bool UpdatePreparation()
     {
-        if (!isAttackActive)
+        if (!isPreparationActive)
+        {
+            return true;
+        }
+
+        RefreshAimTarget();
+
+        if (hasAimTarget)
+        {
+            projectileShooter.ShowAim(
+                lastAimTargetPosition);
+        }
+
+        if (enemyData.AttackPreparationDuration <= 0f)
+        {
+            isPreparationActive = false;
+            return true;
+        }
+
+        preparationElapsedTime +=
+            Time.fixedDeltaTime;
+
+        if (preparationElapsedTime <
+            enemyData.AttackPreparationDuration)
         {
             return false;
         }
 
-        if (isPreparing)
-        {
-            RefreshAimTarget();
+        isPreparationActive = false;
+        return true;
+    }
 
-            if (hasAimTarget)
-            {
-                projectileShooter.ShowAim(
-                    lastAimTargetPosition);
-            }
+    public void BeginAttack()
+    {
+        RefreshAimTarget();
 
-            preparationElapsedTime +=
-                Time.fixedDeltaTime;
+        projectileShooter.BeginBurst(
+            lastAimTargetPosition,
+            enemyData,
+            enemyData.AttackPower);
 
-            if (preparationElapsedTime <
-                enemyData.AttackPreparationDuration)
-            {
-                return false;
-            }
+        isShooting =
+            projectileShooter.IsBurstActive;
+    }
 
-            BeginShooting();
-
-            return !isShooting;
-        }
-
+    public bool UpdateAttack()
+    {
         if (!isShooting)
         {
             return true;
@@ -165,27 +176,6 @@ public sealed class TurretEnemyAttackStrategy :
         projectileShooter.HideAim();
 
         ResetRuntimeState();
-    }
-
-    private void BeginShooting()
-    {
-        if (!isAttackActive)
-        {
-            return;
-        }
-
-        // 予備動作中はPlayerを追従して照準を更新するが、
-        // 発射開始時点で位置をロックし、3発の途中では追尾しない。
-        RefreshAimTarget();
-
-        projectileShooter.BeginBurst(
-            lastAimTargetPosition,
-            enemyData,
-            enemyData.AttackPower);
-
-        isPreparing = false;
-        isShooting =
-            projectileShooter.IsBurstActive;
     }
 
     private void RefreshAimTarget()
@@ -248,8 +238,7 @@ public sealed class TurretEnemyAttackStrategy :
 
     private void ResetRuntimeState()
     {
-        isAttackActive = false;
-        isPreparing = false;
+        isPreparationActive = false;
         isShooting = false;
         hasAimTarget = false;
 

@@ -17,6 +17,9 @@ public sealed class DamagePopupPresenter : MonoBehaviour
     private const float FADE_START = 0.55f;
     private const float POP_END = 0.18f;
     private const float POP_SCALE = 1.25f;
+    // TutorialPresenterのOverlay Canvasは30000。既存のInspector値でも必ずそれより前へ出す。
+    private const int MIN_POPUP_SORTING_ORDER = 30001;
+    private const int MAX_CANVAS_SORTING_ORDER = short.MaxValue;
 
     [Header("フォントと表示位置")]
     [Tooltip("用意したフォントから作成したTextMeshProのSDF Font Assetを指定します。字形は変更しません。数字0〜9を含めてください。")]
@@ -25,8 +28,9 @@ public sealed class DamagePopupPresenter : MonoBehaviour
     [SerializeField] private Camera worldCamera;
     [Tooltip("命中位置から数字を出す位置までの、ワールド座標でのずらし量です。")]
     [SerializeField] private Vector3 worldOffset = new Vector3(0f, 0.45f, 0f);
-    [Tooltip("専用Canvasの表示順です。大きいほど他のUIより手前に表示します。")]
-    [SerializeField] private int sortingOrder = 2000;
+    [Tooltip("専用Canvasの表示順です。チュートリアルの30000より前へ出すため、実行時は30001〜32767に補正します。既存の値が2000でも設定し直す必要はありません。")]
+    [SerializeField, Range(MIN_POPUP_SORTING_ORDER, MAX_CANVAS_SORTING_ORDER)]
+    private int sortingOrder = 31000;
     [Tooltip("ゲーム画面を画面の一部へ合成している場合にオンにし、下の表示範囲を指定します。")]
     [SerializeField] private bool useCustomOutputRect;
     [Tooltip("最終画面内のゲーム表示範囲です。左下を原点とする0〜1の値で指定します。全画面ならX=0、Y=0、W=1、H=1です。")]
@@ -104,7 +108,9 @@ public sealed class DamagePopupPresenter : MonoBehaviour
         canvasRect = canvasObject.GetComponent<RectTransform>();
         Canvas canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = sortingOrder;
+        // 保存済みシーン・Prefabの古い値も補正し、Tutorialの30000より後に描画する。
+        canvas.sortingOrder = Mathf.Clamp(sortingOrder,
+            MIN_POPUP_SORTING_ORDER, MAX_CANVAS_SORTING_ORDER);
         CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920f, 1080f);

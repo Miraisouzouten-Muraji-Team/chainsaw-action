@@ -42,16 +42,15 @@ public sealed class ChargeEnemyData : EnemyData
     private float patrolContactDamagePercent = 50f;
 
     [Header("攻撃")]
-    [Tooltip("Player命中後、再突進前に後退する予備動作時間。")]
+    [Tooltip("突進開始前に停止して待機する予備動作時間。")]
     [SerializeField]
     [Min(0f)]
     private float attackPreparationDuration = 0.75f;
 
-    [Tooltip("Player命中後の予備動作で後退する距離。")]
-    [FormerlySerializedAs("attackRetreatDistance")]
+    [Tooltip("ChargeEnemy個体のCharge Distanceへ最初にコピーする初期値。個体側を初期化した後は、その個体の値が使用されます。")]
     [SerializeField]
     [Min(0f)]
-    private float attackPreparationRetreatDistance;
+    private float chargeDistance = float.MaxValue;
 
     [Tooltip("突進時の移動速度。")]
     [SerializeField]
@@ -62,6 +61,11 @@ public sealed class ChargeEnemyData : EnemyData
     [SerializeField]
     [Range(0f, 100f)]
     private float attackContactDamagePercent = 100f;
+
+    [Header("Stage判定")]
+    [Tooltip("Ground判定と突進中の壁判定でStage Geometryとして扱うLayer。Projectの現在のStage Layerへ設定してください。")]
+    [SerializeField]
+    private LayerMask stageLayerMask = Physics.DefaultRaycastLayers;
 
     [Header("平坦面移動制限")]
     [Tooltip("地面判定をCollider前端より先へ出す最低距離。")]
@@ -100,14 +104,20 @@ public sealed class ChargeEnemyData : EnemyData
     public float AttackPreparationDuration =>
         attackPreparationDuration;
 
-    public float AttackPreparationRetreatDistance =>
-        attackPreparationRetreatDistance;
+    /// <summary>
+    /// ChargeEnemy個体へ最初に設定する突進距離の初期値。
+    /// </summary>
+    public float ChargeDistance =>
+        chargeDistance;
 
     public float AttackMoveSpeed =>
         attackMoveSpeed;
 
     public float AttackContactDamagePercent =>
         attackContactDamagePercent;
+
+    public LayerMask StageLayerMask =>
+        stageLayerMask;
 
     public float GroundCheckForwardOffset =>
         groundCheckForwardOffset;

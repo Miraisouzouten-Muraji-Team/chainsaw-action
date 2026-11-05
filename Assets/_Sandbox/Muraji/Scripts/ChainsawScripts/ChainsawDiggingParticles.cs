@@ -8,24 +8,26 @@ public class ChainsawDiggingParticles : MonoBehaviour
     [SerializeField] private SensorChainsawDigging chainsawDigging;
     [SerializeField] private SensorPlayerController playerController;
 
-    [Tooltip("Project内のParticle SystemのPrefabを設定")]
+    [Tooltip("第1段階のParticle SystemのPrefabです。従来のPrefab設定をそのまま引き継ぎます。")]
     [SerializeField] private ParticleSystem particlePrefab;
+
+    [Tooltip("敵への食い込み中に使用する専用のParticle SystemのPrefabです。未設定なら通常のアクセル段階に従います。")]
+    [SerializeField] private ParticleSystem enemyParticlePrefab;
+
+    [Header("アクセルによる3段階の強さ")]
+    [Tooltip("アクセル値を参照するコンポーネントです。未設定ならプレイヤーの子から非表示のものも含めて取得します。")]
+    [SerializeField] private ChainsawAccelerator accelerator;
+    [Tooltip("第2段階のPrefabです。未設定の場合は第1段階を使用します。")]
+    [SerializeField] private ParticleSystem mediumParticlePrefab;
+    [Tooltip("第3段階のPrefabです。未設定の場合は第2段階、続いて第1段階を使用します。")]
+    [SerializeField] private ParticleSystem strongParticlePrefab;
+    [Tooltip("このアクセル値以上で第2段階になります。割合ではなくアクセルの数値で指定します。")]
+    [SerializeField, Min(0f)] private float mediumAcceleratorThreshold = 20f;
+    [Tooltip("このアクセル値以上で第3段階になります。第2段階のしきい値より大きい値を指定してください。")]
+    [SerializeField, Min(0f)] private float strongAcceleratorThreshold = 35f;
 
     [Tooltip("刃に置いた発生位置用の空オブジェクト")]
     [SerializeField] private Transform emissionPoint;
-
-    [Header("床エフェクトの接触判定")]
-    [Tooltip("地面との接触を確認する、チェーンソーの刃に配置した空オブジェクトです。未設定の場合は発生位置用の空オブジェクトを使用します。Colliderの追加は不要です。")]
-    [SerializeField] private Transform groundContactPoint;
-
-    [Tooltip("空オブジェクトを中心に地面との接触を調べる半径です。大きくすると地面に届く前に再生されやすくなります。")]
-    [SerializeField, Min(0.001f)] private float groundContactRadius = 0.03f;
-
-    [Tooltip("接触対象の地面レイヤーを指定してください。Nothingの場合は食い込み判定で使用している地形レイヤーを使用します。敵のレイヤーは含めないでください。")]
-    [SerializeField] private LayerMask groundContactLayers;
-
-    // 毎回の接触判定で配列を生成しないよう、結果を再利用する。
-    private Collider[] groundContactBuffer = new Collider[16];
 
     [Header("右向き時の噴出角度。左向き時は左右反転")]
     [Tooltip("0=右、90=上、180=左、270=下")]
@@ -43,6 +45,7 @@ public class ChainsawDiggingParticles : MonoBehaviour
 
     private ParticleSystem particleInstance;
     private bool isEmitting;
+    private ParticleSystem activeParticlePrefab;
 
     // 放出終了後も、生存中の粒子が自然に消えるまで生成物を保持する。
     private readonly List<ParticleSystem> finishingParticles = new List<ParticleSystem>();
@@ -62,6 +65,12 @@ public class ChainsawDiggingParticles : MonoBehaviour
                 GetComponentInParent<SensorPlayerController>();
         }
 
+        if (accelerator == null && playerController != null)
+            accelerator = playerController.GetComponentInChildren<ChainsawAccelerator>(true);
+
+        if (accelerator == null)
+            Debug.LogWarning("食い込みエフェクト：アクセル参照がないため第1段階のみ使用します。", this);
+
         if (chainsawDigging == null ||
             playerController == null ||
             particlePrefab == null ||
@@ -75,19 +84,31 @@ public class ChainsawDiggingParticles : MonoBehaviour
         }
     }
 
-    // 食い込み中に生成・追従・再生し、放出を終了した粒子は寿命が尽きてから破棄する。
+    // 有効化時に停止キーフレームの通知を登録し、途中から有効化した場合も現在の状態へ合わせる。
+    private void OnEnable()
+    {
+        if (chainsawDigging != null)
+            chainsawDigging.DiggingParticleFrameChanged += UpdateEmission;
+        UpdateEmission();
+    }
+
+    // 固定キーフレーム中の追従と、終了後の粒子の自然消滅・破棄を更新する。
     private void FixedUpdate()
     {
-        // 食い込みが終了していても、放出済み粒子の後片付けは継続する。
         CleanupFinishedParticles();
+        UpdateEmission();
+    }
 
-        if (chainsawDigging == null ||
+    // キーフレーム到達時に即座に開始し、姿勢固定中は同じインスタンスでループ放出する。
+    private void UpdateEmission()
+    {
+        if (!isActiveAndEnabled || chainsawDigging == null ||
             playerController == null ||
             particlePrefab == null ||
             emissionPoint == null ||
             !chainsawDigging.isActiveAndEnabled ||
             !playerController.isActiveAndEnabled ||
-            !chainsawDigging.IsDigging)
+            !chainsawDigging.IsParticleFrameActive)
         {
             StopEmission();
             return;
@@ -98,13 +119,6 @@ public class ChainsawDiggingParticles : MonoBehaviour
         switch (chainsawDigging.Surface)
         {
             case ChainsawSurface.Floor:
-                // 食い込み状態だけでは再生せず、刃が地面に届くまで待つ。
-                if (!IsGroundContact())
-                {
-                    StopEmission();
-                    return;
-                }
-
                 angle = floorAngle;
                 break;
 
@@ -141,10 +155,17 @@ public class ChainsawDiggingParticles : MonoBehaviour
 
         Vector3 position = emissionPoint.position;
 
-        // 食い込み開始ごとに生成する。継続中だけ同じインスタンスを使う。
+        ParticleSystem selectedPrefab = SelectParticlePrefab();
+        if (particleInstance != null && activeParticlePrefab != selectedPrefab)
+        {
+            // 旧段階の粒子は消去せず、その場で寿命まで再生させる。
+            StopEmission();
+        }
+
+        // 段階が変わったときだけ作り直し、旧粒子が残る間に新しい放出を開始する。
         if (particleInstance == null)
         {
-            CreateParticles(position, rotation);
+            CreateParticles(selectedPrefab, position, rotation);
         }
 
         particleInstance.transform.SetPositionAndRotation(
@@ -158,97 +179,44 @@ public class ChainsawDiggingParticles : MonoBehaviour
         }
     }
 
-    // 刃の空オブジェクト付近に、プレイヤー自身以外の地面Colliderがあるかを調べる。
-    private bool IsGroundContact()
+    // 敵専用Prefabを優先し、それ以外はアクセル値で段階を選ぶ。
+    private ParticleSystem SelectParticlePrefab()
     {
-        Transform contactPoint = groundContactPoint != null
-            ? groundContactPoint
-            : emissionPoint;
-
-        if (contactPoint == null || !contactPoint.gameObject.activeInHierarchy)
+        if (chainsawDigging.Surface == ChainsawSurface.Enemy && enemyParticlePrefab != null)
         {
-            return false;
+            return enemyParticlePrefab;
         }
 
-        int layerMask = groundContactLayers.value != 0
-            ? groundContactLayers.value
-            : chainsawDigging.TerrainLayerMask;
-
-        if (layerMask == 0)
-        {
-            return false;
-        }
-
-        int count;
-
-        // 結果が満杯の場合は拡張し、自分のColliderで地面の検出が欠けるのを防ぐ。
-        while (true)
-        {
-            count = Physics.OverlapSphereNonAlloc(
-                contactPoint.position,
-                Mathf.Max(0.001f, groundContactRadius),
-                groundContactBuffer,
-                layerMask,
-                QueryTriggerInteraction.Ignore);
-
-            if (count < groundContactBuffer.Length)
-            {
-                break;
-            }
-
-            System.Array.Resize(ref groundContactBuffer, groundContactBuffer.Length * 2);
-        }
-
-        Transform playerRoot = playerController.transform;
-        bool hasGroundContact = false;
-
-        for (int i = 0; i < count; i++)
-        {
-            Collider target = groundContactBuffer[i];
-            groundContactBuffer[i] = null;
-
-            if (target == null ||
-                target.transform == playerRoot ||
-                target.transform.IsChildOf(playerRoot))
-            {
-                continue;
-            }
-
-            hasGroundContact = true;
-        }
-
-        return hasGroundContact;
+        float acceleratorValue = accelerator != null ? accelerator.CurrentSpeed : 0f;
+        float mediumThreshold = Mathf.Max(0f, mediumAcceleratorThreshold);
+        float strongThreshold = Mathf.Max(mediumThreshold + 0.01f, strongAcceleratorThreshold);
+        if (accelerator != null && acceleratorValue >= strongThreshold && strongParticlePrefab != null)
+            return strongParticlePrefab;
+        if (accelerator != null && acceleratorValue >= mediumThreshold && mediumParticlePrefab != null)
+            return mediumParticlePrefab;
+        return particlePrefab;
     }
 
-    // 選択中に接触判定の位置と大きさを表示し、刃先と地面の距離を調整しやすくする。
-    private void OnDrawGizmosSelected()
+    // Inspectorでしきい値の逆転を防ぎ、第1→第2→第3の順序を維持する。
+    private void OnValidate()
     {
-        Transform contactPoint = groundContactPoint != null
-            ? groundContactPoint
-            : emissionPoint;
-
-        if (contactPoint == null)
-        {
-            return;
-        }
-
-        Gizmos.color = Color.yellow;
-        Gizmos.DrawWireSphere(
-            contactPoint.position,
-            Mathf.Max(0.001f, groundContactRadius));
+        mediumAcceleratorThreshold = Mathf.Max(0f, mediumAcceleratorThreshold);
+        strongAcceleratorThreshold = Mathf.Max(mediumAcceleratorThreshold + 0.01f, strongAcceleratorThreshold);
     }
 
     // 食い込み専用のインスタンスを作り、ループ再生の準備をする。
     private void CreateParticles(
+        ParticleSystem selectedPrefab,
         Vector3 position,
         Quaternion rotation)
     {
         // 見た目の左右反転やスケールの影響を避けるため、
         // Playerの子にはせず生成する。
         particleInstance = Instantiate(
-            particlePrefab,
+            selectedPrefab,
             position,
             rotation);
+        activeParticlePrefab = selectedPrefab;
 
         ParticleSystem.MainModule main = particleInstance.main;
 
@@ -278,6 +246,7 @@ public class ChainsawDiggingParticles : MonoBehaviour
     private void StopEmission()
     {
         isEmitting = false;
+        activeParticlePrefab = null;
         if (particleInstance == null) return;
 
         ParticleSystem instance = particleInstance;
@@ -330,6 +299,8 @@ public class ChainsawDiggingParticles : MonoBehaviour
     // 無効化やリスポーン中に、親なしで生成したパーティクルを残さない。
     private void OnDisable()
     {
+        if (chainsawDigging != null)
+            chainsawDigging.DiggingParticleFrameChanged -= UpdateEmission;
         ClearAllParticles();
     }
 

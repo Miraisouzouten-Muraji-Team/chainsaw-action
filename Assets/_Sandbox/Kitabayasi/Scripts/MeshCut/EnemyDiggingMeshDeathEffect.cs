@@ -358,9 +358,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
                     $"{targetSkinnedMeshRenderer.name}_DiggingDeathBake"
             };
 
-            // 既存EnemyMeshCutterと同じ座標系に揃える。
-            // BakeMesh(false)でRenderer TransformのScaleを頂点側へ反映し、
-            // Piece生成時はRenderer Scaleを再適用しないことで二重Scaleを避ける。
+            // EnemyMeshCutterと同様に、Transform Scaleを頂点へ一度だけ反映する。
+            // PieceはScale 1のWorld Transformで表示し、親Scaleの二重適用を避ける。
             targetSkinnedMeshRenderer.BakeMesh(
                 bakedMesh,
                 false);
@@ -666,27 +665,23 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             Transform sourceParent =
                 sourceTransform.parent;
 
+            // BakeMesh(false)の頂点にはRendererのTransform Scaleが既に含まれる。
+            // Scale 1のWorld Transformを確定してから元の親へ戻し、
+            // 分割前のWorldサイズと既存の親子関係を同時に維持する。
             pieceTransform.SetParent(
-                sourceParent,
+                null,
                 false);
 
-            if (sourceParent != null)
-            {
-                pieceTransform.localPosition =
-                    sourceTransform.localPosition;
-
-                pieceTransform.localRotation =
-                    sourceTransform.localRotation;
-            }
-            else
-            {
-                pieceTransform.SetPositionAndRotation(
-                    sourceTransform.position,
-                    sourceTransform.rotation);
-            }
+            pieceTransform.SetPositionAndRotation(
+                sourceTransform.position,
+                sourceTransform.rotation);
 
             pieceTransform.localScale =
                 Vector3.one;
+
+            pieceTransform.SetParent(
+                sourceParent,
+                true);
         }
         else
         {

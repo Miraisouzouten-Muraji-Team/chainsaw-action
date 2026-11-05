@@ -5,6 +5,24 @@ using UnityEngine;
 [DefaultExecutionOrder(10000)]
 public class ChainsawAttack : MonoBehaviour
 {
+    private const int SLASH_HIT_COUNT = 4;
+    private PlayerAnimator weakAttackAnimator;
+    private EnemyAttackHitReceiver weakDigTarget;
+    private Collider weakDigCollider;
+    private Vector3 weakDigPoint;
+    private bool weakDigHolding;
+    private bool lastHitDealtDamage;
+    private SensorChainsawDigging weakAttackDigging;
+    private Collider finishingTargetCollider;
+
+    // この武器を使用する攻撃アニメーションの管理元を登録する。
+    public void ConfigureWeakAttack(PlayerAnimator owner)
+    {
+        weakAttackAnimator = owner;
+        weakAttackDigging = owner != null ? owner.GetComponent<SensorChainsawDigging>() : null;
+    }
+
+
     [Header("通常攻撃の判定。食い込み検出とは別")]
     [SerializeField] private Collider hitBox;
 
@@ -23,8 +41,22 @@ public class ChainsawAttack : MonoBehaviour
         public float RemainingTime;
     }
 
+    // 1～3撃目で敵を固定し、4撃目または攻撃終了時に元の制約へ戻す。
+    private sealed class HeldEnemyState
+    {
+        public EnemyAttackHitReceiver Target;
+        public EnemyHealth Health;
+        public Rigidbody Body;
+        public RigidbodyConstraints OriginalConstraints;
+        public Vector3 Position;
+        public Quaternion Rotation;
+    }
+
     private readonly List<SlashKnockbackState> activeSlashKnockbacks =
         new List<SlashKnockbackState>();
+
+    private readonly List<HeldEnemyState> heldEnemies =
+        new List<HeldEnemyState>();
 
     [Header("ダメージ数字")]
     [Tooltip("ダメージ数字を表示するDamagePopupPresenterです。未設定なら起動時にシーン内から取得します。")]
@@ -50,8 +82,8 @@ public class ChainsawAttack : MonoBehaviour
 
     // 敵受信側はAttackData.damageを直接読むため、共有SOを変更せず
     // ダメージ別のランタイムコピーを保持する。敵のLastPlayerAttackHitDataからも参照される。
-    private readonly Dictionary<(AttackData, int), AttackData> scaledDiggingData =
-        new Dictionary<(AttackData, int), AttackData>();
+    private readonly Dictionary<(AttackData, int, bool), AttackData> scaledDiggingData =
+        new Dictionary<(AttackData, int, bool), AttackData>();
 
     private AttackData currentData;
     private float attackHitStopTime;
@@ -60,6 +92,7 @@ public class ChainsawAttack : MonoBehaviour
     private bool attackPrepared;
     private bool hitWindowOpen;
     private bool diggingActive;
+    private int slashHitIndex;
 
     // 通常攻撃の1段ごとに、送信済みの敵を記録する。
     private readonly HashSet<EnemyAttackHitReceiver> hitEnemies =
@@ -108,6 +141,7 @@ public class ChainsawAttack : MonoBehaviour
         }
 
         currentData = data;
+        slashHitIndex = 0;
 
         // 各段の開始時点で演出値を保存する。
         attackHitStopTime = Mathf.Max(0f, data.hitStopTime);
@@ -125,8 +159,32 @@ public class ChainsawAttack : MonoBehaviour
             return;
         }
 
+        if (weakDigHolding || hitWindowOpen || slashHitIndex >= SLASH_HIT_COUNT)
+        {
+            return;
+        }
+
+        // アニメーションイベント1回につき1撃分の判定を開く。
+        slashHitIndex = slashHitIndex == 0 ? 1 : SLASH_HIT_COUNT;
+        hitEnemies.Clear();
         hitWindowOpen = true;
         hitBox.enabled = true;
+        // 振り抜きは食い込んだ敵へ送る。姿勢変化でColliderが離れても取りこぼさない。
+        if (slashHitIndex == SLASH_HIT_COUNT && finishingTargetCollider != null)
+        {
+            Collider targetCollider = finishingTargetCollider;
+            finishingTargetCollider = null;
+            TryHitSlash(targetCollider);
+        }
+    }
+
+    // 振り抜きのイベントから、接続していた敵への4回目の攻撃判定を開始する。
+    public void EnableWeakAttackFinisher()
+    {
+        if (!attackPrepared || weakDigHolding || slashHitIndex == 0 ||
+            slashHitIndex >= SLASH_HIT_COUNT) return;
+        DisableHitBox();
+        EnableHitBox();
     }
 
     public void DisableHitBox()
@@ -142,6 +200,8 @@ public class ChainsawAttack : MonoBehaviour
     public void EndAttack()
     {
         DisableHitBox();
+        FinishWeakDigHold();
+        ReleaseAllHeldEnemies();
 
         attackPrepared = false;
         currentData = null;
@@ -149,6 +209,8 @@ public class ChainsawAttack : MonoBehaviour
         attackShakeMagnitude = 0f;
 
         hitEnemies.Clear();
+        slashHitIndex = 0;
+        finishingTargetCollider = null;
     }
 
     public void BeginDigging()
@@ -182,7 +244,7 @@ public class ChainsawAttack : MonoBehaviour
         Vector3 point)
     {
         if (!isActiveAndEnabled ||
-            !diggingActive ||
+            (!diggingActive && !weakDigHolding) ||
             enemy == null ||
             data == null)
         {
@@ -205,7 +267,7 @@ public class ChainsawAttack : MonoBehaviour
             return false;
         }
 
-        AttackData sendData = GetScaledDiggingData(data, scaledDamage);
+        AttackData sendData = GetScaledDiggingData(data, scaledDamage, weakDigHolding);
         if (!SendAttackHit(receiver, sendData, point))
         {
             return false;
@@ -271,9 +333,9 @@ public class ChainsawAttack : MonoBehaviour
     /// 敵側を変更せず、指定した整数ダメージを送るための実行時AttackDataを取得する。
     /// コピーは武器の生存中保持し、受信側の最後の命中情報から参照可能にする。
     /// </summary>
-    private AttackData GetScaledDiggingData(AttackData source, int damage)
+    private AttackData GetScaledDiggingData(AttackData source, int damage, bool suppressKnockback = false)
     {
-        var key = (source, damage);
+        var key = (source, damage, suppressKnockback);
         if (scaledDiggingData.TryGetValue(key, out AttackData cached) && cached != null)
         {
             return cached;
@@ -282,6 +344,8 @@ public class ChainsawAttack : MonoBehaviour
         AttackData runtimeData = Instantiate(source);
         runtimeData.name = source.name + "_RuntimeDamage_" + damage;
         runtimeData.damage = damage;
+        // 弱攻撃の最初の3回は共有SOを変更せず、送信するコピーの吹き飛ばしだけを無効にする。
+        if (suppressKnockback) runtimeData.attackVector = Vector2.zero;
         scaledDiggingData[key] = runtimeData;
         return runtimeData;
     }
@@ -289,11 +353,13 @@ public class ChainsawAttack : MonoBehaviour
     /// <summary>武器破棄時にのみ、作成したランタイムSOを解放する。</summary>
     private void OnDestroy()
     {
+        ReleaseAllHeldEnemies();
         foreach (AttackData data in scaledDiggingData.Values)
         {
             if (data != null) Destroy(data);
         }
         scaledDiggingData.Clear();
+
     }
 
     private void OnTriggerEnter(Collider other)
@@ -317,7 +383,7 @@ public class ChainsawAttack : MonoBehaviour
             hitBox == null ||
             !hitBox.enabled ||
             other == null ||
-            Time.timeScale <= 0f)
+            Time.timeScale <= 0f || weakDigHolding)
         {
             return;
         }
@@ -335,20 +401,42 @@ public class ChainsawAttack : MonoBehaviour
         Vector3 point =
             other.ClosestPoint(hitBox.bounds.center);
 
+        if (slashHitIndex < SLASH_HIT_COUNT)
+        {
+            if (weakAttackAnimator == null || weakAttackDigging == null ||
+                !weakAttackAnimator.HoldWeakAttackPose()) return;
+            weakDigTarget = receiver;
+            weakDigCollider = other;
+            weakDigPoint = point;
+            weakDigHolding = true;
+            if (!weakAttackDigging.BeginWeakEnemyAttack(receiver, other, point))
+            {
+                FinishWeakDigHold();
+                return;
+            }
+            finishingTargetCollider = other;
+            HoldEnemy(receiver, other);
+            DisableHitBox();
+            return;
+        }
+
         // 受信側で攻撃が中断されても、今回の命中に使う演出値を維持する。
         float hitStopTime = attackHitStopTime;
         float shakeMagnitude = attackShakeMagnitude;
 
         // 受信側の処理で攻撃が終了しても、命中時のSOと左右判定を維持する。
+        bool isFinishingHit = slashHitIndex >= SLASH_HIT_COUNT;
+        // OnWeakAttackSwingで開いたこの区間に、開始時の振り抜き専用SOのベクトルを適用する。
         AttackData attackData = currentData;
         bool hasKnockback = TryGetSlashKnockbackVector(
             receiver,
-            attackData,
+            currentData,
             out Vector2 knockbackVector);
 
         // 送信先の処理中に再度呼ばれても重複送信しないよう、先に登録する。
         hitEnemies.Add(receiver);
 
+        if (isFinishingHit) ReleaseHeldEnemy(receiver);
         if (!SendAttackHit(receiver, attackData, point))
         {
             // 送信できなかった場合は、次の接触通知で再試行できるようにする。
@@ -357,9 +445,13 @@ public class ChainsawAttack : MonoBehaviour
         }
 
         // 通常攻撃だけに適用する。食い込みの既存の押し出しとは重複させない。
-        if (hasKnockback)
+        if (isFinishingHit)
         {
-            ApplySlashKnockback(receiver, other, knockbackVector);
+            ReleaseHeldEnemy(receiver);
+            if (hasKnockback)
+            {
+                ApplySlashKnockback(receiver, other, knockbackVector);
+            }
         }
 
         PlayHitEffects(
@@ -481,6 +573,8 @@ public class ChainsawAttack : MonoBehaviour
     // 敵の通常の物理更新後にノックバック速度を反映し、優先時間の終了で制御を返す。
     private void FixedUpdate()
     {
+        TickWeakDigHold();
+        UpdateHeldEnemies();
         float deltaTime = Time.fixedDeltaTime;
         if (deltaTime <= 0f)
         {
@@ -530,6 +624,160 @@ public class ChainsawAttack : MonoBehaviour
             // 今回設定した速度は、この後の物理演算で使用する。
             // 次の物理更新で残り時間を確認して停止するため、最終ステップも移動できる。
         }
+    }
+
+    // 接続先の消失やアニメーション中断を監視する。ダメージ間隔は通常食い込み側で管理する。
+    private void TickWeakDigHold()
+    {
+        if (!weakDigHolding || Time.timeScale <= 0f) return;
+        if (!attackPrepared || weakAttackAnimator == null || !weakAttackAnimator.IsWeakAttackHeld ||
+            weakAttackDigging == null || !weakAttackDigging.IsWeakEnemyAttack ||
+            weakDigTarget == null || !weakDigTarget.isActiveAndEnabled || weakDigCollider == null)
+        {
+            FinishWeakDigHold();
+        }
+    }
+
+    // 通常敵食い込みの共通処理から、HPを減らせた回数を数えて3回で再開する。
+    public bool RegisterWeakEnemyDamage()
+    {
+        if (!weakDigHolding || !lastHitDealtDamage) return false;
+        slashHitIndex++;
+        // 初段の接触自体はダメージに数えないため、接触時の値1に3回を足す。
+        if (slashHitIndex >= SLASH_HIT_COUNT) FinishWeakDigHold();
+        return true;
+    }
+
+    // 食い込みの停止だけを解除し、振り抜き判定が来るまで敵の固定を維持する。
+    private void FinishWeakDigHold()
+    {
+        if (weakDigHolding) DisableHitBox();
+        weakDigHolding = false;
+        if (weakAttackDigging != null) weakAttackDigging.EndWeakEnemyAttack();
+        weakDigTarget = null;
+        weakDigCollider = null;
+        if (weakAttackAnimator != null) weakAttackAnimator.ResumeWeakAttackPose();
+        // 次の判定開始イベントを振り抜きとして扱う。
+        if (attackPrepared && slashHitIndex > 0) slashHitIndex = SLASH_HIT_COUNT - 1;
+    }
+
+    // 敵死亡や通常食い込み側のキャンセルで、停止姿勢を解除する。
+    public void EndWeakEnemyDamage()
+    {
+        FinishWeakDigHold();
+        ReleaseAllHeldEnemies();
+    }
+
+    // 最初の3撃で命中した敵を、その時点の位置と制約で固定する。
+    private void HoldEnemy(EnemyAttackHitReceiver target, Collider targetCollider)
+    {
+        if (target == null || !target.isActiveAndEnabled)
+        {
+            return;
+        }
+
+        EnemyHealth health = target.GetComponent<EnemyHealth>();
+        if (health == null || health.IsDead)
+        {
+            return;
+        }
+
+        Rigidbody body = targetCollider != null ? targetCollider.attachedRigidbody : null;
+        if (body == null)
+        {
+            body = target.GetComponentInParent<Rigidbody>();
+        }
+
+        if (body == null || body.isKinematic || !body.gameObject.activeInHierarchy)
+        {
+            return;
+        }
+
+        for (int index = 0; index < heldEnemies.Count; index++)
+        {
+            if (heldEnemies[index].Body == body)
+            {
+                return;
+            }
+        }
+
+        // 管理中のノックバックがあれば解除し、敵の通常移動を凍結する。
+        for (int index = activeSlashKnockbacks.Count - 1; index >= 0; index--)
+        {
+            if (activeSlashKnockbacks[index].Body == body)
+            {
+                activeSlashKnockbacks.RemoveAt(index);
+            }
+        }
+
+        HeldEnemyState state = new HeldEnemyState
+        {
+            Target = target,
+            Health = health,
+            Body = body,
+            OriginalConstraints = body.constraints,
+            Position = body.position,
+            Rotation = body.rotation
+        };
+
+        body.linearVelocity = Vector3.zero;
+        body.angularVelocity = Vector3.zero;
+        body.constraints = RigidbodyConstraints.FreezeAll;
+        heldEnemies.Add(state);
+    }
+
+    // 固定中の敵が死亡・無効化した場合は安全に解除し、通常は同じ位置へ固定し続ける。
+    private void UpdateHeldEnemies()
+    {
+        for (int index = heldEnemies.Count - 1; index >= 0; index--)
+        {
+            HeldEnemyState state = heldEnemies[index];
+            if (state.Target == null || !state.Target.isActiveAndEnabled ||
+                state.Health == null || state.Health.IsDead ||
+                state.Body == null || state.Body.isKinematic || !state.Body.gameObject.activeInHierarchy)
+            {
+                RestoreHeldEnemy(index);
+                continue;
+            }
+
+            state.Body.position = state.Position;
+            state.Body.rotation = state.Rotation;
+            state.Body.linearVelocity = Vector3.zero;
+            state.Body.angularVelocity = Vector3.zero;
+        }
+    }
+
+    // 4撃目が当たった敵だけ固定を解除して、ほかの敵の固定は攻撃終了まで維持する。
+    private void ReleaseHeldEnemy(EnemyAttackHitReceiver target)
+    {
+        for (int index = heldEnemies.Count - 1; index >= 0; index--)
+        {
+            if (heldEnemies[index].Target == target)
+            {
+                RestoreHeldEnemy(index);
+            }
+        }
+    }
+
+    // 攻撃終了時に、固定中のすべての敵を元の制約へ戻す。
+    private void ReleaseAllHeldEnemies()
+    {
+        for (int index = heldEnemies.Count - 1; index >= 0; index--)
+        {
+            RestoreHeldEnemy(index);
+        }
+    }
+
+    // Rigidbodyが残っている場合に、固定前の制約を復元して管理対象から外す。
+    private void RestoreHeldEnemy(int index)
+    {
+        HeldEnemyState state = heldEnemies[index];
+        if (state.Body != null)
+        {
+            state.Body.constraints = state.OriginalConstraints;
+        }
+
+        heldEnemies.RemoveAt(index);
     }
 
     // 優先時間終了・武器無効化時に、生存中の敵のX/Y残留速度を一度だけ止める。
@@ -644,6 +892,7 @@ public class ChainsawAttack : MonoBehaviour
         AttackData attackData,
         Vector3 point)
     {
+        lastHitDealtDamage = false;
         if (target == null ||
             !target.isActiveAndEnabled ||
             attackData == null)
@@ -680,6 +929,7 @@ public class ChainsawAttack : MonoBehaviour
             enemyHealth.HealthChanged -= RecordDamage;
         }
 
+        lastHitDealtDamage = actualDamage > 0;
         // 表示の有無で攻撃の成功や消費量を変えない。
         if (actualDamage > 0 && damagePopupPresenter != null)
             damagePopupPresenter.Show(point, actualDamage, attackData);

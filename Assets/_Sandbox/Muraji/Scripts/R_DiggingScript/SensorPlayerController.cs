@@ -203,6 +203,10 @@ public class SensorPlayerController : MonoBehaviour
     private float attackMoveSpeed;
     private float attackMoveDirection;
 
+    [Header("食い込み付き弱攻撃専用データ")]
+    [Tooltip("食い込み付き弱攻撃の振り抜き専用AttackDataです。攻撃力、吹き飛ばす初速、踏み込み、空中重力、命中演出に使用します。既存の通常攻撃用とは別のアセットを指定してください。")]
+    [SerializeField] private AttackData weakAttackFinisherData;
+
     [Header("攻撃データ")]
     [SerializeField] AttackData slash1;
     [SerializeField] AttackData slash2;
@@ -468,6 +472,23 @@ public class SensorPlayerController : MonoBehaviour
         // 被弾硬直中は入力による移動を止め、落下と硬直時間だけを進める。
         if (TickDamageStun(deltaTime))
         {
+            return;
+        }
+
+        // 初段命中後の食い込み中は、重力・入力移動・踏み込みを適用しない。
+        if (weakAttackHoldActive)
+        {
+            playerRigidbody.linearVelocity = Vector3.zero;
+            if (chainsawAccelerator.isActiveAndEnabled)
+            {
+                chainsawAccelerator.Tick(input.AccelerateHeld, deltaTime, chainsawDigging.IsDigging);
+                if (chainsawAudioSource != null) chainsawAudioSource.pitch = chainsawAccelerator.CurrentPitch;
+            }
+            // 通常敵食い込みと同じ接続情報・位置追従・リソース更新を実行する。
+            if (chainsawDigging.TryGetEnemyFollowPosition(out Vector3 followPosition))
+                playerRigidbody.position = followPosition;
+            else playerRigidbody.position = weakAttackHoldPosition;
+            chainsawDigging.Tick(deltaTime, facingDirection);
             return;
         }
 
@@ -1850,6 +1871,25 @@ public class SensorPlayerController : MonoBehaviour
         visualRoot.rotation = slopeRotation * visualRoot.rotation;
     }
 
+    private bool weakAttackHoldActive;
+    private Vector3 weakAttackHoldPosition;
+
+    // 弱攻撃の初段が命中した位置を保存し、食い込み中の踏み込みと移動を止める。
+    public void BeginWeakAttackHold()
+    {
+        weakAttackHoldActive = true;
+        weakAttackHoldPosition = playerRigidbody.position;
+        ClearAttackMovement();
+        playerRigidbody.linearVelocity = Vector3.zero;
+    }
+
+    // 弱攻撃の食い込み停止を解除し、通常の物理制御へ戻す。
+    public void EndWeakAttackHold()
+    {
+        weakAttackHoldActive = false;
+    }
+
+    // 弱攻撃は1回のアニメーションだけ実行し、連打で次段を予約しない。
     void Slash()
     {
         if (!IsAttacking)
@@ -1861,10 +1901,7 @@ public class SensorPlayerController : MonoBehaviour
             isAirAttackCombo = !groundedBeforeAttack;
             StartSlash(1);
         }
-        else if (slashStep < 3)
-        {
-            nextSlashReserved = true;
-        }
+
     }
 
     void UpdateSlash()
@@ -1901,13 +1938,7 @@ public class SensorPlayerController : MonoBehaviour
 
         attackStateObserved = true;
 
-        if (slashStep < 3 &&
-            nextSlashReserved &&
-            progress >= ComboAdvanceTime)
-        {
-            StartSlash(slashStep + 1);
-        }
-        else if (progress >= 1f)
+        if (progress >= 1f)
         {
             FinishSlash();
         }
@@ -1915,10 +1946,14 @@ public class SensorPlayerController : MonoBehaviour
 
     void StartSlash(int step)
     {
-        AttackData data =
-            step == 1 ? slash1 :
-            step == 2 ? slash2 :
-            slash3;
+        // 食い込み付き弱攻撃は専用SOで開始し、振り抜き命中時まで保持する。
+        AttackData data = weakAttackFinisherData;
+        if (data == null)
+        {
+            Debug.LogError("食い込み付き弱攻撃のWeak Attack Finisher Dataを設定してください。", this);
+            CancelAttack();
+            return;
+        }
 
         if (!playerAnimator.StartSlash(step, data))
         {
@@ -2034,6 +2069,7 @@ public class SensorPlayerController : MonoBehaviour
 
     void ClearSlashState()
     {
+        EndWeakAttackHold();
         ClearAttackMovement();
 
         IsAttacking = false;

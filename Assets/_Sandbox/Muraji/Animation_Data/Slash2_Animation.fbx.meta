@@ -63,15 +63,15 @@ ModelImporter:
         floatParameter: 0
         intParameter: 0
         messageOptions: 0
-      - time: 0.50018495
+      - time: 0.28301886
         functionName: DisableAttackHitBox
         data: 
         objectReferenceParameter: {instanceID: 0}
         floatParameter: 0
-        intParameter: 0
+        intParameter: 3
         messageOptions: 0
-      - time: 0.08711656
-        functionName: PlayAttackTrail
+      - time: 0.39178696
+        functionName: DisableAttackHitBox
         data: 
         objectReferenceParameter: {instanceID: 0}
         floatParameter: 0

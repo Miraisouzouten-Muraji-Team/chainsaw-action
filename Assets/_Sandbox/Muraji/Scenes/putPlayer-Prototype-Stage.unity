@@ -316,7 +316,7 @@ GameObject:
   - component: {fileID: 11162537}
   - component: {fileID: 11162536}
   - component: {fileID: 11162535}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: InvisibleWall_1 (2)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -5554,7 +5554,7 @@ GameObject:
   - component: {fileID: 46714379}
   - component: {fileID: 46714378}
   - component: {fileID: 46714377}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: InvisibleWall_1 (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -6299,7 +6299,7 @@ GameObject:
   - component: {fileID: 149474520}
   - component: {fileID: 149474519}
   - component: {fileID: 149474518}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Slope_1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -6464,7 +6464,7 @@ GameObject:
   - component: {fileID: 163382484}
   - component: {fileID: 163382483}
   - component: {fileID: 163382482}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Slope_4
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -6666,7 +6666,7 @@ GameObject:
   - component: {fileID: 173231721}
   - component: {fileID: 173231720}
   - component: {fileID: 173231719}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Wall_2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -16785,7 +16785,7 @@ GameObject:
   - component: {fileID: 188081477}
   - component: {fileID: 188081476}
   - component: {fileID: 188081475}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Slope_2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -43083,7 +43083,7 @@ GameObject:
   - component: {fileID: 355932661}
   - component: {fileID: 355932660}
   - component: {fileID: 355932659}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -54739,7 +54739,7 @@ GameObject:
   - component: {fileID: 574060645}
   - component: {fileID: 574060644}
   - component: {fileID: 574060643}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Wall_2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -66299,7 +66299,7 @@ GameObject:
   - component: {fileID: 749911514}
   - component: {fileID: 749911513}
   - component: {fileID: 749911512}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -71284,7 +71284,7 @@ GameObject:
   - component: {fileID: 761248530}
   - component: {fileID: 761248529}
   - component: {fileID: 761248528}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Wall_3
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -82123,7 +82123,7 @@ GameObject:
   - component: {fileID: 861887423}
   - component: {fileID: 861887422}
   - component: {fileID: 861887421}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_10
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -88720,7 +88720,7 @@ GameObject:
   - component: {fileID: 990850984}
   - component: {fileID: 990850983}
   - component: {fileID: 990850982}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_3
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -88832,7 +88832,7 @@ GameObject:
   - component: {fileID: 997438369}
   - component: {fileID: 997438368}
   - component: {fileID: 997438367}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: InvisibleWall_1 (4)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -100209,7 +100209,7 @@ GameObject:
   - component: {fileID: 1102879722}
   - component: {fileID: 1102879721}
   - component: {fileID: 1102879720}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Slope_2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -105433,7 +105433,7 @@ GameObject:
   - component: {fileID: 1116651082}
   - component: {fileID: 1116651081}
   - component: {fileID: 1116651080}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Wall_1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -105613,7 +105613,7 @@ GameObject:
   - component: {fileID: 1139510214}
   - component: {fileID: 1139510213}
   - component: {fileID: 1139510212}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_5
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -105725,7 +105725,7 @@ GameObject:
   - component: {fileID: 1146264435}
   - component: {fileID: 1146264434}
   - component: {fileID: 1146264433}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Wall_1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -111301,7 +111301,7 @@ GameObject:
   - component: {fileID: 1192767891}
   - component: {fileID: 1192767890}
   - component: {fileID: 1192767889}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_11
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -117089,7 +117089,7 @@ GameObject:
   - component: {fileID: 1264452839}
   - component: {fileID: 1264452838}
   - component: {fileID: 1264452837}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_12
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -128076,6 +128076,10 @@ PrefabInstance:
       propertyPath: contactDetectorParameter
       value: 
       objectReference: {fileID: 11400000, guid: 29a800746011f10429132adda1c51df1, type: 2}
+    - target: {fileID: 443363211707966533, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: slash1State
+      value: Base Layer.Slash2
+      objectReference: {fileID: 0}
     - target: {fileID: 483905726833112176, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_IsTrigger
       value: 1
@@ -128136,6 +128140,10 @@ PrefabInstance:
       propertyPath: diggingEventTimeout
       value: 5
       objectReference: {fileID: 0}
+    - target: {fileID: 1691384145625399883, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: weakAttackDiggingData
+      value: 
+      objectReference: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
     - target: {fileID: 1691384145625399883, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: movementContactDamageMultiplier
       value: 1
@@ -128477,6 +128485,10 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: slash1
+      value: 
+      objectReference: {fileID: 11400000, guid: 5ea1d1f77eb496b498c1ab9404279355, type: 2}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: visualRoot
       value: 
       objectReference: {fileID: 1432210667}
@@ -128532,6 +128544,10 @@ PrefabInstance:
       propertyPath: landingEffect.Lifetime
       value: 0.3
       objectReference: {fileID: 0}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: weakAttackFinisherData
+      value: 
+      objectReference: {fileID: 11400000, guid: 5ea1d1f77eb496b498c1ab9404279355, type: 2}
     - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: doubleJumpEffect.Prefab
       value: 
@@ -129355,7 +129371,7 @@ GameObject:
   - component: {fileID: 1444399919}
   - component: {fileID: 1444399918}
   - component: {fileID: 1444399917}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -134765,7 +134781,7 @@ GameObject:
   - component: {fileID: 1463133183}
   - component: {fileID: 1463133182}
   - component: {fileID: 1463133181}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_8 (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -170760,7 +170776,7 @@ GameObject:
   - component: {fileID: 1574645324}
   - component: {fileID: 1574645323}
   - component: {fileID: 1574645322}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_7 (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -176537,7 +176553,7 @@ GameObject:
   - component: {fileID: 1638866736}
   - component: {fileID: 1638866735}
   - component: {fileID: 1638866734}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: InvisibleWall_1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -182101,7 +182117,7 @@ GameObject:
   - component: {fileID: 1709877258}
   - component: {fileID: 1709877257}
   - component: {fileID: 1709877256}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_3
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -182266,7 +182282,7 @@ GameObject:
   - component: {fileID: 1754744909}
   - component: {fileID: 1754744908}
   - component: {fileID: 1754744907}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Slope_3
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -182378,7 +182394,7 @@ GameObject:
   - component: {fileID: 1760347158}
   - component: {fileID: 1760347157}
   - component: {fileID: 1760347156}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -218386,7 +218402,7 @@ GameObject:
   - component: {fileID: 1922890747}
   - component: {fileID: 1922890746}
   - component: {fileID: 1922890745}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Wall_1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -218503,7 +218519,7 @@ GameObject:
   - component: {fileID: 1948341807}
   - component: {fileID: 1948341806}
   - component: {fileID: 1948341805}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_4
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -218888,7 +218904,7 @@ GameObject:
   - component: {fileID: 1974338206}
   - component: {fileID: 1974338205}
   - component: {fileID: 1974338204}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Slope_3
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -239979,7 +239995,7 @@ GameObject:
   - component: {fileID: 2045125749}
   - component: {fileID: 2045125748}
   - component: {fileID: 2045125747}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Wall_2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -240271,7 +240287,7 @@ GameObject:
   - component: {fileID: 2077909501}
   - component: {fileID: 2077909500}
   - component: {fileID: 2077909499}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_6
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -240562,7 +240578,7 @@ GameObject:
   - component: {fileID: 2104601055}
   - component: {fileID: 2104601054}
   - component: {fileID: 2104601053}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_4
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -240899,7 +240915,7 @@ GameObject:
   - component: {fileID: 2142679301}
   - component: {fileID: 2142679300}
   - component: {fileID: 2142679299}
-  m_Layer: 0
+  m_Layer: 7
   m_Name: Ground_12 (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}

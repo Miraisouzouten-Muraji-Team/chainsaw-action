@@ -15,6 +15,7 @@ MonoBehaviour:
   maxHealth: 100
   attackPower: 0
   detectionRadius: 2
+  searchFailureWaitDuration: 10
   alertDuration: 1
   alertContactDamagePercent: 60
   damageFlashDuration: 0.1
@@ -22,5 +23,5 @@ MonoBehaviour:
   hitTiltRecoveryDuration: 0.15
   hitTiltRecoveryGroundDistance: 0.75
   hitTiltAngle: -15
-  deathShrinkDelay: 3000
+  deathShrinkDelay: 3
   deathShrinkDuration: 3

@@ -34,6 +34,12 @@ public sealed class EnemyStateMachineEditor : Editor
     private const string ATTACK_STRATEGY_PROPERTY_NAME =
         "attackStrategy";
 
+    private const string CHARGE_DISTANCE_PROPERTY_NAME =
+        "chargeDistance";
+
+    private const string CHARGE_DISTANCE_INITIALIZED_PROPERTY_NAME =
+        "hasChargeDistanceBeenInitialized";
+
     private const string SHOW_PATROL_DEBUG_PROPERTY_NAME =
         "showPatrolDebugVisualization";
 
@@ -415,6 +421,9 @@ public sealed class EnemyStateMachineEditor : Editor
             heading,
             EditorStyles.boldLabel);
 
+        InitializeChargeDistanceFromDataIfNeeded(
+            strategyProperty);
+
         // 実行中にInspector上のStrategyと初期化済みStateの参照が食い違うのを防ぐ。
         using (
             new EditorGUI.DisabledScope(
@@ -473,6 +482,54 @@ public sealed class EnemyStateMachineEditor : Editor
 
             EditorGUI.indentLevel--;
         }
+    }
+
+    /// <summary>
+    /// ChargeEnemyAttackStrategyの個体距離が未初期化なら、
+    /// ChargeEnemyDataのChargeDistanceをInspector初期値として1度だけコピーする。
+    /// </summary>
+    private void InitializeChargeDistanceFromDataIfNeeded(
+        SerializedProperty strategyProperty)
+    {
+        if (EditorApplication.isPlaying ||
+            strategyProperty?.managedReferenceValue
+                is not ChargeEnemyAttackStrategy ||
+            !TryGetStateMachineTarget(
+                out EnemyStateMachine stateMachine))
+        {
+            return;
+        }
+
+        SerializedProperty initializedProperty =
+            strategyProperty.FindPropertyRelative(
+                CHARGE_DISTANCE_INITIALIZED_PROPERTY_NAME);
+
+        SerializedProperty chargeDistanceProperty =
+            strategyProperty.FindPropertyRelative(
+                CHARGE_DISTANCE_PROPERTY_NAME);
+
+        if (initializedProperty == null ||
+            chargeDistanceProperty == null ||
+            initializedProperty.boolValue)
+        {
+            return;
+        }
+
+        EnemyDataReference dataReference =
+            stateMachine.GetComponent<EnemyDataReference>();
+
+        if (dataReference == null ||
+            dataReference.Data is not ChargeEnemyData chargeEnemyData)
+        {
+            return;
+        }
+
+        chargeDistanceProperty.floatValue =
+            Mathf.Max(
+                0f,
+                chargeEnemyData.ChargeDistance);
+
+        initializedProperty.boolValue = true;
     }
 
     private void ShowStrategyMenu<TStrategy>(

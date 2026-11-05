@@ -10,6 +10,7 @@ using UnityEngine;
 /// ・敵固有の索敵処理をIEnemySearchStrategyへ委譲する。
 /// ・索敵中に受け取ったCollision開始通知をStrategyへ委譲する。
 /// ・プレイヤー発見時に、発見方向を渡してState遷移を要求する。
+/// ・攻撃後の再索敵に失敗した場合のみ、帰還処理の開始を遅らせ、待機中のアニメーションを停止する。
 ///
 /// 担当しない責務:
 /// ・敵固有の巡回、検知、移動処理。
@@ -22,26 +23,57 @@ public sealed class EnemySearchState :
     IEnemyCollisionEnterReceiver
 {
     private readonly IEnemySearchStrategy searchStrategy;
+    private readonly Animator animator;
     private readonly Action<float> requestAlertState;
+    private readonly float postAttackSearchFailureWaitDuration;
 
     private bool hasRequestedAlertState;
+    private bool hasBegunSearch;
+    private float remainingWaitDuration;
+    private float animatorSpeedBeforeWait;
+    private bool hasPausedAnimatorForWait;
 
     public EnemySearchState(
         IEnemySearchStrategy searchStrategy,
-        Action<float> requestAlertState)
+        Action<float> requestAlertState,
+        float postAttackSearchFailureWaitDuration,
+        Animator animator)
     {
         this.searchStrategy = searchStrategy
             ?? throw new ArgumentNullException(nameof(searchStrategy));
 
         this.requestAlertState = requestAlertState
             ?? throw new ArgumentNullException(nameof(requestAlertState));
+
+        this.animator = animator;
+
+        this.postAttackSearchFailureWaitDuration =
+            Mathf.Max(0f, postAttackSearchFailureWaitDuration);
+    }
+
+    /// <summary>
+    /// 攻撃完了直後の再索敵に失敗した場合だけ、次のSearch開始を遅らせる。
+    /// 通常のSearch開始やDamage復帰では呼ばない。
+    /// </summary>
+    public void WaitBeforeReturningAfterFailedAttackSearch()
+    {
+        remainingWaitDuration =
+            postAttackSearchFailureWaitDuration;
     }
 
     public void Enter()
     {
         hasRequestedAlertState = false;
+        hasBegunSearch = false;
 
-        searchStrategy.BeginSearch();
+        // StrategyのBeginSearchで帰還が始まるため、待機中は呼ばない。
+        if (remainingWaitDuration <= 0f)
+        {
+            BeginSearch();
+            return;
+        }
+
+        PauseAnimatorForWait();
     }
 
     public void Update()
@@ -49,6 +81,18 @@ public sealed class EnemySearchState :
         if (hasRequestedAlertState)
         {
             return;
+        }
+
+        if (!hasBegunSearch)
+        {
+            remainingWaitDuration -= Time.fixedDeltaTime;
+
+            if (remainingWaitDuration > 0f)
+            {
+                return;
+            }
+
+            BeginSearch();
         }
 
         bool hasDetectedPlayer =
@@ -77,11 +121,60 @@ public sealed class EnemySearchState :
     /// </param>
     public void HandleCollisionEnter(Collision collision)
     {
-        searchStrategy.HandleCollisionEnter(collision);
+        // 待機中はSearch Strategyをまだ開始していない。
+        if (hasBegunSearch)
+        {
+            searchStrategy.HandleCollisionEnter(collision);
+        }
     }
 
     public void Exit()
     {
-        searchStrategy.EndSearch();
+        ResumeAnimatorAfterWait();
+
+        if (hasBegunSearch)
+        {
+            searchStrategy.EndSearch();
+        }
+
+        hasBegunSearch = false;
+        remainingWaitDuration = 0f;
+    }
+
+    private void BeginSearch()
+    {
+        // Walkなどの帰還モーションはAnimatorの再生を復元してから開始する。
+        ResumeAnimatorAfterWait();
+        searchStrategy.BeginSearch();
+        hasBegunSearch = true;
+    }
+
+    private void PauseAnimatorForWait()
+    {
+        if (animator == null || hasPausedAnimatorForWait)
+        {
+            return;
+        }
+
+        // 攻撃終了直後のポーズを保ったまま、待機中だけ再生を止める。
+        // Animatorを無効化せず速度を記録しておくことで、遷移・被弾でも復元できる。
+        animatorSpeedBeforeWait = animator.speed;
+        animator.speed = 0f;
+        hasPausedAnimatorForWait = true;
+    }
+
+    private void ResumeAnimatorAfterWait()
+    {
+        if (!hasPausedAnimatorForWait)
+        {
+            return;
+        }
+
+        if (animator != null)
+        {
+            animator.speed = animatorSpeedBeforeWait;
+        }
+
+        hasPausedAnimatorForWait = false;
     }
 }

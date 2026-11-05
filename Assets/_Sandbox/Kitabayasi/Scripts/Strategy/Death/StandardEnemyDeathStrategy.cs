@@ -10,7 +10,8 @@ using UnityEngine;
 /// 死亡原因AttackDataを確認し、通常攻撃死亡はEnemyMeshCutter、
 /// くい込み攻撃死亡はEnemyDiggingMeshDeathEffectへ委譲する。
 ///
-/// 死亡開始時にはEnemy本体と子階層に存在していたColliderを無効化する。
+/// 死亡開始時にはEnemy本体と子階層に存在していたColliderを無効化し、
+/// 設定された追加死亡Pieceだけを本体Pieceと同じ飛散・縮小対象として再有効化する。
 /// Mesh分割アルゴリズム、切断片の具体的な物理挙動、State遷移、HP管理、
 /// Enemy本体の最終破棄は担当しない。
 /// </remarks>
@@ -38,6 +39,14 @@ public sealed class StandardEnemyDeathStrategy :
     [SerializeField]
     private ChainsawAttackTrajectoryProfile[]
         chainsawAttackTrajectoryProfiles;
+
+    [Header("追加死亡Piece")]
+    [Tooltip(
+        "Enemy死亡時に本体の分割Pieceと同じ飛散・縮小へ参加させる、" +
+        "事前配置済みの追加Piece。ChargeEnemyのShield_Piece_A / Bなどを設定する。" +
+        "通常時はRigidbodyを持たせず、死亡時にRigidbodyを追加して物理Pieceへ切り替える。")]
+    [SerializeField]
+    private Transform[] additionalDeathPieces;
 
     [Header("くい込み攻撃Mesh分割")]
     [Tooltip(
@@ -91,6 +100,8 @@ public sealed class StandardEnemyDeathStrategy :
         enemyCutPieceShrink;
 
     private Collider[] enemyColliders;
+
+    private Collider[][] additionalDeathPieceColliders;
 
     private bool isDeathActive;
 
@@ -175,6 +186,9 @@ public sealed class StandardEnemyDeathStrategy :
             enemyObject.GetComponentsInChildren<
                 Collider>(
                 true);
+
+        CacheAdditionalDeathPieces(
+            enemyObject);
 
         if (enemyAttackHitReceiver == null)
         {
@@ -283,6 +297,209 @@ public sealed class StandardEnemyDeathStrategy :
     }
 
     /// <summary>
+    /// 事前配置済みの追加死亡Pieceを検証し、死亡後に使用するColliderを保持する。
+    /// </summary>
+    /// <remarks>
+    /// 追加PieceはEnemy階層内に残し、死亡完了時にEnemy本体と一緒に破棄する。
+    /// 生存中はRigidbodyを持たせず、死亡破片用Colliderだけを無効化して
+    /// VisualRoot等の親Transformへ通常のTransform階層として追従させる。
+    /// </remarks>
+    private void CacheAdditionalDeathPieces(
+        GameObject enemyObject)
+    {
+        if (additionalDeathPieces == null ||
+            additionalDeathPieces.Length == 0)
+        {
+            additionalDeathPieceColliders =
+                Array.Empty<Collider[]>();
+
+            return;
+        }
+
+        int pieceCount =
+            additionalDeathPieces.Length;
+
+        additionalDeathPieceColliders =
+            new Collider[pieceCount][];
+
+        Transform enemyTransform =
+            enemyObject.transform;
+
+        for (int pieceIndex = 0;
+             pieceIndex < pieceCount;
+             pieceIndex++)
+        {
+            Transform pieceTransform =
+                additionalDeathPieces[pieceIndex];
+
+            if (pieceTransform == null)
+            {
+                Debug.LogWarning(
+                    $"{nameof(StandardEnemyDeathStrategy)}: " +
+                    $"追加死亡Piece[{pieceIndex}]が未設定です。",
+                    enemyObject);
+
+                additionalDeathPieceColliders[pieceIndex] =
+                    Array.Empty<Collider>();
+
+                continue;
+            }
+
+            if (!pieceTransform.IsChildOf(
+                    enemyTransform))
+            {
+                Debug.LogWarning(
+                    $"{nameof(StandardEnemyDeathStrategy)}: " +
+                    $"追加死亡Piece '{pieceTransform.name}' はEnemy階層外にあるため使用しません。" +
+                    "死亡完了時にEnemy本体と一緒に破棄できるよう、Enemy配下へ配置してください。",
+                    pieceTransform);
+
+                additionalDeathPieceColliders[pieceIndex] =
+                    Array.Empty<Collider>();
+
+                continue;
+            }
+
+            Collider[] pieceColliders =
+                pieceTransform.GetComponents<Collider>();
+
+            if (pieceColliders.Length == 0)
+            {
+                Debug.LogWarning(
+                    $"{nameof(StandardEnemyDeathStrategy)}: " +
+                    $"追加死亡Piece '{pieceTransform.name}' にColliderがありません。" +
+                    "飛散自体は可能ですが、床・壁との衝突は発生しません。",
+                    pieceTransform);
+            }
+
+            additionalDeathPieceColliders[pieceIndex] =
+                pieceColliders;
+
+            // 生存中は通常のTransform階層として盾を追従させる。
+            // 死亡破片用Colliderだけを通常Gameplayへ参加させず、
+            // Rigidbodyは死亡時に追加する。
+            for (int colliderIndex = 0;
+                 colliderIndex < pieceColliders.Length;
+                 colliderIndex++)
+            {
+                Collider pieceCollider =
+                    pieceColliders[colliderIndex];
+
+                if (pieceCollider != null)
+                {
+                    pieceCollider.enabled =
+                        false;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 事前配置済みの追加死亡Pieceを物理Pieceへ切り替え、
+    /// 本体の分割Piece一覧へ追加する。
+    /// </summary>
+    private void PrepareAndAppendAdditionalDeathPieces(
+        List<Transform> pieceTransforms)
+    {
+        if (pieceTransforms == null ||
+            additionalDeathPieces == null ||
+            additionalDeathPieceColliders == null)
+        {
+            return;
+        }
+
+        for (int pieceIndex = 0;
+             pieceIndex < additionalDeathPieces.Length;
+             pieceIndex++)
+        {
+            Transform pieceTransform =
+                additionalDeathPieces[pieceIndex];
+
+            if (pieceTransform == null)
+            {
+                continue;
+            }
+
+            if (!pieceTransform.gameObject.activeInHierarchy)
+            {
+                Debug.LogWarning(
+                    $"{nameof(StandardEnemyDeathStrategy)}: " +
+                    $"追加死亡Piece '{pieceTransform.name}' が非Activeのため、" +
+                    "飛散・縮小対象へ追加できません。",
+                    pieceTransform);
+
+                continue;
+            }
+
+            // 生存中のEnemy移動へShield PieceのPhysicsを混ぜないため、
+            // Rigidbodyは死亡して物理Pieceへ切り替えるこの時点で初めて追加する。
+            // 既にRigidbodyがあるPrefabでも二重追加しないよう既存Componentは再利用する。
+            Rigidbody pieceRigidbody =
+                pieceTransform.GetComponent<Rigidbody>();
+
+            if (pieceRigidbody == null)
+            {
+                pieceRigidbody =
+                    pieceTransform.gameObject.AddComponent<Rigidbody>();
+            }
+
+            // Colliderを再有効化する前に物理設定を確定し、
+            // 途中状態のShield PieceがPhysicsへ参加しないようにする。
+            pieceRigidbody.isKinematic =
+                true;
+
+            pieceRigidbody.useGravity =
+                true;
+
+            pieceRigidbody.detectCollisions =
+                true;
+
+            // EnemyMeshCutterが生成する本体切断Pieceと同じく、
+            // 現在のゲームプレイ平面(X/Y)から外れるZ移動だけを固定する。
+            // 回転は解放し、既存BurstのTorqueや床・壁との衝突を反映させる。
+            pieceRigidbody.constraints =
+                RigidbodyConstraints.FreezePositionZ;
+
+            Collider[] pieceColliders =
+                additionalDeathPieceColliders[pieceIndex];
+
+            for (int colliderIndex = 0;
+                 colliderIndex < pieceColliders.Length;
+                 colliderIndex++)
+            {
+                Collider pieceCollider =
+                    pieceColliders[colliderIndex];
+
+                if (pieceCollider != null)
+                {
+                    pieceCollider.enabled =
+                        true;
+                }
+            }
+
+            pieceRigidbody.isKinematic =
+                false;
+
+            // 死亡直前のEnemy本体の速度はShield Pieceへ引き継がず、
+            // 既存Burstが与えるImpulseを初速として扱う。
+            pieceRigidbody.linearVelocity =
+                Vector3.zero;
+
+            pieceRigidbody.angularVelocity =
+                Vector3.zero;
+
+            pieceRigidbody.WakeUp();
+
+            if (!pieceTransforms.Contains(
+                    pieceTransform))
+            {
+                pieceTransforms.Add(
+                    pieceTransform);
+            }
+        }
+    }
+
+    /// <summary>
     /// 死亡原因AttackDataから、通常攻撃死亡とくい込み攻撃死亡のどちらを開始するか選択する。
     /// </summary>
     private void TryBeginDeathMeshEffect()
@@ -350,6 +567,9 @@ public sealed class StandardEnemyDeathStrategy :
 
             return;
         }
+
+        PrepareAndAppendAdditionalDeathPieces(
+            pieceTransforms);
 
         if (enemyDiggingDeathBurst == null)
         {
@@ -1318,11 +1538,14 @@ public sealed class StandardEnemyDeathStrategy :
             return;
         }
 
+        PrepareAndAppendAdditionalDeathPieces(
+            cutPieceTransforms);
+
         if (ShouldRunMeshCutDiagnostics)
         {
             LogMeshCutDiagnostic(
                 "Death-07 PieceEffects",
-                $"切断片を{cutPieceTransforms.Count}個取得しました。");
+                $"本体切断Pieceと追加死亡Pieceを合わせて{cutPieceTransforms.Count}個取得しました。");
         }
 
         if (enemyCutPieceBurst == null)

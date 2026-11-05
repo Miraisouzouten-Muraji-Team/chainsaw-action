@@ -1708,16 +1708,23 @@ public sealed class ChainsawMeshCutProcessor
                 cutRangeAxis,
                 axisPosition);
 
-            Plane planeInCutRangeSpace =
-                new Plane(
-                    cutRangeAxisNormal,
+            // TransformPlaneは非単位Scaleで法線と距離の縮尺がずれる場合がある。
+            // Plane上の点と逆転置法線から再構成し、Source空間での切断位置を維持する。
+            Vector3 planePointInSourceSpace =
+                cutRangeSpaceToSource.MultiplyPoint3x4(
                     planePointInCutRangeSpace);
 
-            Plane planeInSourceSpace =
-                cutRangeSpaceToSource.TransformPlane(
-                    planeInCutRangeSpace);
+            Vector3 planeNormalInSourceSpace =
+                sourceToCutRangeSpace.transpose.MultiplyVector(
+                    cutRangeAxisNormal);
 
-            if (!IsFinite(planeInSourceSpace.normal) ||
+            Plane planeInSourceSpace =
+                new Plane(
+                    planeNormalInSourceSpace,
+                    planePointInSourceSpace);
+
+            if (!IsFinite(planePointInSourceSpace) ||
+                !IsFinite(planeInSourceSpace.normal) ||
                 planeInSourceSpace.normal.sqrMagnitude <=
                     MIN_DIRECTION_SQR_MAGNITUDE ||
                 !IsFinite(planeInSourceSpace.distance))

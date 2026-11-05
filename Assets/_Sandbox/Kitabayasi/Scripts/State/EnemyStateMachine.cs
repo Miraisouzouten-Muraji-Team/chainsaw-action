@@ -43,7 +43,8 @@ public class EnemyStateMachine : MonoBehaviour
         "Enemyの見た目だけを回転・傾斜させるTransform。" +
         "RigidbodyやColliderを持つEnemy本体ではなく、" +
         "VisualRoot等の子Transformを設定する。" +
-        "Prefab側ではこのTransformのローカル+Zがモデル正面になるよう調整する。")]
+        "このTransformのローカル+Zをゲーム上の正面とする。" +
+        "子モデルの見た目の角度は独立して補正できる。")]
     [FormerlySerializedAs("damageTiltTarget")]
     [SerializeField]
     private Transform visualRoot;
@@ -66,6 +67,8 @@ public class EnemyStateMachine : MonoBehaviour
     private EnemyDamageFlash enemyDamageFlash;
     private Rigidbody enemyRigidbody;
     private EnemyKnockbackMotor enemyKnockbackMotor;
+
+    private const float MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE = 0.000001f;
 
     private EnemySearchState searchState;
     private EnemyAlertState alertState;
@@ -389,10 +392,23 @@ public class EnemyStateMachine : MonoBehaviour
             gameObject,
             visualRoot);
 
+        // 攻撃Strategyと同じVisualRoot配下のAnimatorだけを待機中に停止する。
+        Animator visualAnimator = null;
+        if (visualRoot != null)
+        {
+            visualAnimator = visualRoot.GetComponent<Animator>();
+            if (visualAnimator == null)
+            {
+                visualAnimator = visualRoot.GetComponentInChildren<Animator>(true);
+            }
+        }
+
         searchState =
             new EnemySearchState(
                 searchStrategy,
-                RequestAlertState);
+                RequestAlertState,
+                enemyData.PostAttackSearchFailureWaitDuration,
+                visualAnimator);
 
         alertState =
             new EnemyAlertState(
@@ -424,7 +440,10 @@ public class EnemyStateMachine : MonoBehaviour
         attackState.SetInitialAttackDirection(
             initialAttackDirectionSign);
 
-        ChangeState(alertState);
+        // 発見方向へ即時に向いてから、既存のAlertを開始する。
+        FacePlayerAndChangeState(
+            alertState,
+            initialAttackDirectionSign);
     }
 
     /// <summary>
@@ -446,32 +465,80 @@ public class EnemyStateMachine : MonoBehaviour
 
     /// <summary>
     /// 1攻撃サイクル完了後、通常Searchと同じ条件でPlayerを再検知する。
-    /// 検知中ならAttack Stateを入り直し、未検知ならSearch Stateへ戻す。
+    /// 検知中ならAttack Stateを入り直し、未検知なら所定時間待機してSearchを開始する。
     /// </summary>
     private void RequestAttackCycleCompletion()
     {
+        bool isChargeEnemy =
+            attackStrategy is ChargeEnemyAttackStrategy;
+
+        if (isChargeEnemy)
+        {
+            Debug.Log(
+                $"[ChargeEnemyReturnDebug] AttackCycleCompletion要求を受信。 " +
+                $"active={isActiveAndEnabled}, dead={enemyHealth.IsDead}, " +
+                $"currentState={CurrentState?.GetType().Name ?? "null"}",
+                gameObject);
+        }
+
         if (!isActiveAndEnabled ||
             enemyHealth.IsDead ||
             !ReferenceEquals(
                 CurrentState,
                 attackState))
         {
+            if (isChargeEnemy)
+            {
+                Debug.LogWarning(
+                    "[ChargeEnemyReturnDebug] AttackCycleCompletion要求はState条件不一致のため破棄されました。",
+                    gameObject);
+            }
+
             return;
         }
 
-        if (searchStrategy.TryDetectPlayer(
-                out float detectedPlayerDirectionSign))
+        bool hasDetectedPlayer =
+            searchStrategy.TryDetectPlayer(
+                out float detectedPlayerDirectionSign);
+
+        if (isChargeEnemy)
+        {
+            Debug.Log(
+                $"[ChargeEnemyReturnDebug] 攻撃後の再索敵結果。 " +
+                $"detected={hasDetectedPlayer}, direction={detectedPlayerDirectionSign:F0}",
+                gameObject);
+        }
+
+        if (hasDetectedPlayer)
         {
             attackState.SetInitialAttackDirection(
                 detectedPlayerDirectionSign);
 
-            // 同じStateへのChangeStateは無視されるため、
-            // 1サイクル分のStrategy状態を確実に終了してからAttackへ入り直す。
-            ExitCurrentState();
-            ChangeState(attackState);
+            if (isChargeEnemy)
+            {
+                Debug.Log(
+                    "[ChargeEnemyReturnDebug] Playerを再検知したためAttack Stateへ入り直します。",
+                    gameObject);
+            }
+
+            // 攻撃後はAlertを挟まない既存仕様を維持し、
+            // 前回のAttackを終了して即時に向き直してから再攻撃する。
+            FacePlayerAndChangeState(
+                attackState,
+                detectedPlayerDirectionSign);
             return;
         }
 
+        if (isChargeEnemy)
+        {
+            Debug.Log(
+                "[ChargeEnemyReturnDebug] Player未検知のため待機後にSearchを開始します。",
+                gameObject);
+        }
+
+        // 攻撃後の再索敵が失敗した経路にだけ待機時間を適用する。
+        // Search StrategyのBeginSearchは、待機終了まで呼ばない。
+        searchState.WaitBeforeReturningAfterFailedAttackSearch();
         ChangeState(searchState);
     }
 
@@ -509,7 +576,9 @@ public class EnemyStateMachine : MonoBehaviour
             attackState.SetInitialAttackDirection(
                 detectedPlayerDirectionSign);
 
-            ChangeState(attackState);
+            FacePlayerAndChangeState(
+                attackState,
+                detectedPlayerDirectionSign);
             return;
         }
 
@@ -517,6 +586,79 @@ public class EnemyStateMachine : MonoBehaviour
         // Search Strategy側で初期配置位置への帰還を開始し、
         // 帰還中も通常の索敵を継続する。
         ChangeState(searchState);
+    }
+
+    /// <summary>
+    /// Playerを検知した時点の方向をVisualRootへ即時設定してから次のStateへ移る。
+    /// Damage StateのExitによる見た目の復元が先に行われるよう、Exit後に回転を設定する。
+    /// </summary>
+    private void FacePlayerAndChangeState(
+        IEnemyState nextState,
+        float detectedPlayerDirectionSign)
+    {
+        // Damage StateのExitでは被弾時の傾きを戻すため、
+        // 元Stateの終了後に発見方向を設定する。
+        ExitCurrentState();
+
+        if (TryGetDetectedPlayerFacingRotation(
+                detectedPlayerDirectionSign,
+                out Quaternion targetRotation))
+        {
+            // プレイヤー発見時は補間せず、VisualRootの向きを即座に確定する。
+            visualRoot.rotation = targetRotation;
+        }
+
+        // TurretEnemyなどの対象外Strategyは向きを変えずに遷移する。
+        ChangeState(nextState);
+    }
+
+    private bool TryGetDetectedPlayerFacingRotation(
+        float detectedPlayerDirectionSign,
+        out Quaternion targetRotation)
+    {
+        targetRotation = Quaternion.identity;
+
+        if (visualRoot == null)
+        {
+            return false;
+        }
+
+        Vector3 facingDirection;
+
+        if (searchStrategy is ChargeEnemySearchStrategy)
+        {
+            // ChargeEnemyの移動・攻撃は水平方向に限定される。
+            facingDirection =
+                Vector3.right * (detectedPlayerDirectionSign < 0f ? -1f : 1f);
+        }
+        else if (searchStrategy is OldDroneEnemySearchStrategy droneSearchStrategy)
+        {
+            // Droneは索敵時に確定したPlayer代表位置へのXY方向を利用する。
+            // 左右符号だけで向くと、Playerが上下にいる場合にずれてしまう。
+            Vector2 planarDirection =
+                droneSearchStrategy.DetectedPlayerPlanarDirection;
+
+            if (planarDirection.sqrMagnitude <=
+                MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE)
+            {
+                planarDirection =
+                    Vector2.right *
+                    (detectedPlayerDirectionSign < 0f ? -1f : 1f);
+            }
+
+            facingDirection =
+                new Vector3(planarDirection.x, planarDirection.y, 0f);
+        }
+        else
+        {
+            // TurretEnemyや未対応Strategyの向きは変更しない。
+            return false;
+        }
+
+        targetRotation =
+            Quaternion.LookRotation(facingDirection, Vector3.up);
+
+        return true;
     }
 
     /// <summary>
@@ -594,9 +736,21 @@ public class EnemyStateMachine : MonoBehaviour
             return;
         }
 
+        IEnemyState previousState =
+            CurrentState;
+
         ExitCurrentState();
 
         CurrentState = nextState;
+
+        if (searchStrategy is ChargeEnemySearchStrategy ||
+            attackStrategy is ChargeEnemyAttackStrategy)
+        {
+            Debug.Log(
+                $"[ChargeEnemyReturnDebug] State遷移: " +
+                $"{previousState?.GetType().Name ?? "null"} -> {CurrentState.GetType().Name}",
+                gameObject);
+        }
 
         CurrentState.Enter();
     }

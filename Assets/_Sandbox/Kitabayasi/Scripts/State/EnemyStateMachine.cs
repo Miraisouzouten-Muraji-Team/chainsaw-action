@@ -390,10 +390,23 @@ public class EnemyStateMachine : MonoBehaviour
             gameObject,
             visualRoot);
 
+        // 攻撃Strategyと同じVisualRoot配下のAnimatorだけを待機中に停止する。
+        Animator visualAnimator = null;
+        if (visualRoot != null)
+        {
+            visualAnimator = visualRoot.GetComponent<Animator>();
+            if (visualAnimator == null)
+            {
+                visualAnimator = visualRoot.GetComponentInChildren<Animator>(true);
+            }
+        }
+
         searchState =
             new EnemySearchState(
                 searchStrategy,
-                RequestAlertState);
+                RequestAlertState,
+                enemyData.PostAttackSearchFailureWaitDuration,
+                visualAnimator);
 
         alertState =
             new EnemyAlertState(
@@ -447,7 +460,7 @@ public class EnemyStateMachine : MonoBehaviour
 
     /// <summary>
     /// 1攻撃サイクル完了後、通常Searchと同じ条件でPlayerを再検知する。
-    /// 検知中ならAttack Stateを入り直し、未検知ならSearch Stateへ戻す。
+    /// 検知中ならAttack Stateを入り直し、未検知なら所定時間待機してSearchを開始する。
     /// </summary>
     private void RequestAttackCycleCompletion()
     {
@@ -513,10 +526,13 @@ public class EnemyStateMachine : MonoBehaviour
         if (isChargeEnemy)
         {
             Debug.Log(
-                "[ChargeEnemyReturnDebug] Player未検知のためSearch Stateへ戻します。",
+                "[ChargeEnemyReturnDebug] Player未検知のため待機後にSearchを開始します。",
                 gameObject);
         }
 
+        // 攻撃後の再索敵が失敗した経路にだけ待機時間を適用する。
+        // Search StrategyのBeginSearchは、待機終了まで呼ばない。
+        searchState.WaitBeforeReturningAfterFailedAttackSearch();
         ChangeState(searchState);
     }
 

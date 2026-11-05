@@ -15,6 +15,7 @@ MonoBehaviour:
   maxHealth: 1
   attackPower: 10
   detectionRadius: 2
+  postAttackSearchFailureWaitDuration: 0.5
   alertDuration: 1
   alertContactDamagePercent: 60
   damageFlashDuration: 0.1

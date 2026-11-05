@@ -851,21 +851,18 @@ public sealed class ChargeEnemyAttackStrategy :
             return;
         }
 
-        float currentVelocityX =
-            enemyRigidbody.linearVelocity.x;
+        Vector3 currentVelocity =
+            enemyRigidbody.linearVelocity;
 
-        if (Mathf.Abs(currentVelocityX) <=
-            DIRECTION_EPSILON)
+        if (currentVelocity.x == 0f)
         {
             return;
         }
 
-        enemyRigidbody.AddForce(
-            new Vector3(
-                -currentVelocityX,
-                0f,
-                0f),
-            ForceMode.VelocityChange);
+        // 攻撃完了とState終了の両方から呼ばれても、逆向きの停止力を重複させない。
+        // X方向だけを停止し、重力等によるY方向の移動は維持する。
+        currentVelocity.x = 0f;
+        enemyRigidbody.linearVelocity = currentVelocity;
     }
 
     private void ResetRuntimeState()

@@ -36,6 +36,12 @@ public class EnemyData : ScriptableObject
     [Min(0f)]
     private float detectionRadius = 2f;
 
+    [Header("攻撃後の再索敵")]
+    [Tooltip("攻撃が正式に終了したあと、再索敵に失敗した場合のみ、初期位置への帰還を始めるまでその場で待つ秒数。0なら即時に帰還します。")]
+    [SerializeField]
+    [Min(0f)]
+    private float postAttackSearchFailureWaitDuration = 0.8f;
+
     [Header("攻撃予告")]
     [Tooltip("攻撃予告の継続時間。")]
     [FormerlySerializedAs("discoveryDuration")]
@@ -92,6 +98,9 @@ public class EnemyData : ScriptableObject
 
     public float DetectionRadius =>
         detectionRadius;
+
+    public float PostAttackSearchFailureWaitDuration =>
+        postAttackSearchFailureWaitDuration;
 
     public float AlertDuration =>
         alertDuration;

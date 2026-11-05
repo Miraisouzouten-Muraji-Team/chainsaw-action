@@ -244,7 +244,7 @@ MonoBehaviour:
       data:
         detectionRadius: 3
         patrolOffset: 2
-        walkAnimationStateName: Base Layer.Walk
+        walkAnimationStateName: Base Layer.rush_enemy_walk
     - rid: 2559746817728970822
       type: {class: StandardEnemyAlertStrategy, ns: , asm: Assembly-CSharp}
       data:

@@ -6248,6 +6248,8 @@ MonoBehaviour:
     y: 0
     width: 1
     height: 1
+  stageOccluders: []
+  stageOccluderRoots: []
 --- !u!65 &144183105
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -55222,6 +55224,8 @@ MonoBehaviour:
     y: 0
     width: 1
     height: 1
+  stageOccluders: []
+  stageOccluderRoots: []
 --- !u!65 &615862202
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -81684,6 +81688,8 @@ MonoBehaviour:
     y: 0
     width: 1
     height: 1
+  stageOccluders: []
+  stageOccluderRoots: []
 --- !u!65 &817826316
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -88202,6 +88208,8 @@ MonoBehaviour:
     y: 0
     width: 1
     height: 1
+  stageOccluders: []
+  stageOccluderRoots: []
 --- !u!65 &960668246
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -94738,6 +94746,8 @@ MonoBehaviour:
     y: 0
     width: 1
     height: 1
+  stageOccluders: []
+  stageOccluderRoots: []
 --- !u!65 &1096810810
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -111307,6 +111317,8 @@ MonoBehaviour:
     y: 0
     width: 1
     height: 1
+  stageOccluders: []
+  stageOccluderRoots: []
 --- !u!65 &1231177305
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -116679,6 +116691,8 @@ MonoBehaviour:
     y: 0
     width: 1
     height: 1
+  stageOccluders: []
+  stageOccluderRoots: []
 --- !u!65 &1254435071
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -127990,7 +128004,7 @@ PrefabInstance:
     - target: {fileID: 4268936431341813628, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: particlePrefab
       value: 
-      objectReference: {fileID: 1015358492388607712, guid: 96e8b8b94590fa84e989a735a1ae3b66, type: 3}
+      objectReference: {fileID: -8463674177795780162, guid: 837e8e5252d7c7e4baa5ea5980ed9e2a, type: 3}
     - target: {fileID: 4573749994781746359, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_AnchorMax.y
       value: 1
@@ -128693,6 +128707,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPresenter
   uiFont: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
+  tutorialOpen: {fileID: 0}
+  tutorialClose: {fileID: 0}
+  tutorialNavigate: {fileID: 0}
+  tutorialReleaseGuard: {fileID: 0}
 --- !u!65 &1416235475 stripped
 BoxCollider:
   m_CorrespondingSourceObject: {fileID: 7824983804689355250, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
@@ -170827,6 +170845,8 @@ MonoBehaviour:
     y: 0
     width: 1
     height: 1
+  stageOccluders: []
+  stageOccluderRoots: []
 --- !u!65 &1611019049
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -176297,6 +176317,8 @@ MonoBehaviour:
     y: 0
     width: 1
     height: 1
+  stageOccluders: []
+  stageOccluderRoots: []
 --- !u!1 &1650823554
 GameObject:
   m_ObjectHideFlags: 0
@@ -239966,6 +239988,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPresenter
   uiFont: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
+  tutorialOpen: {fileID: 0}
+  tutorialClose: {fileID: 0}
+  tutorialNavigate: {fileID: 0}
+  tutorialReleaseGuard: {fileID: 0}
 --- !u!114 &2081488317
 MonoBehaviour:
   m_ObjectHideFlags: 0

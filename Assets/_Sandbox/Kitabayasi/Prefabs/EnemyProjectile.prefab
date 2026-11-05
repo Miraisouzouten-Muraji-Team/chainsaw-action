@@ -153,5 +153,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 47c621dbd3375f545b815d03a7baae76, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyProjectile
-  movementSpeed: 1
+  movementSpeed: 5
   lifeTime: 50
+  stageCollisionMask:
+    serializedVersion: 2
+    m_Bits: 128

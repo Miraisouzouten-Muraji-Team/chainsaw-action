@@ -20,7 +20,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: Spark_Main_High
+  m_Name: Spark_MainBlue_L
   m_Shader: {fileID: 4800000, guid: 1bc5c6a70411243779ce486a98012125, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
@@ -381,7 +381,7 @@ Material:
     - _BaseMapToneMidtonesColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
     - _BaseMapToneShadowsColor: {r: 0, g: 0, b: 0, a: 1}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
-    - _EmissionColor: {r: 0.85660374, g: 0.2141272, b: 0, a: 1}
+    - _EmissionColor: {r: 0.05612278, g: 0, b: 1, a: 1}
     - _EmissionMapRotationOffsets: {r: 0, g: 0, b: 0, a: 0}
     - _FlowMapRotationOffsets: {r: 0, g: 0, b: 0, a: 0}
     - _SpecColor: {r: 0.2, g: 0.2, b: 0.2, a: 1}

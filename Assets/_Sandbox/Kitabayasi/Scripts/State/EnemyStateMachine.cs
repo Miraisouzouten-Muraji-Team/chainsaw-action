@@ -43,7 +43,8 @@ public class EnemyStateMachine : MonoBehaviour
         "Enemyの見た目だけを回転・傾斜させるTransform。" +
         "RigidbodyやColliderを持つEnemy本体ではなく、" +
         "VisualRoot等の子Transformを設定する。" +
-        "Prefab側ではこのTransformのローカル+Zがモデル正面になるよう調整する。")]
+        "このTransformのローカル+Zをゲーム上の正面とする。" +
+        "子モデルの見た目の角度は独立して補正できる。")]
     [FormerlySerializedAs("damageTiltTarget")]
     [SerializeField]
     private Transform visualRoot;

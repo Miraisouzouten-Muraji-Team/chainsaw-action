@@ -631,12 +631,14 @@ public class EnemyStateMachine : MonoBehaviour
             facingDirection =
                 Vector3.right * (detectedPlayerDirectionSign < 0f ? -1f : 1f);
         }
-        else if (searchStrategy is OldDroneEnemySearchStrategy droneSearchStrategy)
+        else if (searchStrategy is OldDroneEnemySearchStrategy ||
+                 searchStrategy is NewDroneEnemySearchStrategy)
         {
             // Droneは索敵時に確定したPlayer代表位置へのXY方向を利用する。
-            // 左右符号だけで向くと、Playerが上下にいる場合にずれてしまう。
-            Vector2 planarDirection =
-                droneSearchStrategy.DetectedPlayerPlanarDirection;
+            // 新旧Droneで同じ向き制御を維持し、Rigidbody本体は回転させない。
+            Vector2 planarDirection = searchStrategy is OldDroneEnemySearchStrategy oldDrone
+                ? oldDrone.DetectedPlayerPlanarDirection
+                : ((NewDroneEnemySearchStrategy)searchStrategy).DetectedPlayerPlanarDirection;
 
             if (planarDirection.sqrMagnitude <=
                 MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE)

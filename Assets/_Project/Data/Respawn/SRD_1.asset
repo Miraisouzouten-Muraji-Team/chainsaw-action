@@ -20,7 +20,7 @@ MonoBehaviour:
     position: {x: 71.73, y: 23.24, z: 0}
     faceRight: 0
   - areaNumber: 3
-    position: {x: 141.61, y: 23.35, z: 0}
+    position: {x: 146.20438, y: 21.5, z: 0}
     faceRight: 0
   fallbackAreaNumber: 1
   deathMotionSeconds: 0.8

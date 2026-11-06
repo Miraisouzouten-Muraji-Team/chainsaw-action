@@ -7,6 +7,7 @@ public class ChainsawAttack : MonoBehaviour
 {
     private const int SLASH_HIT_COUNT = 4;
     private PlayerAnimator weakAttackAnimator;
+    private bool weakAttackStartedInAir;
     private EnemyAttackHitReceiver weakDigTarget;
     private Collider weakDigCollider;
     private Vector3 weakDigPoint;
@@ -15,10 +16,27 @@ public class ChainsawAttack : MonoBehaviour
     private SensorChainsawDigging weakAttackDigging;
     private Collider finishingTargetCollider;
 
+    [Header("食い込み中の敵の震え")]
+    [Tooltip("振り抜きの攻撃ベクトルに沿って敵モデルを震わせる片側の幅です。ワールド座標の距離で指定し、0なら震えを無効にします。当たり判定とRigidbodyは動かしません。")]
+    [SerializeField, Min(0f)] private float enemyDiggingShakeAmplitude = 0.025f;
+    [Tooltip("食い込み中に敵モデルが1秒間に往復する回数です。ヒットストップ中は震えの時間も止まります。")]
+    [SerializeField, Min(0f)] private float enemyDiggingShakeFrequency = 20f;
+    private bool enemyShakeWarningLogged;
+
+    // モデル表示に加算した位置だけを保持し、アニメーションや物理位置と分離する。
+    private sealed class EnemyShakeVisual
+    {
+        public Transform Root;
+        public Vector3 LastOffset;
+        public Vector3 LastWrittenPosition;
+        public bool OffsetApplied;
+    }
+
     // この武器を使用する攻撃アニメーションの管理元を登録する。
-    public void ConfigureWeakAttack(PlayerAnimator owner)
+    public void ConfigureWeakAttack(PlayerAnimator owner, bool isAirAttack = false)
     {
         weakAttackAnimator = owner;
+        weakAttackStartedInAir = isAirAttack;
         weakAttackDigging = owner != null ? owner.GetComponent<SensorChainsawDigging>() : null;
     }
 
@@ -30,6 +48,89 @@ public class ChainsawAttack : MonoBehaviour
     [Tooltip("命中後、敵の通常移動より攻撃ベクトルを優先する秒数です。終了時にX/Y速度を一度0にして残留速度を止めます。時間は物理更新単位で扱い、ヒットストップ中は進みません。重力が有効な敵には通常の重力加速を加えます。")]
     [SerializeField, Min(0.01f)]
     private float slashKnockbackPriorityDuration = 0.15f;
+
+    // 振り抜いた敵との衝突だけを一時停止する。元から無視していた組は変更しない。
+    private sealed class KnockbackCollisionPair
+    {
+        public Collider PlayerCollider;
+        public Collider EnemyCollider;
+        public float RemainingTime;
+    }
+
+    private readonly List<KnockbackCollisionPair> knockbackCollisionPairs =
+        new List<KnockbackCollisionPair>();
+
+    // プレイヤーに吹き飛ばしの力が伝わらないよう、実際の物理Colliderの組を登録する。
+    private void ProtectPlayerFromKnockback(Collider enemyCollider)
+    {
+        if (weakAttackAnimator == null || enemyCollider == null) return;
+        Rigidbody playerBody = weakAttackAnimator.GetComponent<Rigidbody>();
+        Rigidbody enemyBody = enemyCollider.attachedRigidbody;
+        if (playerBody == null || enemyBody == null || playerBody == enemyBody) return;
+        Collider[] playerColliders = playerBody.GetComponentsInChildren<Collider>(true);
+        Collider[] enemyColliders = enemyBody.GetComponentsInChildren<Collider>(true);
+        float remaining = Mathf.Max(Time.fixedDeltaTime, slashKnockbackPriorityDuration);
+        foreach (Collider playerCollider in playerColliders)
+        {
+            if (playerCollider == null || playerCollider.isTrigger ||
+                playerCollider.attachedRigidbody != playerBody) continue;
+            foreach (Collider targetCollider in enemyColliders)
+            {
+                if (targetCollider == null || targetCollider.isTrigger ||
+                    targetCollider.attachedRigidbody != enemyBody) continue;
+                bool alreadyProtected = false;
+                foreach (KnockbackCollisionPair pair in knockbackCollisionPairs)
+                {
+                    if (pair.PlayerCollider == playerCollider && pair.EnemyCollider == targetCollider)
+                    {
+                        pair.RemainingTime = Mathf.Max(pair.RemainingTime, remaining);
+                        alreadyProtected = true;
+                        break;
+                    }
+                }
+                if (alreadyProtected || Physics.GetIgnoreCollision(playerCollider, targetCollider)) continue;
+                Physics.IgnoreCollision(playerCollider, targetCollider, true);
+                knockbackCollisionPairs.Add(new KnockbackCollisionPair
+                {
+                    PlayerCollider = playerCollider,
+                    EnemyCollider = targetCollider,
+                    RemainingTime = remaining
+                });
+            }
+        }
+    }
+
+    // 優先時間が終了し、両者の接触も離れた組だけ衝突を戻す。重なったままの復元を防ぐ。
+    private void UpdateKnockbackCollisionPairs()
+    {
+        for (int index = knockbackCollisionPairs.Count - 1; index >= 0; index--)
+        {
+            KnockbackCollisionPair pair = knockbackCollisionPairs[index];
+            pair.RemainingTime -= Time.fixedDeltaTime;
+            bool valid = pair.PlayerCollider != null && pair.EnemyCollider != null;
+            bool active = valid && pair.PlayerCollider.enabled && pair.EnemyCollider.enabled &&
+                pair.PlayerCollider.gameObject.activeInHierarchy && pair.EnemyCollider.gameObject.activeInHierarchy;
+            if (active && (pair.RemainingTime > 0f ||
+                pair.PlayerCollider.bounds.Intersects(pair.EnemyCollider.bounds))) continue;
+            RestoreKnockbackCollisionPair(index);
+        }
+    }
+
+    // この武器が変更した衝突ペアだけを復元して、管理対象から外す。
+    private void RestoreKnockbackCollisionPair(int index)
+    {
+        KnockbackCollisionPair pair = knockbackCollisionPairs[index];
+        if (pair.PlayerCollider != null && pair.EnemyCollider != null)
+            Physics.IgnoreCollision(pair.PlayerCollider, pair.EnemyCollider, false);
+        knockbackCollisionPairs.RemoveAt(index);
+    }
+
+    // 武器の無効化や破棄時に、一時的に無効にした衝突をすべて元に戻す。
+    private void RestoreAllKnockbackCollisions()
+    {
+        for (int index = knockbackCollisionPairs.Count - 1; index >= 0; index--)
+            RestoreKnockbackCollisionPair(index);
+    }
 
     // 敵ごとの優先速度と残り時間を保持する。再命中時は同じRigidbodyの記録を更新する。
     private sealed class SlashKnockbackState
@@ -50,6 +151,9 @@ public class ChainsawAttack : MonoBehaviour
         public RigidbodyConstraints OriginalConstraints;
         public Vector3 Position;
         public Quaternion Rotation;
+        public Vector3 ShakeDirection;
+        public float ShakeTime;
+        public readonly List<EnemyShakeVisual> ShakeVisuals = new List<EnemyShakeVisual>();
     }
 
     private readonly List<SlashKnockbackState> activeSlashKnockbacks =
@@ -353,6 +457,7 @@ public class ChainsawAttack : MonoBehaviour
     /// <summary>武器破棄時にのみ、作成したランタイムSOを解放する。</summary>
     private void OnDestroy()
     {
+        RestoreAllKnockbackCollisions();
         ReleaseAllHeldEnemies();
         foreach (AttackData data in scaledDiggingData.Values)
         {
@@ -409,7 +514,7 @@ public class ChainsawAttack : MonoBehaviour
             weakDigCollider = other;
             weakDigPoint = point;
             weakDigHolding = true;
-            if (!weakAttackDigging.BeginWeakEnemyAttack(receiver, other, point))
+            if (!weakAttackDigging.BeginWeakEnemyAttack(receiver, other, point, weakAttackStartedInAir))
             {
                 FinishWeakDigHold();
                 return;
@@ -436,7 +541,11 @@ public class ChainsawAttack : MonoBehaviour
         // 送信先の処理中に再度呼ばれても重複送信しないよう、先に登録する。
         hitEnemies.Add(receiver);
 
-        if (isFinishingHit) ReleaseHeldEnemy(receiver);
+        if (isFinishingHit)
+        {
+            ReleaseHeldEnemy(receiver);
+            if (hasKnockback) ProtectPlayerFromKnockback(other);
+        }
         if (!SendAttackHit(receiver, attackData, point))
         {
             // 送信できなかった場合は、次の接触通知で再試行できるようにする。
@@ -573,6 +682,7 @@ public class ChainsawAttack : MonoBehaviour
     // 敵の通常の物理更新後にノックバック速度を反映し、優先時間の終了で制御を返す。
     private void FixedUpdate()
     {
+        UpdateKnockbackCollisionPairs();
         TickWeakDigHold();
         UpdateHeldEnemies();
         float deltaTime = Time.fixedDeltaTime;
@@ -652,6 +762,7 @@ public class ChainsawAttack : MonoBehaviour
     private void FinishWeakDigHold()
     {
         if (weakDigHolding) DisableHitBox();
+        foreach (HeldEnemyState state in heldEnemies) RestoreEnemyShake(state);
         weakDigHolding = false;
         if (weakAttackDigging != null) weakAttackDigging.EndWeakEnemyAttack();
         weakDigTarget = null;
@@ -723,7 +834,98 @@ public class ChainsawAttack : MonoBehaviour
         body.linearVelocity = Vector3.zero;
         body.angularVelocity = Vector3.zero;
         body.constraints = RigidbodyConstraints.FreezeAll;
+        if (TryGetSlashKnockbackVector(target, currentData, out Vector2 vector))
+            state.ShakeDirection = new Vector3(vector.x, vector.y, 0f).normalized;
+        CollectEnemyShakeVisuals(state);
         heldEnemies.Add(state);
+    }
+
+    // 物理要素を持たない表示用のTransformだけを、敵モデルから収集する。
+    private void CollectEnemyShakeVisuals(HeldEnemyState state)
+    {
+        Transform boundary = state.Body.transform;
+        foreach (Renderer renderer in state.Body.GetComponentsInChildren<Renderer>(true))
+        {
+            if (!(renderer is MeshRenderer) && !(renderer is SkinnedMeshRenderer)) continue;
+            SkinnedMeshRenderer skin = renderer as SkinnedMeshRenderer;
+            Transform candidate = skin != null && skin.rootBone != null ? skin.rootBone : renderer.transform;
+            if (candidate == boundary || !candidate.IsChildOf(boundary) || !CanShakeVisual(candidate)) continue;
+            // 骨とメッシュをまとめられる場合は、安全な共通の親を選ぶ。
+            while (candidate.parent != null && candidate.parent != boundary && CanShakeVisual(candidate.parent))
+                candidate = candidate.parent;
+            bool covered = false;
+            for (int index = state.ShakeVisuals.Count - 1; index >= 0; index--)
+            {
+                Transform existing = state.ShakeVisuals[index].Root;
+                if (candidate == existing || candidate.IsChildOf(existing))
+                {
+                    covered = true;
+                    break;
+                }
+                if (existing.IsChildOf(candidate)) state.ShakeVisuals.RemoveAt(index);
+            }
+            if (!covered) state.ShakeVisuals.Add(new EnemyShakeVisual { Root = candidate });
+        }
+        if (state.ShakeVisuals.Count == 0 && !enemyShakeWarningLogged && enemyDiggingShakeAmplitude > 0f)
+        {
+            enemyShakeWarningLogged = true;
+            Debug.LogWarning("食い込みの震えに使用できる表示用の子Transformがありません。敵モデルの表示部分をCollider・Rigidbodyと別の子階層に分けてください。", state.Target);
+        }
+    }
+
+    // 移動すると物理判定へ影響するTransformを、震えの対象から除外する。
+    private bool CanShakeVisual(Transform candidate)
+    {
+        return candidate.GetComponentsInChildren<Collider>(true).Length == 0 &&
+               candidate.GetComponentsInChildren<Rigidbody>(true).Length == 0;
+    }
+
+    // アニメーション評価後に、振り抜き方向へモデルだけを一定幅で往復させる。
+    private void LateUpdate()
+    {
+        foreach (HeldEnemyState state in heldEnemies)
+        {
+            bool shaking = weakDigHolding && state.Target == weakDigTarget &&
+                state.Target != null && state.Target.isActiveAndEnabled &&
+                state.Health != null && !state.Health.IsDead;
+            if (!shaking)
+            {
+                RestoreEnemyShake(state);
+                continue;
+            }
+            if (Time.timeScale <= 0f) continue;
+            state.ShakeTime += Time.deltaTime;
+            float distance = Mathf.Sin(state.ShakeTime * Mathf.Max(0f, enemyDiggingShakeFrequency) * Mathf.PI * 2f) *
+                Mathf.Max(0f, enemyDiggingShakeAmplitude);
+            Vector3 worldOffset = state.ShakeDirection * distance;
+            foreach (EnemyShakeVisual visual in state.ShakeVisuals)
+            {
+                RestoreEnemyShakeVisual(visual);
+                if (visual.Root == null || !visual.Root.gameObject.activeInHierarchy) continue;
+                Vector3 localOffset = visual.Root.parent != null
+                    ? visual.Root.parent.InverseTransformVector(worldOffset) : worldOffset;
+                visual.Root.localPosition += localOffset;
+                visual.LastOffset = localOffset;
+                visual.LastWrittenPosition = visual.Root.localPosition;
+                visual.OffsetApplied = true;
+            }
+        }
+    }
+
+    // 固定中の敵モデルに加えた震えを解除する。
+    private void RestoreEnemyShake(HeldEnemyState state)
+    {
+        foreach (EnemyShakeVisual visual in state.ShakeVisuals) RestoreEnemyShakeVisual(visual);
+    }
+
+    // 追加した位置だけを戻す。アニメーション等が位置を書き直していた場合は差し引かない。
+    private void RestoreEnemyShakeVisual(EnemyShakeVisual visual)
+    {
+        if (visual.Root != null && visual.OffsetApplied &&
+            (visual.Root.localPosition - visual.LastWrittenPosition).sqrMagnitude < 0.0000000001f)
+            visual.Root.localPosition -= visual.LastOffset;
+        visual.OffsetApplied = false;
+        visual.LastOffset = Vector3.zero;
     }
 
     // 固定中の敵が死亡・無効化した場合は安全に解除し、通常は同じ位置へ固定し続ける。
@@ -772,6 +974,7 @@ public class ChainsawAttack : MonoBehaviour
     private void RestoreHeldEnemy(int index)
     {
         HeldEnemyState state = heldEnemies[index];
+        RestoreEnemyShake(state);
         if (state.Body != null)
         {
             state.Body.constraints = state.OriginalConstraints;
@@ -938,6 +1141,7 @@ public class ChainsawAttack : MonoBehaviour
     // 武器が無効になった場合は攻撃を終了し、管理中の敵の残留速度も停止する。
     private void OnDisable()
     {
+        RestoreAllKnockbackCollisions();
         EndDigging();
         EndAttack();
         for (int index = 0; index < activeSlashKnockbacks.Count; index++)

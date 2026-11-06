@@ -128080,6 +128080,10 @@ PrefabInstance:
       propertyPath: slash1State
       value: Base Layer.Slash2
       objectReference: {fileID: 0}
+    - target: {fileID: 443363211707966533, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: airSlashState
+      value: Base Layer.Slash3
+      objectReference: {fileID: 0}
     - target: {fileID: 483905726833112176, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_IsTrigger
       value: 1
@@ -128143,7 +128147,11 @@ PrefabInstance:
     - target: {fileID: 1691384145625399883, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: weakAttackDiggingData
       value: 
-      objectReference: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
+      objectReference: {fileID: 11400000, guid: 805e87899d869204da3ec278acfd7d06, type: 2}
+    - target: {fileID: 1691384145625399883, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: airWeakAttackDiggingData
+      value: 
+      objectReference: {fileID: 11400000, guid: 0ff38655cd9be3643a633c1a45c07f96, type: 2}
     - target: {fileID: 1691384145625399883, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: movementContactDamageMultiplier
       value: 1
@@ -128236,6 +128244,14 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 3515007376542301742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: cameraShake
+      value: 
+      objectReference: {fileID: 552015284}
+    - target: {fileID: 3515007376542301742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: damagePopupPresenter
+      value: 
+      objectReference: {fileID: 1860490148}
     - target: {fileID: 3595412022903481005, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.z
       value: 0
@@ -128557,6 +128573,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1420853011}
     - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: airWeakAttackFinisherData
+      value: 
+      objectReference: {fileID: 11400000, guid: e540abe81fcc379418b2cdafb563b6e8, type: 2}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: doubleJumpEffect.Lifetime
       value: 0.01
       objectReference: {fileID: 0}
@@ -128572,6 +128592,30 @@ PrefabInstance:
       propertyPath: 'walkEffectClips.Array.data[0]'
       value: 
       objectReference: {fileID: -203655887218126122, guid: 9e524d9aa33cd374298e93379558fab3, type: 3}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingReleaseMomentumCurve.m_Curve.Array.data[1].time
+      value: 0.9997498
+      objectReference: {fileID: 0}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingReleaseMomentumCurve.m_Curve.Array.data[1].value
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingReleaseMomentumCurve.m_Curve.Array.data[1].inSlope
+      value: -0.044739705
+      objectReference: {fileID: 0}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingReleaseMomentumCurve.m_Curve.Array.data[0].outSlope
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingReleaseMomentumCurve.m_Curve.Array.data[1].inWeight
+      value: 0.14557911
+      objectReference: {fileID: 0}
+    - target: {fileID: 7781913388005702304, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingReleaseMomentumCurve.m_Curve.Array.data[1].outSlope
+      value: -0.044739705
+      objectReference: {fileID: 0}
     - target: {fileID: 7810380243804671968, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.y
       value: 0.95
@@ -207823,6 +207867,17 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 1546124440}
   m_SourcePrefab: {fileID: 100100000, guid: adce9d3aecc806e4291b160d931e27a8, type: 3}
+--- !u!114 &1860490148 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 2562028494523297573, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 48ab7d84ba210fd45b6eb7fe6df0655b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DamagePopupPresenter
 --- !u!1 &1866881786
 GameObject:
   m_ObjectHideFlags: 0

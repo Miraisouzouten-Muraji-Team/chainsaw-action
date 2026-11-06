@@ -12,12 +12,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f5d1814da0a558d4f8fc4ae6af900098, type: 3}
   m_Name: NewDroneEnemy
   m_EditorClassIdentifier: Assembly-CSharp::NewDroneEnemyData
-  maxHealth: 20
+  maxHealth: 1
   attackPower: 10
   detectionRadius: 2
   postAttackSearchFailureWaitDuration: 0.8
   alertDuration: 1
-  alertContactDamagePercent: 60
+  alertContactDamagePercent: 0
   damageFlashDuration: 0.1
   hitTiltDuration: 0.5
   hitTiltRecoveryDuration: 0.15
@@ -39,3 +39,4 @@ MonoBehaviour:
     m_Bits: 128
   attackPreparationDuration: 0.75
   shootingFollowSpeed: 4
+  shootingPositionSearchTimeout: 3

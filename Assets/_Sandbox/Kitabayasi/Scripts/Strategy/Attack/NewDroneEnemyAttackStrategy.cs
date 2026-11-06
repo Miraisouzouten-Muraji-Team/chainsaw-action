@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 /// <summary>
@@ -6,7 +6,7 @@ using UnityEngine;
 /// </summary>
 /// <remarks>
 /// Preparation中は完全停止し、照準だけ更新する。
-/// 射撃開始時のPlayerとのXY相対位置を固定し、射撃中はMotorの安全制限内で追従する。
+/// 予備動作開始時のPlayerとのXY相対位置を保持し、射撃中はMotorの安全制限内で追従する。
 /// 追従経路探索、後退、接触攻撃、再索敵、State遷移は担当しない。
 /// </remarks>
 [Serializable]
@@ -29,7 +29,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
     private Collider playerTargetCollider;
 
     private Vector3 lastAimTargetPosition;
-    private Vector2 playerToDroneOffsetAtAttackStart;
+    private Vector2 playerToDroneOffsetAtPreparationStart;
     private float preparationElapsedTime;
     private float fallbackDirectionSign;
     private bool isPreparationActive;
@@ -102,7 +102,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         isPreparationActive = true;
         fallbackDirectionSign = initialAttackDirectionSign < 0f ? -1f : 1f;
 
-        RefreshAimTarget();
+        RefreshAimTarget(captureFollowReference: true);
 
         if (!hasAimTarget)
         {
@@ -139,24 +139,20 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
 
     public void BeginAttack()
     {
-        planarMotor.StopPlanarMovement();
-
-        // 照準と相対位置は射撃開始時のPlayer位置から確定する。
+        // 射撃開始時に追従基準を取り直すと、準備中のPlayer移動が相殺される。
+        // 準備開始時の基準を維持し、射撃が始まった直後からその移動量を追いかける。
         // ShooterはBeginBurstで方向を固定し、後続弾は追尾弾にならない。
         if (TryGetCurrentPlayerTargetPosition(out Vector3 playerPosition))
         {
             lastAimTargetPosition = playerPosition;
             hasAimTarget = true;
-            playerToDroneOffsetAtAttackStart =
-                new Vector2(
-                    enemyRigidbody.position.x - playerPosition.x,
-                    enemyRigidbody.position.y - playerPosition.y);
-            hasFollowTarget = true;
+
+            if (!hasFollowTarget)
+            {
+                CaptureFollowReference(playerPosition);
+            }
+
             AlignVisualTowardTarget(playerPosition);
-        }
-        else
-        {
-            hasFollowTarget = false;
         }
 
         projectileShooter.BeginBurst(
@@ -206,7 +202,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         ResetRuntimeState();
     }
 
-    private void RefreshAimTarget()
+    private void RefreshAimTarget(bool captureFollowReference = false)
     {
         if (!TryGetCurrentPlayerTargetPosition(out Vector3 targetPosition))
         {
@@ -214,23 +210,41 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
             return;
         }
 
+        if (captureFollowReference)
+        {
+            CaptureFollowReference(targetPosition);
+        }
+
         lastAimTargetPosition = targetPosition;
         hasAimTarget = true;
         AlignVisualTowardTarget(targetPosition);
     }
 
+    private void CaptureFollowReference(Vector3 playerPosition)
+    {
+        playerToDroneOffsetAtPreparationStart = new Vector2(
+            enemyRigidbody.position.x - playerPosition.x,
+            enemyRigidbody.position.y - playerPosition.y);
+        hasFollowTarget = true;
+    }
+
     private void UpdateShootingFollow()
     {
-        if (!hasFollowTarget ||
-            !TryGetCurrentPlayerTargetPosition(out Vector3 currentPlayerPosition))
+        if (!TryGetCurrentPlayerTargetPosition(out Vector3 currentPlayerPosition))
         {
             planarMotor.StopPlanarMovement();
             return;
         }
 
+        if (!hasFollowTarget)
+        {
+            // 予備動作時にPlayerが存在しなかった場合だけ、現在位置で基準を確保する。
+            CaptureFollowReference(currentPlayerPosition);
+        }
+
         Vector2 targetPosition =
             new Vector2(currentPlayerPosition.x, currentPlayerPosition.y) +
-            playerToDroneOffsetAtAttackStart;
+            playerToDroneOffsetAtPreparationStart;
 
         Vector2 currentPosition =
             new Vector2(enemyRigidbody.position.x, enemyRigidbody.position.y);
@@ -313,6 +327,6 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         preparationElapsedTime = 0f;
         fallbackDirectionSign = 1f;
         lastAimTargetPosition = default;
-        playerToDroneOffsetAtAttackStart = default;
+        playerToDroneOffsetAtPreparationStart = default;
     }
 }

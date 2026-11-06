@@ -6,7 +6,7 @@ using UnityEngine;
 /// 新型ドローンの2点巡回・Player索敵・初期位置へのA*帰還を行う。
 /// </summary>
 /// <remarks>
-/// 障害物を考慮した移動、巡回点補正、経路探索、LOSは既存の共通クラスに委譲する。
+/// 障害物を考慮した移動、巡回点補正、帰還経路探索、LOSは既存の共通クラスに委譲する。
 /// Alert・Attackの動作、接触攻撃、State遷移は担当しない。
 /// </remarks>
 [Serializable]
@@ -47,6 +47,8 @@ public sealed class NewDroneEnemySearchStrategy :
     private Vector3 patrolOriginPosition;
     private bool isSearchActive;
     private bool isReturningToPatrolOrigin;
+    private bool isDetectionSuppressedAfterFailedShot;
+    private bool hasPlayerLeftRangeAfterFailedShot;
 
     public float DetectionRadius => detectionRadius;
 
@@ -184,13 +186,29 @@ public sealed class NewDroneEnemySearchStrategy :
         return false;
     }
 
+    /// <summary>
+    /// 射撃地点が見つからず帰還する場合、帰還完了とPlayerの検知範囲離脱まで再攻撃を禁止する。
+    /// 探索失敗後、帰還開始直後に同じ攻撃を再試行し続けることを防ぐ。
+    /// </summary>
+    public void SuppressDetectionUntilReturnAndRangeExit()
+    {
+        isDetectionSuppressedAfterFailedShot = true;
+        hasPlayerLeftRangeAfterFailedShot = false;
+    }
+
     public bool TryDetectPlayer(out float detectedPlayerDirectionSign)
     {
         detectedPlayerDirectionSign = 0f;
         DetectedPlayerPlanarDirection = Vector2.zero;
+        playerDetectionSensor.ClearDebugRay();
 
         if (!TryGetCurrentPlayerTargetPosition(out Vector3 playerTargetPosition))
         {
+            if (isDetectionSuppressedAfterFailedShot)
+            {
+                hasPlayerLeftRangeAfterFailedShot = true;
+            }
+
             playerDetectionSensor.ClearDebugRay();
             return false;
         }
@@ -204,7 +222,31 @@ public sealed class NewDroneEnemySearchStrategy :
                 detectionCenter.y,
                 playerTargetPosition.z));
 
-        if (!playerDetectionSensor.CanDetectPlayer(
+        // 距離判定はCollider表面。射線が遮られている場合は発見させない。
+        Vector2 planarDistance = new Vector2(
+            closestPlayerPosition.x - detectionCenter.x,
+            closestPlayerPosition.y - detectionCenter.y);
+
+        bool isPlayerWithinDetectionRange = detectionRadius > 0f &&
+            planarDistance.sqrMagnitude <= detectionRadius * detectionRadius;
+
+        if (isDetectionSuppressedAfterFailedShot)
+        {
+            if (!isPlayerWithinDetectionRange)
+            {
+                hasPlayerLeftRangeAfterFailedShot = true;
+            }
+
+            if (isReturningToPatrolOrigin || !hasPlayerLeftRangeAfterFailedShot)
+            {
+                return false;
+            }
+
+            isDetectionSuppressedAfterFailedShot = false;
+        }
+
+        if (!isPlayerWithinDetectionRange ||
+            !playerDetectionSensor.CanDetectPlayer(
                 detectionCenter,
                 closestPlayerPosition,
                 detectionRadius,
@@ -315,6 +357,13 @@ public sealed class NewDroneEnemySearchStrategy :
             playerTargetCollider = null;
             targetWorldPosition = default;
             return false;
+        }
+
+        if (playerTargetCollider != null &&
+            playerTargetCollider.transform != playerTransform &&
+            !playerTargetCollider.transform.IsChildOf(playerTransform))
+        {
+            playerTargetCollider = null;
         }
 
         if (playerTargetCollider == null)

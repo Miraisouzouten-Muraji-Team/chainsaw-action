@@ -30,6 +30,8 @@ public sealed class EnemyProjectile : MonoBehaviour
     [SerializeField]
     private LayerMask stageCollisionMask;
 
+    public LayerMask StageCollisionMask => stageCollisionMask;
+
     private Rigidbody projectileRigidbody;
     private Collider[] projectileColliders;
 

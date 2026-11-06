@@ -119,7 +119,9 @@ public static class PlanarAStarPathfinder
             obstacleMask,
             useDirectTraversalGoal: false,
             includeGoalInPath: true,
-            resultPath);
+            resultPath,
+            null,
+            out _);
     }
 
     /// <summary>
@@ -184,7 +186,53 @@ public static class PlanarAStarPathfinder
             obstacleMask,
             useDirectTraversalGoal: true,
             includeGoalInPath: false,
-            resultPath);
+            resultPath,
+            null,
+            out _);
+    }
+
+    /// <summary>
+    /// 既存のA*グリッドで、配置可能かつ条件を満たす最小経路コストのNodeを探索する。
+    /// </summary>
+    /// <remarks>
+    /// 任意のGoal条件には距離の許容ヒューリスティックを定義できないため、h=0のA*で
+    /// g-scoreが最小のNodeから評価する。検索領域は開始位置とsearchReferencePositionを
+    /// 結ぶ矩形にsearchPaddingを加えた範囲とする。
+    /// </remarks>
+    public static bool TryFindPathToNearestMatchingPosition(
+        Vector3 startBodyPosition,
+        Vector3 searchReferencePosition,
+        Vector3 queryCenterOffsetFromBody,
+        Vector3 queryHalfExtents,
+        Vector3 startEscapeHalfExtents,
+        Quaternion queryOrientation,
+        float searchPadding,
+        int maximumExpandedNodes,
+        LayerMask obstacleMask,
+        Func<Vector3, bool> isMatchingPosition,
+        List<Vector3> resultPath,
+        out Vector3 reachedPosition)
+    {
+        if (isMatchingPosition == null)
+        {
+            throw new ArgumentNullException(nameof(isMatchingPosition));
+        }
+
+        return TryFindPathInternal(
+            startBodyPosition,
+            searchReferencePosition,
+            queryCenterOffsetFromBody,
+            queryHalfExtents,
+            startEscapeHalfExtents,
+            queryOrientation,
+            searchPadding,
+            maximumExpandedNodes,
+            obstacleMask,
+            useDirectTraversalGoal: false,
+            includeGoalInPath: false,
+            resultPath,
+            isMatchingPosition,
+            out reachedPosition);
     }
 
     /// <summary>
@@ -351,8 +399,12 @@ public static class PlanarAStarPathfinder
         LayerMask obstacleMask,
         bool useDirectTraversalGoal,
         bool includeGoalInPath,
-        List<Vector3> resultPath)
+        List<Vector3> resultPath,
+        Func<Vector3, bool> isMatchingPosition,
+        out Vector3 reachedPosition)
     {
+        reachedPosition = default;
+
         if (resultPath == null)
         {
             throw new ArgumentNullException(
@@ -371,7 +423,8 @@ public static class PlanarAStarPathfinder
         goalBodyPosition.z =
             startBodyPosition.z;
 
-        if (!useDirectTraversalGoal &&
+        if (isMatchingPosition == null &&
+            !useDirectTraversalGoal &&
             !IsPositionClear(
                 goalBodyPosition,
                 queryCenterOffsetFromBody,
@@ -413,15 +466,18 @@ public static class PlanarAStarPathfinder
             return false;
         }
 
-        if (HasReachedGoalFromPosition(
-                pathSearchStartPosition,
-                goalBodyPosition,
-                queryCenterOffsetFromBody,
-                queryHalfExtents,
-                queryOrientation,
-                obstacleMask,
-                useDirectTraversalGoal))
+        if (isMatchingPosition != null
+                ? isMatchingPosition(pathSearchStartPosition)
+                : HasReachedGoalFromPosition(
+                    pathSearchStartPosition,
+                    goalBodyPosition,
+                    queryCenterOffsetFromBody,
+                    queryHalfExtents,
+                    queryOrientation,
+                    obstacleMask,
+                    useDirectTraversalGoal))
         {
+            reachedPosition = pathSearchStartPosition;
             if (requiresStartEscape)
             {
                 resultPath.Add(
@@ -507,7 +563,8 @@ public static class PlanarAStarPathfinder
                     costFromStart,
                     pathSearchStartPosition,
                     goalBodyPosition,
-                    nodeSpacing);
+                    nodeSpacing,
+                    isMatchingPosition != null);
 
             Vector2Int currentNode =
                 openNodes[currentOpenIndex];
@@ -535,15 +592,18 @@ public static class PlanarAStarPathfinder
             // Goal自身がGrid上に乗るとは限らない。
             // 通常Goalは実Goalへ接続できた時点、DirectTraversal Goalは
             // BoxのTarget側の面がTargetへ届く区間を通せた時点で探索成功とする。
-            if (HasReachedGoalFromPosition(
-                    currentWorldPosition,
-                    goalBodyPosition,
-                    queryCenterOffsetFromBody,
-                    queryHalfExtents,
-                    queryOrientation,
-                    obstacleMask,
-                    useDirectTraversalGoal))
+            if (isMatchingPosition != null
+                    ? isMatchingPosition(currentWorldPosition)
+                    : HasReachedGoalFromPosition(
+                        currentWorldPosition,
+                        goalBodyPosition,
+                        queryCenterOffsetFromBody,
+                        queryHalfExtents,
+                        queryOrientation,
+                        obstacleMask,
+                        useDirectTraversalGoal))
             {
+                reachedPosition = currentWorldPosition;
                 List<Vector3> pathAfterEscape =
                     requiresStartEscape
                         ? new List<Vector3>()
@@ -869,7 +929,8 @@ public static class PlanarAStarPathfinder
         Dictionary<Vector2Int, float> costFromStart,
         Vector3 startBodyPosition,
         Vector3 goalBodyPosition,
-        float nodeSpacing)
+        float nodeSpacing,
+        bool useZeroHeuristic)
     {
         int bestIndex = 0;
         float bestEstimatedTotalCost =
@@ -890,8 +951,9 @@ public static class PlanarAStarPathfinder
                     startBodyPosition,
                     nodeSpacing);
 
-            float heuristicCost =
-                GetPlanarDistance(
+            float heuristicCost = useZeroHeuristic
+                ? 0f
+                : GetPlanarDistance(
                     worldPosition,
                     goalBodyPosition);
 

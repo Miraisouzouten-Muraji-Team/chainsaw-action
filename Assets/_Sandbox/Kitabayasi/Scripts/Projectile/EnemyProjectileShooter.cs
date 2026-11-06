@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 /// <summary>
@@ -68,6 +68,7 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
     private float aimGizmoLength = 10f;
 
     private Collider[] ownerColliders;
+    private Collider[] projectilePrefabColliders;
     private EnemyPlayerReference playerReference;
 
     private ScriptableObject currentAttackData;
@@ -87,6 +88,15 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
 
     public bool IsBurstActive =>
         isBurstActive;
+
+    public Transform FirePointTransform => firePoint;
+
+    // 発射時の弾Collider形状を射撃地点判定へ渡す。発射仕様自体は変更しない。
+    public Transform ProjectilePrefabRoot => projectilePrefab != null ? projectilePrefab.transform : null;
+    public Collider[] ProjectilePrefabColliders => projectilePrefabColliders;
+
+    public LayerMask ProjectileStageCollisionMask =>
+        projectilePrefab != null ? projectilePrefab.StageCollisionMask : default;
 
     private void Awake()
     {
@@ -196,6 +206,10 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
         ownerColliders =
             ownerObject.GetComponentsInChildren<Collider>(
                 true);
+
+        // A*探索中の各候補でGetComponentsInChildrenを呼び直さない。
+        projectilePrefabColliders =
+            projectilePrefab.GetComponentsInChildren<Collider>(true);
 
         isInitialized = true;
         HideAim();

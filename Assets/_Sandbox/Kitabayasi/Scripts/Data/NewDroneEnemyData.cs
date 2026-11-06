@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// 新型ドローンの巡回・帰還・射撃追従に固有の調整値を保持する。
+/// 新型ドローンの巡回・帰還・射撃位置探索・射撃追従に固有の調整値を保持する。
 /// </summary>
 /// <remarks>
 /// HP、攻撃力、Alert、被弾、死亡、攻撃後待機はEnemyDataに委譲する。
@@ -68,5 +68,10 @@ public sealed class NewDroneEnemyData : EnemyData
     public float NavigationStallDetectionDuration => navigationStallDetectionDuration;
     public LayerMask NavigationObstacleMask => navigationObstacleMask;
     public float AttackPreparationDuration => attackPreparationDuration;
+    [SerializeField, Min(0f)]
+    [Tooltip("射撃可能地点を見つけられない状態で再探索を続ける最大秒数。0なら最初の失敗で帰還する。")]
+    private float shootingPositionSearchTimeout = 3f;
+
     public float ShootingFollowSpeed => shootingFollowSpeed;
+    public float ShootingPositionSearchTimeout => shootingPositionSearchTimeout;
 }

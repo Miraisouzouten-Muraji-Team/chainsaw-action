@@ -497,6 +497,20 @@ public class EnemyStateMachine : MonoBehaviour
             return;
         }
 
+        // 新型Droneの射撃位置探索が時間切れになった場合は、
+        // 検知範囲内でもAttackを繰り返さず通常の帰還へ進む。
+        if (attackStrategy is NewDroneEnemyAttackStrategy newDroneAttack &&
+            newDroneAttack.HasAbandonedAttack)
+        {
+            if (searchStrategy is NewDroneEnemySearchStrategy newDroneSearch)
+            {
+                newDroneSearch.SuppressDetectionUntilReturnAndRangeExit();
+            }
+
+            ChangeState(searchState);
+            return;
+        }
+
         bool hasDetectedPlayer =
             searchStrategy.TryDetectPlayer(
                 out float detectedPlayerDirectionSign);

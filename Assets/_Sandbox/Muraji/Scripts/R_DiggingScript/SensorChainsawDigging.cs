@@ -958,6 +958,10 @@ public class SensorChainsawDigging : MonoBehaviour
         // 再生後は各On～DiggingFrameだけで止め、成立時点で早期固定しない。
         playerAnimator.ResumeDiggingAnimation();
 
+        // 通常の地形壁では何も変更せず、専用Triggerに設定された開始位置だけを適用する。
+        if (Surface == ChainsawSurface.Wall && detector != null)
+            detector.ApplyWallEntryPosition(contact.Collider);
+
         if (Surface ==
             ChainsawSurface.Enemy)
         {
@@ -1073,7 +1077,7 @@ public class SensorChainsawDigging : MonoBehaviour
     /// Physics.IgnoreCollision中もOverlapBoxで検出可能なため、ボーナス貫通に対応。
     /// 敵からプレイヤーへのダメージは既存の敵攻撃とPlayerAttackHitReceiverに委ねる。
     /// </summary>
-    private void ProcessMovementEnemyContacts(Vector3 displacement)
+    private void ProcessMovementEnemyContacts(Vector3 displacement, bool queueTriggerHits = false)
     {
         if (!IsMovementDigging || movementBody == null || detector == null ||
             chainsawAttack == null || diggingAttackData == null)
@@ -1103,7 +1107,7 @@ public class SensorChainsawDigging : MonoBehaviour
             {
                 count = Physics.OverlapBoxNonAlloc(bounds.center, bounds.extents,
                     movementOverlapBuffer, Quaternion.identity, enemyMask,
-                    QueryTriggerInteraction.Ignore);
+                    QueryTriggerInteraction.Collide);
                 if (count < movementOverlapBuffer.Length) break;
                 System.Array.Resize(ref movementOverlapBuffer, movementOverlapBuffer.Length * 2);
             }
@@ -1111,7 +1115,10 @@ public class SensorChainsawDigging : MonoBehaviour
             for (int i = 0; i < count; i++)
             {
                 Collider enemyCollider = movementOverlapBuffer[i];
-                if (enemyCollider == null || enemyCollider.attachedRigidbody == movementBody)
+                if (enemyCollider == null || enemyCollider.attachedRigidbody == movementBody ||
+                    !ChainsawContactZone.AllowsAttack(enemyCollider) ||
+                    (queueTriggerHits && (!enemyCollider.isTrigger ||
+                     ChainsawContactZone.GetZone(enemyCollider) == null)))
                     continue;
 
                 EnemyAttackHitReceiver enemy = enemyCollider.GetComponentInParent<EnemyAttackHitReceiver>();
@@ -1127,6 +1134,11 @@ public class SensorChainsawDigging : MonoBehaviour
 
                 // 同一物理ステップで複数Colliderに接触しても二重命中しない。
                 touchingEnemies.Add(enemy);
+                if (queueTriggerHits)
+                {
+                    QueueTriggerMovementHit(enemy);
+                    continue;
+                }
                 chainsawAttack.HitMovementContact(enemy, diggingAttackData,
                     movementContactDamageMultiplier,
                     enemyCollider.ClosestPoint(bounds.center));
@@ -1139,9 +1151,16 @@ public class SensorChainsawDigging : MonoBehaviour
         {
             if (!IsMovementDigging || !IsRequested) break;
             SensorChainsawContact candidate = movementSweepContacts[i];
+            if (queueTriggerHits && (candidate.Collider == null || !candidate.Collider.isTrigger ||
+                ChainsawContactZone.GetZone(candidate.Collider) == null)) continue;
             if (!SensorChainsawContactDetector.CanReceiveEnemyHit(candidate.Enemy)) continue;
             detectedEnemies.Add(candidate.Enemy);
             if (!touchingEnemies.Add(candidate.Enemy)) continue;
+            if (queueTriggerHits)
+            {
+                QueueTriggerMovementHit(candidate.Enemy);
+                continue;
+            }
             chainsawAttack.HitMovementContact(candidate.Enemy, diggingAttackData,
                 movementContactDamageMultiplier, candidate.Point);
         }
@@ -1158,15 +1177,26 @@ public class SensorChainsawDigging : MonoBehaviour
         {
             // この物理ステップの状態を保存し、被弾で解除された後の衝突通知も受け付ける。
             movementCollisionWindow = true;
+            // 専用の被攻撃Triggerも照会するが、通常時は既存の衝突命中と同じ次回物理更新で送る。
+            ProcessMovementEnemyContacts(displacement, true);
             return;
         }
         ProcessMovementEnemyContacts(displacement);
     }
 
+    // 通常時の専用Triggerへの接触を、既存の遅延命中キューへ一度だけ登録する。
+    private void QueueTriggerMovementHit(EnemyAttackHitReceiver enemy)
+    {
+        if (!SensorChainsawContactDetector.CanReceiveEnemyHit(enemy) ||
+            !normalMovementHitEnemies.Add(enemy) || !queuedMovementCollisionEnemies.Add(enemy)) return;
+        pendingMovementCollisionEnemies.Add(enemy);
+    }
+
     // 通常食い込み中の実際の本体衝突を記録し、敵の接触攻撃より先にやられ状態へ変えない。
     public void QueueMovementEnemyCollision(Collision collision)
     {
-        if (!movementCollisionWindow || collision == null || collision.collider == null) return;
+        if (!movementCollisionWindow || collision == null || collision.collider == null ||
+            !ChainsawContactZone.AllowsAttack(collision.collider)) return;
         EnemyAttackHitReceiver enemy =
             collision.collider.GetComponentInParent<EnemyAttackHitReceiver>();
         if (!SensorChainsawContactDetector.CanReceiveEnemyHit(enemy) ||

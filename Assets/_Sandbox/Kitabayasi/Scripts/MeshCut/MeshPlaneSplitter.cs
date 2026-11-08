@@ -220,6 +220,7 @@ public sealed class MeshPlaneSplitter
             enableDiagnostics,
             enablePlaneTouchingVertexFanHandling,
             false,
+            false,
             out firstPieceMesh,
             out secondPieceMesh,
             out _,
@@ -265,6 +266,7 @@ public sealed class MeshPlaneSplitter
             enableDiagnostics,
             false,
             false,
+            false,
             out firstPieceMesh,
             out secondPieceMesh,
             out _,
@@ -272,11 +274,12 @@ public sealed class MeshPlaneSplitter
     }
 
     /// <summary>
-    /// Plane分割結果を中間Unity Meshへ確定せず、連結成分単位の最終Meshを直接生成する。
+    /// Plane分割結果から、連結成分単位またはPlaneの両側単位で最終Meshを直接生成する。
     /// </summary>
     /// <remarks>
     /// 通常攻撃死亡経路専用。Plane分割中に構築した頂点属性とTriangle indexを
-    /// MeshConnectedComponentSplitterへ直接渡し、First / Secondの中間Mesh読戻しを発生させない。
+    /// 通常はMeshConnectedComponentSplitterへ直接渡す。両側統合モードでは
+    /// 同じ切断・境界構築結果から各側1つのMeshを生成し、Connected Component分離を省略する。
     /// </remarks>
     internal bool TrySplitConnectedPieces(
         Mesh sourceMesh,
@@ -291,6 +294,7 @@ public sealed class MeshPlaneSplitter
         string secondSideMeshNamePrefix,
         Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
         bool enableDiagnostics,
+        bool keepCutSidesAsSinglePieces,
         out List<Mesh> pieceMeshes,
         out string failureReason)
     {
@@ -310,6 +314,7 @@ public sealed class MeshPlaneSplitter
                 enableDiagnostics,
                 false,
                 true,
+                keepCutSidesAsSinglePieces,
                 out _,
                 out _,
                 out pieceMeshes,
@@ -338,6 +343,7 @@ public sealed class MeshPlaneSplitter
         bool enableDiagnostics,
         bool enablePlaneTouchingVertexFanHandling,
         bool splitConnectedComponents,
+        bool keepCutSidesAsSinglePieces,
         out Mesh firstPieceMesh,
         out Mesh secondPieceMesh,
         out List<Mesh> connectedPieceMeshes,
@@ -413,6 +419,7 @@ public sealed class MeshPlaneSplitter
             enableDiagnostics,
             enablePlaneTouchingVertexFanHandling,
             splitConnectedComponents,
+            keepCutSidesAsSinglePieces,
             out firstPieceMesh,
             out secondPieceMesh,
             out connectedPieceMeshes,
@@ -576,6 +583,7 @@ public sealed class MeshPlaneSplitter
         bool enableDiagnostics,
         bool enablePlaneTouchingVertexFanHandling,
         bool splitConnectedComponents,
+        bool keepCutSidesAsSinglePieces,
         out Mesh firstPieceMesh,
         out Mesh secondPieceMesh,
         out List<Mesh> connectedPieceMeshes,
@@ -1258,6 +1266,34 @@ public sealed class MeshPlaneSplitter
                 $"UncappedEdges={uncappedBoundaryEdgePoints.Count / 2}, " +
                 $"GeneratedCapRegions={generatedCapRegionCount}, " +
                 $"SkippedCapRegions={skippedCapRegionCount}");
+        }
+
+        if (splitConnectedComponents && keepCutSidesAsSinglePieces)
+        {
+            // 既存の切断境界・Cap生成・Builder Poolを維持したまま、
+            // 非連結部分だけは独立Piece化せず同じ側のMeshへ含める。
+            Mesh positiveSideMesh =
+                firstBuilder.BuildMesh(firstPieceMeshName);
+
+            Mesh negativeSideMesh =
+                secondBuilder.BuildMesh(secondPieceMeshName);
+
+            if (positiveSideMesh == null || negativeSideMesh == null)
+            {
+                DestroyMeshes(new[] { positiveSideMesh, negativeSideMesh });
+                failureReason =
+                    "切断Planeの両側から2個のMeshを生成できませんでした。";
+                return false;
+            }
+
+            connectedPieceMeshes = new List<Mesh>(2)
+            {
+                positiveSideMesh,
+                negativeSideMesh
+            };
+
+            failureReason = null;
+            return true;
         }
 
         if (splitConnectedComponents)

@@ -604,6 +604,7 @@ MonoBehaviour:
   maximumPieceMass: 10
   minimumCapsuleAspectRatio: 1.5
   preGeneratedPieceCount: 0
+  keepCutSidesAsSinglePieces: 1
   cutDirectionSampleCount: 4
   cutRangeAxis: 1
   cutRangeMinimumNormalized: 0.3

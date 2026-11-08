@@ -108,8 +108,11 @@ public sealed class ChainsawMeshCutProcessor
         new MeshPlaneSplitter();
 
     /// <summary>
-    /// Bake済みMeshをチェンソー軌跡由来のPlaneで分割し、Connected Piece単位の最終Meshを生成する。
+    /// Bake済みMeshをチェンソー軌跡由来のPlaneで分割し、指定されたPiece構成の最終Meshを生成する。
     /// </summary>
+    /// <param name="keepCutSidesAsSinglePieces">
+    /// trueなら切断Planeの両側を各1Meshとして出力し、非連結成分の個別分離を行わない。
+    /// </param>
     /// <param name="useSharedMeshConnectivityCache">
     /// MeshFilter.sharedMeshを読み取り専用Sourceとして使う通常2分割経路だけtrueにする。
     /// BakeMesh等、頂点Positionが実行時に変化するMeshではfalseにする。
@@ -117,6 +120,7 @@ public sealed class ChainsawMeshCutProcessor
     public bool TryCut(
         Mesh sourceMesh,
         bool useSharedMeshConnectivityCache,
+        bool keepCutSidesAsSinglePieces,
         IReadOnlyList<Vector3> localTipPositions,
         IReadOnlyList<Vector3> localRootPositions,
         int cutDirectionSampleCount,
@@ -320,6 +324,7 @@ public sealed class ChainsawMeshCutProcessor
                             : boundaryFailureReason;
                     },
                     enableDiagnostics,
+                    keepCutSidesAsSinglePieces,
                     out pieceMeshes,
                     out failureReason))
             {

@@ -4,7 +4,7 @@ using UnityEngine;
 
 /// <summary>
 /// Enemy死亡時に切断対象Meshを取得し、
-/// チェンソー軌跡で分割したConnected Pieceを物理切断片として表示する。
+/// チェンソー軌跡で分割したMeshを物理切断片として表示する。
 /// </summary>
 /// <remarks>
 /// SkinnedMeshRendererの場合は死亡時の現在姿勢をBakeしてから切断する。
@@ -81,6 +81,15 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     [SerializeField]
     [Min(0)]
     private int preGeneratedPieceCount;
+
+    [Header("切断Piece構成")]
+
+    [Tooltip(
+        "ONなら切断Planeの両側をそれぞれ1Pieceにまとめる。" +
+        "非連結部分も同じ側のMeshに保持し、通常切断で2Pieceだけ生成する。" +
+        "OFFなら従来どおりConnected Componentごとに分割する。")]
+    [SerializeField]
+    private bool keepCutSidesAsSinglePieces = false;
 
     [Header("切断Plane設定")]
 
@@ -300,6 +309,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             bool succeeded = cutProcessor.TryCut(
                 sourceMesh,
                 targetMeshFilter != null,
+                keepCutSidesAsSinglePieces,
                 localTipPositions,
                 localRootPositions,
                 cutDirectionSampleCount,
@@ -334,7 +344,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 DestroyRuntimeMeshes(finalPieceMeshes);
 
                 failureReason =
-                    "MeshPlaneSplitterの成功後に2個以上の最終Connected Pieceを取得できませんでした。";
+                    "MeshPlaneSplitterの成功後に2個以上の切断Pieceを取得できませんでした。";
 
                 if (ShouldRunDiagnostics)
                 {
@@ -353,7 +363,9 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             {
                 LogDiagnostic(
                     "Cutter-05 FinalPieces",
-                    $"中間First / Second Meshを生成せず、Connected Component確定後の最終Pieceを{finalPieceMeshes.Count}個取得しました。");
+                    keepCutSidesAsSinglePieces
+                        ? $"切断Planeの両側から各1Piece、合計{finalPieceMeshes.Count}個を取得しました。"
+                        : $"中間First / Second Meshを生成せず、Connected Component確定後の最終Pieceを{finalPieceMeshes.Count}個取得しました。");
             }
 
             Material[] pieceMaterials =

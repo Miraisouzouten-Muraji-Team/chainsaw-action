@@ -1,8 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-// ChainsawSurfaceは既存PlayerAnimatorと同じ型を共有する。
-// ここでは再定義しない。
+// 食い込み先の種別は、プロジェクト内の既存ChainsawSurfaceを使用する。
 
 public struct SensorChainsawContact
 {
@@ -439,6 +438,21 @@ public class SensorChainsawContactDetector : MonoBehaviour
         return found;
     }
 
+    // 本体中央の真上に実在する下面を確認し、BoxCastが角だけを拾う支持を除外する。
+    private bool TryGetCeilingCenterFace(Collider target, Bounds bodyBounds, float centerX,
+        float extraHeight, out RaycastHit face)
+    {
+        face = default;
+        if (target == null || target.isTrigger || IsOwner(target)) return false;
+        float backoff = Mathf.Max(0.01f, contactDetectorParameter.NormalRayBackoff);
+        Vector3 origin = new Vector3(centerX, bodyBounds.min.y - backoff, bodyBounds.center.z);
+        float distance = bodyBounds.size.y + backoff * 2f + Mathf.Max(0f, extraHeight);
+        if (!target.Raycast(new Ray(origin, Vector3.up), out face, distance)) return false;
+        if (face.point.y < bodyBounds.center.y || Mathf.Abs(face.normal.z) > 0.5f) return false;
+        Vector3 normal = new Vector3(face.normal.x, face.normal.y, 0f).normalized;
+        return normal.y <= -ResolvedSurfaceNormalThreshold;
+    }
+
     // 次の横位置の本体幅を上向きにBoxCastし、頭が通れる高さを決める実際の天井を取得する。
     // 平面・斜面・凸の継ぎ目を同じ方法で調べ、Upperから一瞬外れても本体の支持を維持する。
     public bool TryGetCeilingBodySupport(float moveSpeed, float deltaTime,
@@ -469,6 +483,10 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 continue;
             Vector3 normal = new Vector3(hit.normal.x, hit.normal.y, 0f).normalized;
             if (normal.y > -ResolvedSurfaceNormalThreshold) continue;
+            // 次の本体中央が天井の外へ出ているなら、幅の端だけを支えに接続し続けない。
+            if (!TryGetCeilingCenterFace(hit.collider, bounds, origin.x,
+                probeDistance * 2f, out RaycastHit centerFace)) continue;
+            normal = new Vector3(centerFace.normal.x, centerFace.normal.y, 0f).normalized;
             if (hit.distance > nearestDistance) continue;
             if (hit.distance == nearestDistance && contact.Collider != null &&
                 hit.collider.GetInstanceID() >= contact.Collider.GetInstanceID()) continue;
@@ -926,6 +944,18 @@ public class SensorChainsawContactDetector : MonoBehaviour
             if (surface != expectedSurface)
             {
                 continue;
+            }
+
+            // 初回接触でも、センサーだけが角に届いている候補を天井として採用しない。
+            if (surface == ChainsawSurface.Ceiling)
+            {
+                if (!TryGetCeilingBodyBounds(out Bounds bodyBounds)) continue;
+                float threshold = Mathf.Clamp(ResolvedSurfaceNormalThreshold, 0.01f, 1f);
+                float maxSlope = Mathf.Sqrt(Mathf.Max(0f, 1f - threshold * threshold)) / threshold;
+                float extraHeight = Mathf.Abs(hit.point.y - bodyBounds.max.y) + bodyBounds.extents.x * maxSlope;
+                if (!TryGetCeilingCenterFace(target, bodyBounds, bodyBounds.center.x,
+                    extraHeight, out RaycastHit centerFace)) continue;
+                normal = new Vector3(centerFace.normal.x, centerFace.normal.y, 0f).normalized;
             }
 
             if (IsBlocked(visibilityOrigin, hit.point, target))

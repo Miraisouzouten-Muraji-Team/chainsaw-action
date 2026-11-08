@@ -166,6 +166,67 @@ public class SensorPlayerController : MonoBehaviour
     private bool jumpPending;
     private float pendingJumpPower;
 
+    [Header("天井食い込みからのジャンプ離脱")]
+    [Tooltip("天井に食い込んだ状態でジャンプしたとき、天井から下へ離れる初速です。斜め天井の継ぎ目へ上向きに押し込まないために使用します。")]
+    [SerializeField, Min(0.01f)] private float ceilingJumpReleaseSpeed = 6f;
+    [Tooltip("天井ジャンプ後、下向きの離脱を保証する秒数です。この間は天井角の持ち上げ補正と再食い込みを停止します。")]
+    [SerializeField, Min(0.01f)] private float ceilingJumpReleaseDuration = 0.12f;
+    private bool ceilingJumpLaunchPending;
+    private float ceilingJumpReleaseRemaining;
+    private Vector3 ceilingJumpReleaseVelocity;
+
+    // 天井の下面から、上向きジャンプではなく下向きの離脱を予約する。
+    private void BeginCeilingJumpRelease()
+    {
+        Vector3 releaseVelocity = playerRigidbody.linearVelocity;
+        chainsawDigging.Cancel(true);
+        // 食い込み解除の慣性に含まれる上昇速度や、天井接触猶予を持ち越さない。
+        ClearDiggingReleaseMomentum();
+        ResetCeilingTravelImpact();
+        ResetCeilingFallGrace(false);
+        ceilingCornerJumpPending = false;
+        pendingCornerCorrection = Vector3.zero;
+        jumpPending = false;
+        pendingJumpPower = 0f;
+        pendingJumpCount = MAX_JUMP_COUNT;
+        jumpsUsed = MAX_JUMP_COUNT;
+        variableJumpActive = false;
+        knockbackVelocity = 0f;
+        knockbackHopPending = false;
+        ascentStartSpeed = 0f;
+        fallElapsedTime = 0f;
+        lastGroundedTime = float.NegativeInfinity;
+        ceilingJumpReleaseVelocity = new Vector3(releaseVelocity.x,
+            -Mathf.Max(0.01f, ceilingJumpReleaseSpeed), 0f);
+        ceilingJumpLaunchPending = true;
+        ceilingJumpReleaseRemaining = Mathf.Max(Time.fixedDeltaTime, ceilingJumpReleaseDuration);
+        currentSpeed = releaseVelocity.x;
+        ignoreGroundUntil = Time.time + Mathf.Max(0.1f, ceilingJumpReleaseDuration);
+        playerAnimator.PlayDoubleJump();
+        SpawnMovementEffect(doubleJumpEffect);
+    }
+
+    // 斜め天井や三角形の継ぎ目へ再度上向きに押し込まず、短時間だけ下向き離脱を維持する。
+    private void ApplyCeilingJumpRelease(ref Vector3 velocity, float deltaTime)
+    {
+        if (ceilingJumpLaunchPending)
+        {
+            velocity = ceilingJumpReleaseVelocity;
+            ceilingJumpLaunchPending = false;
+        }
+        if (ceilingJumpReleaseRemaining <= 0f) return;
+        velocity.y = Mathf.Min(velocity.y, -Mathf.Max(0.01f, ceilingJumpReleaseSpeed));
+        ceilingJumpReleaseRemaining = Mathf.Max(0f, ceilingJumpReleaseRemaining - deltaTime);
+    }
+
+    // 被弾・衝突硬直・死亡などへ、離脱速度の上書きを持ち越さない。
+    private void ClearCeilingJumpRelease()
+    {
+        ceilingJumpLaunchPending = false;
+        ceilingJumpReleaseRemaining = 0f;
+        ceilingJumpReleaseVelocity = Vector3.zero;
+    }
+
     private float wallJumpStunRemaining;
     private float wallJumpDirectionHoldRemaining;
     private Vector3 pendingWallJumpVelocity;
@@ -579,7 +640,7 @@ public class SensorPlayerController : MonoBehaviour
         chainsawDigging.HandleInput(
     input.WedgieInput || diggingBuffered,
     input.WedgieHeld || diggingBuffered,
-    IsAttacking,
+    IsAttacking || ceilingJumpLaunchPending || ceilingJumpReleaseRemaining > 0f,
     facingDirection,
     IsGrounded(),
     diggingBuffered
@@ -953,6 +1014,9 @@ public class SensorPlayerController : MonoBehaviour
             ignoreGroundUntil = Time.time + 0.1f;
         }
 
+        // 天井離脱中は角補正による上向き速度を上書きし、通常の落下へつなぐ。
+        ApplyCeilingJumpRelease(ref velocity, deltaTime);
+
         // ジャンプ・壁ジャンプ・角補正の決定後に、通常の斜面歩行だけを適用する。
         ApplyGroundSlopeMovement(ref velocity, isKnockbackActive);
 
@@ -1075,6 +1139,7 @@ public class SensorPlayerController : MonoBehaviour
     // 通常時は被弾硬直を開始する。成立済みの食い込み中は姿勢・移動・接続を維持する。
     public void BeginDamageStun(float duration)
     {
+        ClearCeilingJumpRelease();
         ResetCeilingTravelImpact();
         ClearDiggingReleaseMomentum();
         impactBufferedAction = ImpactBufferedAction.None;
@@ -1273,6 +1338,9 @@ public class SensorPlayerController : MonoBehaviour
     // 壁ジャンプ、接地・猶予中の初段、二段目の順でジャンプを予約する。
     void Jump()
     {
+        // 天井から離れている最中に、再度上向きジャンプを予約しない。
+        if (ceilingJumpLaunchPending || ceilingJumpReleaseRemaining > 0f) return;
+
         if (jumpPending)
         {
             return;
@@ -1285,6 +1353,13 @@ public class SensorPlayerController : MonoBehaviour
         // 食い込み解除前の状態と法線を保存する。
         ChainsawSurface surfaceBeforeJump = chainsawDigging.Surface;
         Vector3 wallNormal = chainsawDigging.SurfaceNormal;
+
+        // 天井食い込みは通常の上向き空中ジャンプへ入れず、下面から確実に離脱させる。
+        if (surfaceBeforeJump == ChainsawSurface.Ceiling)
+        {
+            BeginCeilingJumpRelease();
+            return;
+        }
 
         bool wasDiggingFloor =
             surfaceBeforeJump == ChainsawSurface.Floor;
@@ -1665,6 +1740,7 @@ public class SensorPlayerController : MonoBehaviour
         if (!playerParameter.enableCeilingFallGrace || playerParameter.ceilingFallGraceMaxSeconds <= 0f ||
             IsDamageStunned || IsImpactStunned || wallJumpStunRemaining > 0f ||
             wallJumpLaunchPending || jumpPending || ceilingCornerJumpPending ||
+            ceilingJumpLaunchPending || ceilingJumpReleaseRemaining > 0f ||
             Time.time < ceilingCornerGraceUntil || !variableJumpActive ||
             chainsawDigging == null || chainsawDigging.IsDigging ||
             lastDiggingPhysicsSurface != ChainsawSurface.None)
@@ -1833,6 +1909,8 @@ public class SensorPlayerController : MonoBehaviour
         if (!enableCornerCorrection || headCollider == null ||
             !headCollider.enabled || headCollider.isTrigger ||
             playerRigidbody == null || IsImpactStunned ||
+            (chainsawDigging != null && chainsawDigging.Surface == ChainsawSurface.Ceiling) ||
+            ceilingJumpLaunchPending || ceilingJumpReleaseRemaining > 0f ||
             Time.time < ceilingCornerGraceUntil)
             return false;
 
@@ -1917,6 +1995,13 @@ public class SensorPlayerController : MonoBehaviour
     // 設定アセットの押し出し速度で、予約済みの天井角補正を進める。
     private void ApplyPendingCornerCorrection(float deltaTime)
     {
+        // 天井追従と通常ジャンプの角補正を重ねず、角の内部へ持ち上げる予約を消す。
+        if (chainsawDigging != null && chainsawDigging.Surface == ChainsawSurface.Ceiling)
+        {
+            pendingCornerCorrection = Vector3.zero;
+            ceilingCornerJumpPending = false;
+            return;
+        }
         if (pendingCornerCorrection == Vector3.zero)
             return;
 
@@ -2056,6 +2141,7 @@ public class SensorPlayerController : MonoBehaviour
     // 弱攻撃の初段が命中した位置を保存し、食い込み中の踏み込みと移動を止める。
     public void BeginWeakAttackHold()
     {
+        ClearCeilingJumpRelease();
         weakAttackHoldActive = true;
         weakAttackHoldPosition = playerRigidbody.position;
         ClearAttackMovement();
@@ -2523,6 +2609,7 @@ public class SensorPlayerController : MonoBehaviour
     // 設定アセットの時間と揺れの値を使い、硬直とカメラシェイクを開始する。
     private void BeginDiggingImpactStun(float bounceDirection)
     {
+        ClearCeilingJumpRelease();
         ResetCeilingTravelImpact();
         ClearDiggingReleaseMomentum();
         impactBufferedAction = ImpactBufferedAction.None;
@@ -2736,6 +2823,7 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
+        ClearCeilingJumpRelease();
         ResetCeilingTravelImpact();
         ClearDiggingReleaseMomentum();
         if (chainsawDigging != null)

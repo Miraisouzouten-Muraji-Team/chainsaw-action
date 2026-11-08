@@ -1,7 +1,8 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-[DefaultExecutionOrder(100)]
+// プレイヤーの姿勢調整と敵の見た目の振動処理が終わってから、発生位置を合わせる。
+[DefaultExecutionOrder(11000)]
 public class ChainsawDiggingParticles : MonoBehaviour
 {
     [Header("参照")]
@@ -26,7 +27,7 @@ public class ChainsawDiggingParticles : MonoBehaviour
     [Tooltip("このアクセル値以上で第3段階になります。第2段階のしきい値より大きい値を指定してください。")]
     [SerializeField, Min(0f)] private float strongAcceleratorThreshold = 35f;
 
-    [Tooltip("刃に置いた発生位置用の空オブジェクト")]
+    [Tooltip("チェーンソーの刃に置いた発生位置用の空オブジェクトです。毎フレーム、アニメーションと姿勢調整後の位置へエフェクトを合わせます。")]
     [SerializeField] private Transform emissionPoint;
 
     [Header("右向き時の噴出角度。左向き時は左右反転")]
@@ -92,8 +93,9 @@ public class ChainsawDiggingParticles : MonoBehaviour
         UpdateEmission();
     }
 
-    // 固定キーフレーム中の追従と、終了後の粒子の自然消滅・破棄を更新する。
-    private void FixedUpdate()
+    // アニメーション・物理補間・姿勢調整後の空オブジェクトに追従し、終了済みの粒子を片付ける。
+    // FixedUpdateでは描画時の刃の位置が未確定なので、見た目を追従させる処理はLateUpdateで行う。
+    private void LateUpdate()
     {
         CleanupFinishedParticles();
         UpdateEmission();
@@ -222,16 +224,19 @@ public class ChainsawDiggingParticles : MonoBehaviour
 
         main.stopAction = ParticleSystemStopAction.None;
 
-        // 子の停止アクションによる意図しない破棄を防ぎ、寿命はこのスクリプトで管理する。
+        // 座標系を変更する前に、生成直後の粒子を子も含めて停止・消去する。
+        particleInstance.Stop(
+            true,
+            ParticleSystemStopBehavior.StopEmittingAndClear);
+
+        // 実際の火花を出す子もWorldへ統一し、放出済みの粒子が刃の移動・回転に引きずられるのを防ぐ。
+        // 子の発生形状・速度・色・寿命・再生速度はPrefabの設定を維持する。
         foreach (ParticleSystem particles in particleInstance.GetComponentsInChildren<ParticleSystem>(true))
         {
             ParticleSystem.MainModule childMain = particles.main;
             childMain.stopAction = ParticleSystemStopAction.None;
+            childMain.simulationSpace = ParticleSystemSimulationSpace.World;
         }
-
-        particleInstance.Stop(
-            true,
-            ParticleSystemStopBehavior.StopEmittingAndClear);
 
         main.loop = true;
         main.playOnAwake = false;

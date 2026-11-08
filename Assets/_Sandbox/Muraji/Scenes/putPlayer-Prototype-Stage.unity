@@ -94671,6 +94671,14 @@ PrefabInstance:
       propertyPath: m_Name
       value: Damage_Floor (7)
       objectReference: {fileID: 0}
+    - target: {fileID: 6317061025365660074, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6317061025365660074, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
+      propertyPath: damageFlashDuration
+      value: 0.2
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

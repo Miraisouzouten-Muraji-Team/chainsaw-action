@@ -295,7 +295,7 @@ MonoBehaviour:
   minimumCapsuleAspectRatio: 1.2
   preGeneratedPieceCount: 0
   cutDirectionSampleCount: 4
-  cutRangeAxis: 1
+  cutRangeAxis: 0
   cutRangeMinimumNormalized: 0.2
   cutRangeMaximumNormalized: 0.7
   cutSurfaceUvScale: 1

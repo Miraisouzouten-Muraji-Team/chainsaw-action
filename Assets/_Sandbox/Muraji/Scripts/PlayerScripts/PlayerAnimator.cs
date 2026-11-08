@@ -9,6 +9,8 @@ public class PlayerAnimator : MonoBehaviour
 
     [Header("Animatorステートのフルパス")]
     [SerializeField] string slash1State = "Base Layer.Slash1";
+    [Tooltip("空中で弱攻撃を開始したときに再生するステートのフルパスです。例：Base Layer.AirSlash。空欄なら地上用のステートを使用します。")]
+    [SerializeField] private string airSlashState = "";
     [SerializeField] string slash2State = "Base Layer.Slash2";
     [SerializeField] string slash3State = "Base Layer.Slash3";
     [SerializeField] string idleState = "Base Layer.Idle";
@@ -24,6 +26,39 @@ public class PlayerAnimator : MonoBehaviour
     private bool isHurtAnimationActive;
     private bool rootMotionBeforeHurt;
     public bool IsHurtAnimationActive => isHurtAnimationActive;
+
+    public bool IsWeakAttackHeld { get; private set; }
+    private float weakAttackPreviousSpeed;
+    private bool weakAttackPreviousRootMotion;
+    private SensorPlayerController weakAttackController;
+
+    // 弱攻撃が最初に命中した姿勢を維持し、プレイヤーの移動も止める。
+    public bool HoldWeakAttackPose()
+    {
+        if (IsWeakAttackHeld || !attackActive || animator == null ||
+            !animator.isActiveAndEnabled || !TryGetAttackProgress(out _)) return false;
+        weakAttackPreviousSpeed = animator.speed;
+        weakAttackPreviousRootMotion = animator.applyRootMotion;
+        IsWeakAttackHeld = true;
+        animator.speed = 0f;
+        animator.applyRootMotion = false;
+        if (weakAttackController == null) weakAttackController = GetComponent<SensorPlayerController>();
+        if (weakAttackController != null) weakAttackController.BeginWeakAttackHold();
+        return true;
+    }
+
+    // 攻撃の停止前の再生速度とルートモーションを戻し、同じ位置から再生する。
+    public void ResumeWeakAttackPose()
+    {
+        if (!IsWeakAttackHeld) return;
+        IsWeakAttackHeld = false;
+        if (animator != null)
+        {
+            animator.speed = weakAttackPreviousSpeed;
+            animator.applyRootMotion = weakAttackPreviousRootMotion;
+        }
+        if (weakAttackController != null) weakAttackController.EndWeakAttackHold();
+    }
 
     int activeHash;
     bool attackActive;
@@ -418,8 +453,14 @@ public class PlayerAnimator : MonoBehaviour
         animator.SetFloat(DIGGING_PLAYBACK_SPEED, 0f);
     }
 
-    // 入力予約時ではなく、実際に次段へ進むときに呼ぶ。
+    // 既存の呼び出しでは、地上用の攻撃ステートを再生する。
     public bool StartSlash(int step, AttackData data)
+    {
+        return StartSlash(step, data, false);
+    }
+
+    // 攻撃開始時の接地状態から、地上用または空中用のステートを選んで再生する。
+    public bool StartSlash(int step, AttackData data, bool isAirAttack)
     {
         if (isHurtAnimationActive) return false;
         if (animator == null)
@@ -440,10 +481,11 @@ public class PlayerAnimator : MonoBehaviour
             return false;
         }
 
-        string path =
-            step == 1 ? slash1State :
-            step == 2 ? slash2State :
-            slash3State;
+        string path = isAirAttack && !string.IsNullOrWhiteSpace(airSlashState)
+            ? airSlashState
+            : step == 1 ? slash1State
+            : step == 2 ? slash2State
+            : slash3State;
 
         int hash = Animator.StringToHash(path);
         int idleHash = Animator.StringToHash(idleState);
@@ -466,6 +508,7 @@ public class PlayerAnimator : MonoBehaviour
 
         CancelDiggingAnimation();
         // 前段の判定を閉じ、次段のヒットストップ時間を固定。
+        attackHitBox.ConfigureWeakAttack(this, isAirAttack);
         attackHitBox.BeginAttack(data);
 
         activeHash = hash;
@@ -498,6 +541,7 @@ public class PlayerAnimator : MonoBehaviour
 
     public void EndSlash(bool returnToIdle)
     {
+        ResumeWeakAttackPose();
         attackActive = false;
 
         if (slashTrailEffect != null)
@@ -537,6 +581,13 @@ public class PlayerAnimator : MonoBehaviour
         {
             slashTrailEffect.StopTrail();
         }
+    }
+
+    // 弱攻撃の振り抜きが当たるフレームに置く専用イベント。食い込み終了後に4回目を送る。
+    public void OnWeakAttackSwing()
+    {
+        if (attackActive && attackHitBox != null && TryGetAttackProgress(out _))
+            attackHitBox.EnableWeakAttackFinisher();
     }
 
     // Animation Eventから呼ぶ。

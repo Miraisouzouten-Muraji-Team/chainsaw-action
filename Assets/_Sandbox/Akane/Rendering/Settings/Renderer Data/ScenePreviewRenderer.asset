@@ -28,6 +28,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelVolumetricFogRendererFeature
   m_Active: 1
   _fogMaterial: {fileID: 2100000, guid: fb861e3ff9c8f724f99d4916ce5d764d, type: 2}
+  _useCompositeDepth: 1
 --- !u!114 &-5791863826025335512
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -101,12 +102,13 @@ MonoBehaviour:
   m_RendererFeatures:
   - {fileID: -1172159134056201380}
   - {fileID: 8369403937786145325}
+  - {fileID: 3481394571929301944}
   - {fileID: 7551552043721812693}
   - {fileID: -5791863826025335512}
   - {fileID: -6958880345217565613}
   - {fileID: -6202417465953148688}
   - {fileID: 4080925466021557763}
-  m_RendererFeatureMap: 5cc3595a7aa7bbef2daa7fd589182674d5eae9ec9280cc682835536e892a9faf53fcdb1c32176d9ff0202f312d96eca903760ff5165ca238
+  m_RendererFeatureMap: 5cc3595a7aa7bbef2daa7fd589182674b8b3d1feea655030d5eae9ec9280cc682835536e892a9faf53fcdb1c32176d9ff0202f312d96eca903760ff5165ca238
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -135,6 +137,25 @@ MonoBehaviour:
   m_DepthTextureFormat: 0
   m_AccurateGbufferNormals: 0
   m_IntermediateTextureMode: 1
+--- !u!114 &3481394571929301944
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ce55cb2188d1baa48bbeba6c0c9d9846, type: 3}
+  m_Name: PointLightVolumeRendererFeature
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PointLightVolumeRendererFeature
+  m_Active: 1
+  _computeShader: {fileID: 7200000, guid: 4cc81d5e13b896346b7902c591f2e022, type: 3}
+  _pixelSize: 4
+  _depthSlices: 128
+  _maxDistance: 100
+  _anisotropy: 0.5
+  _enableDiagnosticLogs: 0
 --- !u!114 &4080925466021557763
 MonoBehaviour:
   m_ObjectHideFlags: 0

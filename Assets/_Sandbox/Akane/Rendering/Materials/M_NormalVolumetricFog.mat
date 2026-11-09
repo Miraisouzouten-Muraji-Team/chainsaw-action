@@ -12,7 +12,8 @@ Material:
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
-  m_InvalidKeywords: []
+  m_InvalidKeywords:
+  - _POINTLIGHTVOLUMEENABLED_ON
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -25,6 +26,10 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _BaseMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BlitTexture:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
@@ -61,6 +66,10 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ParallaxMap:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _PixelCompositeDepthTex:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
@@ -113,6 +122,7 @@ Material:
     - _Anisotropy: 0.75
     - _Blend: 0
     - _BlendModePreserveSpecular: 1
+    - _BlitMipLevel: 0
     - _BumpScale: 1
     - _ClearCoatMask: 0
     - _ClearCoatSmoothness: 0
@@ -121,11 +131,13 @@ Material:
     - _Density: 0.025
     - _DetailAlbedoMapScale: 1
     - _DetailNormalMapScale: 1
+    - _DirectionalShadowStrength: 1
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _EnvironmentReflections: 1
     - _FogHeight: 0
     - _FogStartDistance: 2
+    - _FogTransmittanceStrength: 1
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
@@ -137,7 +149,13 @@ Material:
     - _OcclusionStrength: 1
     - _Parallax: 0.005
     - _PixelEffectEnabled: 0
+    - _PointLightDebugDistance: 30
+    - _PointLightDebugGain: 5
+    - _PointLightDebugMode: 0
+    - _PointLightScatteringIntensity: 2
+    - _PointLightVolumeEnabled: 1
     - _QueueOffset: 0
+    - _RayStepLength: 1
     - _ReceiveShadows: 1
     - _SampleCount: 32
     - _ScatteringIntensity: 2

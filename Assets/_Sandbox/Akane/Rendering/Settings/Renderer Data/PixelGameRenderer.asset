@@ -75,6 +75,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelVolumetricFogRendererFeature
   m_Active: 1
   _fogMaterial: {fileID: 2100000, guid: f5fae617f0634ee4d8f7e660620b1a32, type: 2}
+  _useCompositeDepth: 1
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -67,6 +67,7 @@ public class EnemyStateMachine : MonoBehaviour
     private EnemyDamageFlash enemyDamageFlash;
     private Rigidbody enemyRigidbody;
     private EnemyKnockbackMotor enemyKnockbackMotor;
+    private TurretEnemyAttackStrategy turretAttackStrategy;
 
     private const float MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE = 0.000001f;
 
@@ -153,6 +154,15 @@ public class EnemyStateMachine : MonoBehaviour
     /// </summary>
     private void FixedUpdate()
     {
+        // モデルの追従はタレット固有の見た目処理。Alert/Attack中だけ更新する。
+        // Stateの更新より先に向きを決め、同じフレームの照準表示へ反映する。
+        if (turretAttackStrategy != null &&
+            (ReferenceEquals(CurrentState, alertState) ||
+             ReferenceEquals(CurrentState, attackState)))
+        {
+            turretAttackStrategy.UpdateTurretRotation();
+        }
+
         CurrentState?.Update();
     }
 
@@ -329,11 +339,15 @@ public class EnemyStateMachine : MonoBehaviour
             new EnemyKnockbackMotor(
                 enemyRigidbody);
 
+        turretAttackStrategy = attackStrategy as TurretEnemyAttackStrategy;
+
         damageState =
             new EnemyDamageState(
                 enemyDamageFlash,
                 enemyKnockbackMotor,
-                visualRoot,
+                // 土台まで傾くのを防ぐため、固定タレットは被弾時の見た目の傾斜を行わない。
+                // ダメージ点滅・HP処理とノックバックの扱いは従来のまま。
+                turretAttackStrategy != null ? null : visualRoot,
                 enemyData.HitTiltDuration,
                 enemyData.HitTiltRecoveryDuration,
                 enemyData.HitTiltRecoveryGroundDistance,

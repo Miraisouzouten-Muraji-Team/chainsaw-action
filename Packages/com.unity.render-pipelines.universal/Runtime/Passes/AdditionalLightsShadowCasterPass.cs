@@ -833,6 +833,28 @@ namespace UnityEngine.Rendering.Universal.Internal
             return m_VisibleLightIndexToAdditionalLightIndex[visibleLightIndex];
         }
 
+        /// <summary>
+        /// 体積照明用。実際にリアルタイムShadow Atlasへ登録された
+        /// Point / Spot Lightの追加ライト番号だけを返す。
+        /// Baked / MixedのShadowMaskのみが存在する場合は-1を返す。
+        /// </summary>
+        public int GetRealtimeShadowLightIndexFromLightIndex(int visibleLightIndex)
+        {
+            int shadowIndex = GetShadowLightIndexFromLightIndex(visibleLightIndex);
+            if (shadowIndex < 0 ||
+                shadowIndex >= m_AdditionalLightIndexToVisibleLightIndex.Length ||
+                m_AdditionalLightIndexToVisibleLightIndex[shadowIndex] != visibleLightIndex)
+            {
+                return -1;
+            }
+
+            // Bakedだけの場合でもGetShadowLightIndexFromLightIndexは有効値を
+            // 返すことがある。実際に確保されたShadow Sliceで再確認する。
+            return m_ShadowSliceToAdditionalLightIndex.Contains((short)shadowIndex)
+                ? shadowIndex
+                : -1;
+        }
+
         private void Clear()
         {
             m_ShadowSliceToAdditionalLightIndex.Clear();

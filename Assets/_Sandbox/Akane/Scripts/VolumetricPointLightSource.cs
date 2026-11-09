@@ -1,11 +1,11 @@
-
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace Project.Rendering.Pixel
 {
     /// <summary>
-    /// Point LightとSpot Lightを体積照明の対象として登録する。
+    /// Point / Spot Lightを体積照明へ登録するための設定。
+    /// Priorityが高いライトほど先に計算し、同じ優先度ではInstanceIDで順序を固定する。
     /// </summary>
     [ExecuteAlways]
     [DisallowMultipleComponent]
@@ -20,13 +20,15 @@ namespace Project.Rendering.Pixel
         [SerializeField]
         private bool _castVolumetricShadows = true;
 
+        [SerializeField, Range(-100, 100)]
+        private int _priority = 0;
+
         private Light _light;
 
         public static IEnumerable<VolumetricPointLightSource> Sources => SOURCES;
-
         public float VolumetricIntensity => _volumetricIntensity;
-
         public bool CastVolumetricShadows => _castVolumetricShadows;
+        public int Priority => _priority;
 
         public Light SourceLight
         {
@@ -53,12 +55,12 @@ namespace Project.Rendering.Pixel
         }
 
         /// <summary>
-        /// 体積照明に使用できるライトか判定する。
+        /// 現在のカメラで使用する候補として有効な状態かを判定する。
+        /// カメラから見えるかどうかはRenderer Feature側で別途判定する。
         /// </summary>
         public bool IsValid()
         {
             Light sourceLight = SourceLight;
-
             if (!isActiveAndEnabled ||
                 sourceLight == null ||
                 !sourceLight.isActiveAndEnabled)
@@ -71,14 +73,14 @@ namespace Project.Rendering.Pixel
                 sourceLight.type == LightType.Spot;
 
             return supportedType &&
+                   sourceLight.intensity > 0f &&
                    sourceLight.range > 0f &&
                    _volumetricIntensity > 0f;
         }
 
         private void OnValidate()
         {
-            _volumetricIntensity = Mathf.Max(
-                0f, _volumetricIntensity);
+            _volumetricIntensity = Mathf.Max(0f, _volumetricIntensity);
         }
     }
 }

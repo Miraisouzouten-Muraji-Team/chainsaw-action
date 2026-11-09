@@ -48727,6 +48727,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.VolumetricPointLightSource
   _volumetricIntensity: 10
   _castVolumetricShadows: 1
+  _priority: 0
 --- !u!1 &383714204
 GameObject:
   m_ObjectHideFlags: 0
@@ -53815,6 +53816,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.VolumetricPointLightSource
   _volumetricIntensity: 10
   _castVolumetricShadows: 1
+  _priority: 0
 --- !u!114 &396143614
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -206668,6 +206670,10 @@ PrefabInstance:
       propertyPath: m_Layer
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 1938564416640561824, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 200
+      objectReference: {fileID: 0}
     - target: {fileID: 1946617541775819624, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Layer
       value: 0
@@ -207139,6 +207145,10 @@ PrefabInstance:
     - target: {fileID: 7944060716707316244, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Layer
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8075011763517236450, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_IsActive
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8142427073854078882, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Layer

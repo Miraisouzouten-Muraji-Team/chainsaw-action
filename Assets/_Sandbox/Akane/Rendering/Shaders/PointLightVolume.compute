@@ -1,645 +1,328 @@
-
 #pragma kernel CullLights
 #pragma kernel InjectFroxels
-
+#pragma kernel ClearVolume
 #pragma target 5.0
 #pragma multi_compile _ _ADDITIONAL_LIGHT_SHADOWS
-#pragma multi_compile _ _SHADOWS_SOFT _ _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
+#pragma multi_compile _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
 
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
 
-#define THREAD_COUNT 64
 #define MAX_LIGHTS_PER_TILE 64
-#define MAX_SHADOW_CHECKS_PER_FROXEL 4
-// 1つの格子内で奥行き方向に照明を評価する回数。
-// まずは4で検証する。
-#define FROXEL_DEPTH_SAMPLES 4
+#define MAX_SHADOW_CHECKS_PER_SAMPLE 4
+#define FROXEL_DEPTH_SAMPLES 2
 
-// ----------------------------------------------------
-// Debug
-// ----------------------------------------------------
-
-// 1: 全ライトを全画面領域へ登録する。
-// 0: 通常の範囲判定を使用する。
+// 診断時のみ変更する。
 #define DEBUG_FORCE_ALL_LIGHTS 0
-
-// 1: Shadow Mapの判定を無効化する。
-// 0: 通常の影判定を使用する。
 #define DEBUG_DISABLE_SHADOWS 0
-
-// 0: 通常の散乱光を出力する。
-// 1: 領域にライトがあれば赤、なければ青を出力する。
 #define DEBUG_OUTPUT_MODE 0
 
-// ----------------------------------------------------
-// Light Data
-// ----------------------------------------------------
-
-// C#側のPointLightDataと配置を一致させる。
+// C#のPointLightDataと同じ64バイトの配置にする。
 struct VolumetricLightData
 {
-    // xyz: ライト位置、w: Range。
-    float4 PositionRange;
-
-    // rgb: Color * Intensity * VolumetricIntensity。
-    float4 ColorIntensity;
-
-    // xyz: 照射方向、w: 0=Point、1=Spot。
-    float4 DirectionType;
-
-    // x: 内側角度cos、y: 外側角度cos。
-    // z: Shadow Index + 1。0は影なし。
-    float4 SpotParams;
+    float4 PositionRange; // xyz=位置, w=照射範囲
+    float4 ColorIntensity; // rgb=光色×強度
+    float4 DirectionType; // xyz=照射方向, w=Point:0 / Spot:1
+    float4 SpotParams; // x=内側cos, y=外側cos, z=影番号+1
 };
 
-// GPUへ転送したライト情報。
 StructuredBuffer<VolumetricLightData> _PointLights;
-
-// 領域選別用の書き込みバッファ。
 RWStructuredBuffer<uint> _TileCounts;
 RWStructuredBuffer<uint> _TileIndices;
-
-// 散乱光計算用の読み取りバッファ。
 StructuredBuffer<uint> _TileCountsRead;
 StructuredBuffer<uint> _TileIndicesRead;
-
-// 散乱光の出力先。
 RWTexture3D<float4> _PointVolumeTex;
 
-// 3D格子のサイズとライト数。
 float4 _PointVolumeGrid;
 int _PointLightCount;
-
-// カメラ情報。
 float4 _PointCameraPosition;
 float4 _PointCameraRight;
 float4 _PointCameraUp;
 float4 _PointCameraForward;
-
-// xy: 平行投影では画面幅・高さ。
-//     透視投影では奥行き1での視野幅・高さ。
-// z: 最大計算距離。
-// w: 0=平行投影、1=透視投影。
 float4 _PointProjection;
-
 float _PointAnisotropy;
 
-// ----------------------------------------------------
-// Froxel Position
-// ----------------------------------------------------
-
-
-// 3D格子内の指定位置をワールド座標へ変換する。
-// subSlicePosition: 格子内の奥行き位置（0～1）。
-float3 GetFroxelPosition(
-    uint3 index,
-    float subSlicePosition)
+// 3D格子内の位置をワールド座標へ変換する。
+float3 GetFroxelPosition(uint3 index, float subSlicePosition)
 {
-    // XYは格子の中心を使用する。
-    float2 uv =
-        (float2(index.xy) + 0.5) /
-        _PointVolumeGrid.xy;
-
-    // 奥行きは格子内部の指定位置を使用する。
+    float2 uv = (float2(index.xy) + 0.5) / _PointVolumeGrid.xy;
     float normalizedDepth =
-        ((float)index.z + subSlicePosition) /
-        _PointVolumeGrid.z;
+        ((float) index.z + subSlicePosition) / _PointVolumeGrid.z;
+    float depth = normalizedDepth * _PointProjection.z;
+    float2 viewPosition = (uv - 0.5) * _PointProjection.xy;
 
-    float depth =
-        normalizedDepth * _PointProjection.z;
-
-    float2 viewPosition =
-        (uv - 0.5) * _PointProjection.xy;
-
-    // 透視投影では奥に進むほど視野が広がる。
+    // 透視投影は距離に比例して視野が広がる。
     if (_PointProjection.w > 0.5)
     {
         viewPosition *= depth;
     }
 
-    return _PointCameraPosition.xyz
-        + _PointCameraRight.xyz * viewPosition.x
-        + _PointCameraUp.xyz * viewPosition.y
-        + _PointCameraForward.xyz * depth;
+    return _PointCameraPosition.xyz +
+        _PointCameraRight.xyz * viewPosition.x +
+        _PointCameraUp.xyz * viewPosition.y +
+        _PointCameraForward.xyz * depth;
 }
 
-// ----------------------------------------------------
-// Distance Attenuation
-// ----------------------------------------------------
-
-// ライトからの距離に応じた減衰を計算する。
-float GetDistanceAttenuation(
-    float distanceSq,
-    float range)
+// 照射範囲の終端で連続的に減衰する。
+float GetDistanceAttenuation(float distanceSq, float range)
 {
-    float rangeSq =
-        max(range * range, 0.0001);
-
-    float normalizedSq =
-        distanceSq / rangeSq;
-
-    // Rangeの境界で滑らかに減衰させる。
-    float fade = saturate(
-        1.0 - normalizedSq * normalizedSq);
-
-    fade *= fade;
-
-    return fade / max(distanceSq, 0.1);
+    float rangeSq = max(range * range, 0.0001);
+    float normalizedSq = distanceSq / rangeSq;
+    float fade = saturate(1.0 - normalizedSq * normalizedSq);
+    return fade * fade / max(distanceSq, 0.1);
 }
 
-// ----------------------------------------------------
-// Scattering Phase
-// ----------------------------------------------------
-
-// 光と視線の方向による散乱強度を求める。
+// 散乱方向による強度。等方散乱(g=0)を倍率1に正規化する。
 float GetPhaseRatio(float cosTheta)
 {
-    float g =
-        clamp(_PointAnisotropy, -0.9, 0.9);
-
+    float g = clamp(_PointAnisotropy, -0.9, 0.9);
     float g2 = g * g;
-
-    float denominator = max(
-        1.0 + g2 - 2.0 * g * cosTheta,
-        0.0001);
-
-    return min(
-        (1.0 - g2) / pow(denominator, 1.5),
-        8.0);
+    float denominator = max(1.0 + g2 - 2.0 * g * cosTheta, 0.0001);
+    return min((1.0 - g2) / pow(denominator, 1.5), 8.0);
 }
 
-// ----------------------------------------------------
-// Spot Attenuation
-// ----------------------------------------------------
-
-// Spot Lightの照射角による減衰を計算する。
-float GetSpotAttenuation(
-    VolumetricLightData light,
-    float3 samplePositionWS)
+float GetSpotAttenuation(VolumetricLightData light, float3 samplePositionWS)
 {
-    // Point Lightは全方向を照らす。
     if (light.DirectionType.w < 0.5)
     {
         return 1.0;
     }
 
-    float3 fromLight =
-        samplePositionWS - light.PositionRange.xyz;
-
-    float distance = length(fromLight);
-
-    if (distance < 0.0001)
+    float3 fromLight = samplePositionWS - light.PositionRange.xyz;
+    float distanceToSample = length(fromLight);
+    if (distanceToSample < 0.0001)
     {
         return 1.0;
     }
 
-    fromLight /= distance;
-
-    float3 spotDirection =
-        normalize(light.DirectionType.xyz);
-
-    float cosine =
-        dot(spotDirection, fromLight);
-
+    fromLight /= distanceToSample;
+    float cosine = dot(normalize(light.DirectionType.xyz), fromLight);
     float innerCos = light.SpotParams.x;
     float outerCos = light.SpotParams.y;
-
     float attenuation = saturate(
-        (cosine - outerCos) /
-        max(innerCos - outerCos, 0.0001));
-
+        (cosine - outerCos) / max(innerCos - outerCos, 0.0001));
     return attenuation * attenuation;
 }
 
-// ----------------------------------------------------
-// Tile Culling
-// ----------------------------------------------------
-
-// ライトの到達範囲と画面領域が交差するか調べる。
-bool IntersectsTile(
-    uint2 tile,
-    VolumetricLightData light)
+// ライトの範囲が画面領域に重なるか判定する。
+// 影の有無はここでは調べず、奥行き方向で評価する。
+bool IntersectsTile(uint2 tile, VolumetricLightData light)
 {
 #if DEBUG_FORCE_ALL_LIGHTS
-    // 検証用：すべての領域へライトを登録する。
     return true;
 #else
-
-    float2 gridSize =
-        _PointVolumeGrid.xy;
-
-    float2 uvMin =
-        float2(tile) / gridSize;
-
-    float2 uvMax =
-        float2(tile + 1) / gridSize;
-
-    // ライトの位置をカメラ座標に変換する。
-    float3 relativePosition =
-        light.PositionRange.xyz -
-        _PointCameraPosition.xyz;
-
+    float2 gridSize = _PointVolumeGrid.xy;
+    float2 uvMin = float2(tile) / gridSize;
+    float2 uvMax = float2(tile + 1) / gridSize;
+    float3 relativePosition = light.PositionRange.xyz - _PointCameraPosition.xyz;
     float3 lightView = float3(
         dot(relativePosition, _PointCameraRight.xyz),
         dot(relativePosition, _PointCameraUp.xyz),
         dot(relativePosition, _PointCameraForward.xyz));
+    float range = light.PositionRange.w;
 
-    float range =
-        light.PositionRange.w;
-
-    // カメラ前方の計算範囲と交差しなければ除外する。
     if (lightView.z + range < 0.0 ||
         lightView.z - range > _PointProjection.z)
     {
         return false;
     }
 
-    float2 boundsMin =
-        (uvMin - 0.5) * _PointProjection.xy;
-
-    float2 boundsMax =
-        (uvMax - 0.5) * _PointProjection.xy;
+    float2 boundsMin = (uvMin - 0.5) * _PointProjection.xy;
+    float2 boundsMax = (uvMax - 0.5) * _PointProjection.xy;
 
     if (_PointProjection.w < 0.5)
     {
-        // 平行投影では矩形とライトの球を比較する。
-        float2 closestPoint = clamp(
-            lightView.xy,
-            boundsMin,
-            boundsMax);
-
-        float2 difference =
-            lightView.xy - closestPoint;
-
-        return dot(difference, difference)
-            <= range * range;
+        // 平行投影はXY矩形と球の交差を判定する。
+        float2 closestPoint = clamp(lightView.xy, boundsMin, boundsMax);
+        float2 difference = lightView.xy - closestPoint;
+        return dot(difference, difference) <= range * range;
     }
 
-    // 透視投影では各画面領域の境界を
-    // カメラから広がる4つの平面として扱う。
-    float leftDistance =
-        lightView.x - boundsMin.x * lightView.z;
-
-    float rightDistance =
-        boundsMax.x * lightView.z - lightView.x;
-
-    float bottomDistance =
-        lightView.y - boundsMin.y * lightView.z;
-
-    float topDistance =
-        boundsMax.y * lightView.z - lightView.y;
-
-    // 球の半径を平面の法線長で補正する。
-    float leftRadius =
-        range * sqrt(1.0 + boundsMin.x * boundsMin.x);
-
-    float rightRadius =
-        range * sqrt(1.0 + boundsMax.x * boundsMax.x);
-
-    float bottomRadius =
-        range * sqrt(1.0 + boundsMin.y * boundsMin.y);
-
-    float topRadius =
-        range * sqrt(1.0 + boundsMax.y * boundsMax.y);
-
-    if (leftDistance < -leftRadius ||
-        rightDistance < -rightRadius ||
-        bottomDistance < -bottomRadius ||
-        topDistance < -topRadius)
+    // カメラの近傍を横切る球は全領域で候補に入れる。
+    // 欠落防止を優先し、細かい判定はGetDistanceAttenuationに任せる。
+    if (lightView.z <= 0.0)
     {
-        return false;
+        return true;
     }
 
-    // 正確な距離と照射角は後段で判定する。
-    return true;
+    // 透視投影はタイル四辺から伸びる平面と球を比較する。
+    float leftDistance = lightView.x - boundsMin.x * lightView.z;
+    float rightDistance = boundsMax.x * lightView.z - lightView.x;
+    float bottomDistance = lightView.y - boundsMin.y * lightView.z;
+    float topDistance = boundsMax.y * lightView.z - lightView.y;
+    float leftRadius = range * sqrt(1.0 + boundsMin.x * boundsMin.x);
+    float rightRadius = range * sqrt(1.0 + boundsMax.x * boundsMax.x);
+    float bottomRadius = range * sqrt(1.0 + boundsMin.y * boundsMin.y);
+    float topRadius = range * sqrt(1.0 + boundsMax.y * boundsMax.y);
 
+    return leftDistance >= -leftRadius &&
+           rightDistance >= -rightRadius &&
+           bottomDistance >= -bottomRadius &&
+           topDistance >= -topRadius;
 #endif
 }
 
-// 各画面領域に影響するライトを登録する。
-[numthreads(THREAD_COUNT, 1, 1)]
-void CullLights(
-    uint3 groupId : SV_GroupID,
-    uint3 groupThreadId : SV_GroupThreadID)
+// 8×8個の異なる画面領域を並列に処理する。
+// 各スレッドがライト番号順に登録するため、並列Atomicの登録順の揺れをなくす。
+[numthreads(8, 8, 1)]
+void CullLights(uint3 id : SV_DispatchThreadID)
 {
-    uint2 tile = groupId.xy;
-
-    if (tile.x >= (uint)_PointVolumeGrid.x ||
-        tile.y >= (uint)_PointVolumeGrid.y)
+    uint2 tile = id.xy;
+    if (tile.x >= (uint) _PointVolumeGrid.x ||
+        tile.y >= (uint) _PointVolumeGrid.y)
     {
         return;
     }
 
-    uint tileIndex =
-        tile.y * (uint)_PointVolumeGrid.x + tile.x;
+    uint tileIndex = tile.y * (uint) _PointVolumeGrid.x + tile.x;
+    uint lightCount = 0;
 
-    // この領域の登録数を初期化する。
-    if (groupThreadId.x == 0)
+    [loop]
+    for (uint i = 0; i < (uint) _PointLightCount; ++i)
     {
-        _TileCounts[tileIndex] = 0;
-    }
-
-    // GPUバッファの初期化完了を同期する。
-    DeviceMemoryBarrierWithGroupSync();
-
-    // 全ライトをスレッドで分担して調べる。
-    for (uint i = groupThreadId.x;
-         i < (uint)_PointLightCount;
-         i += THREAD_COUNT)
-    {
-        VolumetricLightData light =
-            _PointLights[i];
-
-        if (!IntersectsTile(tile, light))
+        if (!IntersectsTile(tile, _PointLights[i]))
         {
             continue;
         }
 
-        uint slot;
-
-        // 重複しない登録位置を取得する。
-        InterlockedAdd(
-            _TileCounts[tileIndex],
-            1,
-            slot);
-
-        // 1領域あたり最大64灯まで格納する。
-        if (slot < MAX_LIGHTS_PER_TILE)
+        // 優先度順に上位64灯を選ぶ。これを超えたら打ち切る。
+        _TileIndices[tileIndex * MAX_LIGHTS_PER_TILE + lightCount] = i;
+        lightCount++;
+        if (lightCount >= MAX_LIGHTS_PER_TILE)
         {
-            uint index =
-                tileIndex * MAX_LIGHTS_PER_TILE + slot;
-
-            _TileIndices[index] = i;
+            break;
         }
     }
+
+    _TileCounts[tileIndex] = lightCount;
 }
 
-// ----------------------------------------------------
-// Light Evaluation
-// ----------------------------------------------------
-
-
-
-
-// ----------------------------------------------------
-// Light Evaluation
-// ----------------------------------------------------
-
-// Point / Spot Lightの散乱光を計算する。
-// 距離減衰、照射角、散乱方向、Shadow Mapに対応する。
+// 単一サンプルでのPoint / Spotの散乱光を計算する。
 float3 EvaluateLight(
     VolumetricLightData light,
     float3 samplePositionWS,
     inout uint shadowChecks)
 {
-    // ----------------------------------------------------
-    // 1. Light Position / Distance
-    // ----------------------------------------------------
-
-    // 現在のサンプル位置からライトへの方向。
-    float3 toLight =
-        light.PositionRange.xyz - samplePositionWS;
-
-    float distanceSq =
-        dot(toLight, toLight);
-
-    float range =
-        light.PositionRange.w;
-
-    // ライトの到達範囲外は計算しない。
-    if (range <= 0.0 ||
-        distanceSq >= range * range)
+    float3 toLight = light.PositionRange.xyz - samplePositionWS;
+    float distanceSq = dot(toLight, toLight);
+    float range = light.PositionRange.w;
+    if (range <= 0.0 || distanceSq >= range * range)
     {
         return float3(0.0, 0.0, 0.0);
     }
 
-    float distance =
-        sqrt(max(distanceSq, 0.0001));
-
-    float3 directionToLight =
-        toLight / distance;
-
-    // ----------------------------------------------------
-    // 2. Distance Attenuation
-    // ----------------------------------------------------
-
-    // ライトからの距離による減衰を計算する。
-    float distanceAttenuation =
-        GetDistanceAttenuation(
-            distanceSq,
-            range);
-
-    if (distanceAttenuation <= 0.000001)
+    float distance = sqrt(max(distanceSq, 0.0001));
+    float3 directionToLight = toLight / distance;
+    float distanceAttenuation = GetDistanceAttenuation(distanceSq, range);
+    if (distanceAttenuation <= 0.0)
     {
         return float3(0.0, 0.0, 0.0);
     }
 
-    // ----------------------------------------------------
-    // 3. Spot Attenuation
-    // ----------------------------------------------------
-
-    // Spot Lightは照射角に応じて減衰する。
-    // Point Lightでは1が返る。
-    float spotAttenuation =
-        GetSpotAttenuation(
-            light,
-            samplePositionWS);
-
-    if (spotAttenuation <= 0.0001)
+    float spotAttenuation = GetSpotAttenuation(light, samplePositionWS);
+    if (spotAttenuation <= 0.0)
     {
         return float3(0.0, 0.0, 0.0);
     }
 
-    // ----------------------------------------------------
-    // 4. View Direction
-    // ----------------------------------------------------
-
-    // 平行投影では全画素で同じ視線方向。
-    float3 viewDirectionWS =
-        normalize(_PointCameraForward.xyz);
-
-    // 透視投影ではサンプル位置ごとに視線方向を計算する。
+    float3 viewDirectionWS = normalize(_PointCameraForward.xyz);
     if (_PointProjection.w > 0.5)
     {
-        float3 cameraToSample =
-            samplePositionWS -
-            _PointCameraPosition.xyz;
-
-        float distanceToSample =
-            length(cameraToSample);
-
-        if (distanceToSample > 0.0001)
+        float3 cameraToSample = samplePositionWS - _PointCameraPosition.xyz;
+        float cameraDistance = length(cameraToSample);
+        if (cameraDistance > 0.0001)
         {
-            viewDirectionWS =
-                cameraToSample / distanceToSample;
+            viewDirectionWS = cameraToSample / cameraDistance;
         }
     }
 
-    // ----------------------------------------------------
-    // 5. Scattering Phase
-    // ----------------------------------------------------
-
-    // 視線方向とライト方向の角度。
-    float cosTheta = clamp(
-        dot(viewDirectionWS, directionToLight),
-        -1.0,
-        1.0);
-
-    // 散乱方向による光の強さ。
-    float phaseRatio =
-        GetPhaseRatio(cosTheta);
-
-    // ----------------------------------------------------
-    // 6. Shadow Attenuation
-    // ----------------------------------------------------
-
-    // 影なしライトでは1を使用する。
+    float cosTheta = clamp(dot(viewDirectionWS, directionToLight), -1.0, 1.0);
+    float phaseRatio = GetPhaseRatio(cosTheta);
     float shadowAttenuation = 1.0;
+    int shadowIndex = (int) round(light.SpotParams.z) - 1;
 
 #if !DEBUG_DISABLE_SHADOWS
-
-    // C#側ではShadow Indexに1を足して転送している。
-    // 0は影なし。
-    int shadowIndex =
-        (int)round(light.SpotParams.z) - 1;
-
-    // リアルタイムの影を持つライトだけ影判定する。
     if (shadowIndex >= 0)
     {
-        // Shadow Mapの参照上限に達したライトは
-        // 散乱光を加算しない。
-        //
-        // 影を無視して加算すると、
-        // 壁の裏側まで光が貫通するため。
-        if (shadowChecks >= MAX_SHADOW_CHECKS_PER_FROXEL)
+        // 最大参照数を超えた影付きライトは光を加算しない。
+        // 影判定を飛ばして加算すると壁越しに光が漏れるため。
+        if (shadowChecks >= MAX_SHADOW_CHECKS_PER_SAMPLE)
         {
             return float3(0.0, 0.0, 0.0);
         }
 
-        // このサンプル位置での影参照回数を加算する。
         shadowChecks++;
 
-        // URPの追加ライトShadow Mapを参照する。
-        shadowAttenuation =
-            AdditionalLightRealtimeShadow(
-                shadowIndex,
-                samplePositionWS,
-                directionToLight);
+#if defined(_ADDITIONAL_LIGHT_SHADOWS)
+            shadowAttenuation = AdditionalLightRealtimeShadow(
+                shadowIndex, samplePositionWS, directionToLight);
+#else
+            // 影付きと指定されたライトの影機能が無い場合は漏光を防ぐ。
+        return float3(0.0, 0.0, 0.0);
+#endif
     }
-
 #endif
 
-    // ----------------------------------------------------
-    // 7. Final Attenuation
-    // ----------------------------------------------------
-
-    float attenuation =
-        distanceAttenuation *
-        spotAttenuation *
-        shadowAttenuation;
-
-    // ----------------------------------------------------
-    // 8. Final Scattering
-    // ----------------------------------------------------
-
     return light.ColorIntensity.rgb *
-        attenuation *
-        phaseRatio;
+           distanceAttenuation *
+           spotAttenuation *
+           shadowAttenuation *
+           phaseRatio;
 }
 
-
-// ----------------------------------------------------
-// Froxel Injection
-// ----------------------------------------------------
-
-
-// 3D格子ごとにPoint / Spot Lightの散乱光を計算する。
+// 3D格子にライトの散乱光を保存する。
+// Dispatch(x, y, z)のzに各スライスを割り当てる。
 [numthreads(8, 8, 1)]
 void InjectFroxels(uint3 id : SV_DispatchThreadID)
 {
-    // 格子の範囲外は処理しない。
-    if (id.x >= (uint)_PointVolumeGrid.x ||
-        id.y >= (uint)_PointVolumeGrid.y ||
-        id.z >= (uint)_PointVolumeGrid.z)
+    if (id.x >= (uint) _PointVolumeGrid.x ||
+        id.y >= (uint) _PointVolumeGrid.y ||
+        id.z >= (uint) _PointVolumeGrid.z)
     {
         return;
     }
 
-    // 現在の格子に対応する画面領域。
-    uint tileIndex =
-        id.y * (uint)_PointVolumeGrid.x + id.x;
-
-    // この領域に登録されているライト数。
-    uint lightCount = min(
-        _TileCountsRead[tileIndex],
-        (uint)MAX_LIGHTS_PER_TILE);
+    uint tileIndex = id.y * (uint) _PointVolumeGrid.x + id.x;
+    uint lightCount = min(_TileCountsRead[tileIndex], (uint) MAX_LIGHTS_PER_TILE);
 
 #if DEBUG_OUTPUT_MODE == 1
-
-    // デバッグ：登録済みライトがある領域を赤で表示する。
     float3 debugColor = lightCount > 0
         ? float3(1.0, 0.0, 0.0)
         : float3(0.0, 0.0, 1.0);
-
-    _PointVolumeTex[id] =
-        float4(debugColor, 1.0);
-
+    _PointVolumeTex[id] = float4(debugColor, 1.0);
 #else
+    float3 totalLighting = float3(0.0, 0.0, 0.0);
 
-    float3 totalLighting =
-        float3(0.0, 0.0, 0.0);
-
-    // 1つの格子を奥行き方向に複数回評価する。
     [loop]
-    for (uint sample = 0;
-         sample < FROXEL_DEPTH_SAMPLES;
-         ++sample)
+    for (uint sample = 0; sample < FROXEL_DEPTH_SAMPLES; sample++)
     {
-        // 格子内の各区間の中心を取得する。
         float subSlicePosition =
-            ((float)sample + 0.5) /
-            (float)FROXEL_DEPTH_SAMPLES;
-
-        // 今回のサンプルのワールド座標。
-        float3 samplePositionWS =
-            GetFroxelPosition(
-                id,
-                subSlicePosition);
-
-        float3 sampleLighting =
-            float3(0.0, 0.0, 0.0);
-
-        // 影の参照回数はサンプルごとに管理する。
+            ((float) sample + 0.5) / (float) FROXEL_DEPTH_SAMPLES;
+        float3 samplePositionWS = GetFroxelPosition(id, subSlicePosition);
         uint shadowChecks = 0;
+        float3 sampleLighting = float3(0.0, 0.0, 0.0);
 
-        // この領域に影響するライトを評価する。
         [loop]
         for (uint i = 0; i < lightCount; ++i)
         {
-            uint lightIndex = _TileIndicesRead[
-                tileIndex * MAX_LIGHTS_PER_TILE + i];
-
-            VolumetricLightData light =
-                _PointLights[lightIndex];
-
+            uint lightIndex =
+                _TileIndicesRead[tileIndex * MAX_LIGHTS_PER_TILE + i];
             sampleLighting += EvaluateLight(
-                light,
-                samplePositionWS,
-                shadowChecks);
+                _PointLights[lightIndex], samplePositionWS, shadowChecks);
         }
 
-        // 格子内の各位置の照明を合計する。
         totalLighting += sampleLighting;
     }
 
-    // 複数位置の平均値を格子の照明として保存する。
-    float3 averageLighting =
-        totalLighting /
-        (float)FROXEL_DEPTH_SAMPLES;
-
-    _PointVolumeTex[id] =
-        float4(averageLighting, 1.0);
-
+    // ライトが0個のときも必ず0を書き込み、前のカメラの結果を残さない。
+    _PointVolumeTex[id] = float4(
+        totalLighting / (float) FROXEL_DEPTH_SAMPLES, 1.0);
 #endif
+}
+
+// 有効ライト0個のカメラ用。1x1x1の黒体積照明を作る。
+[numthreads(1, 1, 1)]
+void ClearVolume(uint3 id : SV_DispatchThreadID)
+{
+    _PointVolumeTex[uint3(0, 0, 0)] = float4(0.0, 0.0, 0.0, 1.0);
 }

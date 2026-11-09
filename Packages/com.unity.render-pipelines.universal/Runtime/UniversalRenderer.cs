@@ -81,7 +81,7 @@ namespace UnityEngine.Rendering.Universal
             }
 
             return m_AdditionalLightsShadowCasterPass
-                .GetShadowLightIndexFromLightIndex(visibleLightIndex);
+                .GetRealtimeShadowLightIndexFromLightIndex(visibleLightIndex);
         }
 
         /// <inheritdoc/>

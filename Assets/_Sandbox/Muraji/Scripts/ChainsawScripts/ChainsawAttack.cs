@@ -488,6 +488,7 @@ public class ChainsawAttack : MonoBehaviour
             hitBox == null ||
             !hitBox.enabled ||
             other == null ||
+            !ChainsawContactZone.AllowsAttack(other) ||
             Time.timeScale <= 0f || weakDigHolding)
         {
             return;

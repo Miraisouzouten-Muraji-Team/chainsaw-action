@@ -145,7 +145,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
     private void AddMovementEnemyContact(List<SensorChainsawContact> destination,
         Collider target, Vector3 sensorCenter, Vector3 point)
     {
-        if (IsOwner(target)) return;
+        if (IsOwner(target) || !ChainsawContactZone.AllowsAttack(target)) return;
         EnemyAttackHitReceiver enemy = target.GetComponentInParent<EnemyAttackHitReceiver>();
         if (!CanReceiveEnemyHit(enemy)) return;
 
@@ -353,18 +353,15 @@ public class SensorChainsawContactDetector : MonoBehaviour
             ref bestScore
         );
 
-        // 地形食い込み中は敵を「食い込み先」として再選択しない。
-        // 未食い込み時は従来どおり敵への直接食い込みを許可する。
-        if (currentSurface == ChainsawSurface.None)
-        {
-            CollectContacts(
-                middleSensor,
-                preferred,
-                currentSurface,
-                ref contact,
-                ref bestScore
-            );
-        }
+        // 中央センサーは壁用Triggerの継続確認にも使用する。
+        // 敵への新規食い込みはCollectContacts内で未食い込み時だけに制限する。
+        CollectContacts(
+            middleSensor,
+            preferred,
+            currentSurface,
+            ref contact,
+            ref bestScore
+        );
 
         CollectContacts(
             lowerSensor,
@@ -721,7 +718,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 overlapBuffer,
                 sensor.transform.rotation,
                 sensor == middleSensor
-                    ? contactDetectorParameter.EnemyLayers.value
+                    ? contactDetectorParameter.EnemyLayers.value | contactDetectorParameter.TerrainLayers.value
                     : contactDetectorParameter.TerrainLayers.value,
                 QueryTriggerInteraction.Collide
             );
@@ -746,13 +743,19 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 continue;
             }
 
+            // 盾などの壁専用Triggerは、敵本体の受信コンポーネントより先に用途を確認する。
+            if (sensor == middleSensor && TryConsiderWallZone(target, center,
+                preferred, currentSurface, ref contact, ref bestScore))
+                continue;
+
             bool isEnemyLayer =
                 (contactDetectorParameter.EnemyLayers.value & (1 << target.gameObject.layer)) != 0;
 
             // 敵はMiddleだけで検出する。
             if (sensor == middleSensor)
             {
-                if (!isEnemyLayer)
+                if (!isEnemyLayer || currentSurface != ChainsawSurface.None ||
+                    !ChainsawContactZone.AllowsEnemyDigging(target))
                 {
                     continue;
                 }
@@ -977,6 +980,45 @@ public class SensorChainsawContactDetector : MonoBehaviour
         }
     }
 
+    // 中央センサーと重なる壁用Triggerを、指定した面の向きで壁候補へ追加する。
+    private bool TryConsiderWallZone(Collider target, Vector3 sensorCenter,
+        Collider preferred, ChainsawSurface currentSurface,
+        ref SensorChainsawContact contact, ref float bestScore)
+    {
+        ChainsawContactZone zone = ChainsawContactZone.GetZone(target);
+        if (zone == null || !zone.TryGetWallNormal(target, out Vector3 normal)) return false;
+        if (normal.x * facing >= -0.1f) return true;
+        Vector3 point = target.ClosestPoint(sensorCenter);
+        Vector3 origin = new Vector3(ownerRoot.position.x, sensorCenter.y, sensorCenter.z);
+        if (!IsBlocked(origin, point, target))
+            Consider(target, null, ChainsawSurface.Wall, point, normal,
+                preferred, currentSurface, ref contact, ref bestScore);
+        return true;
+    }
+
+    // 壁用Triggerへの食い込み開始時だけ、設定された本体の進入位置へ合わせる。
+    public void ApplyWallEntryPosition(Collider target)
+    {
+        ChainsawContactZone zone = ChainsawContactZone.GetZone(target);
+        if (zone == null || ownerRoot == null || !zone.TryGetWallNormal(target, out Vector3 normal)) return;
+        Vector3 currentPosition = ownerBody != null ? ownerBody.position : ownerRoot.position;
+        if (!zone.TryGetEntryPosition(currentPosition, out Vector3 position))
+        {
+            // メッシュ原点ではなく、盾とプレイヤー本体の実際のCollider範囲から外側の位置を求める。
+            // 移動先が未設定・盾自身・プレイヤー自身でも、盾の中心へ埋まらせない。
+            if (!TryGetCeilingBodyBounds(out Bounds bodyBounds)) return;
+            Bounds wallBounds = target.bounds;
+            float wallFaceX = normal.x < 0f ? wallBounds.min.x : wallBounds.max.x;
+            float bodyFaceX = bodyBounds.center.x - normal.x * bodyBounds.extents.x;
+            float clearance = Mathf.Max(0.005f, ceilingBodyContactOffset);
+            position = currentPosition;
+            position.x += wallFaceX - bodyFaceX + normal.x * clearance;
+        }
+        if (ownerBody != null) ownerBody.position = position;
+        else ownerRoot.position = position;
+        Physics.SyncTransforms();
+    }
+
     private void CollectWallContact(
         Collider preferred,
         ChainsawSurface currentSurface,
@@ -1006,13 +1048,20 @@ public class SensorChainsawContactDetector : MonoBehaviour
             origin,
             direction,
             distance,
-            contactDetectorParameter.TerrainLayers,
-            QueryTriggerInteraction.Ignore))
+            contactDetectorParameter.TerrainLayers.value | contactDetectorParameter.EnemyLayers.value,
+            QueryTriggerInteraction.Collide))
         {
             if (hit.collider == null || IsOwner(hit.collider))
             {
                 continue;
             }
+
+            ChainsawContactZone zone = ChainsawContactZone.GetZone(hit.collider);
+            bool isWallZone = zone != null &&
+                zone.TryGetWallNormal(hit.collider, out _);
+            if (hit.collider.isTrigger ? !isWallZone :
+                (contactDetectorParameter.TerrainLayers.value & (1 << hit.collider.gameObject.layer)) == 0)
+                continue;
 
             if (hit.distance > nearestDistance)
             {
@@ -1042,6 +1091,10 @@ public class SensorChainsawContactDetector : MonoBehaviour
             nearestHit.normal.y,
             0f
         ).normalized;
+        ChainsawContactZone wallZone = ChainsawContactZone.GetZone(nearestHit.collider);
+        if (wallZone != null && wallZone.TryGetWallNormal(nearestHit.collider, out Vector3 zoneNormal))
+            normal = zoneNormal;
+
 
         // 床・天井に分類される面は、壁として採用しない。
         if (Mathf.Abs(normal.y) >= ResolvedSurfaceNormalThreshold)
@@ -1130,6 +1183,12 @@ public class SensorChainsawContactDetector : MonoBehaviour
         );
 
         float score = distance / (1f + distance);
+
+        // 同時に盾と胴体へ届いても、明示した壁用Triggerを優先する。
+        ChainsawContactZone zone = ChainsawContactZone.GetZone(target);
+        if (surface == ChainsawSurface.Wall && zone != null &&
+            zone.TryGetWallNormal(target, out _))
+            score -= 500f;
 
         if (surface == ChainsawSurface.Enemy)
         {

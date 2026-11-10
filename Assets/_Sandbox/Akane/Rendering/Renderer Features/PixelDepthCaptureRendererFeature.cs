@@ -11,8 +11,7 @@ namespace Project.Rendering.Pixel
     /// Capture Cameraの深度を、
     /// Main Cameraから参照可能なRTへ保存する。
     /// </summary>
-    public sealed class PixelDepthCaptureRendererFeature
-        : ScriptableRendererFeature
+    public sealed class PixelDepthCaptureRendererFeature : ScriptableRendererFeature
     {
         private const string NEAR_DEPTH_NAME = "_PixelNearDepthTex";
         private const string MIDDLE_DEPTH_NAME = "_PixelMiddleDepthTex";
@@ -42,12 +41,34 @@ namespace Project.Rendering.Pixel
 
         private DepthCapturePass _capturePass;
 
+        // 各Capture CameraのNormalテクスチャ名。
+        private const string NEAR_NORMAL_NAME = "_PixelNearNormalTex";
+        private const string MIDDLE_NORMAL_NAME = "_PixelMiddleNormalTex";
+        private const string FAR_NORMAL_NAME = "_PixelFarNormalTex";
+
+        // Game / Sceneそれぞれ3層分のNormalを保持する。
+        private readonly RTHandle[][] _normalTextures =
+        {
+            new RTHandle[3],
+            new RTHandle[3]
+        };
+
+        private static string GetNormalPropertyName(int index)
+        {
+            return index switch
+            {
+                0 => NEAR_NORMAL_NAME,
+                1 => MIDDLE_NORMAL_NAME,
+                2 => FAR_NORMAL_NAME,
+                _ => string.Empty
+            };
+        }
+
         public override void Create()
         {
             _capturePass = new DepthCapturePass(this)
             {
-                renderPassEvent =
-                    RenderPassEvent.BeforeRenderingPostProcessing
+                renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing
             };
         }
 
@@ -131,6 +152,35 @@ namespace Project.Rendering.Pixel
         }
 
         /// <summary>
+        /// 指定レイヤーの法線保存用RTを確保する。
+        /// 解像度が同じなら再確保しない。
+        /// </summary>
+        private RTHandle GetOrCreateNormalTexture(
+            PixelCaptureView view,
+            int index,
+            RenderTextureDescriptor descriptor)
+        {
+            descriptor.graphicsFormat = GraphicsFormat.R16G16B16A16_SFloat;
+            descriptor.depthBufferBits = 0;
+            descriptor.stencilFormat = GraphicsFormat.None;
+            descriptor.msaaSamples = 1;
+            descriptor.useMipMap = false;
+            descriptor.autoGenerateMips = false;
+            descriptor.sRGB = false;
+
+            RTHandle[] normalTextures = _normalTextures[(int)view];
+
+            RenderingUtils.ReAllocateHandleIfNeeded(
+                ref normalTextures[index],
+                descriptor,
+                FilterMode.Point,
+                TextureWrapMode.Clamp,
+                name: $"{view}_{GetNormalPropertyName(index)}");
+
+            return normalTextures[index];
+        }
+
+        /// <summary>
         /// URPのDepth Textureを保存するパス。
         /// </summary>
         private sealed class DepthCapturePass : ScriptableRenderPass
@@ -142,8 +192,8 @@ namespace Project.Rendering.Pixel
             {
                 _owner = owner;
 
-                // URPに深度テクスチャが必要なことを伝える。
-                ConfigureInput(ScriptableRenderPassInput.Depth);
+                // DepthとNormalの両方をURPへ要求する。
+                ConfigureInput(ScriptableRenderPassInput.Depth | ScriptableRenderPassInput.Normal);
             }
 
             public override void RecordRenderGraph(
@@ -224,6 +274,58 @@ namespace Project.Rendering.Pixel
                     ? _owner._sceneCompositeMaterial
                     : _owner._compositeMaterial;
 
+
+                // URPが生成したNormalテクスチャを取得する。
+                TextureHandle normalSource = resourceData.cameraNormalsTexture;
+
+                if (normalSource.IsValid())
+                {
+                    // コピー元Normalの実際の解像度を取得する。
+                    TextureDesc normalSourceDesc =
+                        renderGraph.GetTextureDesc(normalSource);
+
+                    RenderTextureDescriptor normalDescriptor =
+                        cameraData.cameraTargetDescriptor;
+
+                    normalDescriptor.width = normalSourceDesc.width;
+                    normalDescriptor.height = normalSourceDesc.height;
+
+                    // Game / SceneとNear / Middle / FarごとにRTを取得する。
+                    RTHandle normalTexture =
+                        _owner.GetOrCreateNormalTexture(
+                            view,
+                            captureIndex,
+                            normalDescriptor);
+
+                    // 外部RTをRender Graphへ登録する。
+                    TextureHandle normalDestination =
+                        renderGraph.ImportTexture(normalTexture);
+
+                    // URPのNormalを外部RTへコピーする。
+                    renderGraph.AddBlitPass(
+                        normalSource,
+                        normalDestination,
+                        Vector2.one,
+                        Vector2.zero,
+                        filterMode:
+                            RenderGraphUtils.BlitFilterMode.ClampNearest,
+                        passName:
+                            "Pixel Normal Copy " +
+                            GetNormalPropertyName(captureIndex));
+
+                    // 対応するComposite MaterialへNormalを登録する。
+                    string normalPropertyName =
+                        GetNormalPropertyName(captureIndex);
+
+                    if (compositeMaterial != null)
+                    {
+                        compositeMaterial.SetTexture(
+                            normalPropertyName,
+                            normalTexture.rt);
+                    }
+                }
+
+
                 if (fogMaterial != null)
                 {
                     fogMaterial.SetTexture(propertyName, depthTexture.rt);
@@ -249,6 +351,16 @@ namespace Project.Rendering.Pixel
                 {
                     depthTextures[i]?.Release();
                     depthTextures[i] = null;
+                }
+            }
+
+            // Normal用のRTHandleも解放する。
+            foreach (RTHandle[] normalTextures in _normalTextures)
+            {
+                for (int i = 0; i < normalTextures.Length; i++)
+                {
+                    normalTextures[i]?.Release();
+                    normalTextures[i] = null;
                 }
             }
         }

@@ -13,9 +13,20 @@ MonoBehaviour:
   m_Name: Slash2Data
   m_EditorClassIdentifier: Assembly-CSharp::AttackData
   damage: 8
-  attackVector: {x: 2, y: 4}
-  attackMoveRange: 2
+  attackVector: {x: 2, y: 5}
+  attackMoveRange: 1.5
   attackMoveDuration: 0.15
   cameraShack: 0.3
-  hitStopTime: 0.05
-  airAttackGravityScale: 1
+  hitStopTime: 0.075
+  airAttackGravityScale: 0.5
+  showDamagePopup: 1
+  damagePopupFontSize: 56
+  damagePopupColor: {r: 0.29803923, g: 0, b: 1, a: 1}
+  damagePopupUseOutline: 1
+  damagePopupOutlineColor: {r: 0, g: 0, b: 0, a: 1}
+  damagePopupOutlineWidth: 0.5
+  damagePopupUseGradient: 1
+  damagePopupBottomColor: {r: 1, g: 0.078431375, b: 0.9411765, a: 1}
+  damagePopupHueVariation: 0
+  damagePopupNeonColor: {r: 1, g: 0.2219167, b: 0, a: 1}
+  damagePopupNeonStrength: 0

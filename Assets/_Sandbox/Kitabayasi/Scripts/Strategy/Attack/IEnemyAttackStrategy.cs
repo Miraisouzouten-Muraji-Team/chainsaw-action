@@ -28,7 +28,14 @@ public interface IEnemyAttackStrategy
     void BeginAttack(
         float initialAttackDirectionSign);
 
-    void UpdateAttack();
+    /// <summary>
+    /// 攻撃処理を1物理更新分進める。
+    /// </summary>
+    /// <returns>
+    /// 現在の1攻撃サイクルが完了し、次の攻撃可否を再判定してよい場合はtrue。
+    /// 継続型の攻撃はfalseを返す。
+    /// </returns>
+    bool UpdateAttack();
 
     void HandleCollisionEnter(
         Collision collision);

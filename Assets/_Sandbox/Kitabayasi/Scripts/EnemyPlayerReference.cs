@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -37,7 +38,8 @@ public sealed class EnemyPlayerReference
             }
 
             playerTransform =
-                playerObject.transform;
+                ResolvePlayerRoot(
+                    playerObject.transform);
         }
 
         resolvedPlayerTransform =
@@ -75,6 +77,37 @@ public sealed class EnemyPlayerReference
             targetTransform == resolvedPlayerTransform ||
             targetTransform.IsChildOf(
                 resolvedPlayerTransform);
+    }
+
+    /// <summary>
+    /// 現在のPlayer Root自身と子階層に属するColliderを取得する。
+    /// </summary>
+    /// <param name="destination">
+    /// 呼び出し側が所有する格納先。呼び出し時に内容を上書きしてPlayer Colliderを格納する。
+    /// </param>
+    public bool TryGetPlayerColliders(
+        List<Collider> destination)
+    {
+        if (destination == null)
+        {
+            return false;
+        }
+
+        destination.Clear();
+
+        if (!TryGetPlayerTransform(
+                out Transform resolvedPlayerTransform))
+        {
+            return false;
+        }
+
+        // Player側のCollider構成をEnemy側へ複製せず、
+        // 解決済みPlayer Root配下からその時点のColliderをまとめて取得する。
+        resolvedPlayerTransform.GetComponentsInChildren(
+            true,
+            destination);
+
+        return destination.Count > 0;
     }
 
     /// <summary>
@@ -152,6 +185,34 @@ public sealed class EnemyPlayerReference
         resolvedReceiver = null;
         resolvedReceiverComponent = null;
         return false;
+    }
+
+    /// <summary>
+    /// Player Tagを持つ子Colliderが検索結果になっても、同じPlayer階層内の最上位Player TagをPlayer Rootとして解決する。
+    /// </summary>
+    private static Transform ResolvePlayerRoot(
+        Transform taggedTransform)
+    {
+        Transform resolvedPlayerRoot =
+            taggedTransform;
+
+        Transform currentTransform =
+            taggedTransform.parent;
+
+        while (currentTransform != null)
+        {
+            if (currentTransform.CompareTag(
+                    PLAYER_TAG))
+            {
+                resolvedPlayerRoot =
+                    currentTransform;
+            }
+
+            currentTransform =
+                currentTransform.parent;
+        }
+
+        return resolvedPlayerRoot;
     }
 
     private bool IsCachedAttackHitReceiverValid(

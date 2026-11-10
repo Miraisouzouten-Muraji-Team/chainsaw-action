@@ -143,11 +143,11 @@ public sealed class ChargeEnemyAttackStrategy :
                 initialAttackDirectionSign));
     }
 
-    public void UpdateAttack()
+    public bool UpdateAttack()
     {
         if (!isAttackActive)
         {
-            return;
+            return false;
         }
 
         switch (currentPhase)
@@ -163,6 +163,10 @@ public sealed class ChargeEnemyAttackStrategy :
             default:
                 throw new ArgumentOutOfRangeException();
         }
+
+        // ChargeEnemyはAttack State内で突進を継続するため、
+        // StateMachineへ攻撃サイクル完了を要求しない。
+        return false;
     }
 
     public void HandleCollisionEnter(

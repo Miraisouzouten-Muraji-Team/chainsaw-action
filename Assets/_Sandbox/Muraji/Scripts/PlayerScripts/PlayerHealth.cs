@@ -18,6 +18,11 @@ public sealed class PlayerHealth : MonoBehaviour
         new Dictionary<DamageFloorData, ExposureState>();
 
     private Rigidbody playerBody;
+    private SensorChainsawDigging chainsawDigging;
+
+    // 敵・床・その他のダメージ経路で、現在のボーナス食い込みによる無敵を共有する。
+    private bool IsBonusInvulnerable =>
+        chainsawDigging != null && chainsawDigging.HasBonus;
     private Collider[] bodyColliders;
     private float maxHealth;
     private bool initialized;
@@ -30,6 +35,8 @@ public sealed class PlayerHealth : MonoBehaviour
     // 現在HPと最大HP、HPが0になった瞬間を外部へ通知する。
     public event Action<float, float> HealthChanged;
     public event Action Died;
+    // リスポーンなどでHPを全回復したとき、被弾演出の解除を通知する。
+    public event Action HealthRestored;
 
     // プレイヤーごと・設定SOごとの接触履歴。共有SOには書き込まない。
     private sealed class ExposureState
@@ -58,6 +65,8 @@ public sealed class PlayerHealth : MonoBehaviour
 
         // Mid_Colliderではなく、移動ControllerがあるPlayerのRigidbodyを使う。
         playerBody = controller.GetComponent<Rigidbody>();
+        // 食い込み側の80%条件をそのまま使い、HP側に別の閾値や無敵時間を作らない。
+        chainsawDigging = controller.GetComponent<SensorChainsawDigging>();
 
         if (healthData == null || playerBody == null)
         {
@@ -165,10 +174,11 @@ public sealed class PlayerHealth : MonoBehaviour
         return false;
     }
 
-    // 接触している物理更新だけ時間を進め、最大HP基準の累計減少量の差分を適用する。
+    // 通常時だけ床の接触時間と差分ダメージを進める。ボーナス中は履歴も進めない。
     public void ApplyFloorContact(DamageFloorData data)
     {
-        if (!initialized || !isActiveAndEnabled || IsDead || data == null)
+        if (!initialized || !isActiveAndEnabled || IsDead || data == null ||
+            IsBonusInvulnerable)
             return;
 
         if (!exposures.TryGetValue(data, out ExposureState state))
@@ -182,25 +192,39 @@ public sealed class PlayerHealth : MonoBehaviour
         if (state.LastFixedTime == fixedTime) return;
         state.LastFixedTime = fixedTime;
 
-        state.ElapsedSeconds = Math.Min(
-            data.SecondsToZero, state.ElapsedSeconds + Time.fixedDeltaTime);
-        float normalizedTime = Mathf.Clamp01(
-            (float)(state.ElapsedSeconds / data.SecondsToZero));
-        float loss = Mathf.Max(state.AppliedLoss, data.EvaluateLoss(normalizedTime));
-        float damage = maxHealth * (loss - state.AppliedLoss);
+        double secondsToZero = data.SecondsToZero;
+        double elapsedSeconds = state.ElapsedSeconds + Math.Max(0d, Time.fixedDeltaTime);
+        double completedCycles = Math.Floor(elapsedSeconds / secondsToZero);
+        double nextElapsedSeconds = elapsedSeconds % secondsToZero;
+        float normalizedTime = Mathf.Clamp01((float)(nextElapsedSeconds / secondsToZero));
+        float loss = data.EvaluateLoss(normalizedTime);
+
+        // 同じ周期内では、下向きのカーブによる回復・二重ダメージを従来どおり防ぐ。
+        if (completedCycles < 1d)
+            loss = Mathf.Max(state.AppliedLoss, loss);
+
+        // 設定時間は「最大HP分のダメージを与える周期」として使う。
+        // 周期をまたいだ差分も含め、回復後は現在HPが実際に尽きるまで減少を続ける。
+        double lossDelta = completedCycles >= 1d
+            ? completedCycles - state.AppliedLoss + loss
+            : loss - state.AppliedLoss;
+        float damage = maxHealth * (float)Math.Max(0d, lossDelta);
+
+        state.ElapsedSeconds = nextElapsedSeconds;
         state.AppliedLoss = loss;
 
-        // 終了点では浮動小数点の丸めで微小なHPが残らないようにする。
-        if (normalizedTime >= 1f || loss >= 1f)
+        // 今回の差分でHPが尽きる場合だけ、最大HPの十万分の一以下の丸め誤差を吸収する。
+        // 周期の終了だけを理由に、大きく残っているHPを削除することはない。
+        if (damage > 0f && currentHealth <= damage + maxHealth * 0.00001f)
             damage = currentHealth;
 
         TakeDamage(damage);
     }
 
-    // HPを減らし、変更を通知する。死亡通知は生存から0になったときだけ発行する。
+    // ボーナス無敵中はダメージを拒否し、通常時だけHP減少と変更・死亡通知を行う。
     public void TakeDamage(float amount)
     {
-        if (!initialized || IsDead || amount <= 0f ||
+        if (!initialized || IsDead || IsBonusInvulnerable || amount <= 0f ||
             float.IsNaN(amount) || float.IsInfinity(amount)) return;
 
         currentHealth = Mathf.Max(0f, currentHealth - amount);
@@ -220,5 +244,6 @@ public sealed class PlayerHealth : MonoBehaviour
         currentHealth = maxHealth;
         ResetRecoveryTimer();
         HealthChanged?.Invoke(currentHealth, maxHealth);
+        HealthRestored?.Invoke();
     }
 }

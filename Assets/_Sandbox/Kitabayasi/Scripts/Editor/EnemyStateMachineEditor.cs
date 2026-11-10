@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 
@@ -58,6 +59,21 @@ public sealed class EnemyStateMachineEditor : Editor
     private const float OLD_DRONE_DETECTION_RADIUS_EPSILON =
         0.001f;
 
+    private static readonly FieldInfo SEARCH_STRATEGY_FIELD =
+        typeof(EnemyStateMachine).GetField(
+            SEARCH_STRATEGY_PROPERTY_NAME,
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+    private static readonly FieldInfo SHOW_PATROL_DEBUG_FIELD =
+        typeof(EnemyStateMachine).GetField(
+            SHOW_PATROL_DEBUG_PROPERTY_NAME,
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+    private static readonly FieldInfo CHARGE_PATROL_OFFSET_FIELD =
+        typeof(ChargeEnemySearchStrategy).GetField(
+            PATROL_OFFSET_PROPERTY_NAME,
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
 
     private SerializedProperty searchStrategyProperty;
     private SerializedProperty alertStrategyProperty;
@@ -66,29 +82,34 @@ public sealed class EnemyStateMachineEditor : Editor
 
     private void OnEnable()
     {
-        searchStrategyProperty =
-            serializedObject.FindProperty(
-                SEARCH_STRATEGY_PROPERTY_NAME);
+        // Prefab再構築直後など、Editor生成時点でtargetが失効しているケースに備え、
+        // OnEnableではSerializedObjectへ触れない。必要なPropertyはInspector描画時に取得する。
+        ClearSerializedProperties();
+    }
 
-        alertStrategyProperty =
-            serializedObject.FindProperty(
-                ALERT_STRATEGY_PROPERTY_NAME);
-
-        attackStrategyProperty =
-            serializedObject.FindProperty(
-                ATTACK_STRATEGY_PROPERTY_NAME);
-
-        showPatrolDebugProperty =
-            serializedObject.FindProperty(
-                SHOW_PATROL_DEBUG_PROPERTY_NAME);
-
+    private void OnDisable()
+    {
+        // Prefabの再構築や削除時に古いSerializedPropertyを保持し続けない。
+        ClearSerializedProperties();
     }
 
     public override void OnInspectorGUI()
     {
+        if (!TryGetStateMachineTarget(
+                out EnemyStateMachine stateMachine))
+        {
+            return;
+        }
+
+        if (!AreSerializedPropertiesReady())
+        {
+            CacheSerializedProperties();
+        }
+
         serializedObject.Update();
 
-        DrawCurrentState();
+        DrawCurrentState(
+            stateMachine);
 
         SerializedProperty property =
             serializedObject.GetIterator();
@@ -157,11 +178,9 @@ public sealed class EnemyStateMachineEditor : Editor
     /// Stateの実体はEnemyStateMachine.CurrentStateを正とし、
     /// Editor側では表示用の状態を別途保持しない。
     /// </summary>
-    private void DrawCurrentState()
+    private static void DrawCurrentState(
+        EnemyStateMachine stateMachine)
     {
-        EnemyStateMachine stateMachine =
-            (EnemyStateMachine)target;
-
         string currentStateName =
             !EditorApplication.isPlaying
                 ? "Playモードで確認できます"
@@ -182,7 +201,8 @@ public sealed class EnemyStateMachineEditor : Editor
     {
         // State遷移はSerializePropertyの変更ではないため、
         // Play中はInspectorを再描画して現在Stateを追従表示する。
-        return EditorApplication.isPlaying;
+        return EditorApplication.isPlaying &&
+               target != null;
     }
 
     [DrawGizmo(
@@ -192,33 +212,14 @@ public sealed class EnemyStateMachineEditor : Editor
         EnemyStateMachine stateMachine,
         GizmoType gizmoType)
     {
-        if (stateMachine == null)
-        {
-            return;
-        }
-
-        SerializedObject serializedStateMachine =
-            new SerializedObject(
-                stateMachine);
-
-        serializedStateMachine.Update();
-
-        SerializedProperty showPatrolDebugProperty =
-            serializedStateMachine.FindProperty(
-                SHOW_PATROL_DEBUG_PROPERTY_NAME);
-
-        if (showPatrolDebugProperty == null ||
-            !showPatrolDebugProperty.boolValue)
-        {
-            return;
-        }
-
-        SerializedProperty searchStrategyProperty =
-            serializedStateMachine.FindProperty(
-                SEARCH_STRATEGY_PROPERTY_NAME);
-
-        if (searchStrategyProperty?.managedReferenceValue
-            is not ChargeEnemySearchStrategy chargeEnemySearchStrategy)
+        if (stateMachine == null ||
+            !TryGetShowPatrolDebugVisualization(
+                stateMachine,
+                out bool showPatrolDebugVisualization) ||
+            !showPatrolDebugVisualization ||
+            !TryGetChargeEnemySearchStrategy(
+                stateMachine,
+                out ChargeEnemySearchStrategy chargeEnemySearchStrategy))
         {
             return;
         }
@@ -238,37 +239,25 @@ public sealed class EnemyStateMachineEditor : Editor
 
     private void OnSceneGUI()
     {
-        serializedObject.Update();
-
-        if (showPatrolDebugProperty == null ||
-            !showPatrolDebugProperty.boolValue)
+        // Unity公式仕様上、OnSceneGUIではEditor.serializedObjectを使用せず、
+        // 有効なtargetを直接参照する。Prefab再構築直後のnull targetに対して
+        // SerializedObjectを生成してしまうEditor例外もここで回避する。
+        if (!TryGetStateMachineTarget(
+                out EnemyStateMachine stateMachine) ||
+            !TryGetShowPatrolDebugVisualization(
+                stateMachine,
+                out bool showPatrolDebugVisualization) ||
+            !showPatrolDebugVisualization ||
+            !TryGetChargeEnemySearchStrategy(
+                stateMachine,
+                out ChargeEnemySearchStrategy chargeEnemySearchStrategy))
         {
             return;
         }
-
-        if (searchStrategyProperty
-                .managedReferenceValue
-            is not ChargeEnemySearchStrategy)
-        {
-            return;
-        }
-
-        SerializedProperty patrolOffsetProperty =
-            searchStrategyProperty.FindPropertyRelative(
-                PATROL_OFFSET_PROPERTY_NAME);
-
-        if (patrolOffsetProperty == null)
-        {
-            return;
-        }
-
-        EnemyStateMachine stateMachine =
-            (EnemyStateMachine)target;
 
         DrawPatrolOffsetEditor(
             stateMachine,
-            serializedObject,
-            patrolOffsetProperty);
+            chargeEnemySearchStrategy);
     }
 
     /// <summary>
@@ -278,8 +267,7 @@ public sealed class EnemyStateMachineEditor : Editor
     /// </summary>
     private static void DrawPatrolOffsetEditor(
         EnemyStateMachine stateMachine,
-        SerializedObject stateMachineSerializedObject,
-        SerializedProperty patrolOffsetProperty)
+        ChargeEnemySearchStrategy chargeEnemySearchStrategy)
     {
         Vector3 patrolStartPosition =
             stateMachine.transform.position;
@@ -290,12 +278,11 @@ public sealed class EnemyStateMachineEditor : Editor
         Vector3 endPosition =
             patrolStartPosition +
             patrolDirection *
-            patrolOffsetProperty.floatValue;
+            chargeEnemySearchStrategy.PatrolOffset;
 
         DrawPatrolOffsetHandle(
             stateMachine,
-            stateMachineSerializedObject,
-            patrolOffsetProperty,
+            chargeEnemySearchStrategy,
             patrolStartPosition,
             endPosition,
             patrolDirection);
@@ -349,8 +336,7 @@ public sealed class EnemyStateMachineEditor : Editor
     /// </summary>
     private static void DrawPatrolOffsetHandle(
         EnemyStateMachine stateMachine,
-        SerializedObject stateMachineSerializedObject,
-        SerializedProperty patrolOffsetProperty,
+        ChargeEnemySearchStrategy chargeEnemySearchStrategy,
         Vector3 startPosition,
         Vector3 endPosition,
         Vector3 patrolDirection)
@@ -384,7 +370,7 @@ public sealed class EnemyStateMachineEditor : Editor
                 Vector3.up *
                 handleSize,
                 $"Patrol Offset: " +
-                $"{patrolOffsetProperty.floatValue:0.##}");
+                $"{chargeEnemySearchStrategy.PatrolOffset:0.##}");
 
             return;
         }
@@ -395,19 +381,22 @@ public sealed class EnemyStateMachineEditor : Editor
                 startPosition,
                 patrolDirection);
 
+        if (CHARGE_PATROL_OFFSET_FIELD == null)
+        {
+            return;
+        }
+
         Undo.RecordObject(
             stateMachine,
             "Change Patrol Offset");
 
-        patrolOffsetProperty.floatValue =
-            newOffset;
+        CHARGE_PATROL_OFFSET_FIELD.SetValue(
+            chargeEnemySearchStrategy,
+            newOffset);
 
-        stateMachineSerializedObject.ApplyModifiedProperties();
-
+        // SerializedObjectを使わず直接変更しているため、
+        // Prefab Instanceでは明示的にOverrideを記録する。
         PrefabUtility.RecordPrefabInstancePropertyModifications(
-            stateMachine);
-
-        EditorUtility.SetDirty(
             stateMachine);
 
         SceneView.RepaintAll();
@@ -574,8 +563,13 @@ public sealed class EnemyStateMachineEditor : Editor
         string propertyPath,
         Type strategyType)
     {
-        EnemyStateMachine stateMachine =
-            (EnemyStateMachine)target;
+        // GenericMenuを開いている間にPrefabが閉じられた場合、
+        // callback実行時にはtargetが破棄済みになり得る。
+        if (!TryGetStateMachineTarget(
+                out EnemyStateMachine stateMachine))
+        {
+            return;
+        }
 
         Undo.RecordObject(
             stateMachine,
@@ -586,6 +580,11 @@ public sealed class EnemyStateMachineEditor : Editor
         SerializedProperty property =
             serializedObject.FindProperty(
                 propertyPath);
+
+        if (property == null)
+        {
+            return;
+        }
 
         property.managedReferenceValue =
             strategyType == null
@@ -619,6 +618,11 @@ public sealed class EnemyStateMachineEditor : Editor
     private void EnsureOldDronePatrolPoints(
         EnemyStateMachine stateMachine)
     {
+        if (stateMachine == null)
+        {
+            return;
+        }
+
         int undoGroup =
             Undo.GetCurrentGroup();
 
@@ -751,15 +755,103 @@ public sealed class EnemyStateMachineEditor : Editor
         return pointObject.transform;
     }
 
+    private void CacheSerializedProperties()
+    {
+        searchStrategyProperty =
+            serializedObject.FindProperty(
+                SEARCH_STRATEGY_PROPERTY_NAME);
+
+        alertStrategyProperty =
+            serializedObject.FindProperty(
+                ALERT_STRATEGY_PROPERTY_NAME);
+
+        attackStrategyProperty =
+            serializedObject.FindProperty(
+                ATTACK_STRATEGY_PROPERTY_NAME);
+
+        showPatrolDebugProperty =
+            serializedObject.FindProperty(
+                SHOW_PATROL_DEBUG_PROPERTY_NAME);
+    }
+
+    private void ClearSerializedProperties()
+    {
+        searchStrategyProperty = null;
+        alertStrategyProperty = null;
+        attackStrategyProperty = null;
+        showPatrolDebugProperty = null;
+    }
+
+    private bool AreSerializedPropertiesReady()
+    {
+        return searchStrategyProperty != null &&
+               alertStrategyProperty != null &&
+               attackStrategyProperty != null &&
+               showPatrolDebugProperty != null;
+    }
+
+    private bool TryGetStateMachineTarget(
+        out EnemyStateMachine stateMachine)
+    {
+        stateMachine =
+            target as EnemyStateMachine;
+
+        return stateMachine != null;
+    }
+
+    private static bool TryGetChargeEnemySearchStrategy(
+        EnemyStateMachine stateMachine,
+        out ChargeEnemySearchStrategy chargeEnemySearchStrategy)
+    {
+        chargeEnemySearchStrategy = null;
+
+        if (stateMachine == null ||
+            SEARCH_STRATEGY_FIELD == null)
+        {
+            return false;
+        }
+
+        chargeEnemySearchStrategy =
+            SEARCH_STRATEGY_FIELD.GetValue(
+                stateMachine) as ChargeEnemySearchStrategy;
+
+        return chargeEnemySearchStrategy != null;
+    }
+
+    private static bool TryGetShowPatrolDebugVisualization(
+        EnemyStateMachine stateMachine,
+        out bool showPatrolDebugVisualization)
+    {
+        showPatrolDebugVisualization = false;
+
+        if (stateMachine == null ||
+            SHOW_PATROL_DEBUG_FIELD == null)
+        {
+            return false;
+        }
+
+        object fieldValue =
+            SHOW_PATROL_DEBUG_FIELD.GetValue(
+                stateMachine);
+
+        if (fieldValue is not bool value)
+        {
+            return false;
+        }
+
+        showPatrolDebugVisualization = value;
+        return true;
+    }
+
     private static float GetOldDroneInitialPatrolOffset(
         EnemyStateMachine stateMachine)
     {
-        EnemyDataReference dataReference =
-            stateMachine.GetComponent<EnemyDataReference>();
-
         float detectionRadius =
-            dataReference?.Data?.DetectionRadius
-            ?? 0f;
+            SEARCH_STRATEGY_FIELD?.GetValue(
+                stateMachine)
+            is OldDroneEnemySearchStrategy oldDroneSearchStrategy
+                ? oldDroneSearchStrategy.DetectionRadius
+                : 0f;
 
         return detectionRadius >
             OLD_DRONE_DETECTION_RADIUS_EPSILON

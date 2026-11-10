@@ -115,5 +115,5 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyHealthBarCanvas
   worldCamera: {fileID: 0}
-  healthBarPrefab: {fileID: 0}
+  healthBarPrefab: {fileID: 7227650965549280453, guid: 8f55787f0e2d25445ba168082a1274d1, type: 3}
   healthBarRoot: {fileID: 0}

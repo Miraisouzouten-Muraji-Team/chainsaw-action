@@ -12,10 +12,21 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 50c86e8e8e4e07a4a81877cbc1e3f5ef, type: 3}
   m_Name: Slash1Data
   m_EditorClassIdentifier: Assembly-CSharp::AttackData
-  damage: 5
+  damage: 1
   attackVector: {x: 3, y: 0}
   attackMoveRange: 1
   attackMoveDuration: 0.15
   cameraShack: 0.2
-  hitStopTime: 0.05
+  hitStopTime: 0
   airAttackGravityScale: 0.25
+  showDamagePopup: 1
+  damagePopupFontSize: 48
+  damagePopupColor: {r: 0.29803923, g: 0, b: 1, a: 1}
+  damagePopupUseOutline: 1
+  damagePopupOutlineColor: {r: 0, g: 0, b: 0, a: 1}
+  damagePopupOutlineWidth: 0.5
+  damagePopupUseGradient: 1
+  damagePopupBottomColor: {r: 1, g: 0.078431375, b: 0.9411765, a: 1}
+  damagePopupHueVariation: 0
+  damagePopupNeonColor: {r: 1, g: 0.10805125, b: 0, a: 1}
+  damagePopupNeonStrength: 0

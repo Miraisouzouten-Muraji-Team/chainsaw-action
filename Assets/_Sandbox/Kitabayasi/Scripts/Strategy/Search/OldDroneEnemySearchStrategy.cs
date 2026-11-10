@@ -13,6 +13,13 @@ public sealed class OldDroneEnemySearchStrategy :
     private const string PLAYER_TARGET_COLLIDER_NAME = "Mid_Collider";
 
     private const float DIRECTION_EPSILON = 0.001f;
+
+    [Header("個体設定")]
+    [Tooltip("このOldDroneEnemyがPlayerを検知する半径。OldDroneEnemyDataのDetectionRadiusは使用しない。")]
+    [SerializeField]
+    [Min(0f)]
+    private float detectionRadius = 2f;
+
     // 既存PrefabのSerializeReference内に保存されたPatrolPoint参照を維持するため、
     // Inspector入力だけはStrategy側に残し、巡回処理本体へ初期化時に渡す。
     [Header("巡回地点")]
@@ -44,6 +51,10 @@ public sealed class OldDroneEnemySearchStrategy :
     private bool isSearchActive;
     private bool isReturningToPatrolOrigin;
 
+    /// <summary>
+    /// このOldDroneEnemy個体に設定された索敵半径。
+    /// </summary>
+    public float DetectionRadius => detectionRadius;
 
     public void Initialize(
         EnemyData enemyData,
@@ -430,7 +441,7 @@ public sealed class OldDroneEnemySearchStrategy :
         if (!playerDetectionSensor.CanDetectPlayer(
                 detectionCenter,
                 playerPosition,
-                enemyData.DetectionRadius,
+                detectionRadius,
                 playerPosition,
                 playerColliderEndsLineOfSight: true))
         {

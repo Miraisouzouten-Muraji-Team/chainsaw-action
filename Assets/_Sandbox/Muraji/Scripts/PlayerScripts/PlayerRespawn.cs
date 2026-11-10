@@ -568,7 +568,7 @@ public sealed class PlayerRespawn : MonoBehaviour
         enabled = false;
     }
 
-    // 死亡通知の購読を解除し、途中終了時に物理固定や黒画面を残さない。
+    // 途中終了時に物理固定や黒画面を残さない。
     private void OnDisable()
     {
         if (playerHealth != null)

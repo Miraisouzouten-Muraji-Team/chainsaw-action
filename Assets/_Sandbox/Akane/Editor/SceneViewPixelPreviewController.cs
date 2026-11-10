@@ -68,6 +68,9 @@ namespace Project.Rendering.Pixel.Editor
         private const string SCENE_FOG_MATERIAL_PATH =
             "Assets/_Sandbox/Akane/Rendering/Materials/M_SceneViewVolumetricFog.mat";
 
+        // SceneビューのOutline Materialのパス
+        private const string SCENE_OUTLINE_MATERIAL_PATH = "Assets/_Sandbox/Akane/Rendering/Materials/M_ScenePixelOutlineDepthNormal.mat";
+
         private readonly string[] _layerNames =
         {
             "PixelNear",
@@ -107,6 +110,7 @@ namespace Project.Rendering.Pixel.Editor
 
         private Material _sceneCompositeMaterial;
         private Material _sceneFogMaterial;
+        private Material _sceneOutlineMaterial;     // Sceneビューで使用する統合Outline Material
 
         private CameraState _gameState;
         private CameraState _sceneState;
@@ -429,7 +433,12 @@ namespace Project.Rendering.Pixel.Editor
                 return;
             }
 
+            // Sceneビュー用のMaterialをロードする
             LoadSceneMaterials();
+
+            // Pixel ONでは統合Outlineを使用する
+            // Pixel OFFでは通常描画に含まれるOutlineを維持する
+            _sceneOutlineMaterial.SetFloat(SCENE_NORMAL_PREVIEW_ENABLED, pixelEnabled ? 0.0f : 1.0f);
 
             _lastSceneCaptureTime = currentTime;
             _sceneCamera = camera;
@@ -604,6 +613,18 @@ namespace Project.Rendering.Pixel.Editor
                 throw new InvalidOperationException(
                     "M_ScenePixelCompositeが見つかりません。");
             }
+
+            // Scene用Outline Materialを読み込む。
+            if (_sceneOutlineMaterial == null)
+            {
+                _sceneOutlineMaterial = AssetDatabase.LoadAssetAtPath<Material>(SCENE_OUTLINE_MATERIAL_PATH);
+            }
+
+            // 必須Materialが見つからなければエラーにする。
+            if (_sceneOutlineMaterial == null)
+            {
+                throw new InvalidOperationException("M_ScenePixelOutlineDepthNormalが見つかりません。");
+            }
         }
 
         /// <summary>
@@ -682,6 +703,12 @@ namespace Project.Rendering.Pixel.Editor
             {
                 _sceneFogMaterial.SetFloat(
                     SCENE_NORMAL_PREVIEW_ENABLED, 0.0f);
+            }
+
+            // Sceneプレビュー終了時にOutlineの表示モードを戻す
+            if (_sceneOutlineMaterial != null)
+            {
+                _sceneOutlineMaterial.SetFloat(SCENE_NORMAL_PREVIEW_ENABLED, 0.0f);
             }
 
             _sceneCaptures.Release();

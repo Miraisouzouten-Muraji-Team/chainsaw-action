@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c0659786e45313f43af6ab5cc9ee5c49, type: 3}
+  m_Name: PlayerDamageReactionData
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerDamageReactionData
+  hurtDuration: 0.25
+  damageInvulnerabilityDuration: 1
+  flashMaterial: {fileID: 2100000, guid: e7276798a66027b429efebfb3e455121, type: 2}
+  flashInterval: 0.075

@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 049ad5c4c5405a74f93e5d1ea9e5e648, type: 3}
+  m_Name: New Runtime Debug Settings
+  m_EditorClassIdentifier: Assembly-CSharp::RuntimeDebugSettings
+  allowReleaseBuild: 1
+  showFPS: 1
+  fpsInterval: 0.5
+  enemies:
+  - label: ChargeEnemy
+    prefab: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+  groups:
+  - Player
+  - Enemy
+  - Sensor
+  - Stage
+  lineMaterial: {fileID: 2100000, guid: a0471a7bd86a85342a64301aee9d1e0a, type: 2}

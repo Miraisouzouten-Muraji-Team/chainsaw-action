@@ -137,8 +137,19 @@ public sealed class StandardEnemyAlertStrategy : IEnemyAlertStrategy
             return;
         }
 
+        float damagePercent =
+            enemyData.AlertContactDamagePercent;
+
+        // 0%設定は「0ダメージの攻撃通知」ではなく、
+        // Alert中の接触攻撃自体を無効化する意味として扱う。
+        if (damagePercent <= 0f)
+        {
+            return;
+        }
+
         float damage =
-            enemyData.AttackPower * (enemyData.AlertContactDamagePercent / 100f);
+            enemyData.AttackPower *
+            (damagePercent / 100f);
 
         // 受信側からEnemyを無効化されても二重送信しないよう、送信前に記録する。
         playerAttackHitReceiver.ReceiveAttackHit(

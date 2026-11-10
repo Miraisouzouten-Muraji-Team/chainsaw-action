@@ -15,6 +15,12 @@ public class PlayerParameter : ScriptableObject
     [SerializeField]
     public float deceleration = 10f;
 
+    [Header("攻撃中の移動")]
+    // 通常の横移動と地上攻撃の踏み込みに適用する倍率。
+    [Tooltip("攻撃中の横移動速度の倍率です。1で通常時と同じ、0.5で半分、0で停止します。地上攻撃の踏み込みと空中攻撃の横移動にも適用します。重力・食い込み・押し戻し・壁ジャンプの速度維持には適用しません。")]
+    [SerializeField, Range(0f, 1f)]
+    public float attackMoveSpeedMultiplier = 1f;
+
     [Header("移動スティックの遊び")]
     [Tooltip("横方向の移動入力を無視する範囲です。0.2なら左右とも入力の大きさが0.2以下では移動・向き変更しません。範囲を超えた入力は0～1へつなぎ直します。0なら遊びを追加しません。")]
     [SerializeField, Range(0f, 0.95f)]
@@ -45,6 +51,20 @@ public class PlayerParameter : ScriptableObject
     [Tooltip("落下速度上限")]
     [SerializeField, Min(0.1f)]
     public float maxFallSpeed = 20f;
+
+    [Header("ジャンプの跳び出し・長押し")]
+    [Tooltip("通常ジャンプの初速に追加する上向きの力積です。質量が大きいほど追加速度は小さくなります。0で追加なし。")]
+    [SerializeField, Min(0f)] public float jumpLaunchImpulse = 5f;
+    [Tooltip("二段ジャンプの初速に追加する上向きの力積です。0で追加なし。")]
+    [SerializeField, Min(0f)] public float airJumpLaunchImpulse = 5f;
+    [Tooltip("長押しによる上昇補助を行う最大秒数です。")]
+    [SerializeField, Min(0f)] public float jumpHoldMaxSeconds = 0.2f;
+    [Tooltip("長押し補助中の上昇重力倍率です。小さいほど上へ伸びます。")]
+    [SerializeField, Range(0.05f, 1f)] public float jumpHoldGravityScale = 0.6f;
+    [Tooltip("上昇中にボタンを離した瞬間に残す上下速度の割合です。小さいほど短押しで低く跳びます。")]
+    [SerializeField, Range(0f, 1f)] public float jumpReleaseSpeedRatio = 0.5f;
+    [Tooltip("通常・二段ジャンプ後の落下重力倍率です。1より小さいと落下加速が緩やかになります。")]
+    [SerializeField, Range(0.05f, 1f)] public float jumpFallGravityScale = 0.75f;
 
     [Header("ジャンプ：3本Ray接地判定")]
     [Tooltip("接地を判定する地形レイヤー。Nothingなら食い込み衝突判定の地形レイヤーを使用します。")]

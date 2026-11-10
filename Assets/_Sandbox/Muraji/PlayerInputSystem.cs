@@ -590,7 +590,7 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                     ""name"": ""ReleaseGuard"",
                     ""type"": ""Button"",
                     ""id"": ""34d1dec8-658d-4d22-9580-ec9cd099035b"",
-                    ""expectedControlType"": ""Button"",
+                    ""expectedControlType"": """",
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false,
@@ -612,7 +612,7 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                 {
                     ""name"": """",
                     ""id"": ""a5122143-d17a-4375-8778-a914179af7ff"",
-                    ""path"": ""<Gamepad>/start"",
+                    ""path"": ""<Gamepad>/buttonWest"",
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": """",
@@ -819,26 +819,37 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                     ""isPartOfComposite"": true
                 },
                 {
-                    ""name"": """",
-                    ""id"": ""417f4e05-8583-45db-8cb0-16c28779d5e6"",
-                    ""path"": ""<Joystick>/stick/right"",
+                    ""name"": ""1D Axis"",
+                    ""id"": ""410275e8-b0ce-4185-abfe-4cbe91113bcc"",
+                    ""path"": ""1DAxis"",
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": """",
                     ""action"": ""Navigate"",
-                    ""isComposite"": false,
+                    ""isComposite"": true,
                     ""isPartOfComposite"": false
                 },
                 {
-                    ""name"": """",
-                    ""id"": ""145a04ff-5bf2-4682-a037-65d028ba7af2"",
+                    ""name"": ""negative"",
+                    ""id"": ""6291e054-9f5f-45ed-babf-78018126c2bd"",
                     ""path"": ""<Joystick>/stick/left"",
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": """",
                     ""action"": ""Navigate"",
                     ""isComposite"": false,
-                    ""isPartOfComposite"": false
+                    ""isPartOfComposite"": true
+                },
+                {
+                    ""name"": ""positive"",
+                    ""id"": ""4c67404e-08bc-4bb8-a165-743992f5cadf"",
+                    ""path"": ""<Joystick>/stick/right"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Navigate"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": true
                 }
             ]
         }

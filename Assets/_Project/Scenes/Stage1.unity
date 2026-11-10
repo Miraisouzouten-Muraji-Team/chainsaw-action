@@ -155110,6 +155110,10 @@ PrefabInstance:
       propertyPath: m_LocalPosition.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 4831536328347066809, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: far.scrollMultiplier.x
+      value: 0.04
+      objectReference: {fileID: 0}
     - target: {fileID: 4981784485426515332, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.z
       value: 0

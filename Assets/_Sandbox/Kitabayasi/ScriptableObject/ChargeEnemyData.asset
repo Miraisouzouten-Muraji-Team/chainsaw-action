@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 85be3c9438c110e4da5600a6244b5dd6, type: 3}
   m_Name: ChargeEnemyData
   m_EditorClassIdentifier: Assembly-CSharp::ChargeEnemyData
-  maxHealth: 1
+  maxHealth: 20
   attackPower: 10
   detectionRadius: 5
   postAttackSearchFailureWaitDuration: 0.5

@@ -3800,8 +3800,8 @@ MonoBehaviour:
   unselectedSprite: {fileID: -826675266552291700, guid: 33929a395fd35614cb49fc0750554b81, type: 3}
   selectedSprite: {fileID: -7466306176710391875, guid: e9cc51c38fd3d8645b1c41249e86b2ab, type: 3}
   unselectedScale: 0.5
-  peakScale: 1.2
-  selectedScale: 0.9
+  peakScale: 1.1
+  selectedScale: 0.7
   expandDuration: 0.2
   shrinkDuration: 0.45
   animationEase: 4

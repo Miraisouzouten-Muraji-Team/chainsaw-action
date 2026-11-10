@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cf69c5f2a86e46e40a097e7a08d2e39d, type: 3}
   m_Name: OldDroneEnemyData
   m_EditorClassIdentifier: Assembly-CSharp::OldDroneEnemyData
-  maxHealth: 10
+  maxHealth: 75
   attackPower: 15
   detectionRadius: 2
   postAttackSearchFailureWaitDuration: 0.5
@@ -24,7 +24,7 @@ MonoBehaviour:
   hitTiltRecoveryGroundDistance: 0.75
   hitTiltAngle: 0
   deathShrinkDelay: 3
-  deathShrinkDuration: 3
+  deathShrinkDuration: 1
   patrolMoveSpeed: 5
   patrolTurnDuration: 0.5
   patrolContactDamagePercent: 50

@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 85be3c9438c110e4da5600a6244b5dd6, type: 3}
   m_Name: ChargeEnemyData
   m_EditorClassIdentifier: Assembly-CSharp::ChargeEnemyData
-  maxHealth: 20
+  maxHealth: 120
   attackPower: 10
   detectionRadius: 5
   postAttackSearchFailureWaitDuration: 0.5
@@ -23,13 +23,13 @@ MonoBehaviour:
   hitTiltRecoveryDuration: 0.15
   hitTiltRecoveryGroundDistance: 0.75
   hitTiltAngle: 0
-  deathShrinkDelay: 3000
-  deathShrinkDuration: 3
+  deathShrinkDelay: 3
+  deathShrinkDuration: 1
   patrolDistance: 2
   patrolMoveSpeed: 3
   patrolTurnDuration: 0.5
   patrolContactDamagePercent: 0
-  attackPreparationDuration: 2
+  attackPreparationDuration: 0.75
   chargeDistance: 5
   attackMoveSpeed: 10
   attackContactDamagePercent: 100

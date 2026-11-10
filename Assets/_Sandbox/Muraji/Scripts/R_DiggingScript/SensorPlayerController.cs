@@ -763,7 +763,6 @@ public class SensorPlayerController : MonoBehaviour
         RecordCeilingTravelImpact(lastDiggingPhysicsSurface == ChainsawSurface.Ceiling
             ? lastDiggingPhysicsVelocity : playerRigidbody.linearVelocity);
         ChainsawSurface previousSurface = chainsawDigging.Surface;
-        float previousMoveSpeed = Mathf.Abs(currentSpeed);
 
         chainsawDigging.Tick(
             deltaTime,
@@ -793,15 +792,10 @@ public class SensorPlayerController : MonoBehaviour
         if (enteredWall)
         {
             handledWallEntryVersion = chainsawDigging.WallEntryVersion;
-            // 床からの速度が0なら、通常の壁登り速度を使う。
-            // 正の床移動速度を引き継ぐ従来の挙動は維持する。
-            useDirectWallSpeed =
-                previousSurface != ChainsawSurface.Floor ||
-                previousMoveSpeed <= WALL_SPEED_EPSILON;
-            wallTravelSpeed =
-                useDirectWallSpeed
-                    ? CalculateDirectWallSpeed()
-                    : previousMoveSpeed;
+            // 床食い込みの移動速度は引き継がず、壁専用の速度計算へ切り替える。
+            // 壁食い込み中も現在のアクセル値を使って壁登り速度を更新する。
+            useDirectWallSpeed = true;
+            wallTravelSpeed = CalculateDirectWallSpeed();
         }
 
         // 食い込み状態と押し戻しの予約が確定してから猶予を更新する。

@@ -1238,73 +1238,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: enemyCount
-      value: 2
-      objectReference: {fileID: 0}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: testMaterial
-      value: 
-      objectReference: {fileID: 0}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: useSpawnDelay
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: appearanceDuration
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: enemies.Array.size
-      value: 2
-      objectReference: {fileID: 0}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: spawndissolveMaterial
-      value: 
-      objectReference: {fileID: 2100000, guid: 379cd1c1752b1c343b2d6cfb094994dc, type: 2}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: enemies.Array.data[1].offset.x
-      value: -3
-      objectReference: {fileID: 0}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: enemies.Array.data[1].offset.y
-      value: -2
-      objectReference: {fileID: 0}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
       propertyPath: enemies.Array.data[0].enemyPrefab
       value: 
       objectReference: {fileID: 1680050713}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: enemies.Array.data[1].enemyPrefab
-      value: 
-      objectReference: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: enemies.Array.data[1].appearanceType
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: enemies.Array.data[0].dissolveMaterial
-      value: 
-      objectReference: {fileID: 2100000, guid: 379cd1c1752b1c343b2d6cfb094994dc, type: 2}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: enemies.Array.data[1].dissolveMaterial
-      value: 
-      objectReference: {fileID: 2100000, guid: 777f7af7cf745ee44a58a0f3da95df89, type: 2}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: enemies.Array.data[0].rendererMaterials.Array.size
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: enemies.Array.data[0].rendererMaterials.Array.data[0].material
-      value: 
-      objectReference: {fileID: 2100000, guid: 379cd1c1752b1c343b2d6cfb094994dc, type: 2}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: enemies.Array.data[0].rendererMaterials.Array.data[0].materials.Array.size
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 4202266251249073066, guid: 088a181a1e1996f47aa3425177f00e41, type: 3}
-      propertyPath: 'enemies.Array.data[0].rendererMaterials.Array.data[0].materials.Array.data[0]'
-      value: 
-      objectReference: {fileID: 2100000, guid: 379cd1c1752b1c343b2d6cfb094994dc, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

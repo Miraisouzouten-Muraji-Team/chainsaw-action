@@ -1,7 +1,7 @@
 using UnityEngine;
 
 // ディゾルブの進行量を不規則に変化させる
-public class DissolvePulse : MonoBehaviour
+public class Old_DissolvePulse : MonoBehaviour
 {
     [SerializeField] private Renderer targetRenderer;
 

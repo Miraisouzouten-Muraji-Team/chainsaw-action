@@ -1,7 +1,7 @@
 using UnityEngine;
 
 // 発光強度をランダムに変化させる
-public class RandomEmissionIntensity : MonoBehaviour
+public class Old_RandomEmissionIntensity : MonoBehaviour
 {
     [Header("発光対象")]
     [SerializeField] private Renderer targetRenderer;

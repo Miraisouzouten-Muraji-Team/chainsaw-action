@@ -1927,7 +1927,7 @@ MonoBehaviour:
   emissionPoint: {fileID: 7464963693528972124}
   floorAngle: 180
   wallAngle: 180
-  ceilingAngle: 270
+  ceilingAngle: 225
   enemyAngle: 0
 --- !u!114 &6024355022737477912
 MonoBehaviour:

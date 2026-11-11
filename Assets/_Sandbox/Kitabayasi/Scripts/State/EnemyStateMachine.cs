@@ -13,7 +13,7 @@ using UnityEngine.Serialization;
 /// 対応する受信interfaceを実装しているCurrentStateへ通知する。
 ///
 /// SearchでPlayerを発見した瞬間の方向をAttack Stateへ引き継ぎ、
-/// Alert完了後にAttack Stateへ遷移する。
+/// Alert中はPlayerの現在位置へ見た目を徐々に向ける。Alert完了後にAttack Stateへ遷移する。
 /// HPが0になった場合はDeath Stateへ遷移し、
 /// 死亡処理完了後にEnemy本体を破棄する。
 /// </remarks>
@@ -49,6 +49,9 @@ public class EnemyStateMachine : MonoBehaviour
     [SerializeField]
     private Transform visualRoot;
 
+    [Tooltip("プレイヤー発見後、Alert中にVisualRootを回転させる角速度（度/秒）。")]
+    [SerializeField, Min(0f)]
+    private float discoveryFacingRotationSpeed = 360f;
 
     [Header("死亡")]
     [Tooltip("このEnemyがDeath Stateで使用するStrategy。")]
@@ -70,6 +73,13 @@ public class EnemyStateMachine : MonoBehaviour
     private TurretEnemyAttackStrategy turretAttackStrategy;
 
     private const float MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE = 0.000001f;
+    private const string PLAYER_FACING_COLLIDER_NAME = "Mid_Collider";
+
+    private EnemyPlayerReference facingPlayerReference;
+    private Collider facingPlayerCollider;
+    private Quaternion lastDetectedFacingRotation;
+    private float lastDetectedFacingDirectionSign = 1f;
+    private bool hasAlertFacingTarget;
 
     private EnemySearchState searchState;
     private EnemyAlertState alertState;
@@ -161,6 +171,12 @@ public class EnemyStateMachine : MonoBehaviour
              ReferenceEquals(CurrentState, attackState)))
         {
             turretAttackStrategy.UpdateTurretRotation();
+        }
+
+        // Alert中は同じ物理更新周期で追従回転する。Stateの残り時間は変更しない。
+        if (ReferenceEquals(CurrentState, alertState))
+        {
+            UpdateAlertFacing();
         }
 
         CurrentState?.Update();
@@ -270,6 +286,8 @@ public class EnemyStateMachine : MonoBehaviour
         // Disable中はCollision Exitを受け取れない場合があるため、
         // 再有効化時へ古い接地参照を持ち越さない。
         enemyKnockbackMotor?.ClearGroundContactTracking();
+        facingPlayerReference?.Clear();
+        facingPlayerCollider = null;
     }
 
     /// <summary>
@@ -406,6 +424,9 @@ public class EnemyStateMachine : MonoBehaviour
             gameObject,
             visualRoot);
 
+        // 発見後の見た目追従用。索敵判定そのものはSearch Strategyに任せる。
+        facingPlayerReference = new EnemyPlayerReference();
+
         // 攻撃Strategyと同じVisualRoot配下のAnimatorだけを待機中に停止する。
         Animator visualAnimator = null;
         if (visualRoot != null)
@@ -454,7 +475,7 @@ public class EnemyStateMachine : MonoBehaviour
         attackState.SetInitialAttackDirection(
             initialAttackDirectionSign);
 
-        // 発見方向へ即時に向いてから、既存のAlertを開始する。
+        // Alertへの遷移時は向きを即時確定せず、既存の予告時間内で回転する。
         FacePlayerAndChangeState(
             alertState,
             initialAttackDirectionSign);
@@ -617,27 +638,136 @@ public class EnemyStateMachine : MonoBehaviour
     }
 
     /// <summary>
-    /// Playerを検知した時点の方向をVisualRootへ即時設定してから次のStateへ移る。
-    /// Damage StateのExitによる見た目の復元が先に行われるよう、Exit後に回転を設定する。
+    /// 発見方向を次のStateへ引き継ぐ。Alert開始時だけ瞬間回転を行わず、
+    /// 他の遷移（攻撃後の直接再攻撃・被弾復帰）は従来の向き制御を維持する。
     /// </summary>
     private void FacePlayerAndChangeState(
         IEnemyState nextState,
         float detectedPlayerDirectionSign)
     {
-        // Damage StateのExitでは被弾時の傾きを戻すため、
-        // 元Stateの終了後に発見方向を設定する。
+        // Damage StateのExitでVisualRootの被弾傾斜が元に戻るため、
+        // 向きの処理は必ず終了処理後に行う。
         ExitCurrentState();
 
+        hasAlertFacingTarget = false;
         if (TryGetDetectedPlayerFacingRotation(
                 detectedPlayerDirectionSign,
                 out Quaternion targetRotation))
         {
-            // プレイヤー発見時は補間せず、VisualRootの向きを即座に確定する。
-            visualRoot.rotation = targetRotation;
+            if (ReferenceEquals(nextState, alertState))
+            {
+                hasAlertFacingTarget = true;
+                lastDetectedFacingRotation = targetRotation;
+                lastDetectedFacingDirectionSign =
+                    detectedPlayerDirectionSign < 0f ? -1f : 1f;
+                facingPlayerCollider = null;
+            }
+            else
+            {
+                // Alertを挟まない再攻撃・被弾復帰では、既存挙動を変更しない。
+                visualRoot.rotation = targetRotation;
+            }
         }
 
         // TurretEnemyなどの対象外Strategyは向きを変えずに遷移する。
         ChangeState(nextState);
+    }
+
+    /// <summary>
+    /// 発見したPlayerの現在位置を追い、Alertの間だけ一定角速度でVisualRootを回転する。
+    /// Playerが一時的に取得できない場合は最後の目標回転を維持する。
+    /// </summary>
+    private void UpdateAlertFacing()
+    {
+        if (!hasAlertFacingTarget ||
+            visualRoot == null ||
+            facingPlayerReference == null)
+        {
+            return;
+        }
+
+        if (TryGetCurrentPlayerFacingRotation(
+                out Quaternion currentTargetRotation))
+        {
+            lastDetectedFacingRotation = currentTargetRotation;
+        }
+
+        visualRoot.rotation = Quaternion.RotateTowards(
+            visualRoot.rotation,
+            lastDetectedFacingRotation,
+            discoveryFacingRotationSpeed * Time.fixedDeltaTime);
+    }
+
+    private bool TryGetCurrentPlayerFacingRotation(
+        out Quaternion targetRotation)
+    {
+        targetRotation = Quaternion.identity;
+
+        if (!facingPlayerReference.TryGetPlayerTransform(
+                out Transform playerTransform) ||
+            !playerTransform.gameObject.activeInHierarchy)
+        {
+            facingPlayerCollider = null;
+            return false;
+        }
+
+        Vector3 facingDirection;
+
+        if (searchStrategy is ChargeEnemySearchStrategy)
+        {
+            // ChargeEnemyは左右だけを向く。ジャンプによる上下方向へは傾けない。
+            float horizontalDelta =
+                playerTransform.position.x - enemyRigidbody.position.x;
+
+            if (horizontalDelta * horizontalDelta >
+                MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE)
+            {
+                lastDetectedFacingDirectionSign = Mathf.Sign(horizontalDelta);
+            }
+
+            facingDirection =
+                Vector3.right * lastDetectedFacingDirectionSign;
+        }
+        else if (searchStrategy is OldDroneEnemySearchStrategy ||
+                 searchStrategy is NewDroneEnemySearchStrategy)
+        {
+            // 初回検知時と同じ代表Colliderを参照し、Player Rootの座標へ
+            // 突然目標が切り替わるのを防ぐ。
+            if (facingPlayerCollider == null ||
+                (facingPlayerCollider.transform != playerTransform &&
+                 !facingPlayerCollider.transform.IsChildOf(playerTransform)))
+            {
+                Transform targetTransform =
+                    playerTransform.Find(PLAYER_FACING_COLLIDER_NAME);
+                facingPlayerCollider = targetTransform != null
+                    ? targetTransform.GetComponent<Collider>()
+                    : null;
+            }
+
+            if (facingPlayerCollider == null ||
+                !facingPlayerCollider.enabled ||
+                !facingPlayerCollider.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            facingDirection =
+                facingPlayerCollider.bounds.center - enemyRigidbody.position;
+            facingDirection.z = 0f;
+
+            if (facingDirection.sqrMagnitude <=
+                MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE)
+            {
+                return false;
+            }
+        }
+        else
+        {
+            return false;
+        }
+
+        targetRotation = Quaternion.LookRotation(facingDirection, Vector3.up);
+        return true;
     }
 
     private bool TryGetDetectedPlayerFacingRotation(

@@ -47,6 +47,11 @@ public sealed class ChargeEnemyData : EnemyData
     [Min(0f)]
     private float attackPreparationDuration = 0.75f;
 
+    [Tooltip("予備動作モーションの再生速度。1で通常速度、0で停止します。予備動作時間には影響しません。")]
+    [SerializeField]
+    [Min(0f)]
+    private float preparationAnimationSpeed = 1f;
+
     [Tooltip("ChargeEnemy個体のCharge Distanceへ最初にコピーする初期値。個体側を初期化した後は、その個体の値が使用されます。")]
     [SerializeField]
     [Min(0f)]
@@ -103,6 +108,9 @@ public sealed class ChargeEnemyData : EnemyData
 
     public float AttackPreparationDuration =>
         attackPreparationDuration;
+
+    public float PreparationAnimationSpeed =>
+        preparationAnimationSpeed;
 
     /// <summary>
     /// ChargeEnemy個体へ最初に設定する突進距離の初期値。

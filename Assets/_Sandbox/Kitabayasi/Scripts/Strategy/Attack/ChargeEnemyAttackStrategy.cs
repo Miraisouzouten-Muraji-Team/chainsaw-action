@@ -27,7 +27,6 @@ public sealed class ChargeEnemyAttackStrategy :
     private const float CHARGE_ARRIVAL_TOLERANCE = 0.2f;
     private const float BLOCKING_NORMAL_THRESHOLD = 0.5f;
     private const int ANIMATION_BASE_LAYER_INDEX = 0;
-    private const float ANIMATION_SPEED_EPSILON = 0.0001f;
 
     [Header("攻撃アニメーション")]
     [Tooltip("予備動作開始時に再生するAnimator Stateのフルパス（例: Base Layer.Preparation）。")]
@@ -66,15 +65,10 @@ public sealed class ChargeEnemyAttackStrategy :
 
     private int preparationAnimationStateHash;
     private int attackAnimationStateHash;
-    private readonly List<AnimatorClipInfo> preparationAnimationClipInfos =
-        new List<AnimatorClipInfo>(1);
     private float animatorSpeedBeforePreparation = 1f;
     private AnimatorUpdateMode animatorUpdateModeBeforePreparation;
     private bool hasChangedAnimatorUpdateMode;
-    private bool needsPreparationAnimationSpeedAdjustment;
     private bool hasAdjustedPreparationAnimationSpeed;
-    private float preparationAnimationClipLength;
-    private float preparationAnimationStateSpeed;
 
     private EnemyPlayerReference playerReference;
     private ChargeEnemyGroundChecker groundChecker;
@@ -174,13 +168,10 @@ public sealed class ChargeEnemyAttackStrategy :
         FaceAttackDirection();
         StopHorizontalMovement();
 
-        preparationAnimationClipLength = 0f;
-        preparationAnimationStateSpeed = 0f;
-
         if (preparationAnimationStateHash == 0 ||
             animator == null ||
             !animator.isActiveAndEnabled ||
-            enemyData.AttackPreparationDuration <= ANIMATION_SPEED_EPSILON)
+            enemyData.AttackPreparationDuration <= 0f)
         {
             PlayAnimation(preparationAnimationStateHash);
             return;
@@ -197,13 +188,11 @@ public sealed class ChargeEnemyAttackStrategy :
             hasChangedAnimatorUpdateMode = true;
         }
 
-        // Play直後のAnimatorは前Stateの情報を返す場合がある。
-        // 時間を進めずに評価し、最初の再生フレームより前に速度を確定させる。
+        // 予備動作時間からは計算せず、設定されたモーション速度を使用する。
+        // Animator全体へ適用するため、突進開始時とState終了時に元へ戻す。
+        animator.speed = Mathf.Max(0f, enemyData.PreparationAnimationSpeed);
+        hasAdjustedPreparationAnimationSpeed = true;
         PlayAnimation(preparationAnimationStateHash);
-        animator.Update(0f);
-
-        needsPreparationAnimationSpeedAdjustment = true;
-        TrySetPreparationAnimationSpeed();
     }
 
     public bool UpdatePreparation()
@@ -214,9 +203,6 @@ public sealed class ChargeEnemyAttackStrategy :
         {
             return true;
         }
-
-        // 再生対象Clipが取得可能になった時点で、予備動作時間に合わせて速度を1度だけ決める。
-        TrySetPreparationAnimationSpeed();
 
         float preparationDuration =
             enemyData.AttackPreparationDuration;
@@ -588,112 +574,6 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     /// <summary>
-    /// 現在の予備動作Stateに設定されたClipを、残り予備時間で最後まで再生する速度にする。
-    /// </summary>
-    /// <remarks>
-    /// BeginPreparationで開始フレーム前に速度を決定する。
-    /// State情報の取得が遅れた場合も、既に再生した部分を考慮して残り時間へ合わせる。
-    /// 対象Stateは単一Clipを再生する構成を前提とする。
-    /// </remarks>
-    private void TrySetPreparationAnimationSpeed()
-    {
-        if (!needsPreparationAnimationSpeedAdjustment ||
-            animator == null ||
-            !animator.isActiveAndEnabled)
-        {
-            return;
-        }
-
-        AnimatorStateInfo stateInfo =
-            animator.GetCurrentAnimatorStateInfo(ANIMATION_BASE_LAYER_INDEX);
-
-        if (stateInfo.fullPathHash != preparationAnimationStateHash)
-        {
-            return;
-        }
-
-        preparationAnimationClipInfos.Clear();
-        animator.GetCurrentAnimatorClipInfo(
-            ANIMATION_BASE_LAYER_INDEX,
-            preparationAnimationClipInfos);
-
-        if (preparationAnimationClipInfos.Count == 0)
-        {
-            return;
-        }
-
-        if (preparationAnimationClipInfos.Count != 1 ||
-            preparationAnimationClipInfos[0].clip == null)
-        {
-            Debug.LogWarning(
-                $"{nameof(ChargeEnemyAttackStrategy)}: " +
-                "予備動作Stateには単一のAnimationClipを設定してください。" +
-                "Clip長を取得できず速度調整を省略します。",
-                enemyObject);
-            needsPreparationAnimationSpeedAdjustment = false;
-            return;
-        }
-
-        preparationAnimationClipLength =
-            preparationAnimationClipInfos[0].clip.length;
-        preparationAnimationStateSpeed =
-            stateInfo.speed * stateInfo.speedMultiplier;
-
-        float remainingPreparationDuration =
-            enemyData.AttackPreparationDuration - preparationElapsedTime;
-        float remainingClipRatio =
-            1f - Mathf.Clamp01(stateInfo.normalizedTime);
-
-        if (preparationAnimationClipLength <= ANIMATION_SPEED_EPSILON ||
-            remainingPreparationDuration <= ANIMATION_SPEED_EPSILON ||
-            remainingClipRatio <= ANIMATION_SPEED_EPSILON ||
-            preparationAnimationStateSpeed <= ANIMATION_SPEED_EPSILON)
-        {
-            Debug.LogWarning(
-                $"{nameof(ChargeEnemyAttackStrategy)}: " +
-                "Clip長・残り予備時間・State速度・残り再生区間を確認してください。" +
-                "再生速度の自動調整を省略します。",
-                enemyObject);
-            needsPreparationAnimationSpeedAdjustment = false;
-            return;
-        }
-
-        // 例: Clip長1秒、予備動作0.5秒、State速度1ならAnimator.speedは2。
-        // 遅延取得時は進んだ分のClipを除外し、終端で待つ時間を作らない。
-        float requiredAnimatorSpeed =
-            (preparationAnimationClipLength * remainingClipRatio) /
-            (remainingPreparationDuration * preparationAnimationStateSpeed);
-
-        if (float.IsNaN(requiredAnimatorSpeed) ||
-            float.IsInfinity(requiredAnimatorSpeed) ||
-            requiredAnimatorSpeed <= ANIMATION_SPEED_EPSILON)
-        {
-            Debug.LogWarning(
-                $"{nameof(ChargeEnemyAttackStrategy)}: " +
-                "予備動作の再生速度を正しく計算できません。",
-                enemyObject);
-            needsPreparationAnimationSpeedAdjustment = false;
-            return;
-        }
-
-        animator.speed = requiredAnimatorSpeed;
-        hasAdjustedPreparationAnimationSpeed = true;
-        needsPreparationAnimationSpeedAdjustment = false;
-
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-        Debug.Log(
-            $"[ChargeEnemyPreparationAnimation] 速度設定。 " +
-            $"clipLength={preparationAnimationClipLength:F3}s, " +
-            $"preparationDuration={enemyData.AttackPreparationDuration:F3}s, " +
-            $"remainingDuration={remainingPreparationDuration:F3}s, " +
-            $"normalizedTime={stateInfo.normalizedTime:F3}, " +
-            $"stateSpeed={preparationAnimationStateSpeed:F3}, " +
-            $"animatorSpeed={animator.speed:F3}",
-            enemyObject);
-#endif
-    }
-
-    /// <summary>
     /// 再生が実際にどこまで進んだかを、攻撃開始直前に確認するための診断ログ。
     /// </summary>
     private void LogPreparationAnimationCompletion()
@@ -725,8 +605,6 @@ public sealed class ChargeEnemyAttackStrategy :
 
     private void RestoreAnimatorSettings()
     {
-        needsPreparationAnimationSpeedAdjustment = false;
-
         if (animator != null)
         {
             if (hasAdjustedPreparationAnimationSpeed)

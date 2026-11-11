@@ -17,8 +17,7 @@ namespace Project.InGame.Boss
 
         [Header("行動設定")]
         [SerializeField, Min(0f)] private float idleDuration = 2f;
-        [SerializeField, Min(0.01f)] private float moveSegmentDuration = 4f;
-        [SerializeField, Min(0f)] private float moveSpeed = 3f;
+        [SerializeField, Min(0f)] private float moveSpeed = 4f;
 
         [Header("向きの設定")]
         [SerializeField] private float rightFacingAngle = 90f;
@@ -46,7 +45,6 @@ namespace Project.InGame.Boss
         public IBossAttackStrategy SelectedAttack { get; private set; }
 
         public float IdleDuration => idleDuration;
-        public float MoveSegmentDuration => moveSegmentDuration;
         public float DistanceToPlayer => player == null
             ? float.PositiveInfinity
             : Mathf.Abs(player.position.x - transform.position.x);
@@ -85,7 +83,9 @@ namespace Project.InGame.Boss
         {
             // Start実行後に再有効化された場合のみ再開する。
             if (started)
+            {
                 BeginBoss();
+            }
         }
 
         private void OnDisable()
@@ -98,8 +98,9 @@ namespace Project.InGame.Boss
         private void OnDestroy()
         {
             if (Health != null)
+            {
                 Health.Died -= HandleDeath;
-
+            }
             StateMachine?.Dispose();
         }
 
@@ -122,17 +123,14 @@ namespace Project.InGame.Boss
                 return;
             }
 
-            var initialState = Health.IsDead
-                ? BossStateType.Dead
-                : BossStateType.Idle;
+            var initialState = Health.IsDead ? BossStateType.Dead : BossStateType.Idle;
 
             StateMachine.ChangeState(initialState);
         }
 
         private void Update()
         {
-            if (Health.IsDead)
-                return;
+            if (Health.IsDead) { return; }
 
             Shield.Tick(Time.deltaTime);
             StateMachine.Tick(Time.deltaTime);
@@ -149,7 +147,9 @@ namespace Project.InGame.Boss
             foreach (var definition in attackDefinitions)
             {
                 if (definition == null)
+                {
                     continue;
+                }
 
                 // 同じ種類の攻撃が重複登録されないようにする。
                 if (!registeredTypes.Add(definition.Type))
@@ -261,7 +261,9 @@ namespace Project.InGame.Boss
         public void PlayDeathAnimation()
         {
             if (animator != null && !string.IsNullOrEmpty(deathTrigger))
+            {
                 animator.SetTrigger(deathTrigger);
+            }
         }
 
         /// <summary>

@@ -67,6 +67,7 @@ public class EnemyStateMachine : MonoBehaviour
     private EnemyDamageFlash enemyDamageFlash;
     private Rigidbody enemyRigidbody;
     private EnemyKnockbackMotor enemyKnockbackMotor;
+    private TurretEnemyAttackStrategy turretAttackStrategy;
 
     private const float MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE = 0.000001f;
 
@@ -153,6 +154,15 @@ public class EnemyStateMachine : MonoBehaviour
     /// </summary>
     private void FixedUpdate()
     {
+        // モデルの追従はタレット固有の見た目処理。Alert/Attack中だけ更新する。
+        // Stateの更新より先に向きを決め、同じフレームの照準表示へ反映する。
+        if (turretAttackStrategy != null &&
+            (ReferenceEquals(CurrentState, alertState) ||
+             ReferenceEquals(CurrentState, attackState)))
+        {
+            turretAttackStrategy.UpdateTurretRotation();
+        }
+
         CurrentState?.Update();
     }
 
@@ -329,11 +339,15 @@ public class EnemyStateMachine : MonoBehaviour
             new EnemyKnockbackMotor(
                 enemyRigidbody);
 
+        turretAttackStrategy = attackStrategy as TurretEnemyAttackStrategy;
+
         damageState =
             new EnemyDamageState(
                 enemyDamageFlash,
                 enemyKnockbackMotor,
-                visualRoot,
+                // 土台まで傾くのを防ぐため、固定タレットは被弾時の見た目の傾斜を行わない。
+                // ダメージ点滅・HP処理とノックバックの扱いは従来のまま。
+                turretAttackStrategy != null ? null : visualRoot,
                 enemyData.HitTiltDuration,
                 enemyData.HitTiltRecoveryDuration,
                 enemyData.HitTiltRecoveryGroundDistance,
@@ -497,6 +511,20 @@ public class EnemyStateMachine : MonoBehaviour
             return;
         }
 
+        // 新型Droneの射撃位置探索が時間切れになった場合は、
+        // 検知範囲内でもAttackを繰り返さず通常の帰還へ進む。
+        if (attackStrategy is NewDroneEnemyAttackStrategy newDroneAttack &&
+            newDroneAttack.HasAbandonedAttack)
+        {
+            if (searchStrategy is NewDroneEnemySearchStrategy newDroneSearch)
+            {
+                newDroneSearch.SuppressDetectionUntilReturnAndRangeExit();
+            }
+
+            ChangeState(searchState);
+            return;
+        }
+
         bool hasDetectedPlayer =
             searchStrategy.TryDetectPlayer(
                 out float detectedPlayerDirectionSign);
@@ -631,12 +659,14 @@ public class EnemyStateMachine : MonoBehaviour
             facingDirection =
                 Vector3.right * (detectedPlayerDirectionSign < 0f ? -1f : 1f);
         }
-        else if (searchStrategy is OldDroneEnemySearchStrategy droneSearchStrategy)
+        else if (searchStrategy is OldDroneEnemySearchStrategy ||
+                 searchStrategy is NewDroneEnemySearchStrategy)
         {
             // Droneは索敵時に確定したPlayer代表位置へのXY方向を利用する。
-            // 左右符号だけで向くと、Playerが上下にいる場合にずれてしまう。
-            Vector2 planarDirection =
-                droneSearchStrategy.DetectedPlayerPlanarDirection;
+            // 新旧Droneで同じ向き制御を維持し、Rigidbody本体は回転させない。
+            Vector2 planarDirection = searchStrategy is OldDroneEnemySearchStrategy oldDrone
+                ? oldDrone.DetectedPlayerPlanarDirection
+                : ((NewDroneEnemySearchStrategy)searchStrategy).DetectedPlayerPlanarDirection;
 
             if (planarDirection.sqrMagnitude <=
                 MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE)

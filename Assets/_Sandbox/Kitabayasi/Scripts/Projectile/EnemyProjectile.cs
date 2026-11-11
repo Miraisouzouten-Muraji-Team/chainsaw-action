@@ -3,10 +3,10 @@ using UnityEngine;
 
 /// <summary>
 /// Enemyが発射する共通Projectile。
-/// 発射時に確定した方向へ直進し、Player命中時のダメージ通知と命中後の消滅を担当する。
+/// 発射時に確定した方向へ直進し、Player命中時のダメージ通知とPlayer・Stage命中後の消滅を担当する。
 /// </summary>
 /// <remarks>
-/// Player以外のColliderとの接触では消滅しない。
+/// Playerと指定したStage Layer以外のColliderとの接触では消滅しない。
 /// 発射数、発射間隔、命中精度、照準表示は担当しない。
 /// </remarks>
 [RequireComponent(typeof(Rigidbody))]
@@ -24,6 +24,13 @@ public sealed class EnemyProjectile : MonoBehaviour
     [SerializeField]
     [Min(0f)]
     private float lifeTime = 5f;
+
+    [Header("衝突")]
+    [Tooltip("命中時に弾を消滅させるステージのLayer。StageColliderを選択してください。")]
+    [SerializeField]
+    private LayerMask stageCollisionMask;
+
+    public LayerMask StageCollisionMask => stageCollisionMask;
 
     private Rigidbody projectileRigidbody;
     private Collider[] projectileColliders;
@@ -141,16 +148,25 @@ public sealed class EnemyProjectile : MonoBehaviour
             return;
         }
 
-        // Stageやエリア判定など、Player以外との接触では命中扱いにしない。
-        if (!playerReference.IsPlayerCollider(
-                hitCollider))
+        bool isPlayerHit =
+            playerReference.IsPlayerCollider(
+                hitCollider);
+
+        bool isStageHit =
+            (stageCollisionMask.value &
+             (1 << hitCollider.gameObject.layer)) != 0;
+
+        if (!isPlayerHit &&
+            !isStageHit)
         {
             return;
         }
 
         hasResolvedHit = true;
 
-        if (playerReference.TryGetAttackHitReceiver(
+        // Stage命中時にはダメージを送らず、Projectileのみ消滅させる。
+        if (isPlayerHit &&
+            playerReference.TryGetAttackHitReceiver(
                 requireActiveAndEnabled: true,
                 out IAttackHitReceiver playerAttackHitReceiver,
                 out _))

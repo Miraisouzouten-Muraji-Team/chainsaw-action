@@ -57,6 +57,12 @@ public static class EnemySearchGizmoDrawer
                 oldDroneEnemySearchStrategy.DetectionRadius;
         }
         else if (searchStrategy is
+                     NewDroneEnemySearchStrategy newDroneEnemySearchStrategy)
+        {
+            detectionRadius =
+                newDroneEnemySearchStrategy.DetectionRadius;
+        }
+        else if (searchStrategy is
                      TurretEnemySearchStrategy turretEnemySearchStrategy)
         {
             detectionRadius =
@@ -140,6 +146,18 @@ public static class EnemySearchGizmoDrawer
             searchRangeCenter =
                 stateMachine.transform.position;
 
+            return true;
+        }
+
+        if (searchStrategy is NewDroneEnemySearchStrategy newDroneSearchStrategy)
+        {
+            if (EditorApplication.isPlaying &&
+                newDroneSearchStrategy.TryGetSearchCenter(out searchRangeCenter))
+            {
+                return true;
+            }
+
+            searchRangeCenter = stateMachine.transform.position;
             return true;
         }
 

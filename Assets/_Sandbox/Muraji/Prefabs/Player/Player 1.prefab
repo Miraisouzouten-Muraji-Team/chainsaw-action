@@ -448,10 +448,10 @@ CapsuleCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 2
-  m_Radius: 0.094292685
-  m_Height: 1.1321682
+  m_Radius: 0.14616777
+  m_Height: 1.3561004
   m_Direction: 1
-  m_Center: {x: -0.09062247, y: -0.42734578, z: 0.4800969}
+  m_Center: {x: -0.090610944, y: -0.53930336, z: 0.4282056}
 --- !u!114 &2192336546025605430
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -464,10 +464,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 385f652c3658c254baf718c254e02400, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawAttack
+  enemyDiggingShakeAmplitude: 0.025
+  enemyDiggingShakeFrequency: 20
   hitBox: {fileID: 6651475171482002204}
   slashKnockbackPriorityDuration: 10
   damagePopupPresenter: {fileID: 0}
-  hitParticle: {fileID: 6176228616533195752, guid: 8b653b8ed8f598c42baa0eca3fd64bea, type: 3}
+  hitParticle: {fileID: 0}
   cameraShake: {fileID: 0}
   duration: 0.05
   hitStopSystem: {fileID: 4024298612769009824}
@@ -797,7 +799,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayeMidCollider
   wallLayers:
     serializedVersion: 2
-    m_Bits: 1
+    m_Bits: 128
   surfaceNormalThreshold: 0.7
 --- !u!114 &4747396505095716884
 MonoBehaviour:
@@ -875,6 +877,7 @@ GameObject:
   - component: {fileID: 1203193980578457020}
   - component: {fileID: 3327013363795973915}
   - component: {fileID: 3846418490811467109}
+  - component: {fileID: 2355374143254767553}
   m_Layer: 0
   m_Name: Player 1
   m_TagString: Player
@@ -930,7 +933,7 @@ Rigidbody:
   m_ImplicitTensor: 1
   m_UseGravity: 0
   m_IsKinematic: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_Constraints: 120
   m_CollisionDetection: 0
 --- !u!114 &4996046773718306232
@@ -956,7 +959,7 @@ MonoBehaviour:
   doubleJumpEffect:
     Prefab: {fileID: 4026887684143952547, guid: 098f157927a3abf4ea8488589f6bf67f, type: 3}
     SpawnPoint: {fileID: 2818282200944578263}
-    Lifetime: 0.75
+    Lifetime: 0.2
   landingEffect:
     Prefab: {fileID: 1475400350550726891, guid: 873007ee2dffc354e95a1110312d3377, type: 3}
     SpawnPoint: {fileID: 2818282200944578263}
@@ -969,13 +972,40 @@ MonoBehaviour:
   jumpHoldAction: {fileID: 0}
   logJumpDiagnostics: 1
   playerParameter: {fileID: 11400000, guid: 95f83e18d5c42904aa49a97890997239, type: 2}
+  diggingReleaseMomentumCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.9999329
+      value: 0
+      inSlope: -0.03581918
+      outSlope: -0.03581918
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.12068503
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
   chainsawDigging: {fileID: 4166513584750343507}
   chainsawAccelerator: {fileID: 3199202209234272052}
   chainsawAudioSource: {fileID: 0}
   directWallSpeedDivisor: 5
+  ceilingJumpReleaseSpeed: 6
+  ceilingJumpReleaseDuration: 0.12
   groundCheckTransform: {fileID: 4866853695070243676}
   isGroundedByRay: 0
   visualRoot: {fileID: 4814178263090608376}
+  alignFloorDiggingVisual: 1
   debugRotationSpeed: 0
   debugSpeedBonus: 0
   debugTargetSpeed: 0
@@ -988,17 +1018,20 @@ MonoBehaviour:
   debugVelocityBeforeWall: {x: 0, y: 0, z: 0}
   debugVelocityAfterWall: {x: 0, y: 0, z: 0}
   debugWallBlocked: 0
+  weakAttackFinisherData: {fileID: 11400000, guid: 5ea1d1f77eb496b498c1ab9404279355, type: 2}
+  airWeakAttackFinisherData: {fileID: 11400000, guid: e540abe81fcc379418b2cdafb563b6e8, type: 2}
   slash1: {fileID: 11400000, guid: 8607520c691a1314eb0173541cd3397a, type: 2}
   slash2: {fileID: 11400000, guid: 5ea1d1f77eb496b498c1ab9404279355, type: 2}
   slash3: {fileID: 11400000, guid: e540abe81fcc379418b2cdafb563b6e8, type: 2}
   enableDiggingImpact: 1
   impactTerrainLayers:
     serializedVersion: 2
-    m_Bits: 1
+    m_Bits: 128
   impactCameraShake: {fileID: 0}
   logDiggingImpact: 1
   enableCornerCorrection: 1
   headCollider: {fileID: 0}
+  enableImpactInputBuffer: 1
   logCornerCorrection: 1
 --- !u!114 &4166513584750343507
 MonoBehaviour:
@@ -1018,7 +1051,9 @@ MonoBehaviour:
   playerAnimator: {fileID: 2921792244955255645}
   chainsawAttack: {fileID: 2192336546025605430}
   diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
-  movementContactDamageMultiplier: 0.3
+  weakAttackDiggingData: {fileID: 11400000, guid: 805e87899d869204da3ec278acfd7d06, type: 2}
+  airWeakAttackDiggingData: {fileID: 11400000, guid: 0ff38655cd9be3643a633c1a45c07f96, type: 2}
+  movementContactDamageMultiplier: 1
 --- !u!114 &6047860458994670659
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1088,7 +1123,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
   attackHitBox: {fileID: 2192336546025605430}
-  slash1State: Base Layer.Slash1
+  slash1State: Base Layer.Slash2
+  airSlashState: Base Layer.Slash3
   slash2State: Base Layer.Slash2
   slash3State: Base Layer.Slash3
   idleState: Base Layer.Idle
@@ -1128,11 +1164,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerRespawn
   stageData: {fileID: 11400000, guid: e8bfaa789d57e8547a102d33b7421ced, type: 2}
   playerController: {fileID: 4996046773718306232}
+  playerParameter: {fileID: 11400000, guid: 95f83e18d5c42904aa49a97890997239, type: 2}
+  enemyRespawnManager: {fileID: 0}
   playerCamera: {fileID: 0}
   fadeGroup: {fileID: 0}
   deathState: Base Layer.Slash1
   respawnState: Base Layer.Slash1
   idleState: Base Layer.Idle
+  useInitialFacingOnRespawn: 1
+  deathGroundTolerance: 0.05
+  maximumDeathFallSeconds: 10
   deathEffectPrefab: {fileID: 0}
   respawnEffectPrefab: {fileID: 0}
   effectLifetime: 5
@@ -1210,6 +1251,25 @@ MonoBehaviour:
   rays: []
   segments: 24
   drawingLayer: 0
+--- !u!114 &2355374143254767553
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7542431373430556866}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 917b0ed0b511b7b47ac281b2b85df853, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPlayer
+  hideTutorialBehindPlayer: 1
+  tutorialOccluders: []
+  flipTutorialMaskY: 0
+  inputBehaviours: []
+  clearBufferedInput:
+    m_PersistentCalls:
+      m_Calls: []
 --- !u!1 &7674304533746313249
 GameObject:
   m_ObjectHideFlags: 0
@@ -1272,6 +1332,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 776dc5136991bf548905828379b952e4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerDamageScreenEffect
+  lowHealthPercent: 20
   playerHealth: {fileID: 4747396505095716884}
   screenData: {fileID: 11400000, guid: 40da88de0547b0c459193a624d717edf, type: 2}
   volumePriority: 100
@@ -1856,17 +1917,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawDiggingParticles
   chainsawDigging: {fileID: 4166513584750343507}
   playerController: {fileID: 4996046773718306232}
-  particlePrefab: {fileID: 7044623282841772800, guid: 837e8e5252d7c7e4baa5ea5980ed9e2a, type: 3}
+  particlePrefab: {fileID: -8463674177795780162, guid: 837e8e5252d7c7e4baa5ea5980ed9e2a, type: 3}
+  enemyParticlePrefab: {fileID: 1015358492388607712, guid: 96e8b8b94590fa84e989a735a1ae3b66, type: 3}
+  accelerator: {fileID: 3199202209234272052}
+  mediumParticlePrefab: {fileID: 8177517891552390736, guid: d3c0841f362468d418c2b3b0481f8bc9, type: 3}
+  strongParticlePrefab: {fileID: 174813603635813635, guid: 1d614d472e959864e8572e2fa84f5965, type: 3}
+  mediumAcceleratorThreshold: 20
+  strongAcceleratorThreshold: 34
   emissionPoint: {fileID: 7464963693528972124}
-  groundContactPoint: {fileID: 7464963693528972124}
-  groundContactRadius: 0.03
-  groundContactLayers:
-    serializedVersion: 2
-    m_Bits: 1
-  floorAngle: 135
-  wallAngle: 225
+  floorAngle: 180
+  wallAngle: 180
   ceilingAngle: 225
-  enemyAngle: 160
+  enemyAngle: 0
 --- !u!114 &6024355022737477912
 MonoBehaviour:
   m_ObjectHideFlags: 0

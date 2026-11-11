@@ -2,21 +2,25 @@ using UnityEngine;
 using UnityEditor;
 
 /// <summary>
-/// EnemySpawnerのInspector表示をカスタマイズするクラス
+/// EnemySpawnerのInspector表示をカスタマイズするクラス。
 /// </summary>
 [CustomEditor(typeof(EnemySpawner))]
 public class EnemySpawnerEditor : Editor
 {
     /// <summary>
     /// 敵の生成数やPrefab、配置方法、出現演出などの設定項目を
-    /// Inspectorに表示する
+    /// Inspectorに表示する。
     /// </summary>
     public override void OnInspectorGUI()
     {
         // Inspector上の変更を取得
         serializedObject.Update();
 
-        // EnemySpawnerの設定項目を取得
+        // ディゾルブ用マテリアルの設定欄を取得
+        SerializedProperty dissolveMaterial =
+            serializedObject.FindProperty("dissolveMaterial");
+
+        // 敵の生成数や登録情報を取得
         SerializedProperty enemyCount =
             serializedObject.FindProperty("enemyCount");
 
@@ -31,6 +35,18 @@ public class EnemySpawnerEditor : Editor
 
         SerializedProperty appearanceDuration =
             serializedObject.FindProperty("appearanceDuration");
+
+        // ディゾルブ設定
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField(
+            "ディゾルブ設定",
+            EditorStyles.boldLabel);
+
+        EditorGUILayout.PropertyField(
+            dissolveMaterial,
+            new GUIContent("Dissolve Material"));
+
+        EditorGUILayout.Space(8);
 
         // 生成数を表示
         EditorGUILayout.PropertyField(
@@ -50,7 +66,15 @@ public class EnemySpawnerEditor : Editor
             "エネミー登録",
             EditorStyles.boldLabel);
 
-        // 敵ごとのPrefab・配置・出現演出を表示
+        // エネミーの登録数に合わせて折りたたみ状態を調整
+        if (foldoutStates.Length != enemies.arraySize)
+        {
+            System.Array.Resize(
+                ref foldoutStates,
+                enemies.arraySize);
+        }
+
+        // 敵ごとのPrefab・配置設定を表示
         for (int i = 0; i < enemies.arraySize; i++)
         {
             SerializedProperty entry =
@@ -74,79 +98,88 @@ public class EnemySpawnerEditor : Editor
             EditorGUILayout.BeginVertical(
                 EditorStyles.helpBox);
 
-            EditorGUILayout.LabelField(
+            // エネミーごとの折りたたみ見出し
+            foldoutStates[i] = EditorGUILayout.Foldout(
+                foldoutStates[i],
                 $"エネミー {i + 1}",
-                EditorStyles.boldLabel);
+                true,
+                EditorStyles.foldoutHeader);
 
-            // 生成する敵のPrefabを設定
-            EditorGUILayout.PropertyField(
+            // 開いている場合だけ設定項目を表示
+            if (foldoutStates[i])
+            {
+
+                // 生成する敵のPrefabを設定
+                EditorGUILayout.PropertyField(
                 enemyPrefab,
                 new GUIContent("Enemy Prefab"));
 
-            // Prefab未設定時の警告
-            if (enemyPrefab.objectReferenceValue == null)
-            {
-                EditorGUILayout.HelpBox(
-                    $"エネミー {i + 1} のPrefabが未設定です。" +
-                    "生成する敵のPrefabを登録してください。",
-                    MessageType.Warning);
-            }
-
-            // エネミーごとの出現演出
-            EditorGUILayout.PropertyField(
+                // エネミーごとの出現演出を選択
+                EditorGUILayout.PropertyField(
                 appearanceType,
                 new GUIContent("出現演出"));
 
-            // 1体目はスポナー位置に固定
-            if (i == 0)
-            {
-                EditorGUILayout.LabelField(
-                    "生成位置",
-                    "スポナーの位置に固定");
-            }
-            else
-            {
-                // 2体目以降は配置方法を選択できる
-                EditorGUILayout.PropertyField(
-                    placementMode,
-                    new GUIContent("配置方法"));
-
-                if (placementMode.enumValueIndex ==
-                    (int)EnemySpawnEntry.PlacementMode.Simple)
+                // Prefab未設定時の警告
+                if (enemyPrefab.objectReferenceValue == null)
                 {
-                    // スポナーからのX・Y方向のずれを設定する
-                    EditorGUILayout.PropertyField(
-                        offset,
-                        new GUIContent("X・Yオフセット"));
+                    EditorGUILayout.HelpBox(
+                        $"エネミー {i + 1} のPrefabが未設定です。" +
+                        "生成する敵のPrefabを登録してください。",
+                        MessageType.Warning);
+                }
+
+                // 1体目はスポナー位置に固定
+                if (i == 0)
+                {
+                    EditorGUILayout.LabelField(
+                        "生成位置",
+                        "スポナーの位置に固定");
                 }
                 else
                 {
-                    // 詳細配置ではスポーンポイントを指定する
+                    // 2体目以降は配置方法を選択できる
                     EditorGUILayout.PropertyField(
-                        spawnPoint,
-                        new GUIContent("スポーンポイント"));
+                        placementMode,
+                        new GUIContent("配置方法"));
 
-                    // スポーンポイントが未設定の場合は警告する
-                    if (spawnPoint.objectReferenceValue == null)
+                    if (placementMode.enumValueIndex ==
+                        (int)EnemySpawnEntry.PlacementMode.Simple)
                     {
-                        EditorGUILayout.HelpBox(
-                            $"エネミー {i + 1} のスポーンポイントが" +
-                            "未設定です。",
-                            MessageType.Warning);
+                        // スポナーからのX・Y方向のずれを設定
+                        EditorGUILayout.PropertyField(
+                            offset,
+                            new GUIContent("X・Yオフセット"));
+                    }
+                    else
+                    {
+                        // 詳細配置ではスポーンポイントを指定
+                        EditorGUILayout.PropertyField(
+                            spawnPoint,
+                            new GUIContent("スポーンポイント"));
+
+                        // スポーンポイントが未設定の場合は警告
+                        if (spawnPoint.objectReferenceValue == null)
+                        {
+                            EditorGUILayout.HelpBox(
+                                $"エネミー {i + 1} のスポーンポイントが" +
+                                "未設定です。",
+                                MessageType.Warning);
+                        }
                     }
                 }
             }
 
             EditorGUILayout.EndVertical();
         }
-        // 2体以上の場合だけ時間差スポーンの設定を表示する
+
+        // 2体以上の場合だけ時間差スポーンの設定を表示
         if (enemyCount.intValue >= 2)
         {
             EditorGUILayout.PropertyField(
                 useSpawnDelay,
                 new GUIContent("時間差を有効にする"));
 
-            // 時間差が有効な場合だけ生成間隔を表示する
+            // 時間差が有効な場合だけ生成間隔を表示
             if (useSpawnDelay.boolValue)
             {
                 EditorGUILayout.PropertyField(
@@ -163,13 +196,8 @@ public class EnemySpawnerEditor : Editor
                     MessageType.Info);
             }
         }
-        // ディゾルブ演出の共通設定
-        EditorGUILayout.Space(8);
 
-        EditorGUILayout.LabelField(
-            "ディゾルブ設定（共通）",
-            EditorStyles.boldLabel);
-
+        // 出現時間
         EditorGUILayout.PropertyField(
             appearanceDuration,
             new GUIContent("出現時間（秒）"));
@@ -177,7 +205,9 @@ public class EnemySpawnerEditor : Editor
         appearanceDuration.floatValue =
             Mathf.Max(0f, appearanceDuration.floatValue);
 
-        // Inspector上の変更をEnemySpawnerに反映する
+        // Inspector上の変更を反映
         serializedObject.ApplyModifiedProperties();
     }
+    // エネミーごとの折りたたみ状態
+    private bool[] foldoutStates = new bool[0];
 }

@@ -1,0 +1,42 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f5d1814da0a558d4f8fc4ae6af900098, type: 3}
+  m_Name: NewDroneEnemy
+  m_EditorClassIdentifier: Assembly-CSharp::NewDroneEnemyData
+  maxHealth: 1
+  attackPower: 10
+  detectionRadius: 2
+  postAttackSearchFailureWaitDuration: 0.8
+  alertDuration: 1
+  alertContactDamagePercent: 0
+  damageFlashDuration: 0.1
+  hitTiltDuration: 0.5
+  hitTiltRecoveryDuration: 0.15
+  hitTiltRecoveryGroundDistance: 0.75
+  hitTiltAngle: 0
+  deathShrinkDelay: 3
+  deathShrinkDuration: 3
+  patrolMoveSpeed: 5
+  patrolTurnDuration: 0.5
+  navigationMoveSpeed: 5
+  pathSafetyMargin: 0.05
+  pathSearchPadding: 5
+  maximumExpandedPathNodes: 4096
+  waypointArrivalTolerance: 0.1
+  navigationStallMinimumMoveSpeed: 0.1
+  navigationStallDetectionDuration: 0.5
+  navigationObstacleMask:
+    serializedVersion: 2
+    m_Bits: 128
+  attackPreparationDuration: 0.75
+  shootingFollowSpeed: 4
+  shootingPositionSearchTimeout: 3

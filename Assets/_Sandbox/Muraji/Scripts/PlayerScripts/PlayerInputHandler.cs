@@ -1,8 +1,11 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class PlayerInputHandler : MonoBehaviour
 {
     private PlayerInputSystem inputSystem;
+
+    public InputActionAsset SharedInputActions => inputSystem?.asset;
 
     public float MoveInput { get; private set; }
     public bool JumpInput { get; private set; }
@@ -47,7 +50,8 @@ public class PlayerInputHandler : MonoBehaviour
 
     private void OnDisable()
     {
-        inputSystem.Disable();
+        // チュートリアルの操作はプレイヤー操作の停止中も受け付ける。
+        inputSystem.Player.Disable();
 
         MoveInput = 0f;
         ResetInput();

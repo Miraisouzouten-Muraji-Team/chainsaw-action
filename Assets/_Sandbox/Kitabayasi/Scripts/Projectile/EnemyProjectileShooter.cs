@@ -1,9 +1,9 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 /// <summary>
 /// Enemy共通のProjectile発射処理を担当する。
-/// Projectile生成、射撃精度、ブレ角度、発射数、発射間隔、射撃前の照準線を管理する。
+/// Projectile生成、射撃精度、ブレ角度、発射数、発射間隔、攻撃予告表示を管理する。
 /// </summary>
 /// <remarks>
 /// Playerの索敵可否やEnemyのState遷移は担当しない。
@@ -44,18 +44,35 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
     [Min(0f)]
     private float shotInterval = 0.25f;
 
-    [Header("照準表示")]
-    [Tooltip("射撃精度100%時に使用する中央の照準線。")]
+    [Header("旧照準表示（ゲーム中は使用しない）")]
+    [Tooltip("旧照準用。互換性のため参照を保持し、ゲーム中は常に非表示にする。")]
     [SerializeField]
     private LineRenderer centerAimLine;
 
-    [Tooltip("射撃精度100%未満時に使用する最大ブレ範囲の上側照準線。")]
+    [Tooltip("旧照準用。ゲーム中は表示せず、Scene Gizmoで拡散範囲を確認する。")]
     [SerializeField]
     private LineRenderer upperSpreadAimLine;
 
-    [Tooltip("射撃精度100%未満時に使用する最大ブレ範囲の下側照準線。")]
+    [Tooltip("旧照準用。ゲーム中は表示せず、Scene Gizmoで拡散範囲を確認する。")]
     [SerializeField]
     private LineRenderer lowerSpreadAimLine;
+
+    [Header("攻撃予告")]
+    [Tooltip("予備動作中だけ表示するLineRenderer。旧照準線とは別のものを指定する。")]
+    [SerializeField]
+    private LineRenderer attackWarningLine;
+
+    [Tooltip("攻撃予告線の色。LineRendererのMaterialは頂点カラーに対応するものを使用する。")]
+    [SerializeField]
+    private Color attackWarningColor = Color.red;
+
+    [Tooltip("攻撃予告線の太さ（ワールド単位）。")]
+    [SerializeField, Min(0f)]
+    private float attackWarningWidth = 0.035f;
+
+    [Tooltip("攻撃予告線の点滅回数（1秒あたり）。0なら点灯したままにする。")]
+    [SerializeField, Min(0f)]
+    private float attackWarningBlinkFrequency = 4f;
 
     [Header("Scene確認")]
     [Tooltip("Sceneビューで射撃方向を確認する対象。Scene上のPlayer Transformを設定する。未設定時はFire Pointの右方向を使用する。")]
@@ -68,6 +85,7 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
     private float aimGizmoLength = 10f;
 
     private Collider[] ownerColliders;
+    private Collider[] projectilePrefabColliders;
     private EnemyPlayerReference playerReference;
 
     private ScriptableObject currentAttackData;
@@ -79,6 +97,12 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
 
     private bool isInitialized;
     private bool isBurstActive;
+    private bool isAttackWarningActive;
+    private bool hasRuntimeAimTarget;
+    private float attackWarningStartTime;
+    private Vector3 runtimeAimTargetPosition;
+    private Vector3 attackWarningTargetPosition;
+    private Collider attackWarningTargetCollider;
 
     public Vector3 FirePointPosition =>
         firePoint != null
@@ -88,19 +112,48 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
     public bool IsBurstActive =>
         isBurstActive;
 
+    public bool HasAttackWarningLine => attackWarningLine != null;
+
+    public Transform FirePointTransform => firePoint;
+
+    // 発射時の弾Collider形状を射撃地点判定へ渡す。発射仕様自体は変更しない。
+    public Transform ProjectilePrefabRoot => projectilePrefab != null ? projectilePrefab.transform : null;
+    public Collider[] ProjectilePrefabColliders => projectilePrefabColliders;
+
+    public LayerMask ProjectileStageCollisionMask =>
+        projectilePrefab != null ? projectilePrefab.StageCollisionMask : default;
+
     private void Awake()
     {
         HideAim();
+        HideAttackWarning();
     }
 
     private void OnDisable()
     {
         CancelBurst();
         HideAim();
+        HideAttackWarning();
     }
 
+    private void LateUpdate()
+    {
+        // Playerと銃口の表示位置は描画フレームごとに更新し、物理更新間のカクつきを減らす。
+        if (isAttackWarningActive)
+        {
+            RefreshAttackWarningLine();
+        }
+    }
+
+#if UNITY_EDITOR
     private void OnDrawGizmosSelected()
     {
+        // Gizmosを有効にしたGameビューでも旧紫線が出ないよう、Scene描画時だけ実行する。
+        if (UnityEditor.SceneView.currentDrawingSceneView == null)
+        {
+            return;
+        }
+
         Vector3 origin =
             firePoint != null
                 ? firePoint.position
@@ -109,7 +162,14 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
         Vector3 referenceDirection;
         float previewLength;
 
-        if (scenePreviewTarget != null)
+        if (hasRuntimeAimTarget && Application.isPlaying)
+        {
+            referenceDirection =
+                GetPlanarDirectionToTarget(
+                    runtimeAimTargetPosition,
+                    out previewLength);
+        }
+        else if (scenePreviewTarget != null)
         {
             referenceDirection =
                 GetPlanarDirectionToTarget(
@@ -127,7 +187,7 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
                     aimGizmoLength);
         }
 
-        Gizmos.color = Color.yellow;
+        Gizmos.color = new Color(0.65f, 0.15f, 1f, 1f);
 
         if (accuracyPercent >= 100f ||
             maximumSpreadAngle <= 0f)
@@ -160,6 +220,7 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
             origin +
             lowerDirection * previewLength);
     }
+#endif
 
     /// <summary>
     /// 発射元Enemyを確定し、自身とのCollisionを無効化するためのCollider一覧を保持する。
@@ -191,89 +252,109 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
                 $"{nameof(EnemyProjectileShooter)}のFire Pointを設定してください。");
         }
 
-        ValidateAimLineConfiguration();
-
         ownerColliders =
             ownerObject.GetComponentsInChildren<Collider>(
                 true);
 
+        // A*探索中の各候補でGetComponentsInChildrenを呼び直さない。
+        projectilePrefabColliders =
+            projectilePrefab.GetComponentsInChildren<Collider>(true);
+
         isInitialized = true;
         HideAim();
+        HideAttackWarning();
     }
 
     /// <summary>
-    /// 現在狙っている範囲を表示する。
-    /// 100%精度では中央1本、それ未満では最大ブレ角度の上限・下限2本を表示する。
+    /// Sceneビュー用に照準位置を保持する。旧LineRendererはゲーム中に描画しない。
     /// </summary>
-    public void ShowAim(
-        Vector3 targetWorldPosition)
+    public void ShowAim(Vector3 targetWorldPosition)
     {
         EnsureInitialized();
-
-        Vector3 baseDirection =
-            GetPlanarDirectionToTarget(
-                targetWorldPosition,
-                out float aimLineLength);
-
-        if (accuracyPercent >= 100f)
-        {
-            SetAimLine(
-                centerAimLine,
-                baseDirection,
-                aimLineLength,
-                true);
-
-            SetLineEnabled(
-                upperSpreadAimLine,
-                false);
-
-            SetLineEnabled(
-                lowerSpreadAimLine,
-                false);
-
-            return;
-        }
-
-        SetLineEnabled(
-            centerAimLine,
-            false);
-
-        Vector3 upperDirection =
-            RotateInGameplayPlane(
-                baseDirection,
-                maximumSpreadAngle);
-
-        Vector3 lowerDirection =
-            RotateInGameplayPlane(
-                baseDirection,
-                -maximumSpreadAngle);
-
-        SetAimLine(
-            upperSpreadAimLine,
-            upperDirection,
-            aimLineLength,
-            true);
-
-        SetAimLine(
-            lowerSpreadAimLine,
-            lowerDirection,
-            aimLineLength,
-            true);
+        runtimeAimTargetPosition = targetWorldPosition;
+        hasRuntimeAimTarget = true;
+        DisableLegacyAimLines();
     }
 
     public void HideAim()
     {
-        SetLineEnabled(
-            centerAimLine,
-            false);
+        hasRuntimeAimTarget = false;
+        DisableLegacyAimLines();
+    }
 
-        SetLineEnabled(
-            upperSpreadAimLine,
-            false);
+    /// <summary>
+    /// 予備動作中の警告線を更新する。射撃精度や発射方向には使用しない。
+    /// </summary>
+    public void ShowAttackWarning(
+        Vector3 targetWorldPosition,
+        Collider targetCollider = null)
+    {
+        EnsureInitialized();
 
-        SetLineEnabled(
-            lowerSpreadAimLine,
-            false);
+        if (attackWarningLine == null)
+        {
+            return;
+        }
+
+        if (!isAttackWarningActive)
+        {
+            isAttackWarningActive = true;
+            attackWarningStartTime = Time.time;
+        }
+
+        attackWarningTargetPosition = targetWorldPosition;
+        attackWarningTargetCollider = targetCollider;
+
+        attackWarningLine.useWorldSpace = true;
+        attackWarningLine.positionCount = 2;
+        attackWarningLine.startColor = attackWarningColor;
+        attackWarningLine.endColor = attackWarningColor;
+        attackWarningLine.startWidth = attackWarningWidth;
+        attackWarningLine.endWidth = attackWarningWidth;
+
+        RefreshAttackWarningLine();
+    }
+
+    public void HideAttackWarning()
+    {
+        isAttackWarningActive = false;
+        attackWarningTargetCollider = null;
+        SetLineEnabled(attackWarningLine, false);
+    }
+
+    private void RefreshAttackWarningLine()
+    {
+        if (attackWarningLine == null)
+        {
+            return;
+        }
+
+        Vector3 origin = FirePointPosition;
+        Vector3 target = attackWarningTargetPosition;
+
+        if (attackWarningTargetCollider != null &&
+            attackWarningTargetCollider.enabled &&
+            attackWarningTargetCollider.gameObject.activeInHierarchy)
+        {
+            target = attackWarningTargetCollider.bounds.center;
+        }
+
+        // 弾と同じXYゲームプレイ平面上で描画する。照準計算への反映はしない。
+        target.z = origin.z;
+        attackWarningLine.SetPosition(0, origin);
+        attackWarningLine.SetPosition(1, target);
+
+        float elapsedTime = Mathf.Max(0f, Time.time - attackWarningStartTime);
+        bool isLit = attackWarningBlinkFrequency <= 0f ||
+            Mathf.Repeat(elapsedTime * attackWarningBlinkFrequency, 1f) < 0.5f;
+        attackWarningLine.enabled = isLit;
+    }
+
+    private void DisableLegacyAimLines()
+    {
+        SetLineEnabled(centerAimLine, false);
+        SetLineEnabled(upperSpreadAimLine, false);
+        SetLineEnabled(lowerSpreadAimLine, false);
     }
 
     /// <summary>
@@ -307,6 +388,7 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
         isBurstActive = true;
 
         HideAim();
+        HideAttackWarning();
 
         FireNextProjectile();
 
@@ -494,30 +576,6 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
             direction;
     }
 
-    private void SetAimLine(
-        LineRenderer lineRenderer,
-        Vector3 direction,
-        float lineLength,
-        bool enabled)
-    {
-        if (lineRenderer == null)
-        {
-            return;
-        }
-
-        lineRenderer.useWorldSpace = true;
-        lineRenderer.positionCount = 2;
-        lineRenderer.SetPosition(
-            0,
-            FirePointPosition);
-        lineRenderer.SetPosition(
-            1,
-            FirePointPosition +
-            direction.normalized *
-            lineLength);
-        lineRenderer.enabled = enabled;
-    }
-
     private static void SetLineEnabled(
         LineRenderer lineRenderer,
         bool enabled)
@@ -525,29 +583,6 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
         if (lineRenderer != null)
         {
             lineRenderer.enabled = enabled;
-        }
-    }
-
-    private void ValidateAimLineConfiguration()
-    {
-        if (accuracyPercent >= 100f)
-        {
-            if (centerAimLine == null)
-            {
-                throw new InvalidOperationException(
-                    $"{nameof(EnemyProjectileShooter)}: " +
-                    "Accuracyが100%の場合はCenter Aim Lineを設定してください。");
-            }
-
-            return;
-        }
-
-        if (upperSpreadAimLine == null ||
-            lowerSpreadAimLine == null)
-        {
-            throw new InvalidOperationException(
-                $"{nameof(EnemyProjectileShooter)}: " +
-                "Accuracyが100%未満の場合はUpper / Lower Spread Aim Lineを設定してください。");
         }
     }
 

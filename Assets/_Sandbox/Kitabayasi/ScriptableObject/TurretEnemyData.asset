@@ -12,9 +12,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 765398ebc16d3dd49bb118c9fae1187d, type: 3}
   m_Name: TurretEnemyData
   m_EditorClassIdentifier: Assembly-CSharp::TurretEnemyData
-  maxHealth: 20
+  maxHealth: 100
   attackPower: 10
   detectionRadius: 2
+  postAttackSearchFailureWaitDuration: 0.5
   alertDuration: 1
   alertContactDamagePercent: 60
   damageFlashDuration: 0.1
@@ -23,5 +24,5 @@ MonoBehaviour:
   hitTiltRecoveryGroundDistance: 0.75
   hitTiltAngle: 0
   deathShrinkDelay: 3
-  deathShrinkDuration: 3
+  deathShrinkDuration: 1
   attackPreparationDuration: 0.75

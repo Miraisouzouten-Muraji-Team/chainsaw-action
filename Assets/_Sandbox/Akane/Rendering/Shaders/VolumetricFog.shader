@@ -3,87 +3,79 @@ Shader "Custom/VolumetricFog"
 {
     Properties
     {
-        // ============================================================
-        // Pixel Rendering
-        // ============================================================
+        [HideInInspector] _BlitTexture("Blit Texture", 2D) = "white" {}
+        [HideInInspector] _BlitMipLevel("Blit Mip Level", Float) = 0
 
-        [HideInInspector] _PixelNearTex("Near Color", 2D) = "black" {}
-        [HideInInspector] _PixelMiddleTex("Middle Color", 2D) = "black" {}
-        [HideInInspector] _PixelFarTex("Far Color", 2D) = "black" {}
-
-        [HideInInspector] _PixelNearDepthTex("Near Depth", 2D) = "white" {}
-        [HideInInspector] _PixelMiddleDepthTex("Middle Depth", 2D) = "white" {}
-        [HideInInspector] _PixelFarDepthTex("Far Depth", 2D) = "white" {}
-
+        [HideInInspector] _PixelEffectEnabled("Pixel Effect Enabled", Float) = 0
         [HideInInspector] _SceneNormalPreviewEnabled("Scene Normal Preview Enabled", Float) = 0
 
-        _PixelEffectEnabled("Pixel Effect Enabled", Float) = 0
-
-        // Opaque Compositeから受け取る統合Depth。
-        [HideInInspector] _PixelCompositeDepthTex("Composite Depth", 2D) = "black" {}
-
-        // ============================================================
+        // ----------------------------------------------------
         // Fog
-        // ============================================================
+        // ----------------------------------------------------
 
-        // 霧の色と基本密度。
-        _FogColor("Fog Color", Color) = (0.6, 0.65, 0.7, 1.0)
+        _FogColor("Fog Color", Color) = (0.5, 0.6, 0.65, 1.0)
         _Density("Density", Range(0.0, 0.2)) = 0.02
-
-        // 霧を計算する最大距離と開始距離。
-        // 開始距離を設けることで、カメラ周辺が靄っぽくなるのを防ぐ。
         _MaxDistance("Max Distance", Float) = 100.0
         _FogStartDistance("Fog Start Distance", Float) = 5.0
 
-        // ============================================================
-        // Height Fog
-        // ============================================================
-
-        // 霧の基準高さ。
+        // 高さによる霧の減衰。
         _FogHeight("Fog Height", Float) = 0.0
-
-        // 基準高さより上に行くほど霧を薄くする。
         _HeightFalloff("Height Falloff", Range(0.0, 1.0)) = 0.02
 
-        // ============================================================
-        // Sky Fog
-        // ============================================================
-
-        // Sky方向のレイマーチ最大距離。
-        // 通常のMaxDistanceより短くして過剰な霧を抑える。
+        // 空に適用する霧。
         _SkyMaxDistance("Sky Max Distance", Float) = 30.0
-
-        // Skyに適用する霧の強さ。
-        // 0 = 適用しない / 1 = 通常の霧と同じ。
         _SkyFogStrength("Sky Fog Strength", Range(0.0, 1.0)) = 0.4
 
-        // ============================================================
-        // Lighting
-        // ============================================================
+        // 背景の暗くなり方を調整する。
+        // 1=物理的な透過率、0=背景を暗くしない。
+        _FogTransmittanceStrength("Fog Transmittance Strength", Range(0.0, 1.0)) = 1.0
 
-        // Directional Lightによる散乱光。
-        _LightIntensity("Light Intensity", Range(0.0, 10.0)) = 0.5
+        // ----------------------------------------------------
+        // Directional / Ambient Light
+        // ----------------------------------------------------
 
-        // 影の中にも存在する環境光。
-        _AmbientIntensity("Ambient Intensity", Range(0.0, 1.0)) = 0.0
+        // 太陽光による散乱光の強さ。
+        _LightIntensity("Directional Scattering Intensity", Range(0.0, 5.0)) = 0.2
 
-        // 散乱光全体の倍率。
-        _ScatteringIntensity("Scattering Intensity", Range(0.0, 5.0)) = 1.5
+        // Directional LightのShadow Mapを反映する強さ。
+        _DirectionalShadowStrength("Directional Shadow Strength", Range(0.0, 1.0)) = 1.0
 
-        // ============================================================
-        // God Ray
-        // ============================================================
+        // 霧全体の環境光。
+        _AmbientIntensity("Ambient Intensity", Range(0.0, 1.0)) = 0.03
 
-        // Henyey-Greensteinの異方性。
-        // 正の値ほど前方散乱を強調する。
+        // DirectionalとAmbientに適用する共通倍率。
+        _ScatteringIntensity("Scattering Intensity", Range(0.0, 5.0)) = 1.0
+
+        // ----------------------------------------------------
+        // Point / Spot Light
+        // ----------------------------------------------------
+
+        [Toggle] _PointLightVolumeEnabled("Point Light Volume Enabled", Float) = 0
+
+        // Point / Spot Lightの散乱光の強さ。
+        _PointLightScatteringIntensity("Point Light Scattering Intensity", Range(0.0, 10.0)) = 2.0
+
+        // ----------------------------------------------------
+        // Scattering / Ray March
+        // ----------------------------------------------------
+
         _Anisotropy("Anisotropy", Range(-0.9, 0.9)) = 0.5
 
-        // ============================================================
-        // Ray March
-        // ============================================================
+        // レイマーチングの目標間隔。
+        _RayStepLength("Ray Step Length", Range(0.25, 4.0)) = 1.0
 
-        // レイマーチングのサンプル数。
-        _SampleCount("Sample Count", Range(8, 64)) = 32
+        // 1画素あたりの最大サンプル数。
+        _SampleCount("Max Sample Count", Range(8, 128)) = 64
+
+        // ----------------------------------------------------
+        // Debug
+        // ----------------------------------------------------
+
+        [Enum(Off, 0, PointOnly, 1, VolumeMax, 2, DistanceRanges, 3)]
+        _PointLightDebugMode("Point Light Debug Mode", Float) = 0
+
+        _PointLightDebugGain("Point Light Debug Gain", Range(0.1, 20.0)) = 5.0
+        _PointLightDebugDistance("Point Light Debug Distance", Float) = 30.0
     }
 
     SubShader
@@ -94,7 +86,6 @@ Shader "Custom/VolumetricFog"
             "RenderType" = "Opaque"
         }
 
-        // Full Screen Pass用。
         ZWrite Off
         ZTest Always
         Cull Off
@@ -109,51 +100,33 @@ Shader "Custom/VolumetricFog"
             #pragma vertex Vert
             #pragma fragment Frag
 
-            // ========================================================
-            // Shadow Variants
-            // ========================================================
-
+            // Directional LightのShadow Mapに対応する。
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
-            #pragma multi_compile_fragment _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
-
-            // ========================================================
-            // Includes
-            // ========================================================
+            #pragma multi_compile_fragment _ _SHADOWS_SOFT _ _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
             #include "Packages/com.unity.render-pipelines.core/Runtime/Utilities/Blit.hlsl"
 
-            // ========================================================
-            // Constants
-            // ========================================================
+            #define MAX_SAMPLE_COUNT 128
+            #define MAX_VOLUME_SLICES 128
 
-            #define MAX_SAMPLE_COUNT 64
-
-            // INV_FOUR_PIはインクルード先の定義を使用する。
-
-            // ========================================================
-            // Textures
-            // ========================================================
-
-            TEXTURE2D(_PixelNearTex);
-            TEXTURE2D(_PixelMiddleTex);
-            TEXTURE2D(_PixelFarTex);
-
+            // Pixel Captureの深度テクスチャ。
             TEXTURE2D(_PixelNearDepthTex);
             TEXTURE2D(_PixelMiddleDepthTex);
             TEXTURE2D(_PixelFarDepthTex);
 
-            // Opaque Compositeで生成した統合Depth
+            // Near / Middle / Farの統合深度。
             TEXTURE2D(_PixelCompositeDepthTex);
 
-            // ========================================================
-            // Material Parameters
-            // ========================================================
+            // Point / Spot Lightの3D照明テクスチャ。
+            TEXTURE3D(_PointLightVolumeTex);
+
+            // Point Light Volumeの最大計算距離。
+            float _PointVolumeMaxDistance;
 
             CBUFFER_START(UnityPerMaterial)
-
                 float4 _FogColor;
 
                 float _Density;
@@ -165,26 +138,33 @@ Shader "Custom/VolumetricFog"
 
                 float _SkyMaxDistance;
                 float _SkyFogStrength;
+                float _FogTransmittanceStrength;
 
                 float _LightIntensity;
+                float _DirectionalShadowStrength;
                 float _AmbientIntensity;
                 float _ScatteringIntensity;
 
+                float _PointLightVolumeEnabled;
+                float _PointLightScatteringIntensity;
+
                 float _Anisotropy;
+                float _RayStepLength;
                 float _SampleCount;
 
                 float _PixelEffectEnabled;
                 float _SceneNormalPreviewEnabled;
 
+                float _PointLightDebugMode;
+                float _PointLightDebugGain;
+                float _PointLightDebugDistance;
             CBUFFER_END
 
-            // ========================================================
+            // ----------------------------------------------------
             // Fog Density
-            //
-            // 指定したワールド座標における霧密度を計算する。
-            // 高い位置ほど指数関数的に薄くする。
-            // ========================================================
+            // ----------------------------------------------------
 
+            // ワールド座標から霧の密度を計算する。
             float GetFogDensity(float3 positionWS)
             {
                 float heightDifference = max(
@@ -197,12 +177,11 @@ Shader "Custom/VolumetricFog"
                 return max(_Density, 0.0) * heightDensity;
             }
 
-            // ========================================================
-            // Henyey-Greenstein Phase Function
-            //
-            // 光が視線方向にどの程度散乱するかを計算する。
-            // ========================================================
+            // ----------------------------------------------------
+            // Scattering Phase
+            // ----------------------------------------------------
 
+            // 散乱する光の方向による倍率を計算する。
             float HenyeyGreenstein(
                 float cosTheta,
                 float anisotropy)
@@ -218,13 +197,16 @@ Shader "Custom/VolumetricFog"
                     1.0 + g2 - 2.0 * g * cosTheta,
                     0.0001);
 
-                return INV_FOUR_PI
-                    * (1.0 - g2)
-                    / pow(denominator, 1.5);
+                return INV_FOUR_PI *
+                    (1.0 - g2) /
+                    pow(denominator, 1.5);
             }
 
-            // Depth Bufferの値からSkyを判定する。
-            // Reversed Zと通常のZ Bufferの両方に対応する。
+            // ----------------------------------------------------
+            // Depth
+            // ----------------------------------------------------
+
+            // 深度がSkyを表しているか判定する。
             bool IsSkyDepth(float rawDepth)
             {
                 #if UNITY_REVERSED_Z
@@ -234,124 +216,340 @@ Shader "Custom/VolumetricFog"
                 #endif
             }
 
-            // Pixel Renderingの状態に応じてFogで使用するDepthを取得する。
-            float GetCompositeDepth(float2 colorUv, float2 depthUv)
+            // Pixel ON/OFFに応じて使用する深度を切り替える。
+            float GetCompositeDepth(
+                float2 colorUv,
+                float2 depthUv)
             {
-                // Pixel OFFではMain CameraのDepthを使用する。
+                // Pixel OFFではURPの標準深度を使用する。
                 if (_PixelEffectEnabled < 0.5)
                 {
                     return SampleSceneDepth(depthUv);
                 }
 
-                // Pixel ONではOpaque Compositeで生成した統合Depthを使用する。
-                return SAMPLE_TEXTURE2D(_PixelCompositeDepthTex, sampler_PointClamp, colorUv).r;
+                // Pixel ONでは合成済みの深度を参照する。
+                return SAMPLE_TEXTURE2D(
+                    _PixelCompositeDepthTex,
+                    sampler_PointClamp,
+                    colorUv).r;
             }
 
+            // ----------------------------------------------------
+            // Camera
+            // ----------------------------------------------------
 
-            // ========================================================
-            // Fragment Shader
-            // ========================================================
+            // カメラの前方ベクトルをワールド座標で取得する。
+            float3 GetCameraForwardWS()
+            {
+                return normalize(
+                    mul(
+                        (float3x3)UNITY_MATRIX_I_V,
+                        float3(0.0, 0.0, -1.0)));
+            }
+
+            // ----------------------------------------------------
+            // Point / Spot Light Volume
+            // ----------------------------------------------------
+
+            // 3D照明テクスチャから散乱光を取得する。
+            // 平行投影と透視投影の両方に対応する。
+            float3 SamplePointLightScattering(
+                float2 screenUv,
+                float viewDistance)
+            {
+                if (_PointLightVolumeEnabled < 0.5)
+                {
+                    return float3(0.0, 0.0, 0.0);
+                }
+
+                float maxDistance =
+                    _PointVolumeMaxDistance;
+
+                if (maxDistance <= 0.0001)
+                {
+                    return float3(0.0, 0.0, 0.0);
+                }
+
+                // 3D照明の計算範囲外は参照しない。
+                if (viewDistance < 0.0 ||
+                    viewDistance > maxDistance)
+                {
+                    return float3(0.0, 0.0, 0.0);
+                }
+
+                // カメラ前方距離を0～1へ変換する。
+                float normalizedDepth = saturate(
+                    viewDistance / maxDistance);
+
+                float3 volumeUv = float3(
+                    saturate(screenUv),
+                    normalizedDepth);
+
+                // 3D照明を線形補間して取得する。
+                float3 pointLighting = SAMPLE_TEXTURE3D_LOD(
+                    _PointLightVolumeTex,
+                    sampler_LinearClamp,
+                    volumeUv,
+                    0).rgb;
+
+                return pointLighting *
+                    _PointLightScatteringIntensity;
+            }
+
+            // ----------------------------------------------------
+            // Debug Volume
+            // ----------------------------------------------------
+
+            // Compute Shaderが作成した3D照明を直接表示する。
+            // Mode 2: 全奥行きの最大値。
+            // Mode 3: 近距離を赤、遠距離を緑で表示する。
+            float4 GetPointLightDebugVolume(float2 screenUv)
+            {
+                if (_PointLightVolumeEnabled < 0.5 ||
+                    _PointVolumeMaxDistance <= 0.0001)
+                {
+                    return float4(0.0, 0.0, 0.0, 1.0);
+                }
+
+                uint volumeWidth;
+                uint volumeHeight;
+                uint volumeDepth;
+
+                _PointLightVolumeTex.GetDimensions(
+                    volumeWidth,
+                    volumeHeight,
+                    volumeDepth);
+
+                int sliceCount = min(
+                    (int)volumeDepth,
+                    MAX_VOLUME_SLICES);
+
+                if (sliceCount <= 0)
+                {
+                    return float4(0.0, 0.0, 0.0, 1.0);
+                }
+
+                float3 maxLighting =
+                    float3(0.0, 0.0, 0.0);
+
+                float nearLighting = 0.0;
+                float farLighting = 0.0;
+
+                [loop]
+                for (int slice = 0;
+                     slice < MAX_VOLUME_SLICES;
+                     ++slice)
+                {
+                    if (slice >= sliceCount)
+                    {
+                        break;
+                    }
+
+                    // 各奥行き層の中心を参照する。
+                    float normalizedDepth =
+                        ((float)slice + 0.5) /
+                        (float)sliceCount;
+
+                    float viewDistance =
+                        normalizedDepth * _PointVolumeMaxDistance;
+
+                    float3 lighting = SAMPLE_TEXTURE3D_LOD(
+                        _PointLightVolumeTex,
+                        sampler_LinearClamp,
+                        float3(screenUv, normalizedDepth),
+                        0).rgb;
+
+                    // 全奥行きのRGB最大値を記録する。
+                    maxLighting = max(
+                        maxLighting,
+                        lighting);
+
+                    // ライト色に依存せず明るさを判定する。
+                    float brightness = max(
+                        lighting.r,
+                        max(lighting.g, lighting.b));
+
+                    if (viewDistance <= _PointLightDebugDistance)
+                    {
+                        nearLighting = max(
+                            nearLighting,
+                            brightness);
+                    }
+                    else
+                    {
+                        farLighting = max(
+                            farLighting,
+                            brightness);
+                    }
+                }
+
+                // Mode 2: 3D照明の最大値を表示する。
+                if (_PointLightDebugMode < 2.5)
+                {
+                    return float4(
+                        saturate(
+                            maxLighting * _PointLightDebugGain),
+                        1.0);
+                }
+
+                // Mode 3: 赤=近距離、緑=遠距離。
+                return float4(
+                    saturate(
+                        nearLighting * _PointLightDebugGain),
+                    saturate(
+                        farLighting * _PointLightDebugGain),
+                    0.0,
+                    1.0);
+            }
+
+            // ----------------------------------------------------
+            // Fragment
+            // ----------------------------------------------------
 
             half4 Frag(Varyings input) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
 
-                // ====================================================
-                // 1. Screen UV
-                // ====================================================
+                // ----------------------------------------------------
+                // 1. Screen UV / Scene Color
+                // ----------------------------------------------------
 
-                // BlitTextureのカラー取得用。
-                float2 colorUv = input.texcoord.xy;
+                float2 colorUv =
+                    input.texcoord.xy;
 
-                // Depth取得・ワールド座標復元用。
-                float2 depthUv = input.positionCS.xy / _ScaledScreenParams.xy;
+                float2 depthUv =
+                    input.positionCS.xy / _ScaledScreenParams.xy;
 
-                // ====================================================
-                // 2. Scene Color
-                // ====================================================
+                half4 sceneColor = SAMPLE_TEXTURE2D_X_LOD(
+                    _BlitTexture,
+                    sampler_LinearClamp,
+                    colorUv,
+                    _BlitMipLevel);
 
-                half4 sceneColor = SAMPLE_TEXTURE2D_X_LOD(_BlitTexture, sampler_LinearClamp, colorUv, _BlitMipLevel);
-                // Scene通常プレビュー時はFogを追加しない。
-                // 通常表示RTにはGameRendererの描画結果が含まれる。
+                // Sceneビューの通常表示では重複適用しない。
                 if (_SceneNormalPreviewEnabled > 0.5)
                 {
                     return sceneColor;
                 }
 
-                // ====================================================
-                // 3. Scene Depth
-                // ====================================================
+                // ----------------------------------------------------
+                // 2. Debug Volume
+                // ----------------------------------------------------
 
-                float rawDepth = GetCompositeDepth(colorUv, depthUv);
+                // 3D照明を直接確認するデバッグ表示。
+                // 通常のFog計算は実行しない。
+                if (_PointLightDebugMode > 1.5)
+                {
+                    return half4(
+                        GetPointLightDebugVolume(depthUv));
+                }
+
+                // ----------------------------------------------------
+                // 3. Scene Depth
+                // ----------------------------------------------------
+
+                float rawDepth =
+                    GetCompositeDepth(colorUv, depthUv);
+
+                bool isSky =
+                    IsSkyDepth(rawDepth);
 
                 float deviceDepth = rawDepth;
 
                 #if !UNITY_REVERSED_Z
-                    deviceDepth = lerp(UNITY_NEAR_CLIP_VALUE, 1.0, rawDepth);
+                    deviceDepth = lerp(
+                        UNITY_NEAR_CLIP_VALUE,
+                        1.0,
+                        rawDepth);
                 #endif
 
-                // ====================================================
-                // 4. Surface World Position
-                // ====================================================
+                // Skyでは無限遠の座標を復元しない。
+                // 視線を求めるためNear Planeを使用する。
+                if (isSky)
+                {
+                    #if UNITY_REVERSED_Z
+                        deviceDepth = 1.0;
+                    #else
+                        deviceDepth = UNITY_NEAR_CLIP_VALUE;
+                    #endif
+                }
 
-                float3 surfacePositionWS = ComputeWorldSpacePosition(depthUv, deviceDepth, UNITY_MATRIX_I_VP);
+                // ----------------------------------------------------
+                // 4. World Position
+                // ----------------------------------------------------
 
-                float3 cameraPositionWS = _WorldSpaceCameraPos;
+                float3 surfacePositionWS =
+                    ComputeWorldSpacePosition(
+                        depthUv,
+                        deviceDepth,
+                        UNITY_MATRIX_I_VP);
 
-                // ====================================================
-                // 5. Camera → Surface
-                // ====================================================
+                float3 cameraPositionWS =
+                    _WorldSpaceCameraPos;
 
-                float3 cameraToSurface =
-                    surfacePositionWS - cameraPositionWS;
+                float3 cameraForwardWS =
+                    GetCameraForwardWS();
 
-                float surfaceDistance = length(cameraToSurface);
+                // ----------------------------------------------------
+                // 5. Ray Origin / Direction
+                // ----------------------------------------------------
 
-                // 距離がほぼ0の場合は霧を適用しない。
-                if (surfaceDistance < 0.0001)
+                float3 rayOriginWS;
+                float3 rayDirection;
+                float surfaceDistance;
+
+                if (unity_OrthoParams.w > 0.5)
+                {
+                    // 平行投影では視線方向が全画素で一定。
+                    rayDirection = cameraForwardWS;
+
+                    float3 cameraToSurface =
+                        surfacePositionWS - cameraPositionWS;
+
+                    surfaceDistance = max(
+                        dot(cameraToSurface, rayDirection),
+                        0.0);
+
+                    // 画素ごとのXY位置を維持し、
+                    // カメラ前方平面からレイを開始する。
+                    rayOriginWS =
+                        surfacePositionWS -
+                        rayDirection * surfaceDistance;
+                }
+                else
+                {
+                    // 透視投影ではカメラ位置からレイを開始する。
+                    rayOriginWS = cameraPositionWS;
+
+                    float3 cameraToSurface =
+                        surfacePositionWS - rayOriginWS;
+
+                    surfaceDistance =
+                        length(cameraToSurface);
+
+                    rayDirection =
+                        cameraToSurface /
+                        max(surfaceDistance, 0.0001);
+                }
+
+                // 表面までの距離が無効な場合は描画しない。
+                if (!isSky && surfaceDistance < 0.0001)
                 {
                     return sceneColor;
                 }
 
-                float3 rayDirection =
-                    cameraToSurface / surfaceDistance;
+                // ----------------------------------------------------
+                // 6. Ray March Distance
+                // ----------------------------------------------------
 
-                // ====================================================
-                // 6. Sky判定
-                // ====================================================
+                // 空と通常の物体でFogの計算距離を切り替える。
+                float rayLength = isSky
+                    ? min(_SkyMaxDistance, _MaxDistance)
+                    : min(surfaceDistance, _MaxDistance);
 
-                bool isSky = IsSkyDepth(rawDepth);
-
-                // ====================================================
-                // 7. Ray March Distance
-                //
-                // 通常のオブジェクトは表面まで、
-                // SkyはSkyMaxDistanceまで計算する。
-                // ====================================================
-
-                float rayLength;
-
-                if (isSky)
-                {
-                    rayLength = min(
-                        _SkyMaxDistance,
-                        _MaxDistance);
-                }
-                else
-                {
-                    rayLength = min(
-                        surfaceDistance,
-                        _MaxDistance);
-                }
-
-                rayLength = max(rayLength, 0.0);
-
-                // ====================================================
-                // 8. Fog Start Distance
-                //
-                // カメラ周辺が霧で覆われないように、
-                // FogStartDistanceより先だけを計算する。
-                // ====================================================
+                rayLength = max(
+                    rayLength,
+                    0.0);
 
                 float fogStartDistance = clamp(
                     _FogStartDistance,
@@ -362,36 +560,109 @@ Shader "Custom/VolumetricFog"
                     rayLength - fogStartDistance,
                     0.0);
 
+                // 計算する霧がない場合は終了する。
                 if (fogRayLength <= 0.0001)
                 {
+                    if (_PointLightDebugMode > 0.5)
+                    {
+                        return half4(0.0, 0.0, 0.0, 1.0);
+                    }
+
                     return sceneColor;
                 }
 
-                // ====================================================
-                // 9. Sample Count
-                // ====================================================
+                // ----------------------------------------------------
+                // 7. Adaptive Sample Count
+                // ----------------------------------------------------
 
-                int sampleCount = clamp(
+                // 1画素で実行できる最大回数。
+                int maxSampleCount = clamp(
                     (int)round(_SampleCount),
                     8,
                     MAX_SAMPLE_COUNT);
 
+                // 目標の標本間隔。
+                float targetStepLength = max(
+                    _RayStepLength,
+                    0.01);
+
+                // 計算距離から必要な標本数を決める。
+                int sampleCount = clamp(
+                    (int)ceil(fogRayLength / targetStepLength),
+                    1,
+                    maxSampleCount);
+
+                // 必ずレイ全体を覆うよう間隔を計算する。
                 float stepLength =
-                    fogRayLength / max((float)sampleCount, 1.0);
+                    fogRayLength / (float)sampleCount;
 
-                // ====================================================
-                // 10. Accumulation
-                // ====================================================
+                // ----------------------------------------------------
+                // 8. Accumulation
+                // ----------------------------------------------------
 
-                // カメラまで届く元の光の割合。
+                // カメラまで届く背景光の割合。
                 float transmittance = 1.0;
 
-                // 霧からカメラに届く散乱光。
-                float3 scattering = float3(0.0, 0.0, 0.0);
+                // 全ライトの散乱光。
+                float3 scattering =
+                    float3(0.0, 0.0, 0.0);
 
-                // ====================================================
-                // 11. Ray March
-                // ====================================================
+                // Point Onlyデバッグ用の散乱光。
+                float3 pointOnlyScattering =
+                    float3(0.0, 0.0, 0.0);
+
+                // ----------------------------------------------------
+                // 9. Directional Light Preparation
+                // ----------------------------------------------------
+
+                // Directional Lightの方向と色は、
+                // この画素のレイマーチング中は変化しない。
+                Light directionalLight =
+                    GetMainLight();
+
+                float directionalCosTheta = clamp(
+                    dot(
+                        rayDirection,
+                        directionalLight.direction),
+                    -1.0,
+                    1.0);
+
+                // 異方性0を倍率1とした散乱方向の補正。
+                // 以前の最低1倍の制限は設けない。
+                float directionalPhase = min(
+                    HenyeyGreenstein(
+                        directionalCosTheta,
+                        _Anisotropy) / INV_FOUR_PI,
+                    4.0);
+
+                // 影以外のDirectional Lightの寄与を事前計算。
+                float3 directionalBaseScattering =
+                    _FogColor.rgb *
+                    directionalLight.color.rgb *
+                    _LightIntensity *
+                    directionalPhase;
+
+                // Ambientはサンプル位置で変化しない。
+                float3 ambientScattering =
+                    _FogColor.rgb *
+                    _AmbientIntensity;
+
+                // Directionalの影計算が必要か。
+                bool directionalEnabled =
+                    _LightIntensity > 0.0001;
+
+                // Point / Spotの計算が必要か。
+                bool pointEnabled =
+                    _PointLightVolumeEnabled > 0.5;
+
+                // Point Onlyデバッグを使うか。
+                bool pointDebugEnabled =
+                    _PointLightDebugMode > 0.5 &&
+                    _PointLightDebugMode < 1.5;
+
+                // ----------------------------------------------------
+                // 10. Ray March
+                // ----------------------------------------------------
 
                 [loop]
                 for (int i = 0; i < MAX_SAMPLE_COUNT; ++i)
@@ -401,156 +672,198 @@ Shader "Custom/VolumetricFog"
                         break;
                     }
 
-                    // ------------------------------------------------
-                    // Sample Position
-                    // ------------------------------------------------
-
+                    // サンプル位置を計算する。
                     float distanceAlongRay =
-                        fogStartDistance
-                        + ((float)i + 0.5) * stepLength;
+                        fogStartDistance +
+                        ((float)i + 0.5) * stepLength;
 
                     float3 samplePositionWS =
-                        cameraPositionWS
-                        + rayDirection * distanceAlongRay;
+                        rayOriginWS +
+                        rayDirection * distanceAlongRay;
 
-                    // ------------------------------------------------
+                    // -----------------------------------------------
                     // Fog Density
-                    // ------------------------------------------------
+                    // -----------------------------------------------
 
-                    float density = GetFogDensity(samplePositionWS);
+                    float density =
+                        GetFogDensity(samplePositionWS);
 
+                    // 霧が存在しない位置の計算を省略する。
                     if (density <= 0.000001)
                     {
                         continue;
                     }
 
-                    // ------------------------------------------------
-                    // Main Light Shadow
-                    //
-                    // 1 = 光が届いている
-                    // 0 = 遮蔽物による影
-                    // ------------------------------------------------
 
-                    float4 shadowCoord = TransformWorldToShadowCoord(
-                        samplePositionWS);
+                    // ----------------------------------------------------
+                    // Directional Light Scattering
+                    // ----------------------------------------------------
 
-                    Light mainLight = GetMainLight(shadowCoord);
+                    // Directional Lightの散乱光。
+                    float3 directScattering =
+                        float3(0.0, 0.0, 0.0);
 
-                    float shadowAttenuation =
-                        mainLight.shadowAttenuation;
+                    // Directionalの散乱を使う場合だけ処理する。
+                    if (directionalEnabled)
+                    {
+                        // 初期状態では影による減衰なし。
+                        float shadowAttenuation = 1.0;
 
-                    // ------------------------------------------------
-                    // Forward Scattering
-                    // ------------------------------------------------
+                        // 影の強さが0の場合はShadow Mapを参照しない。
+                        if (_DirectionalShadowStrength > 0.0001)
+                        {
+                            // 現在のサンプル位置をShadow Map座標に変換する。
+                            float4 shadowCoord =
+                                TransformWorldToShadowCoord(
+                                    samplePositionWS);
 
-                    float cosTheta = clamp(
-                        dot(rayDirection, mainLight.direction),
-                        -1.0,
-                        1.0);
+                            // Directional Lightのリアルタイム影を取得する。
+                            float sampledShadow =
+                                GetMainLight(
+                                    shadowCoord).shadowAttenuation;
 
-                    float hgPhase = HenyeyGreenstein(
-                        cosTheta,
-                        _Anisotropy);
+                            // 0では影なし、1ではShadow Mapの結果を使用。
+                            shadowAttenuation = lerp(
+                                1.0,
+                                sampledShadow,
+                                saturate(_DirectionalShadowStrength));
+                        }
 
-                    // 異方性0のときを基準倍率1とする。
-                    float phaseRatio = hgPhase / INV_FOUR_PI;
+                        // 影を反映してDirectionalの散乱光を計算する。
+                        directScattering =
+                            directionalBaseScattering *
+                            shadowAttenuation;
+                    }
 
-                    // 前方散乱を強調する。
-                    float phaseBoost = max(phaseRatio, 1.0);
 
-                    // 極端な白飛びを防ぐ。
-                    phaseBoost = min(phaseBoost, 8.0);
+                    // -----------------------------------------------
+                    // Point / Spot Light Scattering
+                    // -----------------------------------------------
 
-                    // ------------------------------------------------
+                    float3 pointScattering =
+                        float3(0.0, 0.0, 0.0);
+
+                    if (pointEnabled)
+                    {
+                        // 3D格子と共通のカメラ前方距離。
+                        float viewDistance = dot(
+                            samplePositionWS - cameraPositionWS,
+                            cameraForwardWS);
+
+                        float3 pointLighting =
+                            SamplePointLightScattering(
+                                depthUv,
+                                viewDistance);
+
+                        pointScattering =
+                            _FogColor.rgb *
+                            pointLighting;
+                    }
+
+                    // -----------------------------------------------
+                    // Total Scattering
+                    // -----------------------------------------------
+
+                    // DirectionalとAmbientは共通倍率を適用。
+                    // Point / Spotは専用倍率で独立調整する。
+                    float3 scatteredLight =
+                        (ambientScattering + directScattering) *
+                        _ScatteringIntensity +
+                        pointScattering;
+
+                    // -----------------------------------------------
                     // Beer-Lambert
-                    // ------------------------------------------------
+                    // -----------------------------------------------
 
-                    float extinction = density * stepLength;
+                    // この区間を通過する光の減衰率。
+                    float extinction =
+                        density * stepLength;
 
-                    float stepTransmittance = exp(-extinction);
+                    float stepTransmittance =
+                        exp(-extinction);
 
+                    // この区間で散乱する光の割合。
                     float scatteredAmount =
                         1.0 - stepTransmittance;
 
-                    // ------------------------------------------------
-                    // Ambient Scattering
-                    // ------------------------------------------------
+                    // 手前側の霧による遮蔽を反映する。
+                    float scatteringWeight =
+                        transmittance *
+                        scatteredAmount;
 
-                    float3 ambientLight =
-                        _FogColor.rgb * _AmbientIntensity;
-
-                    // ------------------------------------------------
-                    // Directional Light Scattering
-                    //
-                    // Directional Lightなので
-                    // distanceAttenuationは使用しない。
-                    // ------------------------------------------------
-
-                    float3 directScattering =
-                        _FogColor.rgb
-                        * mainLight.color.rgb
-                        * shadowAttenuation
-                        * _LightIntensity
-                        * phaseBoost;
-
-                    // ------------------------------------------------
-                    // Total Scattered Light
-                    // ------------------------------------------------
-
-                    float3 scatteredLight =
-                        (ambientLight + directScattering)
-                        * _ScatteringIntensity;
-
-                    // ------------------------------------------------
-                    // Accumulate Scattering
-                    // ------------------------------------------------
-
+                    // 全ライトの散乱光を蓄積する。
                     scattering +=
-                        transmittance
-                        * scatteredAmount
-                        * scatteredLight;
+                        scatteringWeight *
+                        scatteredLight;
 
-                    // ------------------------------------------------
-                    // Update Transmittance
-                    // ------------------------------------------------
+                    // Point OnlyではPoint / Spotだけを蓄積する。
+                    // Scattering Intensityを二重適用しない。
+                    if (pointDebugEnabled)
+                    {
+                        pointOnlyScattering +=
+                            scatteringWeight *
+                            pointScattering;
+                    }
 
+                    // 次の標本に向けて透過率を更新する。
                     transmittance *= stepTransmittance;
 
-                    // 十分に減衰した場合は計算を終了する。
+                    // ほぼ完全に遮蔽されたら早期終了する。
                     if (transmittance < 0.01)
                     {
                         break;
                     }
                 }
 
-                // ====================================================
-                // 12. Sky Fog Strength
-                //
-                // Skyに対してだけ霧の強さを調整する。
-                // 通常のオブジェクトには1.0を使用する。
-                // ====================================================
+                // ----------------------------------------------------
+                // 11. Sky Fog Strength
+                // ----------------------------------------------------
 
-                float fogStrength = isSky ? saturate(_SkyFogStrength) : 1.0;
+                float fogStrength = isSky
+                    ? saturate(_SkyFogStrength)
+                    : 1.0;
 
-                // ====================================================
-                // 13. Apply Fog Strength
-                // ====================================================
+                // ----------------------------------------------------
+                // 12. Debug Point Only
+                // ----------------------------------------------------
 
-                // 0 = 元画面を完全に残す
-                // 1 = 計算した透過率をそのまま適用する
-                float appliedTransmittance = lerp(1.0, transmittance, fogStrength);
+                if (pointDebugEnabled)
+                {
+                    // 実際のFog積算を通したPoint / Spotの散乱光。
+                    float3 debugPointLighting =
+                        pointOnlyScattering *
+                        fogStrength *
+                        _PointLightDebugGain;
 
-                float3 appliedScattering = scattering * fogStrength;
+                    return half4(
+                        saturate(debugPointLighting),
+                        1.0);
+                }
 
-                // ====================================================
-                // 14. Final Composite
-                // ====================================================
+                // ----------------------------------------------------
+                // 13. Final Composite
+                // ----------------------------------------------------
 
+                // 背景が暗くなる割合を調整する。
+                // 初期値1では従来どおりの減衰になる。
+                float appliedTransmittance = lerp(
+                    1.0,
+                    transmittance,
+                    fogStrength *
+                    saturate(_FogTransmittanceStrength));
+
+                // 散乱光は背景の透過率とは独立して合成する。
+                float3 appliedScattering =
+                    scattering *
+                    fogStrength;
+
+                // 元の画面色と散乱光を合成する。
                 float3 finalColor =
-                    sceneColor.rgb * appliedTransmittance
-                    + appliedScattering;
+                    sceneColor.rgb *
+                    appliedTransmittance +
+                    appliedScattering;
 
-                // HDR値をBloomへ渡すためsaturateはしない。
+                // HDRを維持して後続のBloomへ渡す。
                 return half4(
                     finalColor,
                     sceneColor.a);

@@ -1,5 +1,20 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-7017103792857020219
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 160d7859b1141da4cbc66de7199a98d1, type: 3}
+  m_Name: PixelVolumetricFogRendererFeature
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelVolumetricFogRendererFeature
+  m_Active: 1
+  _fogMaterial: {fileID: 2100000, guid: 865cd092550174e4394cb24600a5f64a, type: 2}
+  _useCompositeDepth: 0
 --- !u!114 &-5791863826025335512
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -26,6 +41,25 @@ MonoBehaviour:
     BlurQuality: 0
     Falloff: 100
     SampleCount: -1
+--- !u!114 &-4432953328512687642
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ce55cb2188d1baa48bbeba6c0c9d9846, type: 3}
+  m_Name: PointLightVolumeRendererFeature
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PointLightVolumeRendererFeature
+  m_Active: 1
+  _computeShader: {fileID: 7200000, guid: 4cc81d5e13b896346b7902c591f2e022, type: 3}
+  _pixelSize: 4
+  _depthSlices: 128
+  _maxDistance: 100
+  _anisotropy: 0.5
+  _enableDiagnosticLogs: 0
 --- !u!114 &-1172159134056201380
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -74,11 +108,12 @@ MonoBehaviour:
   - {fileID: -1172159134056201380}
   - {fileID: 2482062767438460493}
   - {fileID: -5791863826025335512}
-  - {fileID: 7218563272067358311}
   - {fileID: 4080925466021557763}
   - {fileID: 5258720680466886612}
   - {fileID: 8378362383342218171}
-  m_RendererFeatureMap: 5cc3595a7aa7bbef4d7664bbef0e72222835536e892a9faf679e41e40c7d2d6403760ff5165ca238d4af3ad498bafa48bbab9b7a32ec4574
+  - {fileID: -4432953328512687642}
+  - {fileID: -7017103792857020219}
+  m_RendererFeatureMap: 5cc3595a7aa7bbef4d7664bbef0e72222835536e892a9faf03760ff5165ca238d4af3ad498bafa48bbab9b7a32ec4574e6a11d3c6ffc7ac2c508b652473d9e9e
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -164,26 +199,6 @@ MonoBehaviour:
   fetchColorBuffer: 1
   requirements: 7
   passMaterial: {fileID: 2100000, guid: cc24803f25cb93543818e95ee7993d0c, type: 2}
-  passIndex: 0
-  bindDepthStencilAttachment: 0
-  m_Version: 1
---- !u!114 &7218563272067358311
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b00045f12942b46c698459096c89274e, type: 3}
-  m_Name: Volumetric Fog
-  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.FullScreenPassRendererFeature
-  m_Active: 1
-  injectionPoint: 550
-  fetchColorBuffer: 1
-  requirements: 5
-  passMaterial: {fileID: 2100000, guid: 865cd092550174e4394cb24600a5f64a, type: 2}
   passIndex: 0
   bindDepthStencilAttachment: 0
   m_Version: 1

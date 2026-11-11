@@ -25,6 +25,106 @@ public class SensorChainsawDigging : MonoBehaviour
     [Tooltip("敵への食い込み攻撃データ")]
     [SerializeField] private AttackData diggingAttackData;
 
+    [Header("弱攻撃の食い込み専用データ")]
+    [Tooltip("弱攻撃の最初の3回に使用する専用AttackDataです。通常の敵食い込み用とは別のアセットを指定してください。攻撃ベクトルは0にして、吹き飛ばしは振り抜き専用データで設定してください。")]
+    [SerializeField] private AttackData weakAttackDiggingData;
+
+    [Tooltip("空中で開始した弱攻撃の最初の3回に使用する専用AttackDataです。未設定なら地上用のWeak Attack Digging Dataを使います。攻撃間隔・アクセル消費・倍率は通常の敵食い込みと共通です。")]
+    [SerializeField] private AttackData airWeakAttackDiggingData;
+    // 開始時に選んだ攻撃データを保持し、途中着地で攻撃内容が変わることを防ぐ。
+    private AttackData activeWeakAttackDiggingData;
+
+    public bool IsWeakEnemyAttack { get; private set; }
+
+    // 弱攻撃の接触情報を通常の敵食い込みへ接続し、命中した場所と敵との位置差を保持する。
+    public bool BeginWeakEnemyAttack(EnemyAttackHitReceiver enemy, Collider enemyCollider, Vector3 point, bool isAirAttack = false)
+    {
+        // 敵に当たった時点の接地ではなく、攻撃を開始した時点の空中判定を使う。
+        AttackData data = isAirAttack && airWeakAttackDiggingData != null
+            ? airWeakAttackDiggingData
+            : weakAttackDiggingData;
+        if (!isActiveAndEnabled || diggingParameter == null || data == null ||
+            accelerator == null || !SensorChainsawContactDetector.CanReceiveEnemyHit(enemy)) return false;
+        activeWeakAttackDiggingData = data;
+        IsWeakEnemyAttack = true;
+        IsRequested = true;
+        Surface = ChainsawSurface.Enemy;
+        contact = new SensorChainsawContact
+        {
+            Enemy = enemy,
+            Collider = enemyCollider,
+            Point = point,
+            Surface = ChainsawSurface.Enemy,
+            Normal = Vector3.up
+        };
+        enemyFollowOffset = transform.position - enemy.transform.position;
+        enemyLocalHitPoint = enemy.transform.InverseTransformPoint(point);
+        enemyPushApplied = true; // 吹き飛ばしは振り抜きまで待つ。
+        timer = 0f;
+        particleFrameSurface = ChainsawSurface.Enemy;
+        DiggingParticleFrameChanged?.Invoke();
+        return true;
+    }
+
+    // 弱攻撃による敵接続を解除する。攻撃アニメーションの再開は攻撃側へ任せる。
+    public void EndWeakEnemyAttack()
+    {
+        if (!IsWeakEnemyAttack) return;
+        IsWeakEnemyAttack = false;
+        activeWeakAttackDiggingData = null;
+        IsRequested = false;
+        Surface = ChainsawSurface.None;
+        contact = default;
+        enemyFollowOffset = Vector3.zero;
+        enemyLocalHitPoint = Vector3.zero;
+        enemyPushApplied = false;
+        particleFrameSurface = ChainsawSurface.None;
+        timer = 0f;
+        DiggingParticleFrameChanged?.Invoke();
+    }
+
+    // 通常・弱攻撃の敵食い込みで、倍率計算、アクセル消費、命中演出を共用する。
+    private bool TrySendEnemyDiggingDamage()
+    {
+        float speedRatio = Mathf.Clamp01(accelerator.SpeedRatio);
+        float damageMultiplier = Mathf.Lerp(diggingParameter.minDamageMultiplier,
+            diggingParameter.maxDamageMultiplier, speedRatio);
+        float consumeAmount = HasBonus ? diggingParameter.bonusEnemyConsumeAmount
+            : diggingParameter.enemyConsumeAmount;
+        if (!accelerator.TryConsume(consumeAmount))
+        {
+            // 消費できるまで接続を保持し、未実行の間隔は持ち越さない。
+            timer = 0f;
+            return false;
+        }
+        // 間隔・倍率・消費は共用し、弱攻撃中だけ専用SOへ切り替える。
+        AttackData data = IsWeakEnemyAttack ? activeWeakAttackDiggingData : diggingAttackData;
+        return chainsawAttack.HitDigging(contact.Enemy, data,
+            damageMultiplier * (HasBonus ? diggingParameter.bonusDamageMultiplier : 1f),
+            contact.Point);
+    }
+
+    // 通常敵食い込みと同じ間隔・消費・攻撃データでダメージを送り、3回成立で振り抜きへ進める。
+    private void TickWeakEnemyAttack(float deltaTime)
+    {
+        if (!SensorChainsawContactDetector.CanReceiveEnemyHit(contact.Enemy))
+        {
+            EndWeakEnemyAttack();
+            chainsawAttack.EndWeakEnemyDamage();
+            return;
+        }
+        contact.Point = contact.Enemy.transform.TransformPoint(enemyLocalHitPoint);
+        timer += deltaTime;
+        float interval = Mathf.Max(0.01f, diggingParameter.enemyAttackInterval);
+        // ヒットストップをまたいだ連続送信を防ぐため、1回の物理更新につき1命中とする。
+        if (timer < interval) return;
+        timer = 0f;
+        if (TrySendEnemyDiggingDamage()) chainsawAttack.RegisterWeakEnemyDamage();
+    }
+
+    // Hold操作の予約押下を、最低1回の物理更新で処理するまで保持する。
+    private bool bufferedRequestAwaitingTick;
+
     private float wallContactLostTime;
     private float ceilingBonusRamp;
 
@@ -70,6 +170,21 @@ public class SensorChainsawDigging : MonoBehaviour
     public Vector3 SurfaceNormal =>
         contact.Normal;
 
+    private ChainsawSurface particleFrameSurface = ChainsawSurface.None;
+
+    // 面別の停止キーフレームへ到達した食い込みだけ、パーティクルの継続放出を許可する。
+    public bool IsParticleFrameActive =>
+        isActiveAndEnabled && IsRequested && IsDigging &&
+        particleFrameSurface != ChainsawSurface.None && Surface == particleFrameSurface &&
+        playerAnimator != null && (playerAnimator.IsDiggingAnimationActive ||
+            (IsWeakEnemyAttack && playerAnimator.IsWeakAttackHeld));
+
+    // 床・壁・天井の食い込み解除時に、解除直前の面法線を移動制御へ渡す。
+    public event System.Action<Vector3> MovementDiggingReleased;
+
+    // 固定フレームへの到達・解除を通知し、同じタイミングでパーティクルの放出を切り替える。
+    public event System.Action DiggingParticleFrameChanged;
+
     // 凸の角で法線が真下になった場合も、本体幅による天井支持が確定しているかを返す。
     public bool HasCeilingBodySupport => isActiveAndEnabled && IsRequested &&
         Surface == ChainsawSurface.Ceiling && contact.HasCeilingBodyTarget;
@@ -86,6 +201,18 @@ public class SensorChainsawDigging : MonoBehaviour
         // Controllerが今回確定した速度でも照会し、加速やボーナス直後の移動先と判定位置を揃える。
         contact = support;
         return detector.TryGetCeilingFollowVelocity(contact, moveSpeed, stickSpeed, deltaTime, out velocity);
+    }
+
+    // 床継続中だけ、今回の速度で支持高さを調べ直してControllerへ追従速度を渡す。
+    public bool TryGetFloorFollowVelocity(float moveSpeed, float deltaTime, out Vector3 velocity)
+    {
+        velocity = default;
+        if (!isActiveAndEnabled || !IsRequested || Surface != ChainsawSurface.Floor ||
+            detector == null || !detector.TryGetFloorBodySupport(
+                moveSpeed, deltaTime, contact.Normal, out SensorChainsawContact support))
+            return false;
+        contact = support;
+        return detector.TryGetFloorFollowVelocity(contact, deltaTime, out velocity);
     }
 
     public float MoveSpeedBonus =>
@@ -228,9 +355,23 @@ public class SensorChainsawDigging : MonoBehaviour
         bool held,
         bool attacking,
         float facingDirection = 1f,
-        bool isGrounded = true)
+        bool isGrounded = true,
+        bool fromImpactBuffer = false)
     {
         if (!isActiveAndEnabled)
+        {
+            return;
+        }
+
+        if (IsWeakEnemyAttack) return; // 弱攻撃の接続は3回の命中または中断で解除する。
+
+        // 予約中にボタンを離していても、押下を1回実行してから通常のHold解除へ戻す。
+        if (fromImpactBuffer)
+        {
+            holdBlocked = false;
+            bufferedRequestAwaitingTick = true;
+        }
+        else if (bufferedRequestAwaitingTick && !pressed && !attacking)
         {
             return;
         }
@@ -304,6 +445,8 @@ public class SensorChainsawDigging : MonoBehaviour
     // 入力時に接触を確認し、接触中ならその場で成立、空中なら接触待機を開始する。
     private void BeginRequest(float facingDirection, bool waitForContact)
     {
+        particleFrameSurface = ChainsawSurface.None;
+        DiggingParticleFrameChanged?.Invoke();
         detector.SetFacingDirection(facingDirection);
         // 天井専用センサーの接触を優先し、それ以外は既存の面選択を使用する。
         bool hasContact = detector.TryGetCeilingContact(out SensorChainsawContact initialContact);
@@ -377,6 +520,8 @@ public class SensorChainsawDigging : MonoBehaviour
             playerAnimator != null && playerAnimator.IsDiggingAnimationActive)
         {
             playerAnimator.HoldDiggingAnimationImmediately();
+            particleFrameSurface = surface;
+            DiggingParticleFrameChanged?.Invoke();
         }
     }
 
@@ -388,6 +533,14 @@ public class SensorChainsawDigging : MonoBehaviour
     float floorMoveSpeed = 0f,
     int wallImpactLayers = 0)
     {
+        // 予約押下はここから通常の食い込み更新へ引き渡す。
+        bufferedRequestAwaitingTick = false;
+        if (IsWeakEnemyAttack)
+        {
+            if (isActiveAndEnabled && deltaTime > 0f && Time.timeScale > 0f) TickWeakEnemyAttack(deltaTime);
+            return;
+        }
+
         // 閾値を下回ったら、古い回避時間と未実行のボーナスダッシュを持ち越さない。
         // 食い込み要求がない場合も消去し、再加速だけで古い回避が復活するのを防ぐ。
         if (!MeetsBonusAcceleratorThreshold)
@@ -625,38 +778,7 @@ public class SensorChainsawDigging : MonoBehaviour
                     return;
                 }
 
-                float speedRatio =
-                    Mathf.Clamp01(accelerator.SpeedRatio);
-
-                float damageMultiplier =
-                    Mathf.Lerp(
-                        diggingParameter.minDamageMultiplier,
-                        diggingParameter.maxDamageMultiplier,
-                        speedRatio
-                    );
-
-                float consumeAmount =
-                    HasBonus
-                        ? diggingParameter.bonusEnemyConsumeAmount
-                        : diggingParameter.enemyConsumeAmount;
-
-                if (!accelerator.TryConsume(consumeAmount))
-                {
-                    // リソース不足でも接続は保持し、今回のダメージだけを停止する。
-                    // 回復後の一括攻撃を防ぐため、未実行の間隔を持ち越さない。
-                    timer = 0f;
-                    return;
-                }
-
-                bool hit = chainsawAttack.HitDigging(
-                    contact.Enemy,
-                    diggingAttackData,
-                    damageMultiplier *
-                        (HasBonus
-                            ? diggingParameter.bonusDamageMultiplier
-                            : 1f),
-                    contact.Point
-                );
+                bool hit = TrySendEnemyDiggingDamage();
 
                 if (!hit)
                 {
@@ -813,6 +935,10 @@ public class SensorChainsawDigging : MonoBehaviour
         Surface =
             contact.Surface;
 
+        // 面が切り替わった場合も、新しい面の停止キーフレームに到達するまでは放出しない。
+        particleFrameSurface = ChainsawSurface.None;
+        DiggingParticleFrameChanged?.Invoke();
+
         // 地面→壁の切り替え時は呼び出し元が一旦Noneにするため、
         // 壁へ食い込み成立した時点で必ず進入バージョンを更新する。
         if (Surface == ChainsawSurface.Wall)
@@ -831,6 +957,10 @@ public class SensorChainsawDigging : MonoBehaviour
         }
         // 再生後は各On～DiggingFrameだけで止め、成立時点で早期固定しない。
         playerAnimator.ResumeDiggingAnimation();
+
+        // 通常の地形壁では何も変更せず、専用Triggerに設定された開始位置だけを適用する。
+        if (Surface == ChainsawSurface.Wall && detector != null)
+            detector.ApplyWallEntryPosition(contact.Collider);
 
         if (Surface ==
             ChainsawSurface.Enemy)
@@ -947,7 +1077,7 @@ public class SensorChainsawDigging : MonoBehaviour
     /// Physics.IgnoreCollision中もOverlapBoxで検出可能なため、ボーナス貫通に対応。
     /// 敵からプレイヤーへのダメージは既存の敵攻撃とPlayerAttackHitReceiverに委ねる。
     /// </summary>
-    private void ProcessMovementEnemyContacts(Vector3 displacement)
+    private void ProcessMovementEnemyContacts(Vector3 displacement, bool queueTriggerHits = false)
     {
         if (!IsMovementDigging || movementBody == null || detector == null ||
             chainsawAttack == null || diggingAttackData == null)
@@ -977,7 +1107,7 @@ public class SensorChainsawDigging : MonoBehaviour
             {
                 count = Physics.OverlapBoxNonAlloc(bounds.center, bounds.extents,
                     movementOverlapBuffer, Quaternion.identity, enemyMask,
-                    QueryTriggerInteraction.Ignore);
+                    QueryTriggerInteraction.Collide);
                 if (count < movementOverlapBuffer.Length) break;
                 System.Array.Resize(ref movementOverlapBuffer, movementOverlapBuffer.Length * 2);
             }
@@ -985,7 +1115,10 @@ public class SensorChainsawDigging : MonoBehaviour
             for (int i = 0; i < count; i++)
             {
                 Collider enemyCollider = movementOverlapBuffer[i];
-                if (enemyCollider == null || enemyCollider.attachedRigidbody == movementBody)
+                if (enemyCollider == null || enemyCollider.attachedRigidbody == movementBody ||
+                    !ChainsawContactZone.AllowsAttack(enemyCollider) ||
+                    (queueTriggerHits && (!enemyCollider.isTrigger ||
+                     ChainsawContactZone.GetZone(enemyCollider) == null)))
                     continue;
 
                 EnemyAttackHitReceiver enemy = enemyCollider.GetComponentInParent<EnemyAttackHitReceiver>();
@@ -1001,6 +1134,11 @@ public class SensorChainsawDigging : MonoBehaviour
 
                 // 同一物理ステップで複数Colliderに接触しても二重命中しない。
                 touchingEnemies.Add(enemy);
+                if (queueTriggerHits)
+                {
+                    QueueTriggerMovementHit(enemy);
+                    continue;
+                }
                 chainsawAttack.HitMovementContact(enemy, diggingAttackData,
                     movementContactDamageMultiplier,
                     enemyCollider.ClosestPoint(bounds.center));
@@ -1013,9 +1151,16 @@ public class SensorChainsawDigging : MonoBehaviour
         {
             if (!IsMovementDigging || !IsRequested) break;
             SensorChainsawContact candidate = movementSweepContacts[i];
+            if (queueTriggerHits && (candidate.Collider == null || !candidate.Collider.isTrigger ||
+                ChainsawContactZone.GetZone(candidate.Collider) == null)) continue;
             if (!SensorChainsawContactDetector.CanReceiveEnemyHit(candidate.Enemy)) continue;
             detectedEnemies.Add(candidate.Enemy);
             if (!touchingEnemies.Add(candidate.Enemy)) continue;
+            if (queueTriggerHits)
+            {
+                QueueTriggerMovementHit(candidate.Enemy);
+                continue;
+            }
             chainsawAttack.HitMovementContact(candidate.Enemy, diggingAttackData,
                 movementContactDamageMultiplier, candidate.Point);
         }
@@ -1032,15 +1177,26 @@ public class SensorChainsawDigging : MonoBehaviour
         {
             // この物理ステップの状態を保存し、被弾で解除された後の衝突通知も受け付ける。
             movementCollisionWindow = true;
+            // 専用の被攻撃Triggerも照会するが、通常時は既存の衝突命中と同じ次回物理更新で送る。
+            ProcessMovementEnemyContacts(displacement, true);
             return;
         }
         ProcessMovementEnemyContacts(displacement);
     }
 
+    // 通常時の専用Triggerへの接触を、既存の遅延命中キューへ一度だけ登録する。
+    private void QueueTriggerMovementHit(EnemyAttackHitReceiver enemy)
+    {
+        if (!SensorChainsawContactDetector.CanReceiveEnemyHit(enemy) ||
+            !normalMovementHitEnemies.Add(enemy) || !queuedMovementCollisionEnemies.Add(enemy)) return;
+        pendingMovementCollisionEnemies.Add(enemy);
+    }
+
     // 通常食い込み中の実際の本体衝突を記録し、敵の接触攻撃より先にやられ状態へ変えない。
     public void QueueMovementEnemyCollision(Collision collision)
     {
-        if (!movementCollisionWindow || collision == null || collision.collider == null) return;
+        if (!movementCollisionWindow || collision == null || collision.collider == null ||
+            !ChainsawContactZone.AllowsAttack(collision.collider)) return;
         EnemyAttackHitReceiver enemy =
             collision.collider.GetComponentInParent<EnemyAttackHitReceiver>();
         if (!SensorChainsawContactDetector.CanReceiveEnemyHit(enemy) ||
@@ -1080,6 +1236,18 @@ public class SensorChainsawDigging : MonoBehaviour
     public void Cancel(
         bool immediate)
     {
+        bufferedRequestAwaitingTick = false;
+        if (IsWeakEnemyAttack)
+        {
+            EndWeakEnemyAttack();
+            if (chainsawAttack != null) chainsawAttack.EndWeakEnemyDamage();
+            return;
+        }
+        bool releasedMovementDigging = Surface == ChainsawSurface.Floor ||
+            Surface == ChainsawSurface.Wall || Surface == ChainsawSurface.Ceiling;
+        Vector3 releasedNormal = contact.Normal;
+        particleFrameSurface = ChainsawSurface.None;
+        DiggingParticleFrameChanged?.Invoke();
         // 被弾で解除されても、直前の物理衝突で成立した命中は次の物理更新まで残す。
         normalMovementHitEnemies.Clear();
         // 攻撃・ジャンプ・無効化でも、接触待ちを残さない。
@@ -1101,6 +1269,7 @@ public class SensorChainsawDigging : MonoBehaviour
         ceilingBonusRamp = 0f;
         pendingDash = 0f;
         holdBlocked = true;
+        if (releasedMovementDigging) MovementDiggingReleased?.Invoke(releasedNormal);
 
         // 保留中のFloor → Wall判定をリセット。
         pendingWallCollider = null;

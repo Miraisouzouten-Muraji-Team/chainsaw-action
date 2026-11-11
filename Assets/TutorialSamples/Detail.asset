@@ -1,0 +1,57 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e3899f69d9f93a14f895ecb2a5b8f7cd, type: 3}
+  m_Name: Detail
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialDefinition
+  mode: 1
+  fadeSeconds: 0.5
+  pages:
+  - title: "\u8A73\u7D30\u8AAC\u660E\uFF1A\u30DA\u30FC\u30B81"
+    description: "\u3053\u3053\u306B\u98DF\u3044\u8FBC\u307F\u3084\u30DC\u30FC\u30CA\u30B9\u306E\u8AAC\u660E\u3092\u8A2D\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002\n\u5DE6\u30B9\u30C6\u30A3\u30C3\u30AF\u3092\u5DE6\u53F3\u306B\u5012\u3059\u3068\u30DA\u30FC\u30B8\u3092\u5207\u308A\u66FF\u3048\u307E\u3059\u3002"
+    demo: 3
+    buttonLabel: X
+    thirdPress: 0.55
+    demoMaxRPM: 50
+    demoMinRPM: 5
+    demoBonusThreshold: 40
+    demoAfterBonusRPM: 35
+    demoBonusTravelDuration: 0.04
+    demoKnockback: {x: 0.18, y: 0.1}
+    illustration: {fileID: 0}
+    animationFrames: []
+    alternateAnimationFrames: []
+    triggerPressDuration: 0.08
+    cycleSeconds: 2.4
+    firstPress: 0.15
+    secondPress: 0.38
+    landing: 0.75
+    customRelease: 0.7
+  - title: "\u8A73\u7D30\u8AAC\u660E\uFF1A\u30DA\u30FC\u30B82"
+    description: "\u56F3\u3084\u9023\u756A\u30A2\u30CB\u30E1\u30FC\u30B7\u30E7\u30F3\u3092\u30DA\u30FC\u30B8\u3054\u3068\u306B\u767B\u9332\u3067\u304D\u307E\u3059\u3002"
+    demo: 3
+    buttonLabel: X
+    thirdPress: 0.55
+    demoMaxRPM: 50
+    demoMinRPM: 5
+    demoBonusThreshold: 40
+    demoAfterBonusRPM: 35
+    demoBonusTravelDuration: 0.04
+    demoKnockback: {x: 0.18, y: 0.1}
+    illustration: {fileID: 0}
+    animationFrames: []
+    alternateAnimationFrames: []
+    triggerPressDuration: 0.08
+    cycleSeconds: 2.4
+    firstPress: 0.15
+    secondPress: 0.38
+    landing: 0.75
+    customRelease: 0.7

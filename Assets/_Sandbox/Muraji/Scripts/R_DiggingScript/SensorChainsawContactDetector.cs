@@ -1,8 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-// ChainsawSurfaceは既存PlayerAnimatorと同じ型を共有する。
-// ここでは再定義しない。
+// 食い込み先の種別は、プロジェクト内の既存ChainsawSurfaceを使用する。
 
 public struct SensorChainsawContact
 {
@@ -14,6 +13,9 @@ public struct SensorChainsawContact
     // 天井継続の本体BoxCastが求めた安全な中心位置。通常の床・壁・敵判定では使用しない。
     public bool HasCeilingBodyTarget;
     public Vector3 CeilingBodyTarget;
+    // 床継続中の本体BoxCastで求めた、次の横位置に対応する安全な中心位置。
+    public bool HasFloorBodyTarget;
+    public Vector3 FloorBodyTarget;
 }
 
 public class SensorChainsawContactDetector : MonoBehaviour
@@ -143,7 +145,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
     private void AddMovementEnemyContact(List<SensorChainsawContact> destination,
         Collider target, Vector3 sensorCenter, Vector3 point)
     {
-        if (IsOwner(target)) return;
+        if (IsOwner(target) || !ChainsawContactZone.AllowsAttack(target)) return;
         EnemyAttackHitReceiver enemy = target.GetComponentInParent<EnemyAttackHitReceiver>();
         if (!CanReceiveEnemyHit(enemy)) return;
 
@@ -351,18 +353,15 @@ public class SensorChainsawContactDetector : MonoBehaviour
             ref bestScore
         );
 
-        // 地形食い込み中は敵を「食い込み先」として再選択しない。
-        // 未食い込み時は従来どおり敵への直接食い込みを許可する。
-        if (currentSurface == ChainsawSurface.None)
-        {
-            CollectContacts(
-                middleSensor,
-                preferred,
-                currentSurface,
-                ref contact,
-                ref bestScore
-            );
-        }
+        // 中央センサーは壁用Triggerの継続確認にも使用する。
+        // 敵への新規食い込みはCollectContacts内で未食い込み時だけに制限する。
+        CollectContacts(
+            middleSensor,
+            preferred,
+            currentSurface,
+            ref contact,
+            ref bestScore
+        );
 
         CollectContacts(
             lowerSensor,
@@ -395,6 +394,18 @@ public class SensorChainsawContactDetector : MonoBehaviour
         // 敵・壁・天井の優先順位は既存どおり維持する。
         ApplyPlayerGroundSupport(currentSurface, ref contact);
 
+        // 床の開始条件は変えず、継続時だけ移動先の本体幅で実際の床高さを確定する。
+        // 正面の壁は既存の床→壁遷移を優先する。
+        if (currentSurface == ChainsawSurface.Floor &&
+            (contact.Collider == null || contact.Surface == ChainsawSurface.Floor))
+        {
+            if (TryGetFloorBodySupport(ceilingMoveSpeed, ceilingDeltaTime,
+                ceilingPreviousNormal, out SensorChainsawContact floorSupport))
+                contact = floorSupport;
+            else
+                contact = default;
+        }
+
         detectedSurface = contact.Surface;
         detectedCollider = contact.Collider;
         detectedNormal = contact.Normal;
@@ -422,6 +433,21 @@ public class SensorChainsawContactDetector : MonoBehaviour
             found = true;
         }
         return found;
+    }
+
+    // 本体中央の真上に実在する下面を確認し、BoxCastが角だけを拾う支持を除外する。
+    private bool TryGetCeilingCenterFace(Collider target, Bounds bodyBounds, float centerX,
+        float extraHeight, out RaycastHit face)
+    {
+        face = default;
+        if (target == null || target.isTrigger || IsOwner(target)) return false;
+        float backoff = Mathf.Max(0.01f, contactDetectorParameter.NormalRayBackoff);
+        Vector3 origin = new Vector3(centerX, bodyBounds.min.y - backoff, bodyBounds.center.z);
+        float distance = bodyBounds.size.y + backoff * 2f + Mathf.Max(0f, extraHeight);
+        if (!target.Raycast(new Ray(origin, Vector3.up), out face, distance)) return false;
+        if (face.point.y < bodyBounds.center.y || Mathf.Abs(face.normal.z) > 0.5f) return false;
+        Vector3 normal = new Vector3(face.normal.x, face.normal.y, 0f).normalized;
+        return normal.y <= -ResolvedSurfaceNormalThreshold;
     }
 
     // 次の横位置の本体幅を上向きにBoxCastし、頭が通れる高さを決める実際の天井を取得する。
@@ -454,6 +480,10 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 continue;
             Vector3 normal = new Vector3(hit.normal.x, hit.normal.y, 0f).normalized;
             if (normal.y > -ResolvedSurfaceNormalThreshold) continue;
+            // 次の本体中央が天井の外へ出ているなら、幅の端だけを支えに接続し続けない。
+            if (!TryGetCeilingCenterFace(hit.collider, bounds, origin.x,
+                probeDistance * 2f, out RaycastHit centerFace)) continue;
+            normal = new Vector3(centerFace.normal.x, centerFace.normal.y, 0f).normalized;
             if (hit.distance > nearestDistance) continue;
             if (hit.distance == nearestDistance && contact.Collider != null &&
                 hit.collider.GetInstanceID() >= contact.Collider.GetInstanceID()) continue;
@@ -539,6 +569,98 @@ public class SensorChainsawContactDetector : MonoBehaviour
         return true;
     }
 
+    // 床食い込みの移動先を本体サイズで下向きに掃引し、坂の継ぎ目でも支持位置を取得する。
+    public bool TryGetFloorBodySupport(float moveSpeed, float deltaTime,
+        Vector3 previousNormal, out SensorChainsawContact contact)
+    {
+        contact = default;
+        if (!isActiveAndEnabled || !configured || deltaTime <= 0f ||
+            !TryGetCeilingBodyBounds(out Bounds bounds)) return false;
+
+        float travel = Mathf.Abs(moveSpeed) * deltaTime;
+        float threshold = Mathf.Clamp(ResolvedSurfaceNormalThreshold, 0.01f, 1f);
+        float maxSlope = Mathf.Sqrt(Mathf.Max(0f, 1f - threshold * threshold)) / threshold;
+        float backoff = Mathf.Max(0.01f, contactDetectorParameter.NormalRayBackoff);
+        float verticalRange = travel * maxSlope + backoff +
+            (ceilingBodyContactOffset + CEILING_FOLLOW_SKIN) * 2f / threshold;
+        float horizontalRatio = previousNormal.sqrMagnitude > 0.01f
+            ? Mathf.Abs(previousNormal.normalized.y) : 1f;
+        Vector3 origin = bounds.center + Vector3.right * (moveSpeed * deltaTime * horizontalRatio)
+            + Vector3.up * verticalRange;
+        float nearestDistance = float.PositiveInfinity;
+        foreach (RaycastHit hit in Physics.BoxCastAll(origin, bounds.extents, Vector3.down,
+            Quaternion.identity, verticalRange * 2f,
+            contactDetectorParameter.TerrainLayers, QueryTriggerInteraction.Ignore))
+        {
+            if (hit.collider == null || IsOwner(hit.collider) || hit.distance <= POINT_TOLERANCE ||
+                Mathf.Abs(hit.normal.z) > 0.5f) continue;
+            Vector3 normal = new Vector3(hit.normal.x, hit.normal.y, 0f).normalized;
+            if (normal.y < threshold || hit.distance > nearestDistance) continue;
+            if (hit.distance == nearestDistance && contact.Collider != null &&
+                hit.collider.GetInstanceID() >= contact.Collider.GetInstanceID()) continue;
+            // 本体を縮めずに照会し、接触余白の分だけ床から上へ離す。
+            float targetY = origin.y - hit.distance + GetCeilingClearance(hit.collider) / threshold;
+            if (Mathf.Abs(targetY - bounds.center.y) > verticalRange) continue;
+            nearestDistance = hit.distance;
+            contact = new SensorChainsawContact
+            {
+                Collider = hit.collider,
+                Surface = ChainsawSurface.Floor,
+                Point = hit.point,
+                Normal = normal,
+                HasFloorBodyTarget = true,
+                FloorBodyTarget = new Vector3(origin.x, targetY, bounds.center.z)
+            };
+        }
+        return contact.Collider != null;
+    }
+
+    // 床へ向かう経路上の角も掃引し、横移動を打ち消さずに必要な上方向の補正を行う。
+    private void ResolveFloorPath(Bounds bounds, float pathClearance, ref Vector3 displacement)
+    {
+        float threshold = Mathf.Max(0.01f, ResolvedSurfaceNormalThreshold);
+        Vector3 castHalf = bounds.extents;
+        castHalf.y += Mathf.Max(0f, pathClearance - CEILING_FOLLOW_SKIN * 0.5f) / threshold;
+        for (int pass = 0; pass < CEILING_PATH_MAX_PASSES; pass++)
+        {
+            float distance = displacement.magnitude;
+            if (distance <= POINT_TOLERANCE) return;
+            float safeY = displacement.y;
+            foreach (RaycastHit hit in Physics.BoxCastAll(bounds.center, castHalf,
+                displacement / distance, Quaternion.identity, distance,
+                contactDetectorParameter.TerrainLayers, QueryTriggerInteraction.Ignore))
+            {
+                if (hit.collider == null || IsOwner(hit.collider) || hit.distance <= 0f ||
+                    hit.normal.y < ResolvedSurfaceNormalThreshold || Mathf.Abs(hit.normal.z) > 0.5f)
+                    continue;
+                Vector3 normal = hit.normal.normalized;
+                float radius = Mathf.Abs(normal.x) * bounds.extents.x +
+                    Mathf.Abs(normal.y) * bounds.extents.y + Mathf.Abs(normal.z) * bounds.extents.z;
+                float gap = Vector3.Dot(bounds.center - hit.point, normal) - radius;
+                float requiredY = (GetCeilingClearance(hit.collider) - gap -
+                    normal.x * displacement.x - normal.z * displacement.z) / normal.y;
+                safeY = Mathf.Max(safeY, requiredY);
+            }
+            if (safeY <= displacement.y + 0.00001f) return;
+            displacement.y = safeY;
+        }
+    }
+
+    // 床の支持高さへ到達する速度を返し、頂点での浮き上がりと下り坂での離脱を防ぐ。
+    public bool TryGetFloorFollowVelocity(SensorChainsawContact support,
+        float deltaTime, out Vector3 velocity)
+    {
+        velocity = default;
+        if (deltaTime <= 0f || support.Collider == null ||
+            support.Surface != ChainsawSurface.Floor || !support.HasFloorBodyTarget ||
+            !TryGetCeilingBodyBounds(out Bounds bounds)) return false;
+        Vector3 displacement = support.FloorBodyTarget - bounds.center;
+        ResolveFloorPath(bounds, GetCeilingClearance(support.Collider), ref displacement);
+        velocity = displacement / deltaTime;
+        // 法線方向の押し付け速度は重ねない。斜面でXが減速し、継ぎ目で衝突するのを防ぐ。
+        return true;
+    }
+
     // 床を検出した場合、または床食い込み継続中だけ、実際の支持面を共有する。
     private void ApplyPlayerGroundSupport(
         ChainsawSurface currentSurface,
@@ -596,7 +718,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 overlapBuffer,
                 sensor.transform.rotation,
                 sensor == middleSensor
-                    ? contactDetectorParameter.EnemyLayers.value
+                    ? contactDetectorParameter.EnemyLayers.value | contactDetectorParameter.TerrainLayers.value
                     : contactDetectorParameter.TerrainLayers.value,
                 QueryTriggerInteraction.Collide
             );
@@ -621,13 +743,19 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 continue;
             }
 
+            // 盾などの壁専用Triggerは、敵本体の受信コンポーネントより先に用途を確認する。
+            if (sensor == middleSensor && TryConsiderWallZone(target, center,
+                preferred, currentSurface, ref contact, ref bestScore))
+                continue;
+
             bool isEnemyLayer =
                 (contactDetectorParameter.EnemyLayers.value & (1 << target.gameObject.layer)) != 0;
 
             // 敵はMiddleだけで検出する。
             if (sensor == middleSensor)
             {
-                if (!isEnemyLayer)
+                if (!isEnemyLayer || currentSurface != ChainsawSurface.None ||
+                    !ChainsawContactZone.AllowsEnemyDigging(target))
                 {
                     continue;
                 }
@@ -821,6 +949,18 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 continue;
             }
 
+            // 初回接触でも、センサーだけが角に届いている候補を天井として採用しない。
+            if (surface == ChainsawSurface.Ceiling)
+            {
+                if (!TryGetCeilingBodyBounds(out Bounds bodyBounds)) continue;
+                float threshold = Mathf.Clamp(ResolvedSurfaceNormalThreshold, 0.01f, 1f);
+                float maxSlope = Mathf.Sqrt(Mathf.Max(0f, 1f - threshold * threshold)) / threshold;
+                float extraHeight = Mathf.Abs(hit.point.y - bodyBounds.max.y) + bodyBounds.extents.x * maxSlope;
+                if (!TryGetCeilingCenterFace(target, bodyBounds, bodyBounds.center.x,
+                    extraHeight, out RaycastHit centerFace)) continue;
+                normal = new Vector3(centerFace.normal.x, centerFace.normal.y, 0f).normalized;
+            }
+
             if (IsBlocked(visibilityOrigin, hit.point, target))
             {
                 continue;
@@ -838,6 +978,45 @@ public class SensorChainsawContactDetector : MonoBehaviour
                 ref bestScore
             );
         }
+    }
+
+    // 中央センサーと重なる壁用Triggerを、指定した面の向きで壁候補へ追加する。
+    private bool TryConsiderWallZone(Collider target, Vector3 sensorCenter,
+        Collider preferred, ChainsawSurface currentSurface,
+        ref SensorChainsawContact contact, ref float bestScore)
+    {
+        ChainsawContactZone zone = ChainsawContactZone.GetZone(target);
+        if (zone == null || !zone.TryGetWallNormal(target, out Vector3 normal)) return false;
+        if (normal.x * facing >= -0.1f) return true;
+        Vector3 point = target.ClosestPoint(sensorCenter);
+        Vector3 origin = new Vector3(ownerRoot.position.x, sensorCenter.y, sensorCenter.z);
+        if (!IsBlocked(origin, point, target))
+            Consider(target, null, ChainsawSurface.Wall, point, normal,
+                preferred, currentSurface, ref contact, ref bestScore);
+        return true;
+    }
+
+    // 壁用Triggerへの食い込み開始時だけ、設定された本体の進入位置へ合わせる。
+    public void ApplyWallEntryPosition(Collider target)
+    {
+        ChainsawContactZone zone = ChainsawContactZone.GetZone(target);
+        if (zone == null || ownerRoot == null || !zone.TryGetWallNormal(target, out Vector3 normal)) return;
+        Vector3 currentPosition = ownerBody != null ? ownerBody.position : ownerRoot.position;
+        if (!zone.TryGetEntryPosition(currentPosition, out Vector3 position))
+        {
+            // メッシュ原点ではなく、盾とプレイヤー本体の実際のCollider範囲から外側の位置を求める。
+            // 移動先が未設定・盾自身・プレイヤー自身でも、盾の中心へ埋まらせない。
+            if (!TryGetCeilingBodyBounds(out Bounds bodyBounds)) return;
+            Bounds wallBounds = target.bounds;
+            float wallFaceX = normal.x < 0f ? wallBounds.min.x : wallBounds.max.x;
+            float bodyFaceX = bodyBounds.center.x - normal.x * bodyBounds.extents.x;
+            float clearance = Mathf.Max(0.005f, ceilingBodyContactOffset);
+            position = currentPosition;
+            position.x += wallFaceX - bodyFaceX + normal.x * clearance;
+        }
+        if (ownerBody != null) ownerBody.position = position;
+        else ownerRoot.position = position;
+        Physics.SyncTransforms();
     }
 
     private void CollectWallContact(
@@ -869,13 +1048,20 @@ public class SensorChainsawContactDetector : MonoBehaviour
             origin,
             direction,
             distance,
-            contactDetectorParameter.TerrainLayers,
-            QueryTriggerInteraction.Ignore))
+            contactDetectorParameter.TerrainLayers.value | contactDetectorParameter.EnemyLayers.value,
+            QueryTriggerInteraction.Collide))
         {
             if (hit.collider == null || IsOwner(hit.collider))
             {
                 continue;
             }
+
+            ChainsawContactZone zone = ChainsawContactZone.GetZone(hit.collider);
+            bool isWallZone = zone != null &&
+                zone.TryGetWallNormal(hit.collider, out _);
+            if (hit.collider.isTrigger ? !isWallZone :
+                (contactDetectorParameter.TerrainLayers.value & (1 << hit.collider.gameObject.layer)) == 0)
+                continue;
 
             if (hit.distance > nearestDistance)
             {
@@ -905,6 +1091,10 @@ public class SensorChainsawContactDetector : MonoBehaviour
             nearestHit.normal.y,
             0f
         ).normalized;
+        ChainsawContactZone wallZone = ChainsawContactZone.GetZone(nearestHit.collider);
+        if (wallZone != null && wallZone.TryGetWallNormal(nearestHit.collider, out Vector3 zoneNormal))
+            normal = zoneNormal;
+
 
         // 床・天井に分類される面は、壁として採用しない。
         if (Mathf.Abs(normal.y) >= ResolvedSurfaceNormalThreshold)
@@ -993,6 +1183,12 @@ public class SensorChainsawContactDetector : MonoBehaviour
         );
 
         float score = distance / (1f + distance);
+
+        // 同時に盾と胴体へ届いても、明示した壁用Triggerを優先する。
+        ChainsawContactZone zone = ChainsawContactZone.GetZone(target);
+        if (surface == ChainsawSurface.Wall && zone != null &&
+            zone.TryGetWallNormal(target, out _))
+            score -= 500f;
 
         if (surface == ChainsawSurface.Enemy)
         {

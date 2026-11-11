@@ -229,6 +229,41 @@ public sealed class DroneEnemyPathNavigator
     }
 
     /// <summary>
+    /// 現在位置から到達できる最短経路コストの条件一致地点へ経路を開始する。
+    /// 経路探索条件はA*へ渡し、NavigatorはWaypointと移動のみを管理する。
+    /// </summary>
+    public bool TryBeginPathToNearestMatchingPosition(
+        Vector3 searchReferencePosition,
+        Func<Vector3, bool> isMatchingPosition,
+        out Vector3 reachedPosition)
+    {
+        Reset();
+        RefreshQueryGeometry();
+
+        bool hasPath = PlanarAStarPathfinder.TryFindPathToNearestMatchingPosition(
+            enemyRigidbody.position,
+            searchReferencePosition,
+            boxCenterOffsetFromRigidbody,
+            navigationBoxHalfExtents,
+            bodyBoxHalfExtents,
+            boxOrientation,
+            pathSearchPadding,
+            maximumExpandedPathNodes,
+            obstacleMask,
+            isMatchingPosition,
+            path,
+            out reachedPosition);
+
+        pathIndex = 0;
+        navigationStallElapsedTime = 0f;
+        lastNavigationPosition = GetCurrentPlanarPosition();
+        lastPathTargetPosition = ToPlanarPosition(reachedPosition);
+        nextPathSearchTime = Time.time + PATH_RETRY_INTERVAL;
+
+        return hasPath;
+    }
+
+    /// <summary>
     /// 固定Targetへの経路追従を1 Physics Step分更新する。
     /// Pathが失効・Stall・未取得の場合は再探索待機もここで管理する。
     /// </summary>

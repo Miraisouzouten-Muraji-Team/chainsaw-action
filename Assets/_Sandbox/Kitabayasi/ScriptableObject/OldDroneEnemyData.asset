@@ -12,16 +12,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cf69c5f2a86e46e40a097e7a08d2e39d, type: 3}
   m_Name: OldDroneEnemyData
   m_EditorClassIdentifier: Assembly-CSharp::OldDroneEnemyData
-  maxHealth: 20
-  attackPower: 10
+  maxHealth: 75
+  attackPower: 15
   detectionRadius: 2
+  postAttackSearchFailureWaitDuration: 0.5
   alertDuration: 1
   alertContactDamagePercent: 60
   damageFlashDuration: 0.1
   hitTiltDuration: 0.5
+  hitTiltRecoveryDuration: 0.15
+  hitTiltRecoveryGroundDistance: 0.75
   hitTiltAngle: 0
   deathShrinkDelay: 3
-  deathShrinkDuration: 3
+  deathShrinkDuration: 1
   patrolMoveSpeed: 5
   patrolTurnDuration: 0.5
   patrolContactDamagePercent: 50
@@ -36,14 +39,14 @@ MonoBehaviour:
   navigationStallDetectionDuration: 0.5
   navigationObstacleMask:
     serializedVersion: 2
-    m_Bits: 512
+    m_Bits: 128
   attackMoveSpeed: 15
   homingStrength: 50
   maximumTurnSpeed: 180
   attackStallMinimumMoveSpeed: 0.1
   attackStallDetectionDuration: 0.25
   attackContactDamagePercent: 100
-  initialPreparationDuration: 0.75
+  attackPreparationDuration: 0.75
   homingEndThreshold: 0.25
   brakingDeceleration: 60
   brakePauseDuration: 0.15

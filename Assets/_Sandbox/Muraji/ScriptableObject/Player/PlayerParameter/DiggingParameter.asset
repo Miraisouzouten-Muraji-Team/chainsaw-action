@@ -31,7 +31,7 @@ MonoBehaviour:
   bonusEnemyConsumeAmount: 2
   minDamageMultiplier: 0.9
   maxDamageMultiplier: 1.25
-  bonusDamageMultiplier: 1.5
+  bonusDamageMultiplier: 3
   enemyPushPower: 2
   airContactWaitDuration: 1
   wallClimbInputWindow: 0.2

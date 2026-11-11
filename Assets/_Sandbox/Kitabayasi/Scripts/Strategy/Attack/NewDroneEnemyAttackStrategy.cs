@@ -126,6 +126,14 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         playerReference.TryGetPlayerTransform(out _);
         projectileShooter.Initialize(enemyObject, playerReference);
 
+        if (!projectileShooter.HasAttackWarningLine)
+        {
+            Debug.LogWarning(
+                $"{nameof(NewDroneEnemyAttackStrategy)}: EnemyProjectileShooterの" +
+                "Attack Warning Lineが未設定です。射撃は継続しますが攻撃予告は表示できません。",
+                enemyObject);
+        }
+
         if (projectileShooter.ProjectileStageCollisionMask.value == 0)
         {
             throw new InvalidOperationException(
@@ -136,6 +144,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
     public void BeginPreparation(float initialAttackDirectionSign)
     {
         ResetRuntimeState();
+        projectileShooter.HideAttackWarning();
         pathNavigator.Reset();
         planarMotor.StopPlanarMovement();
 
@@ -161,6 +170,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
             enemyRigidbody.position.x, enemyRigidbody.position.y);
         lastPositioningProgressTime = Time.time;
         projectileShooter.HideAim();
+        projectileShooter.HideAttackWarning();
     }
 
     public bool UpdatePreparation()
@@ -185,6 +195,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         planarMotor.StopPlanarMovement();
         RefreshAimTarget();
         projectileShooter.ShowAim(lastAimTargetPosition);
+        projectileShooter.ShowAttackWarning(lastAimTargetPosition, playerTargetCollider);
 
         preparationElapsedTime += Time.fixedDeltaTime;
         if (preparationElapsedTime < enemyData.AttackPreparationDuration)
@@ -193,6 +204,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         }
 
         isPreparationActive = false;
+        projectileShooter.HideAttackWarning();
         return true;
     }
 
@@ -214,6 +226,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         }
 
         projectileShooter.ShowAim(lastAimTargetPosition);
+        projectileShooter.ShowAttackWarning(lastAimTargetPosition, playerTargetCollider);
     }
 
     private void UpdateShootingPositionSearch()
@@ -721,10 +734,13 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         pathNavigator.Reset();
         planarMotor.StopPlanarMovement();
         projectileShooter.HideAim();
+        projectileShooter.HideAttackWarning();
     }
 
     public void BeginAttack()
     {
+        projectileShooter.HideAttackWarning();
+
         if (HasAbandonedAttack)
         {
             return;
@@ -794,6 +810,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
     {
         projectileShooter.CancelBurst();
         projectileShooter.HideAim();
+        projectileShooter.HideAttackWarning();
         pathNavigator?.Reset();
         planarMotor?.StopPlanarMovement();
         ResetRuntimeState();

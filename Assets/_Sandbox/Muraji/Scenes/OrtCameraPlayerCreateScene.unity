@@ -3476,6 +3476,11 @@ MonoBehaviour:
   playerController: {fileID: 0}
   particlePrefab: {fileID: 6738715962970879416, guid: 433900216c058ea4aa41a048804046dc, type: 3}
   emissionPoint: {fileID: 312158539}
+  groundContactPoint: {fileID: 0}
+  groundContactRadius: 0.03
+  groundContactLayers:
+    serializedVersion: 2
+    m_Bits: 0
   floorAngle: 135
   wallAngle: 225
   ceilingAngle: 225
@@ -3547,6 +3552,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawAttack
   hitBox: {fileID: 1474968308}
   slashKnockbackPriorityDuration: 0.15
+  damagePopupPresenter: {fileID: 0}
   hitParticle: {fileID: 6176228616533195752, guid: 8b653b8ed8f598c42baa0eca3fd64bea, type: 3}
   cameraShake: {fileID: 0}
   duration: 0.05

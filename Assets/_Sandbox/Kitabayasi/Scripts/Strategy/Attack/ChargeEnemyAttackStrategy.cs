@@ -7,7 +7,7 @@ using UnityEngine;
 /// </summary>
 /// <remarks>
 /// 責務:
-/// ・Preparation中は停止し、設定時間経過後に1回分の突進を開始できる状態へする。
+/// ・Preparation中は停止し、設定時間経過か予備動作モーション終了の早い方で突進を開始可能にする。
 /// ・突進開始地点からChargeDistanceまでを1回の攻撃として扱う。
 /// ・Player命中、Stage壁による進行阻害、崖・段差等の進行不能で現在の攻撃を終了する。
 /// ・Player命中時に攻撃情報を1回だけ送信する。
@@ -217,11 +217,16 @@ public sealed class ChargeEnemyAttackStrategy :
         preparationElapsedTime +=
             Time.fixedDeltaTime;
 
-        if (preparationElapsedTime <
-                preparationDuration &&
-            !Mathf.Approximately(
+        bool hasReachedPreparationDuration =
+            preparationElapsedTime >= preparationDuration ||
+            Mathf.Approximately(
                 preparationElapsedTime,
-                preparationDuration))
+                preparationDuration);
+
+        // アニメーションが先に終わった場合は、設定した待機時間を残して突進する。
+        // Animatorが未設定・無効の場合は、従来どおり時間経過で終了する。
+        if (!hasReachedPreparationDuration &&
+            !HasPreparationAnimationFinished())
         {
             return false;
         }
@@ -571,6 +576,30 @@ public sealed class ChargeEnemyAttackStrategy :
 
         // 再突進する場合も、同じStateを必ず先頭から再生する。
         animator.Play(stateHash, ANIMATION_BASE_LAYER_INDEX, 0f);
+    }
+
+    /// <summary>
+    /// 予備動作Stateの再生が1周分終了したかを調べる。
+    /// </summary>
+    /// <remarks>
+    /// 現在のStateが予備動作以外なら完了扱いにしない。
+    /// Animatorの自動遷移でStateが切り替わると終了を検出できないため、
+    /// 予備動作からの自動遷移はAnimator側で設定しない。
+    /// </remarks>
+    private bool HasPreparationAnimationFinished()
+    {
+        if (animator == null ||
+            !animator.isActiveAndEnabled ||
+            preparationAnimationStateHash == 0)
+        {
+            return false;
+        }
+
+        AnimatorStateInfo stateInfo =
+            animator.GetCurrentAnimatorStateInfo(ANIMATION_BASE_LAYER_INDEX);
+
+        return stateInfo.fullPathHash == preparationAnimationStateHash &&
+               stateInfo.normalizedTime >= 1f;
     }
 
     /// <summary>

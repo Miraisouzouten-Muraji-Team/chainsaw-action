@@ -45,16 +45,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2bb584600e9208849bb5e897bda77955, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemySpawner
+  dissolveMaterial: {fileID: 2100000, guid: 5e0e98f9c6c5945478bb1932b53cdf24, type: 2}
   enemyCount: 1
   enemies:
-  - enemyPrefab: {fileID: 4656271209163700965, guid: 6d4f233d85e96ec458a6134ad2180c37, type: 3}
+  - enemyPrefab: {fileID: 0}
+    appearanceType: 1
     placementMode: 0
     offset: {x: 0, y: 0}
     spawnPoint: {fileID: 0}
-    appearanceType: 1
   useSpawnDelay: 0
   spawnInterval: 0.5
-  dissolveMaterial: {fileID: 2100000, guid: 5e0e98f9c6c5945478bb1932b53cdf24, type: 2}
   appearanceDuration: 1
 --- !u!114 &7955743996142165286
 MonoBehaviour:

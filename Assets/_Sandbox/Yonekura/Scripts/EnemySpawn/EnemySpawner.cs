@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using Cysharp.Threading.Tasks;
 
-// 敵1体ごとの生成設定
 [Serializable]
 /// <summary>
 /// 敵の生成位置や生成数、生成間隔を管理し、
@@ -11,13 +10,18 @@ using Cysharp.Threading.Tasks;
 /// </summary>
 public class EnemySpawnEntry
 {
+    /// <summary>
+    /// 敵の配置方法。
+    /// </summary>
     public enum PlacementMode
     {
         Simple,      // スポナーからの相対位置を指定
         Detailed     // 専用のスポーンポイントを指定
     }
 
-    // エネミーごとの出現演出
+    /// <summary>
+    /// エネミーごとの出現演出
+    /// <summary>
     public enum AppearanceType
     {
         None,        // 演出なし
@@ -28,6 +32,9 @@ public class EnemySpawnEntry
     [Tooltip("この枠で生成する敵のPrefab")]
     public GameObject enemyPrefab;
 
+    [Tooltip("このエネミーに適用する出現演出")]
+    public AppearanceType appearanceType = AppearanceType.Dissolve;
+
     [Header("配置設定")]
     [Tooltip("簡易配置または詳細配置")]
     public PlacementMode placementMode = PlacementMode.Simple;
@@ -37,15 +44,18 @@ public class EnemySpawnEntry
 
     [Tooltip("詳細配置で使用するスポーンポイント")]
     public Transform spawnPoint;
-
-    [Header("出現演出")]
-    [Tooltip("エネミーがスポーンする際の演出選択")]
-    public AppearanceType appearanceType = AppearanceType.Dissolve;
 }
 
-// 敵の生成と出現演出の開始を管理する
+/// <summary>
+/// 敵の生成と出現演出の開始を管理する
+/// <summary>
 public class EnemySpawner : MonoBehaviour
 {
+    [Header("ディゾルブ設定")]
+    [Tooltip("エネミーの出現時に使用するディゾルブ用マテリアル")]
+    [SerializeField]
+    private Material dissolveMaterial;
+
     [Header("スポーン設定")]
     [Tooltip("生成するエネミーの数")]
     [SerializeField, Min(1)]
@@ -65,11 +75,6 @@ public class EnemySpawner : MonoBehaviour
     [SerializeField, Min(0f)]
     private float spawnInterval = 0.5f;
 
-    [Header("出現演出")]
-    [Tooltip("ディゾルブ演出に使用するマテリアル")]
-    [SerializeField]
-    private Material dissolveMaterial;
-
     [Tooltip("敵が完成するまでの時間")]
     [SerializeField, Min(0f)]
     private float appearanceDuration = 1.0f;
@@ -81,7 +86,9 @@ public class EnemySpawner : MonoBehaviour
     public int EnemyCount => enemyCount;
     public List<EnemySpawnEntry> Enemies => enemies;
 
-    // EnemySpawnAreaから呼び出される
+    /// <summary>
+    /// EnemySpawnAreaから呼び出される
+    /// </summary>
     public void SpawnOnce()
     {
         // すでに生成済みなら何もしない
@@ -179,27 +186,17 @@ public class EnemySpawner : MonoBehaviour
 
             hasSpawnedAny = true;
 
-            // エネミーごとの出現演出を判定
+            // ディゾルブ演出が選択されている場合だけ再生
             if (entry.appearanceType ==
-                EnemySpawnEntry.AppearanceType.Dissolve)
+                EnemySpawnEntry.AppearanceType.Dissolve &&
+                dissolveMaterial != null)
             {
-                if (EnemyDissolveManager.Instance != null)
-                {
-                    // ディゾルブ演出は敵ごとに開始し、完了を待たず次へ進む
-                    EnemyDissolveManager.Instance
-                        .PlayAppearAsync(
-                            spawnedEnemy,
-                            dissolveMaterial,
-                            appearanceDuration)
-                        .Forget();
-                }
-                else
-                {
-                    // Managerが存在しない場合はエラーを通知
-                    Debug.LogError(
-                        "EnemyDissolveManagerがシーンにありません。",
-                        this);
-                }
+                EnemyDissolveManager.Instance
+                    .PlayAppearAsync(
+                        spawnedEnemy,
+                        dissolveMaterial,
+                        appearanceDuration)
+                    .Forget();
             }
         }
     }

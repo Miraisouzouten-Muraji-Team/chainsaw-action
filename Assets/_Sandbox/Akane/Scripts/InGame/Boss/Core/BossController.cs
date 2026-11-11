@@ -31,6 +31,12 @@ namespace Project.InGame.Boss
         [Header("アニメーション")]
         [SerializeField] private string deathTrigger = "Dead";
 
+        [SerializeField] private BossAttackTelegraph attackTelegraph;
+
+        private float lastPlayerDirection = 1f;
+        private bool started;
+
+        public BossAttackTelegraph Telegraph => attackTelegraph;
         public Transform Player => player;
         public Animator Animator => animator;
         public BossHealth Health { get; private set; }
@@ -71,6 +77,37 @@ namespace Project.InGame.Boss
 
         private void Start()
         {
+            started = true;
+            BeginBoss();
+        }
+
+        private void OnEnable()
+        {
+            // Start実行後に再有効化された場合のみ再開する。
+            if (started)
+                BeginBoss();
+        }
+
+        private void OnDisable()
+        {
+            // Stateを終了し、実行中の攻撃を中断する。
+            StateMachine?.Stop();
+            attackTelegraph?.Hide();
+        }
+
+        private void OnDestroy()
+        {
+            if (Health != null)
+                Health.Died -= HandleDeath;
+
+            StateMachine?.Dispose();
+        }
+
+        /// <summary>
+        /// 参照を検証し、初期状態へ遷移する。
+        /// </summary>
+        private void BeginBoss()
+        {
             if (player == null)
             {
                 Debug.LogError("BossController: Playerが設定されていません。", this);
@@ -85,7 +122,11 @@ namespace Project.InGame.Boss
                 return;
             }
 
-            StateMachine.ChangeState(BossStateType.Idle);
+            var initialState = Health.IsDead
+                ? BossStateType.Dead
+                : BossStateType.Idle;
+
+            StateMachine.ChangeState(initialState);
         }
 
         private void Update()
@@ -95,12 +136,6 @@ namespace Project.InGame.Boss
 
             Shield.Tick(Time.deltaTime);
             StateMachine.Tick(Time.deltaTime);
-        }
-
-        private void OnDestroy()
-        {
-            if (Health != null)
-                Health.Died -= HandleDeath;
         }
 
         /// <summary>
@@ -158,45 +193,50 @@ namespace Project.InGame.Boss
         /// <summary>
         /// プレイヤーの方向へ向きを変える。
         /// </summary>
+        /// <summary>
+        /// プレイヤーの方向へモデルの向きを変更する。
+        /// </summary>
         public void FacePlayer(float deltaTime)
         {
-            if (visualRoot == null || player == null)
-                return;
+            if (visualRoot == null || player == null) { return; }
 
-            var isRight = player.position.x >= transform.position.x;
-            var targetAngle = isRight ? rightFacingAngle : leftFacingAngle;
+            var distanceX = player.position.x - transform.position.x;
+
+            if (Mathf.Abs(distanceX) > 0.001f)
+            {
+                lastPlayerDirection = Mathf.Sign(distanceX);
+            }
+
+            var targetAngle = lastPlayerDirection > 0f ? rightFacingAngle : leftFacingAngle;
+
             var targetRotation = Quaternion.Euler(0f, targetAngle, 0f);
 
-            visualRoot.rotation = Quaternion.RotateTowards(
-                visualRoot.rotation,
-                targetRotation,
-                rotationSpeed * deltaTime);
+            visualRoot.rotation = Quaternion.RotateTowards(visualRoot.rotation, targetRotation, rotationSpeed * deltaTime);
         }
 
         /// <summary>
         /// プレイヤーとの距離が指定値になるまでX軸方向に移動する。
         /// </summary>
-        public void MoveTowardPlayer(float targetDistance, float deltaTime)
+        /// <summary>
+        /// プレイヤーとの距離が指定値になるよう、X軸方向に移動する。
+        /// </summary>
+        public void MoveToTargetDistance(float targetDistance, float deltaTime)
         {
-            if (player == null)
-                return;
+            if (player == null) { return; }
 
             var currentPosition = transform.position;
             var distanceX = player.position.x - currentPosition.x;
 
-            if (Mathf.Abs(distanceX) <= targetDistance)
-                return;
+            if (Mathf.Abs(distanceX) > 0.001f)
+            {
+                lastPlayerDirection = Mathf.Sign(distanceX);
+            }
 
-            var targetX = player.position.x - Mathf.Sign(distanceX) * targetDistance;
-            var nextX = Mathf.MoveTowards(
-                currentPosition.x,
-                targetX,
-                moveSpeed * deltaTime);
+            var targetX = player.position.x - lastPlayerDirection * Mathf.Max(0f, targetDistance);
 
-            transform.position = new Vector3(
-                nextX,
-                currentPosition.y,
-                currentPosition.z);
+            var nextX = Mathf.MoveTowards(currentPosition.x, targetX, moveSpeed * deltaTime);
+
+            transform.position = new Vector3(nextX, currentPosition.y, currentPosition.z);
         }
 
         /// <summary>

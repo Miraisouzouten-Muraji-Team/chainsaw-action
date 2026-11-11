@@ -3,7 +3,7 @@ using UnityEngine;
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// 選択した攻撃の目的距離まで移動する状態。
+    /// 次の攻撃に適した距離まで移動する状態。
     /// </summary>
     public sealed class BossMoveState : IBossState
     {
@@ -34,7 +34,7 @@ namespace Project.InGame.Boss
                 return;
             }
 
-            // 移動中に盾が壊れ、選択した攻撃が使用できなくなった場合。
+            // 移動中に盾がなくなった場合は攻撃を選び直す。
             if (attack.Definition.RequiresShield && !context.Shield.IsActive)
             {
                 context.Boss.ClearSelectedAttack();
@@ -45,32 +45,32 @@ namespace Project.InGame.Boss
             elapsedTime += deltaTime;
             context.Boss.FacePlayer(deltaTime);
 
-            // 攻撃射程に対する割合から目的距離を求める。
-            var targetDistance = attack.Definition.Range * attack.Definition.TargetDistanceRatio;
+            var targetDistance = attack.Definition.Range *
+                attack.Definition.TargetDistanceRatio;
 
-            context.Boss.MoveTowardPlayer(targetDistance, deltaTime);
+            context.Boss.MoveToTargetDistance(targetDistance, deltaTime);
 
             var distance = context.Boss.DistanceToPlayer;
+            var distanceDifference = Mathf.Abs(distance - targetDistance);
 
-            // 目的距離に到達したら攻撃を実行する。
-            if (distance <= targetDistance + ARRIVAL_TOLERANCE)
+            // 目標距離へ到達した場合は攻撃する。
+            if (distanceDifference <= ARRIVAL_TOLERANCE)
             {
                 context.Boss.StateMachine.ChangeState(BossStateType.Attack);
                 return;
             }
 
-            // 4秒経過時点で攻撃射程内なら攻撃する。
-            if (elapsedTime >= context.Boss.MoveSegmentDuration)
-            {
-                if (distance <= attack.Definition.Range)
-                {
-                    context.Boss.StateMachine.ChangeState(BossStateType.Attack);
-                    return;
-                }
+            if (elapsedTime < context.Boss.MoveSegmentDuration) { return; }
 
-                // 射程外なら同じ攻撃を保持して移動を継続する。
-                elapsedTime = 0f;
+            // 4秒経過時点で射程内なら攻撃を実行する。
+            if (distance <= attack.Definition.Range)
+            {
+                context.Boss.StateMachine.ChangeState(BossStateType.Attack);
+                return;
             }
+
+            // 射程外なら移動を継続する。
+            elapsedTime = 0f;
         }
 
         public void Exit()

@@ -77597,7 +77597,7 @@ GameObject:
   - component: {fileID: 689811665}
   - component: {fileID: 689811667}
   - component: {fileID: 689811666}
-  m_Layer: 6
+  m_Layer: 17
   m_Name: PlayerContactSensor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -258598,7 +258598,7 @@ Rigidbody:
   m_UseGravity: 1
   m_IsKinematic: 0
   m_Interpolate: 0
-  m_Constraints: 126
+  m_Constraints: 120
   m_CollisionDetection: 0
 --- !u!114 &2120808299
 MonoBehaviour:

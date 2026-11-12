@@ -26,7 +26,7 @@ MonoBehaviour:
   ceilingSpeedDivisor: 5
   ceilingDashPower: 15
   ceilingEvadeTime: 0.35
-  enemyAttackInterval: 0.1
+  enemyAttackInterval: 0.15
   enemyConsumeAmount: 1
   bonusEnemyConsumeAmount: 2
   minDamageMultiplier: 0.9

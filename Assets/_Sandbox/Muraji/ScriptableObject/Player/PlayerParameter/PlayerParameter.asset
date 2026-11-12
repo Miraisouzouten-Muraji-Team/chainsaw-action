@@ -31,6 +31,7 @@ MonoBehaviour:
   jumpHoldGravityScale: 0.05
   jumpReleaseSpeedRatio: 0.9
   jumpFallGravityScale: 1
+  jumpApexGravityMultiplier: 0.45
   enableCeilingFallGrace: 1
   ceilingFallGraceMaxSeconds: 0.25
   groundRayLayers:

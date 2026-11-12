@@ -16,8 +16,16 @@ MonoBehaviour:
   showFPS: 1
   fpsInterval: 0.5
   enemies:
+  - label: SandBag
+    prefab: {fileID: 8856678778778255261, guid: 8b6c165a24a7021498124562437e381e, type: 3}
   - label: ChargeEnemy
     prefab: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+  - label: OldDroneEnemy
+    prefab: {fileID: 4656271209163700965, guid: 6d4f233d85e96ec458a6134ad2180c37, type: 3}
+  - label: TurretEnemy
+    prefab: {fileID: 8971459978354202689, guid: 3eb12c37789e9154b8aaa9b6d5fd2ce7, type: 3}
+  - label: NewDroneEnemy
+    prefab: {fileID: 5561362133186013732, guid: d6f4dc9654169d241ac00870edef9a5b, type: 3}
   groups:
   - Player
   - Enemy

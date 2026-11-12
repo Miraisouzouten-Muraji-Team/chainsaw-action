@@ -20,8 +20,8 @@ namespace Project.InGame.Boss
         [SerializeField, Min(0f)] private float moveSpeed = 4f;
 
         [Header("向きの設定")]
-        [SerializeField] private float rightFacingAngle = 90f;
-        [SerializeField] private float leftFacingAngle = -90f;
+        [SerializeField] private float rightFacingAngle = 0f;
+        [SerializeField] private float leftFacingAngle = -180f;
         [SerializeField, Min(0f)] private float rotationSpeed = 360f;
 
         [Header("攻撃設定")]

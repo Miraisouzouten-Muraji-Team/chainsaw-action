@@ -26,6 +26,7 @@ public sealed class ChargeEnemyAttackStrategy :
     private const float DIRECTION_EPSILON = 0.001f;
     private const float CHARGE_ARRIVAL_TOLERANCE = 0.2f;
     private const float BLOCKING_NORMAL_THRESHOLD = 0.5f;
+    private const float GROUND_NORMAL_TRANSITION_ANGLE = 2f;
     private const int ANIMATION_BASE_LAYER_INDEX = 0;
 
     [Header("攻撃アニメーション")]
@@ -339,7 +340,15 @@ public sealed class ChargeEnemyAttackStrategy :
         groundChecker?.ClearDebugRays();
         RestoreAnimatorSettings();
 
-        StopHorizontalMovement();
+        if (isAttackActive || isAttackComplete)
+        {
+            StopChargeMovement();
+        }
+        else
+        {
+            StopHorizontalMovement();
+        }
+
         ResetRuntimeState();
     }
 
@@ -419,9 +428,12 @@ public sealed class ChargeEnemyAttackStrategy :
                 maximumStepDistance,
                 remainingDistance);
 
-        if (!groundChecker.CanMoveInDirection(
+        bool isGrounded = groundChecker.TryGetCurrentGroundNormal(
+            out Vector3 supportingGroundNormal);
+        if (!groundChecker.TryGetTraversableGroundNormal(
                 attackDirectionSign,
-                expectedMovementDistance))
+                expectedMovementDistance,
+                out Vector3 forwardGroundNormal))
         {
             // 崖・段差・許容外の坂など、既存GroundCheckerが進行不能とした時点で
             // 同一Attack内の方向再評価は行わず再索敵へ返す。
@@ -430,22 +442,55 @@ public sealed class ChargeEnemyAttackStrategy :
             return;
         }
 
-        float targetSpeed =
-            enemyData.AttackMoveSpeed;
-
-        if (Time.fixedDeltaTime >
-            DIRECTION_EPSILON)
+        if (!isGrounded)
         {
-            targetSpeed =
-                Mathf.Min(
-                    targetSpeed,
-                    remainingDistance /
-                    Time.fixedDeltaTime);
+            // 斜面の継ぎ目等で一時的に非接地ならY速度は重力に任せる。
+            float horizontalSpeed = enemyData.AttackMoveSpeed;
+            if (Time.fixedDeltaTime > DIRECTION_EPSILON)
+            {
+                horizontalSpeed = Mathf.Min(
+                    horizontalSpeed, remainingDistance / Time.fixedDeltaTime);
+            }
+
+            SetHorizontalVelocity(attackDirectionSign * horizontalSpeed);
+            return;
         }
 
-        SetHorizontalVelocity(
-            attackDirectionSign *
-            targetSpeed);
+        Vector3 forwardNormal = new Vector3(
+            forwardGroundNormal.x, forwardGroundNormal.y, 0f).normalized;
+        Vector3 supportNormal = new Vector3(
+            supportingGroundNormal.x, supportingGroundNormal.y, 0f).normalized;
+
+        // 通行確認済みの前方が支持面より急な上り坂なら、その法線で登坂速度を作る。
+        // 下り坂や上り勾配が緩くなる境界は支持法線を優先して急な上下動を抑える。
+        float forwardRise = -forwardNormal.x * attackDirectionSign;
+        float supportRise = -supportNormal.x * attackDirectionSign;
+        bool isSteeperUphillAhead = forwardRise > DIRECTION_EPSILON &&
+            forwardRise > supportRise + DIRECTION_EPSILON;
+        Vector3 movementNormal = isSteeperUphillAhead ||
+            Vector3.Angle(forwardNormal, supportNormal) <= GROUND_NORMAL_TRANSITION_ANGLE
+                ? forwardNormal : supportNormal;
+        Vector3 movementDirection = Vector3.ProjectOnPlane(
+            Vector3.right * attackDirectionSign, movementNormal).normalized;
+
+        float horizontalSpeedRatio = Mathf.Abs(movementDirection.x);
+        if (horizontalSpeedRatio <= DIRECTION_EPSILON)
+        {
+            CompleteAttack("斜面の進行方向を計算できません");
+            return;
+        }
+
+        float targetSpeed = enemyData.AttackMoveSpeed;
+        if (Time.fixedDeltaTime > DIRECTION_EPSILON)
+        {
+            // ChargeDistanceは従来どおりX変位で測るため、X成分で終端速度を制限する。
+            targetSpeed = Mathf.Min(
+                targetSpeed,
+                remainingDistance / (horizontalSpeedRatio * Time.fixedDeltaTime));
+        }
+
+        // 法線切替時、旧水平速度を新しい斜面への食い込み速度として保持しない。
+        SetChargeVelocity(movementDirection, supportNormal, targetSpeed);
     }
 
     private void HandlePlayerCollision(
@@ -497,7 +542,7 @@ public sealed class ChargeEnemyAttackStrategy :
             return;
         }
 
-        StopHorizontalMovement();
+        StopChargeMovement();
 
         float traveledDistance =
             Mathf.Abs(
@@ -677,16 +722,59 @@ public sealed class ChargeEnemyAttackStrategy :
         float moveDirectionSign,
         out ContactPoint blockingContact)
     {
-        Vector3 moveDirection =
-            Vector3.right *
-            NormalizeDirectionSign(
-                moveDirectionSign);
-
-        return EnemyBlockingContactEvaluator.TryGetBlockingContact(
-            collision,
-            moveDirection,
+        Vector3 moveDirection = Vector3.right * NormalizeDirectionSign(moveDirectionSign);
+        float blockingThreshold = Mathf.Min(
             BLOCKING_NORMAL_THRESHOLD,
-            out blockingContact);
+            Mathf.Max(DIRECTION_EPSILON,
+                Mathf.Sin(enemyData.MaxGroundSlopeAngle * Mathf.Deg2Rad)));
+
+        if (!EnemyBlockingContactEvaluator.TryGetBlockingContact(
+                collision, moveDirection, blockingThreshold, out _))
+        {
+            blockingContact = default;
+            return false;
+        }
+
+        // 共通判定が返す最初のContactが坂道でも、同じCollision内の壁を見逃さない。
+        blockingContact = default;
+        float strongestBlockingScore = blockingThreshold;
+        bool hasBlockingContact = false;
+        bool isTraversableSlopeEntrance =
+            groundChecker.IsTraversableSlopeEntrance(
+                collision.collider,
+                moveDirectionSign);
+        for (int i = 0; i < collision.contactCount; i++)
+        {
+            ContactPoint contact = collision.GetContact(i);
+            float blockingScore = -Vector3.Dot(contact.normal, moveDirection);
+            if (blockingScore < blockingThreshold)
+            {
+                continue;
+            }
+
+            // 地面として通行できる傾斜のContactは、進行方向に逆らっても壁ではない。
+            if (contact.normal.y > DIRECTION_EPSILON &&
+                Vector3.Angle(contact.normal, Vector3.up) <= enemyData.MaxGroundSlopeAngle)
+            {
+                continue;
+            }
+
+            // 回転Colliderの通行可能な坂では、入口端面だけが壁相当の法線になる。
+            // 同じColliderの斜面上面が直前方へ連続すると確認できた場合だけ除外する。
+            if (isTraversableSlopeEntrance)
+            {
+                continue;
+            }
+
+            if (!hasBlockingContact || blockingScore > strongestBlockingScore)
+            {
+                blockingContact = contact;
+                strongestBlockingScore = blockingScore;
+                hasBlockingContact = true;
+            }
+        }
+
+        return hasBlockingContact;
     }
 
     private bool IsStageCollider(
@@ -724,6 +812,29 @@ public sealed class ChargeEnemyAttackStrategy :
         return enemyCollider.bounds.center;
     }
 
+    /// <summary>
+    /// 接地中だけ突進速度を地面接線へ合わせ、地面法線方向の落下速度は保持する。
+    /// </summary>
+    private void SetChargeVelocity(
+        Vector3 movementDirection,
+        Vector3 groundNormal,
+        float targetSpeed)
+    {
+        Vector3 currentVelocity = enemyRigidbody.linearVelocity;
+        float normalVelocity = Mathf.Min(0f, Vector3.Dot(currentVelocity, groundNormal));
+        Vector3 targetVelocity = movementDirection * targetSpeed +
+            groundNormal * normalVelocity;
+        Vector3 velocityChange = targetVelocity - currentVelocity;
+        velocityChange.z = 0f;
+
+        if (velocityChange.sqrMagnitude > DIRECTION_EPSILON * DIRECTION_EPSILON)
+        {
+            enemyRigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
+        }
+
+        AlignVisualWithHorizontalDirection(attackDirectionSign);
+    }
+
     private void SetHorizontalVelocity(
         float targetVelocityX)
     {
@@ -749,6 +860,33 @@ public sealed class ChargeEnemyAttackStrategy :
                 0f,
                 0f),
             ForceMode.VelocityChange);
+    }
+
+    /// <summary>
+    /// 突進終了時は坂道を進む接線速度を消し、法線方向の落下速度は維持する。
+    /// 予備動作時の従来の水平停止処理とは分ける。
+    /// </summary>
+    private void StopChargeMovement()
+    {
+        if (enemyRigidbody == null)
+        {
+            return;
+        }
+
+        if (groundChecker != null &&
+            groundChecker.TryGetCurrentGroundNormal(out Vector3 supportingGroundNormal))
+        {
+            Vector3 groundNormal = new Vector3(
+                supportingGroundNormal.x, supportingGroundNormal.y, 0f).normalized;
+            Vector3 currentVelocity = enemyRigidbody.linearVelocity;
+            float normalVelocity = Mathf.Min(0f, Vector3.Dot(currentVelocity, groundNormal));
+            Vector3 stoppedVelocity = groundNormal * normalVelocity;
+            stoppedVelocity.z = currentVelocity.z;
+            enemyRigidbody.linearVelocity = stoppedVelocity;
+            return;
+        }
+
+        StopHorizontalMovement();
     }
 
     private void StopHorizontalMovement()

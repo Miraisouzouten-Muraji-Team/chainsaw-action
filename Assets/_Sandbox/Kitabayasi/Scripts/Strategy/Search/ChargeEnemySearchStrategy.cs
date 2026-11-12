@@ -7,9 +7,9 @@ using UnityEngine.Serialization;
 /// ・配置時の位置を巡回基準として保持し、物理的に帰還できないと確認した場合だけ地面上で更新する。
 /// ・着地イベントや単発のRay判定に依存せず、実際の帰還移動の進捗を確認する。
 /// ・左右の移動可能距離を比較し、PatrolOffsetを上限とする巡回区間を決める。
-/// ・巡回端または平坦面の終端で停止し、VisualRootだけを指定時間かけて180度反転する。
+/// ・巡回端または通行可能な地面の終端で停止し、VisualRootだけを指定時間かけて180度反転する。
 /// ・巡回中に進行方向を塞ぐ壁面へ衝突した場合は反転する。
-/// ・巡回前に平坦面を判定し、穴・段差・坂へ進入しない。
+/// ・通行可能な斜面に沿って移動し、穴・大きな段差・許容角を超える坂へは進入しない。
 /// ・XY平面上でプレイヤーとの距離を判定する。
 /// ・EnemyとPlayerのX位置まで水平Rayを飛ばし、区間内の障害物を判定する。
 /// ・初期位置への帰還中も索敵を継続し、Player発見時は通常のAlert遷移へ通知する。
@@ -22,6 +22,7 @@ public sealed class ChargeEnemySearchStrategy :
 {
     private const float ARRIVAL_TOLERANCE = 0.05f;
     private const float DIRECTION_EPSILON = 0.001f;
+    private const float GROUND_NORMAL_TRANSITION_ANGLE = 2f;
     private const float WALL_NORMAL_X_THRESHOLD = 0.7f;
     private const int ANIMATION_BASE_LAYER_INDEX = 0;
     private const float ANIMATION_SPEED_EPSILON = 0.0001f;
@@ -84,10 +85,11 @@ public sealed class ChargeEnemySearchStrategy :
     private bool isReturningToPatrolStart;
     private bool isAwaitingGroundForPatrol;
 
-    // 進行が止まっただけでは帰還不能にせず、下段との高低差かStage壁接触で裏付ける。
+    // 停滞だけでは帰還不能にせず、下段との高低差・壁接触・通行不可の地形で裏付ける。
     private float returnProgressSampleX;
     private float returnStallElapsedTime;
     private bool hasStageWallContactDuringReturn;
+    private float blockedGroundPathElapsedTime;
     private float stageWallContactX;
 
     private float turnElapsedTime;
@@ -506,8 +508,18 @@ public sealed class ChargeEnemySearchStrategy :
         }
 
         // 許容傾斜内の接触を「壁で帰還不能」と誤認しない。
-        return Vector3.Angle(blockingContact.normal, Vector3.up) >
-               enemyData.MaxGroundSlopeAngle;
+        if (Vector3.Angle(blockingContact.normal, Vector3.up) <=
+            enemyData.MaxGroundSlopeAngle)
+        {
+            return false;
+        }
+
+        // 回転BoxColliderの坂入口では、上面とは別に通行不可角度の端面Contactが
+        // 発生する。同じColliderの通行可能な斜面上面が直前方へ連続する場合だけ、
+        // その端面ContactによるBeginTurnを抑止する。
+        return !groundChecker.IsTraversableSlopeEntrance(
+            collision.collider,
+            currentMoveDirectionSign);
     }
 
     private bool IsStageCollider(
@@ -561,8 +573,8 @@ public sealed class ChargeEnemySearchStrategy :
     }
 
     /// <summary>
-    /// 帰還中は物理移動を試し、進捗が一定時間なく、下段への落下かStage壁接触が
-    /// 確認できたときだけ原点を変更する。地面を離れたら再接地まで待つ。
+    /// 帰還中は通行可能な地面上を物理移動し、停滞に加えて下段への落下・Stage壁接触・
+    /// 通行不可の地形が確認されたときだけ原点を変更する。地面を離れたら再接地を待つ。
     /// </summary>
     private void UpdateReturnToPatrolStart()
     {
@@ -607,17 +619,28 @@ public sealed class ChargeEnemySearchStrategy :
 
         if (HasConfirmedUnreachableReturn(moveSpeed, fixedDeltaTime))
         {
-            HandleUnreachablePatrolOrigin("Stage壁または下段からの帰還中に進捗がない");
+            HandleUnreachablePatrolOrigin("Stage壁・通行不可の地形・下段からの帰還中に進捗がない");
             return;
         }
 
-        float expectedMovementDistance = moveSpeed * fixedDeltaTime;
+        float expectedMovementDistance = Mathf.Min(
+            moveSpeed * fixedDeltaTime,
+            Mathf.Abs(deltaX));
 
-        // 1回のRayの不発では停止させず、実際に戻れる経路なら移動を継続する。
-        float targetVelocityX = Mathf.Abs(deltaX) <= expectedMovementDistance
-            ? deltaX / fixedDeltaTime
-            : currentMoveDirectionSign * moveSpeed;
-        SetHorizontalVelocity(targetVelocityX);
+        // 帰還可能な進行先だけを使用する。通行不可なら停止して既存の進捗監視を継続する。
+        if (!TryApplyGroundMovement(
+                currentMoveDirectionSign,
+                moveSpeed,
+                expectedMovementDistance,
+                Mathf.Abs(deltaX)))
+        {
+            // 一時的なRayの不発では帰還不能とせず、通行不可が継続した時間を測る。
+            blockedGroundPathElapsedTime += fixedDeltaTime;
+            StopHorizontalMovement();
+            return;
+        }
+
+        blockedGroundPathElapsedTime = 0f;
         EnsureWalkAnimation();
     }
 
@@ -626,12 +649,13 @@ public sealed class ChargeEnemySearchStrategy :
         returnProgressSampleX = enemyRigidbody != null ? enemyRigidbody.position.x : 0f;
         returnStallElapsedTime = 0f;
         hasStageWallContactDuringReturn = false;
+        blockedGroundPathElapsedTime = 0f;
         stageWallContactX = 0f;
     }
 
     /// <summary>
-    /// 物理ステップをまたいでも帰還方向へ進めないときだけ帰還不能を確定する。
-    /// Playerなどによる一時的な停滞や緩やかな坂では旧原点を保持する。
+    /// 物理ステップをまたいでも帰還方向へ進めず、地形による障害が確認されたときだけ
+    /// 帰還不能を確定する。Playerなどによる一時的な停滞では旧原点を保持する。
     /// </summary>
     private bool HasConfirmedUnreachableReturn(float moveSpeed, float fixedDeltaTime)
     {
@@ -665,8 +689,10 @@ public sealed class ChargeEnemySearchStrategy :
         bool isBelowOriginalPlatform = originHeightDifference >
             Mathf.Max(enemyData.MaxGroundHeightDifference, ARRIVAL_TOLERANCE);
 
-        // 停滞だけで判断すると、Playerなどに塞がれた際に誤って初期位置を更新する。
-        return isBelowOriginalPlatform || hasStageWallContactDuringReturn;
+        // 一時的なPlayerによる停滞だけでは原点更新しない。
+        // 通行不能な地形が0.8秒続く場合は、衝突前でも帰還不能を確定する。
+        return isBelowOriginalPlatform || hasStageWallContactDuringReturn ||
+               blockedGroundPathElapsedTime >= RETURN_STALL_CONFIRM_SECONDS;
     }
 
     private void HandleUnreachablePatrolOrigin(string reason)
@@ -740,25 +766,29 @@ public sealed class ChargeEnemySearchStrategy :
             return;
         }
 
+        // 空中では地面に沿うY速度を与えず、再接地まで既存の待機処理へ戻す。
+        if (!groundChecker.IsStandingOnStageGround())
+        {
+            isAwaitingGroundForPatrol = true;
+            StopHorizontalMovement();
+            return;
+        }
+
         float expectedMovementDistance =
             enemyData.PatrolMoveSpeed *
             Time.fixedDeltaTime;
 
-        if (!groundChecker.CanMoveInDirection(
+        if (!TryApplyGroundMovement(
                 currentMoveDirectionSign,
-                expectedMovementDistance))
+                enemyData.PatrolMoveSpeed,
+                expectedMovementDistance,
+                float.PositiveInfinity))
         {
             BeginTurn();
             return;
         }
 
-        float targetVelocityX =
-            currentMoveDirectionSign *
-            enemyData.PatrolMoveSpeed;
-
-        SetHorizontalVelocity(
-            targetVelocityX);
-        if (Mathf.Abs(targetVelocityX) > DIRECTION_EPSILON)
+        if (enemyData.PatrolMoveSpeed > DIRECTION_EPSILON)
         {
             EnsureWalkAnimation();
         }
@@ -1162,39 +1192,92 @@ public sealed class ChargeEnemySearchStrategy :
     }
 
     /// <summary>
-    /// RigidbodyのY方向速度を維持しながら、
-    /// X方向を指定速度へ補正する。
+    /// 接地している間だけ、通行可能な地面の接線方向へ巡回・帰還速度を与える。
+    /// 戻り先が近い場合はX座標を超えないよう、接線上の速度を制限する。
     /// </summary>
-    private void SetHorizontalVelocity(
-        float targetVelocityX)
+    private bool TryApplyGroundMovement(
+        float directionSign,
+        float moveSpeed,
+        float expectedMovementDistance,
+        float remainingHorizontalDistance)
     {
-        AlignVisualWithHorizontalDirection(
-            targetVelocityX);
-
-        float currentVelocityX =
-            enemyRigidbody.linearVelocity.x;
-
-        float velocityDifference =
-            targetVelocityX -
-            currentVelocityX;
-
-        if (Mathf.Abs(velocityDifference) <=
-            DIRECTION_EPSILON)
+        if (!groundChecker.TryGetCurrentGroundNormal(
+                out Vector3 supportingGroundNormal) ||
+            !groundChecker.TryGetTraversableGroundNormal(
+                directionSign,
+                expectedMovementDistance,
+                out Vector3 forwardGroundNormal))
         {
-            return;
+            return false;
         }
 
-        enemyRigidbody.AddForce(
-            new Vector3(
-                velocityDifference,
-                0f,
-                0f),
-            ForceMode.VelocityChange);
+        Vector3 forwardNormal = new Vector3(
+            forwardGroundNormal.x, forwardGroundNormal.y, 0f).normalized;
+        Vector3 supportNormal = new Vector3(
+            supportingGroundNormal.x, supportingGroundNormal.y, 0f).normalized;
+
+        // 通行確認済みの前方が現在の支持面より急な上り坂なら、
+        // 法線差が大きくても前方法線を使い、坂入口で水平速度のまま衝突するのを防ぐ。
+        // 下り坂や上り勾配が緩くなる境界では、早すぎる下降・浮き上がりを避けて支持法線を優先する。
+        float forwardRise = -forwardNormal.x * directionSign;
+        float supportRise = -supportNormal.x * directionSign;
+        bool isSteeperUphillAhead = forwardRise > DIRECTION_EPSILON &&
+            forwardRise > supportRise + DIRECTION_EPSILON;
+        Vector3 movementNormal = isSteeperUphillAhead ||
+            Vector3.Angle(forwardNormal, supportNormal) <= GROUND_NORMAL_TRANSITION_ANGLE
+                ? forwardNormal : supportNormal;
+        Vector3 movementDirection = GetGroundTangent(directionSign, movementNormal);
+        if (movementDirection.sqrMagnitude <= DIRECTION_EPSILON * DIRECTION_EPSILON)
+        {
+            return false;
+        }
+
+        float targetSpeed = moveSpeed;
+        if (!float.IsPositiveInfinity(remainingHorizontalDistance))
+        {
+            float horizontalSpeedRatio = Mathf.Abs(movementDirection.x);
+            if (horizontalSpeedRatio <= DIRECTION_EPSILON ||
+                Time.fixedDeltaTime <= DIRECTION_EPSILON)
+            {
+                return false;
+            }
+
+            targetSpeed = Mathf.Min(
+                moveSpeed,
+                remainingHorizontalDistance / (horizontalSpeedRatio * Time.fixedDeltaTime));
+        }
+
+        // 地面切替時の水平速度を前方法線への「食い込み速度」と誤認しないよう、
+        // 落下方向の速度は実際の支持法線で評価・保持する。
+        Vector3 currentVelocity = enemyRigidbody.linearVelocity;
+        float normalVelocity = Mathf.Min(0f, Vector3.Dot(currentVelocity, supportNormal));
+        Vector3 targetVelocity = movementDirection * targetSpeed +
+            supportNormal * normalVelocity;
+        Vector3 velocityChange = targetVelocity - currentVelocity;
+        velocityChange.z = 0f;
+
+        if (velocityChange.sqrMagnitude > DIRECTION_EPSILON * DIRECTION_EPSILON)
+        {
+            enemyRigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
+        }
+
+        if (targetSpeed > DIRECTION_EPSILON)
+        {
+            AlignVisualWithHorizontalDirection(directionSign);
+        }
+        return true;
+    }
+
+    private static Vector3 GetGroundTangent(float directionSign, Vector3 groundNormal)
+    {
+        return Vector3.ProjectOnPlane(
+            Vector3.right * directionSign,
+            groundNormal).normalized;
     }
 
     /// <summary>
-    /// X方向の移動速度のみ停止する。
-    /// 重力などによるY方向速度は維持する。
+    /// 接地中は斜面に沿う移動成分だけを止め、地面法線方向の速度を維持する。
+    /// 空中ではX速度だけを止め、重力によるY速度を変えない。
     /// </summary>
     private void StopHorizontalMovement()
     {
@@ -1203,21 +1286,29 @@ public sealed class ChargeEnemySearchStrategy :
             return;
         }
 
-        float currentVelocityX =
-            enemyRigidbody.linearVelocity.x;
-
-        if (Mathf.Abs(currentVelocityX) <=
-            DIRECTION_EPSILON)
+        Vector3 currentVelocity = enemyRigidbody.linearVelocity;
+        if (groundChecker != null &&
+            groundChecker.TryGetCurrentGroundNormal(out Vector3 supportingGroundNormal))
         {
+            Vector3 planarNormal = new Vector3(
+                supportingGroundNormal.x, supportingGroundNormal.y, 0f).normalized;
+            Vector3 groundTangent = GetGroundTangent(1f, planarNormal);
+            float tangentSpeed = Vector3.Dot(currentVelocity, groundTangent);
+            if (Mathf.Abs(tangentSpeed) > DIRECTION_EPSILON)
+            {
+                enemyRigidbody.AddForce(
+                    -groundTangent * tangentSpeed,
+                    ForceMode.VelocityChange);
+            }
             return;
         }
 
-        enemyRigidbody.AddForce(
-            new Vector3(
-                -currentVelocityX,
-                0f,
-                0f),
-            ForceMode.VelocityChange);
+        if (Mathf.Abs(currentVelocity.x) > DIRECTION_EPSILON)
+        {
+            enemyRigidbody.AddForce(
+                new Vector3(-currentVelocity.x, 0f, 0f),
+                ForceMode.VelocityChange);
+        }
     }
 
     /// <summary>

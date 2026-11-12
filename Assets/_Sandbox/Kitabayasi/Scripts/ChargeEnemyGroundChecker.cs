@@ -22,16 +22,23 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
     private const float PATH_SAMPLE_SPACING = 0.1f;
     private const int MAX_PATH_SAMPLE_COUNT = 512;
     private const float STANDING_HEIGHT_TOLERANCE = 0.12f;
-    private const float STANDING_NORMAL_SPEED_TOLERANCE = 0.4f;
     private const float PROBE_SKIN = 0.025f;
     private const float PATH_DISTANCE_EPSILON = 0.001f;
+    private const float GAP_SEARCH_SPACING = 0.025f;
+    private const float MIN_POSITION_CORRECTION = 0.008f;
+    private const float POSITION_CLEARANCE_SKIN = 0.003f;
+    private const float MIN_UPWARD_SEPARATION_NORMAL = 0.35f;
+    private const int OVERLAP_BUFFER_SIZE = 32;
 
     private readonly ChargeEnemyData enemyData;
     private readonly Transform enemyTransform;
     private readonly Rigidbody enemyRigidbody;
     private readonly Collider enemyCollider;
+    // Attackから共有する判定は従来仕様のままにし、接続誤差の許容はSearchでだけ有効化する。
+    private readonly bool allowMinorStageConnections;
     private readonly RaycastHit[] raycastHitBuffer;
     private readonly RaycastHit[] wallCastHitBuffer;
+    private readonly Collider[] nearbyStageColliders;
     private readonly EnemyDebugRay[] debugRays;
 
     private int debugRayCount;
@@ -42,11 +49,25 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
     /// </summary>
     public string LastFailureReason { get; private set; } = string.Empty;
 
+    /// <summary>直近の支持地面検査が失敗した理由。最後に検査したRayの結果を含む。</summary>
+    public string LastSupportFailureReason { get; private set; } = string.Empty;
+
+    /// <summary>最後の巡回距離計測が停止した理由。距離計測のたびに更新する。</summary>
+    public string LastPathScanFailureReason { get; private set; } = string.Empty;
+
+    private string lastPathStepFailureReason = string.Empty;
+    private string lastBlockingWallHitDetails = string.Empty;
+
+    // 直前に成功した移動可否判定の前方支持面。Search内でのみ段差乗り越えに使用する。
+    public Collider LastTraversableGroundCollider { get; private set; }
+    public float LastUpwardConnectionRise { get; private set; }
+
     public ChargeEnemyGroundChecker(
         ChargeEnemyData enemyData,
         Transform enemyTransform,
         Rigidbody enemyRigidbody,
-        Collider enemyCollider)
+        Collider enemyCollider,
+        bool allowMinorStageConnections = false)
     {
         this.enemyData = enemyData
             ?? throw new ArgumentNullException(nameof(enemyData));
@@ -63,6 +84,8 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
             ? enemyCollider
             : throw new ArgumentNullException(nameof(enemyCollider));
 
+        this.allowMinorStageConnections = allowMinorStageConnections;
+
         raycastHitBuffer =
             new RaycastHit[RAYCAST_HIT_BUFFER_SIZE];
 
@@ -71,6 +94,7 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
 
         debugRays =
             new EnemyDebugRay[MAX_DEBUG_RAY_COUNT];
+        nearbyStageColliders = new Collider[OVERLAP_BUFFER_SIZE];
     }
 
     /// <summary>
@@ -97,6 +121,7 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         Bounds bounds = enemyCollider.bounds;
         if (bounds.size.sqrMagnitude <= DIRECTION_EPSILON)
         {
+            LastSupportFailureReason = $"ColliderのBoundsが無効: size={bounds.size}";
             return false;
         }
 
@@ -127,6 +152,8 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         groundNormal = Vector3.zero;
         ClearDebugRays();
         LastFailureReason = string.Empty;
+        LastTraversableGroundCollider = null;
+        LastUpwardConnectionRise = 0f;
 
         if (Mathf.Abs(moveDirectionSign) <= DIRECTION_EPSILON)
         {
@@ -201,13 +228,15 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
                 endCenter,
                 bounds.extents,
                 sign,
+                currentGround,
                 frontGround))
         {
-            LastFailureReason = "進行方向のStage壁に阻まれています。";
+            LastFailureReason = $"進行方向のStage壁に阻まれています。 {lastBlockingWallHitDetails}";
             return false;
         }
 
         groundNormal = frontGround.normal;
+        LastTraversableGroundCollider = frontGround.collider;
         return true;
     }
 
@@ -218,8 +247,13 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
     public bool IsStandingOnStageGround()
     {
         Bounds bounds = enemyCollider.bounds;
-        return bounds.size.sqrMagnitude > DIRECTION_EPSILON &&
-               TryGetSupportingGroundHit(bounds, out _);
+        if (bounds.size.sqrMagnitude <= DIRECTION_EPSILON)
+        {
+            LastSupportFailureReason = $"ColliderのBoundsが無効: size={bounds.size}";
+            return false;
+        }
+
+        return TryGetSupportingGroundHit(bounds, out _);
     }
 
     private bool TryGetSupportingGroundHit(Bounds bounds, out RaycastHit supportingHit)
@@ -260,9 +294,19 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         out RaycastHit supportingHit)
     {
         supportingHit = default;
-        if (!TryGetNearestGroundHit(rayOrigin, rayDistance, out RaycastHit hit) ||
-            !IsSlopeAllowed(hit.normal))
+        if (!TryGetNearestGroundHit(rayOrigin, rayDistance, out RaycastHit hit))
         {
+            LastSupportFailureReason =
+                $"支持Ray未Hit: origin={rayOrigin}, distance={rayDistance:F3}";
+            return false;
+        }
+
+        if (!IsSlopeAllowed(hit.normal))
+        {
+            LastSupportFailureReason =
+                $"支持面の傾斜が通行不可: collider={hit.collider?.name}, " +
+                $"angle={Vector3.Angle(hit.normal, Vector3.up):F2}, " +
+                $"max={enemyData.MaxGroundSlopeAngle:F2}, origin={rayOrigin}";
             return false;
         }
 
@@ -271,22 +315,20 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         if (supportSeparationSquared >
             STANDING_HEIGHT_TOLERANCE * STANDING_HEIGHT_TOLERANCE)
         {
+            LastSupportFailureReason =
+                $"支持面までの間隔が超過: collider={hit.collider?.name}, " +
+                $"separation={Mathf.Sqrt(supportSeparationSquared):F3}, " +
+                $"tolerance={STANDING_HEIGHT_TOLERANCE:F3}, " +
+                $"hit={hit.point}, origin={rayOrigin}";
             return false;
         }
 
-        // 先読みした上り坂へ向かう上向き速度は、支持面がまだ平地の間、
-        // 正の法線速度になる。上昇速度だけで離地扱いにせず、上で検証した
-        // Colliderと地面の距離を優先して坂入口での待機状態への移行を防ぐ。
-        // 高速で下降中かつSkinより離れている場合の非接地判定は維持する。
-        Vector3 planarVelocity = enemyRigidbody.linearVelocity;
-        planarVelocity.z = 0f;
-        float normalSpeed = Vector3.Dot(planarVelocity, hit.normal);
-        if (normalSpeed < -STANDING_NORMAL_SPEED_TOLERANCE &&
-            supportSeparationSquared > PROBE_SKIN * PROBE_SKIN)
-        {
-            return false;
-        }
+        // 接地面法線方向の下降速度は、支持面へ接近していることも意味する。
+        // 速度だけで非接地とすると、下り坂の継ぎ目や初期着地時に
+        // 近くの通行可能な地面を検出できても巡回が停止する。
+        // 接地の許容範囲は上記の地面法線とCollider表面までの距離で判断する。
 
+        LastSupportFailureReason = string.Empty;
         supportingHit = hit;
         return true;
     }
@@ -317,10 +359,14 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         out float reachedBodyY)
     {
         reachedBodyY = enemyRigidbody.position.y;
+        LastPathScanFailureReason = string.Empty;
         if (Mathf.Abs(directionSign) <= DIRECTION_EPSILON ||
             maximumDistance <= PATH_DISTANCE_EPSILON ||
             !IsStandingOnStageGround())
         {
+            LastPathScanFailureReason =
+                $"開始条件不成立: direction={directionSign:F2}, maxDistance={maximumDistance:F3}, " +
+                $"support={LastSupportFailureReason}";
             return 0f;
         }
 
@@ -330,9 +376,17 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         if (!TryGetNearestGroundHit(
                 bounds.center,
                 bounds.extents.y + enemyData.GroundCheckDownDistance,
-                out RaycastHit startGround) ||
-            !IsSlopeAllowed(startGround.normal))
+                out RaycastHit startGround))
         {
+            LastPathScanFailureReason = $"開始地点の地面Ray未Hit: center={bounds.center}";
+            return 0f;
+        }
+
+        if (!IsSlopeAllowed(startGround.normal))
+        {
+            LastPathScanFailureReason =
+                $"開始地面の傾斜角が許容外: collider={startGround.collider?.name}, " +
+                $"angle={Vector3.Angle(startGround.normal, Vector3.up):F2}";
             return 0f;
         }
 
@@ -342,6 +396,9 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         if (!TryTraceGroundPath(startGround, initialFrontX, bounds.center.z,
                 out RaycastHit frontGround, false))
         {
+            LastPathScanFailureReason =
+                $"開始地点から前端への地面追跡失敗: targetX={initialFrontX:F3}, " +
+                lastPathStepFailureReason;
             return 0f;
         }
 
@@ -366,10 +423,18 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
             // 中央と前端の双方を前回の接地点から辿るため、下り坂や継ぎ目を
             // 「元の平地Y座標から届かない」という理由で切り捨てない。
             if (!TryGetNextGroundHit(centerGround, nextX, bounds.center.z,
-                    out RaycastHit nextGround) ||
-                !TryGetNextGroundHit(frontGround, nextFrontX, bounds.center.z,
+                    out RaycastHit nextGround))
+            {
+                LastPathScanFailureReason =
+                    $"中心の地面追跡失敗: sampleX={nextX:F3}, " + lastPathStepFailureReason;
+                break;
+            }
+
+            if (!TryGetNextGroundHit(frontGround, nextFrontX, bounds.center.z,
                     out RaycastHit nextFrontGround))
             {
+                LastPathScanFailureReason =
+                    $"前端の地面追跡失敗: sampleX={nextFrontX:F3}, " + lastPathStepFailureReason;
                 break;
             }
 
@@ -387,8 +452,11 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
                     toCenter,
                     bounds.extents,
                     sign,
+                    centerGround,
                     nextFrontGround))
             {
+                LastPathScanFailureReason =
+                    $"BoxCastが壁判定: sampleX={nextX:F3}, " + lastBlockingWallHitDetails;
                 break;
             }
 
@@ -432,9 +500,15 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         }
 
         float startX = startGround.point.x;
+        float traversalSign = Mathf.Sign(targetX - startX);
         for (int i = 1; i <= sampleCount; i++)
         {
             float nextX = Mathf.Lerp(startX, targetX, (float)i / sampleCount);
+            // 隙間を越えて先の支持面を見つけた場合、次サンプルで後退しない。
+            if ((nextX - lastGround.point.x) * traversalSign < -PATH_DISTANCE_EPSILON)
+            {
+                continue;
+            }
             if (!TryGetNextGroundHit(lastGround, nextX, targetZ, out RaycastHit nextGround))
             {
                 if (setFailureReason)
@@ -443,7 +517,8 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
                         $"進行経路の地面が未検出・許容角超過・高さ不連続です。 " +
                         $"sampleX={nextX:F3}, lastGroundY={lastGround.point.y:F3}, " +
                         $"maxSlope={enemyData.MaxGroundSlopeAngle:F2}, " +
-                        $"maxHeightDifference={enemyData.MaxGroundHeightDifference:F3}";
+                        $"maxHeightDifference={enemyData.MaxGroundHeightDifference:F3}, " +
+                        $"detail={lastPathStepFailureReason}";
                 }
                 lastGround = default;
                 return false;
@@ -461,7 +536,138 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         float nextZ,
         out RaycastHit nextGround)
     {
+        if (!allowMinorStageConnections)
+        {
+            return TryGetStrictNextGroundHit(previousGround, nextX, nextZ,
+                out nextGround);
+        }
+
         nextGround = default;
+        lastPathStepFailureReason = string.Empty;
+        float directionSign = Mathf.Sign(nextX - previousGround.point.x);
+        if (Mathf.Abs(directionSign) <= DIRECTION_EPSILON)
+        {
+            nextGround = previousGround;
+            return true;
+        }
+
+        // 欠けた地面Rayを無条件に崖とはみなさず、ごく短い範囲だけ次の上面を探す。
+        // 検索に失敗した場合、未確認の空間を通行可能とは扱わない。
+        float gapLimit = Mathf.Max(0f, enemyData.GroundConnectionGapTolerance);
+        int gapSamples = Mathf.CeilToInt(gapLimit / GAP_SEARCH_SPACING);
+        for (int sample = 0; sample <= gapSamples; sample++)
+        {
+            float extraDistance = sample == 0 ? 0f :
+                Mathf.Min(sample * GAP_SEARCH_SPACING, gapLimit);
+            float sampleX = nextX + directionSign * extraDistance;
+            if (!TryGetGroundAtPathSample(previousGround, sampleX, nextZ,
+                    out RaycastHit hit))
+            {
+                // 斜面上面が見つかっても、許容外の高さ/角度ならその先を探さない。
+                // 隣接する別の安全な地面を探して本物の壁を飛ばさないため。
+                if (!string.IsNullOrEmpty(lastPathStepFailureReason) &&
+                    !lastPathStepFailureReason.StartsWith("地面Ray未Hit"))
+                {
+                    return false;
+                }
+                continue;
+            }
+
+            if (sample > 0 &&
+                Mathf.Abs(hit.point.x - previousGround.point.x) >
+                    gapLimit + PATH_SAMPLE_SPACING * 0.5f + PATH_DISTANCE_EPSILON)
+            {
+                lastPathStepFailureReason =
+                    $"隙間の長さが許容外: fromX={previousGround.point.x:F3}, " +
+                    $"toX={hit.point.x:F3}, maxGap={gapLimit:F3}";
+                return false;
+            }
+
+            nextGround = hit;
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryGetGroundAtPathSample(
+        RaycastHit previousGround,
+        float sampleX,
+        float sampleZ,
+        out RaycastHit nextGround)
+    {
+        nextGround = default;
+        float horizontalDistance = Mathf.Abs(sampleX - previousGround.point.x);
+        float slopeHeightAllowance = GetSlopeHeightAllowance(horizontalDistance);
+        float connectionAllowance = Mathf.Min(
+            enemyData.MaxGroundHeightDifference,
+            enemyData.GroundConnectionHeightTolerance);
+        float rayRise = slopeHeightAllowance + connectionAllowance + PROBE_SKIN;
+        float rayOriginY = previousGround.point.y + rayRise;
+        float rayDistance = rayRise + Mathf.Max(
+            enemyData.GroundCheckDownDistance,
+            slopeHeightAllowance + connectionAllowance) + PROBE_SKIN;
+        Vector3 rayOrigin = new Vector3(sampleX, rayOriginY, sampleZ);
+        if (!TryGetNearestGroundHit(rayOrigin, rayDistance, out RaycastHit hit))
+        {
+            lastPathStepFailureReason =
+                $"地面Ray未Hit: from={previousGround.point}, origin={rayOrigin}, " +
+                $"distance={rayDistance:F3}";
+            return false;
+        }
+
+        if (!IsSlopeAllowed(hit.normal))
+        {
+            lastPathStepFailureReason =
+                $"角度・法線が通行不可: collider={hit.collider?.name}, " +
+                $"normal={hit.normal}, max={enemyData.MaxGroundSlopeAngle:F2}";
+            return false;
+        }
+
+        bool isColliderTransition = hit.collider != previousGround.collider;
+        float naturalRise = GetGroundTangentRiseLimit(
+            previousGround.normal, hit.normal, horizontalDistance);
+        float permittedHeightDifference = naturalRise + PROBE_SKIN +
+            (isColliderTransition ? connectionAllowance : 0f);
+        float heightDifference = Mathf.Abs(hit.point.y - previousGround.point.y);
+        if (heightDifference > permittedHeightDifference + PATH_DISTANCE_EPSILON)
+        {
+            lastPathStepFailureReason =
+                $"高さ差が許容外: collider={hit.collider?.name}, " +
+                $"difference={heightDifference:F3}, permitted={permittedHeightDifference:F3}, " +
+                $"from={previousGround.point}, hit={hit.point}";
+            return false;
+        }
+
+        if (isColliderTransition)
+        {
+            // 自然な斜面勾配を超えた上向きの接続誤差だけを、段差補正の候補とする。
+            float deltaX = hit.point.x - previousGround.point.x;
+            float previousRise = -previousGround.normal.x * deltaX /
+                Mathf.Max(previousGround.normal.y, DIRECTION_EPSILON);
+            float nextRise = -hit.normal.x * deltaX /
+                Mathf.Max(hit.normal.y, DIRECTION_EPSILON);
+            float expectedRise = Mathf.Max(0f, Mathf.Max(previousRise, nextRise));
+            float extraRise = hit.point.y - previousGround.point.y - expectedRise;
+            if (extraRise > MIN_POSITION_CORRECTION)
+            {
+                LastUpwardConnectionRise = Mathf.Max(
+                    LastUpwardConnectionRise, Mathf.Min(extraRise, connectionAllowance));
+            }
+        }
+
+        nextGround = hit;
+        return true;
+    }
+
+    private bool TryGetStrictNextGroundHit(
+        RaycastHit previousGround,
+        float nextX,
+        float nextZ,
+        out RaycastHit nextGround)
+    {
+        nextGround = default;
+        lastPathStepFailureReason = string.Empty;
         float horizontalDistance = Mathf.Abs(nextX - previousGround.point.x);
         float slopeHeightAllowance = GetSlopeHeightAllowance(horizontalDistance);
 
@@ -476,9 +682,20 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         float rayDistance = localStepAllowance * 2f +
             enemyData.GroundCheckDownDistance + PROBE_SKIN;
         Vector3 rayOrigin = new Vector3(nextX, rayOriginY, nextZ);
-        if (!TryGetNearestGroundHit(rayOrigin, rayDistance, out RaycastHit hit) ||
-            !IsSlopeAllowed(hit.normal))
+        if (!TryGetNearestGroundHit(rayOrigin, rayDistance, out RaycastHit hit))
         {
+            lastPathStepFailureReason =
+                $"地面Ray未Hit: from={previousGround.point}, origin={rayOrigin}, " +
+                $"distance={rayDistance:F3}, allowance={localStepAllowance:F3}";
+            return false;
+        }
+
+        if (!IsSlopeAllowed(hit.normal))
+        {
+            lastPathStepFailureReason =
+                $"角度・法線が通行不可: collider={hit.collider?.name}, " +
+                $"normal={hit.normal}, angle={Vector3.Angle(hit.normal, Vector3.up):F2}, " +
+                $"max={enemyData.MaxGroundSlopeAngle:F2}, hit={hit.point}";
             return false;
         }
 
@@ -489,6 +706,10 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
                 previousGround.normal, hit.normal, horizontalDistance) + PROBE_SKIN));
         if (heightDifference > permittedHeightDifference + PATH_DISTANCE_EPSILON)
         {
+            lastPathStepFailureReason =
+                $"高さ差が許容外: collider={hit.collider?.name}, " +
+                $"difference={heightDifference:F3}, permitted={permittedHeightDifference:F3}, " +
+                $"from={previousGround.point}, hit={hit.point}";
             return false;
         }
 
@@ -527,8 +748,10 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         Vector3 endCenter,
         Vector3 bodyExtents,
         float directionSign,
+        RaycastHit currentGround,
         RaycastHit traversableGroundAhead)
     {
+        lastBlockingWallHitDetails = string.Empty;
         // 接地床を壁として拾いにくくするため、足元を少し縮めたBoxを掃引する。
         Vector3 castExtents = new Vector3(
             Mathf.Max(bodyExtents.x - PROBE_SKIN, PROBE_SKIN),
@@ -562,10 +785,12 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
             // 回転BoxColliderで作られた坂は、上面が許容角内でも入口に
             // 通行不可角度の端面を持つ。直前の地面追跡が同じColliderの
             // 斜面上面まで連続している場合だけ、その端面は坂入口として除外する。
-            // 別Colliderの壁、平坦な箱の段差、坂の終端はこの条件を満たさない。
-            if (IsSameTraversableSlope(
-                    hit.collider,
-                    traversableGroundAhead))
+            // 別Colliderの微小段差は上面の連続性と高さ条件を満たす場合だけ通す。
+            // 通行可能な接続先以外の壁は従来どおり拒否する。
+            if (allowMinorStageConnections
+                    ? IsTraversableGroundEntrance(
+                        hit.collider, currentGround, traversableGroundAhead)
+                    : IsSameTraversableSlope(hit.collider, traversableGroundAhead))
             {
                 continue;
             }
@@ -574,6 +799,11 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
             if (hit.normal.x * directionSign < -DIRECTION_EPSILON &&
                 !IsSlopeAllowed(hit.normal))
             {
+                lastBlockingWallHitDetails =
+                    $"collider={hit.collider.name}, normal={hit.normal}, " +
+                    $"angle={Vector3.Angle(hit.normal, Vector3.up):F2}, " +
+                    $"hitPoint={hit.point}, " +
+                    $"frontCollider={traversableGroundAhead.collider?.name}";
                 return true;
             }
         }
@@ -624,9 +854,39 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
             return false;
         }
 
-        return IsSameTraversableSlope(
-            candidateCollider,
-            traversableGroundAhead);
+        return allowMinorStageConnections
+            ? IsTraversableGroundEntrance(
+                candidateCollider, currentGround, traversableGroundAhead)
+            : IsSameTraversableSlope(candidateCollider, traversableGroundAhead);
+    }
+
+    private bool IsTraversableGroundEntrance(
+        Collider candidateCollider,
+        RaycastHit currentGround,
+        RaycastHit traversableGroundAhead)
+    {
+        if (IsSameTraversableSlope(candidateCollider, traversableGroundAhead))
+        {
+            return true;
+        }
+
+        // 上面を連続追跡できた別Colliderの微小段差だけ例外とする。
+        // 接続先と異なるColliderの壁、同一Colliderの真正面の壁は通過させない。
+        if (candidateCollider == null ||
+            candidateCollider != traversableGroundAhead.collider ||
+            candidateCollider == currentGround.collider)
+        {
+            return false;
+        }
+
+        float heightDifference = traversableGroundAhead.point.y - currentGround.point.y;
+        float tolerance = Mathf.Min(
+            enemyData.MaxGroundHeightDifference,
+            enemyData.GroundConnectionHeightTolerance);
+        return heightDifference >= -tolerance &&
+               heightDifference <= tolerance + GetGroundTangentRiseLimit(
+                   currentGround.normal, traversableGroundAhead.normal,
+                   Mathf.Abs(traversableGroundAhead.point.x - currentGround.point.x));
     }
 
     private bool IsSameTraversableSlope(
@@ -702,6 +962,166 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         }
 
         return hasGroundHit;
+    }
+
+    /// <summary>
+    /// 地面に浅く食い込んだColliderについて、上方向だけの安全な分離量を求める。
+    /// 水平方向の押し出しが必要な壁・大きな重なりは補正しない。
+    /// </summary>
+    public bool TryGetGroundPenetrationRecovery(out float upwardDistance)
+    {
+        upwardDistance = 0f;
+        float maxRecovery = enemyData.MaxGroundPenetrationRecovery;
+        if (maxRecovery <= MIN_POSITION_CORRECTION ||
+            (enemyRigidbody.constraints & RigidbodyConstraints.FreezePositionY) != 0 ||
+            !TryCollectNeighbours(Vector3.zero, enemyData.StageLayerMask, out int count))
+        {
+            return false;
+        }
+
+        Vector3 currentPosition = enemyCollider.transform.position;
+        Quaternion currentRotation = enemyCollider.transform.rotation;
+        for (int i = 0; i < count; i++)
+        {
+            Collider stage = nearbyStageColliders[i];
+            if (!Physics.ComputePenetration(
+                    enemyCollider, currentPosition, currentRotation,
+                    stage, stage.transform.position, stage.transform.rotation,
+                    out Vector3 separationNormal, out float penetration))
+            {
+                continue;
+            }
+
+            if (penetration <= MIN_POSITION_CORRECTION)
+            {
+                continue;
+            }
+
+            if (separationNormal.y < MIN_UPWARD_SEPARATION_NORMAL)
+            {
+                return false;
+            }
+
+            float requiredRise = penetration /
+                separationNormal.y + POSITION_CLEARANCE_SKIN;
+            if (requiredRise > maxRecovery)
+            {
+                return false;
+            }
+            upwardDistance = Mathf.Max(upwardDistance, requiredRise);
+        }
+
+        return upwardDistance >= MIN_POSITION_CORRECTION &&
+               HasNearbySupportingSurface() &&
+               CanLiftBodySafely(upwardDistance);
+    }
+
+    private bool HasNearbySupportingSurface()
+    {
+        Bounds bounds = enemyCollider.bounds;
+        float rayLength = bounds.size.y +
+            enemyData.MaxGroundPenetrationRecovery + STANDING_HEIGHT_TOLERANCE;
+        float supportOffset = Mathf.Max(0f, bounds.extents.x - PROBE_SKIN);
+        for (int i = -1; i <= 1; i++)
+        {
+            Vector3 origin = new Vector3(
+                bounds.center.x + i * supportOffset,
+                bounds.max.y + PROBE_SKIN,
+                bounds.center.z);
+            if (TryGetNearestGroundHit(origin, rayLength, out RaycastHit hit) &&
+                IsSlopeAllowed(hit.normal) &&
+                hit.point.y <= bounds.center.y &&
+                hit.point.y >= bounds.min.y -
+                    enemyData.MaxGroundPenetrationRecovery - STANDING_HEIGHT_TOLERANCE)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Searchの微小段差越えで使用する事前検証。Colliderの最終位置に
+    /// 許容外の重なりがなく、頭上のStageを突き抜けない場合だけ許可する。
+    /// </summary>
+    public bool CanLiftBodySafely(float upwardDistance)
+    {
+        if (upwardDistance <= MIN_POSITION_CORRECTION ||
+            upwardDistance > enemyData.MaxGroundPenetrationRecovery ||
+            (enemyRigidbody.constraints & RigidbodyConstraints.FreezePositionY) != 0 ||
+            !TryCollectNeighbours(Vector3.up * upwardDistance, Physics.AllLayers, out int count))
+        {
+            return false;
+        }
+
+        Vector3 candidatePosition = enemyCollider.transform.position +
+            Vector3.up * upwardDistance;
+        Quaternion candidateRotation = enemyCollider.transform.rotation;
+        for (int i = 0; i < count; i++)
+        {
+            Collider stage = nearbyStageColliders[i];
+            if (Physics.ComputePenetration(
+                    enemyCollider, candidatePosition, candidateRotation,
+                    stage, stage.transform.position, stage.transform.rotation,
+                    out _, out float penetration) &&
+                penetration > POSITION_CLEARANCE_SKIN)
+            {
+                return false;
+            }
+        }
+
+        Bounds bounds = enemyCollider.bounds;
+        Vector3 castExtents = bounds.extents -
+            Vector3.one * PROBE_SKIN;
+        castExtents = Vector3.Max(castExtents,
+            Vector3.one * POSITION_CLEARANCE_SKIN);
+        int hits = Physics.BoxCastNonAlloc(
+            bounds.center, castExtents, Vector3.up,
+            wallCastHitBuffer, Quaternion.identity,
+            upwardDistance, enemyData.StageLayerMask,
+            QueryTriggerInteraction.Ignore);
+        if (hits >= wallCastHitBuffer.Length)
+        {
+            return false;
+        }
+        for (int i = 0; i < hits; i++)
+        {
+            RaycastHit hit = wallCastHitBuffer[i];
+            if (hit.collider != null &&
+                !IsEnemyOwnedCollider(hit.collider) &&
+                hit.normal.y < -MIN_UPWARD_SEPARATION_NORMAL)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private bool TryCollectNeighbours(Vector3 offset, int collisionMask, out int count)
+    {
+        Bounds bounds = enemyCollider.bounds;
+        count = Physics.OverlapBoxNonAlloc(
+            bounds.center + offset,
+            bounds.extents + Vector3.one * POSITION_CLEARANCE_SKIN,
+            nearbyStageColliders, Quaternion.identity,
+            collisionMask, QueryTriggerInteraction.Ignore);
+        if (count >= nearbyStageColliders.Length)
+        {
+            // 対象を取りこぼしたまま安全判定を通さない。
+            return false;
+        }
+
+        int write = 0;
+        for (int i = 0; i < count; i++)
+        {
+            Collider stage = nearbyStageColliders[i];
+            if (stage != null && !IsEnemyOwnedCollider(stage))
+            {
+                nearbyStageColliders[write++] = stage;
+            }
+        }
+        count = write;
+        return true;
     }
 
     /// <summary>

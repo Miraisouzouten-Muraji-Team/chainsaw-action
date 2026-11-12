@@ -18,7 +18,8 @@ using UnityEngine.Serialization;
 [Serializable]
 public sealed class ChargeEnemySearchStrategy :
     IEnemySearchStrategy,
-    IEnemyDebugRayProvider
+    IEnemyDebugRayProvider,
+    IEnemyCollisionStayReceiver
 {
     private const float ARRIVAL_TOLERANCE = 0.05f;
     private const float DIRECTION_EPSILON = 0.001f;
@@ -32,6 +33,16 @@ public sealed class ChargeEnemySearchStrategy :
     private const int WALK_REPLAY_WARNING_COUNT = 12;
     private const float RETURN_STALL_CONFIRM_SECONDS = 0.8f;
     private const float RETURN_PROGRESS_SAMPLE_DISTANCE = 0.06f;
+    private const float MOVEMENT_DIAGNOSTIC_STALL_SECONDS = 0.25f;
+    private const float MOVEMENT_DIAGNOSTIC_LOG_INTERVAL = 1f;
+    private const float MOVEMENT_COMMAND_LOG_INTERVAL = 0.5f;
+    private const float MOVEMENT_DIAGNOSTIC_MINIMUM_SPEED = 0.1f;
+    private const float MOVEMENT_DIAGNOSTIC_PROGRESS_RATIO = 0.1f;
+    private const float CONTACT_DIAGNOSTIC_MAX_AGE = 0.25f;
+    private const float GROUND_STEP_CONTACT_MAX_AGE = 0.15f;
+    private const float GROUND_STEP_RETRY_INTERVAL = 0.15f;
+    private const float MIN_GROUND_STEP_RISE = 0.025f;
+    private const float GROUND_STEP_SKIN = 0.005f;
 
     [Header("個体設定")]
     [Tooltip("このChargeEnemyがPlayerを検知する半径。ChargeEnemyDataのDetectionRadiusは使用しない。")]
@@ -68,8 +79,17 @@ public sealed class ChargeEnemySearchStrategy :
     private int walkReplayCount;
     private bool hasReportedRepeatedWalkReplay;
     private bool hasRestoredStoppedAnimatorSpeed;
+    private bool hasPausedWalkAnimation;
+    private bool isPhysicalMovementStalled;
+    private bool hasPendingInitialGroundRecovery;
+    private Collider recentBlockingStageCollider;
+    private float recentBlockingStageContactTime = float.NegativeInfinity;
+    private float lastGroundStepTime = float.NegativeInfinity;
 
     private ChargeEnemyGroundChecker groundChecker;
+
+    // 巡回移動が失敗した理由を、直後の折り返しログに渡すために保持する。
+    private string lastMovementFailureReason = string.Empty;
 
     private EnemyPlayerReference playerReference;
     private EnemyPlayerDetectionSensor playerDetectionSensor;
@@ -93,6 +113,33 @@ public sealed class ChargeEnemySearchStrategy :
     private float stageWallContactX;
 
     private float turnElapsedTime;
+
+    // 移動指示が物理結果に変換されない停滞だけを診断する。
+    // 移動判定や速度制御には使用しない。
+    private bool hasPendingMovementDiagnostic;
+    private Vector3 diagnosticCommandPosition;
+    private Vector3 diagnosticPreCommandVelocity;
+    private Vector3 diagnosticTargetVelocity;
+    private Vector3 diagnosticMovementDirection;
+    private Vector3 diagnosticSupportNormal;
+    private Vector3 diagnosticForwardNormal;
+    private float diagnosticStallElapsedTime;
+    private float lastMovementStallLogTime = float.NegativeInfinity;
+    private bool hasLoggedMovementNormal;
+    private Vector3 lastLoggedMovementNormal;
+    private float lastMovementCommandLogTime = float.NegativeInfinity;
+
+    private bool hasRecentContactDiagnostic;
+    private int diagnosticContactFixedFrame;
+    private float diagnosticContactTime;
+    private string diagnosticContactColliderName = string.Empty;
+    private string diagnosticContactMaterialName = string.Empty;
+    private Vector3 diagnosticContactPoint;
+    private Vector3 diagnosticContactNormal;
+    private Vector3 diagnosticRelativeVelocity;
+    private Vector3 diagnosticCollisionImpulse;
+    private int diagnosticContactCount;
+    private float diagnosticContactBlockingDot = float.PositiveInfinity;
 
     private Quaternion turnStartRotation;
     private Quaternion turnTargetRotation;
@@ -176,10 +223,21 @@ public sealed class ChargeEnemySearchStrategy :
                 this.enemyData,
                 enemyTransform,
                 enemyRigidbody,
-                enemyCollider);
+                enemyCollider,
+                allowMinorStageConnections: true);
 
         InitializeWalkAnimation();
         ResetWalkProgressSample();
+
+        // Awake時点の初期めり込みを先に補正し、巡回原点が補正前の高さにならないようにする。
+        // Rigidbodyの姿勢が物理世界へ反映される次回FixedUpdateまで、地面経路は再判定しない。
+        if (groundChecker.TryGetGroundPenetrationRecovery(out float initialLift))
+        {
+            enemyRigidbody.position += Vector3.up * initialLift;
+            RemoveDownwardVelocity();
+            hasPendingInitialGroundRecovery = true;
+            LogSlopeDiagnostic("InitialGroundRecovery", $"upwardDistance={initialLift:F4}");
+        }
 
         // 巡回開始位置はSearchStateへ入るたびではなく、
         // ゲーム開始時の位置として固定する。
@@ -202,6 +260,15 @@ public sealed class ChargeEnemySearchStrategy :
         isAwaitingGroundForPatrol = false;
         turnElapsedTime = 0f;
         ResetReturnProgressTracking();
+        ResetMovementDiagnostics();
+        recentBlockingStageCollider = null;
+
+        if (hasPendingInitialGroundRecovery)
+        {
+            isAwaitingGroundForPatrol = true;
+            currentMoveDirectionSign = 0f;
+            return;
+        }
 
         // 着地瞬間の通知ではなく、地面上での帰還移動の進捗を確認する。
         DecideReturnOrPatrol();
@@ -232,6 +299,8 @@ public sealed class ChargeEnemySearchStrategy :
             isAwaitingGroundForPatrol = true;
             isReturningToPatrolStart = false;
             currentMoveDirectionSign = 0f;
+            LogSlopeDiagnostic("GroundWaitStarted",
+                $"開始時に非接地: {groundChecker.LastSupportFailureReason}", true);
             StopHorizontalMovement();
             return;
         }
@@ -287,11 +356,15 @@ public sealed class ChargeEnemySearchStrategy :
         {
             activePatrolOffset = 0f;
             currentMoveDirectionSign = 0f;
+            LogSlopeDiagnostic("PatrolDistanceSelection",
+                $"巡回距離が閾値以下: patrolOffset={patrolOffset:F3}");
             return;
         }
 
         float rightDistance = groundChecker.MeasureSafeHorizontalDistance(1f, maximumDistance);
+        string rightStopReason = groundChecker.LastPathScanFailureReason;
         float leftDistance = groundChecker.MeasureSafeHorizontalDistance(-1f, maximumDistance);
+        string leftStopReason = groundChecker.LastPathScanFailureReason;
         float preferredDirection = Mathf.Sign(patrolOffset);
         float directionSign = rightDistance > leftDistance + DIRECTION_EPSILON
             ? 1f
@@ -308,6 +381,11 @@ public sealed class ChargeEnemySearchStrategy :
             ? directionSign * selectedDistance
             : 0f;
         currentMoveDirectionSign = GetPatrolEndDirectionSign();
+        LogSlopeDiagnostic("PatrolDistanceSelection",
+            $"requested={patrolOffset:F3}, right={rightDistance:F3}, " +
+            $"rightStop=({rightStopReason}), left={leftDistance:F3}, " +
+            $"leftStop=({leftStopReason}), selected={activePatrolOffset:F3}, " +
+            $"minDistance={minimumPatrolDistance:F3}");
     }
 
     public bool UpdateSearch(
@@ -317,6 +395,26 @@ public sealed class ChargeEnemySearchStrategy :
 
         if (!isSearchActive)
         {
+            return false;
+        }
+
+        UpdateMovementDiagnostics();
+
+        if (hasPendingInitialGroundRecovery)
+        {
+            hasPendingInitialGroundRecovery = false;
+            DecideReturnOrPatrol();
+        }
+
+        // 軽微なめり込みは物理更新前に最小限の上方向だけへ分離する。
+        // 修正したRigidbody位置が反映されるまでは、旧Collider姿勢を使って経路検査しない。
+        if (groundChecker.TryGetGroundPenetrationRecovery(out float overlapLift))
+        {
+            enemyRigidbody.position += Vector3.up * overlapLift;
+            RemoveDownwardVelocity();
+            recentBlockingStageCollider = null;
+            ResetMovementDiagnostics();
+            LogSlopeDiagnostic("GroundOverlapRecovered", $"upwardDistance={overlapLift:F4}");
             return false;
         }
 
@@ -421,6 +519,9 @@ public sealed class ChargeEnemySearchStrategy :
         Collider collidedCollider =
             collision.collider;
 
+        CaptureCollisionDiagnostic(collision);
+        CaptureBlockingStageContact(collision);
+
         // 帰還中もSearch中であることに変わりはないため、
         // Player接触時は通常巡回中と同じ接触ダメージを与える。
         if (playerReference.IsPlayerCollider(
@@ -478,6 +579,38 @@ public sealed class ChargeEnemySearchStrategy :
     }
 
     /// <summary>
+    /// 移動指示中の物理停止を切り分けるため、
+    /// 継続接触のColliderと最も進行を塞ぐ法線を保存する。
+    /// この情報は診断ログにのみ使用する。
+    /// </summary>
+    public void HandleCollisionStay(Collision collision)
+    {
+        if (isSearchActive)
+        {
+            CaptureCollisionDiagnostic(collision);
+            CaptureBlockingStageContact(collision);
+        }
+    }
+
+    private void CaptureBlockingStageContact(Collision collision)
+    {
+        if (collision == null || collision.collider == null ||
+            !IsStageCollider(collision.collider) ||
+            Mathf.Abs(currentMoveDirectionSign) <= DIRECTION_EPSILON)
+        {
+            return;
+        }
+
+        if (EnemyBlockingContactEvaluator.TryGetBlockingContact(
+                collision, Vector3.right * currentMoveDirectionSign,
+                WALL_NORMAL_X_THRESHOLD, out _))
+        {
+            recentBlockingStageCollider = collision.collider;
+            recentBlockingStageContactTime = Time.fixedTime;
+        }
+    }
+
+    /// <summary>
     /// 現在の巡回方向を正面から塞ぐ接触面が存在するか判定する。
     /// 地面との接触は法線が主に上下方向を向くため、
     /// 壁として扱わない。
@@ -517,9 +650,19 @@ public sealed class ChargeEnemySearchStrategy :
         // 回転BoxColliderの坂入口では、上面とは別に通行不可角度の端面Contactが
         // 発生する。同じColliderの通行可能な斜面上面が直前方へ連続する場合だけ、
         // その端面ContactによるBeginTurnを抑止する。
-        return !groundChecker.IsTraversableSlopeEntrance(
-            collision.collider,
-            currentMoveDirectionSign);
+        if (groundChecker.IsTraversableSlopeEntrance(
+                collision.collider,
+                currentMoveDirectionSign))
+        {
+            return false;
+        }
+
+        LogSlopeDiagnostic("BlockingCollision",
+            $"collider={collision.collider.name}, point={blockingContact.point}, " +
+            $"normal={blockingContact.normal}, " +
+            $"angle={Vector3.Angle(blockingContact.normal, Vector3.up):F2}, " +
+            $"returning={isReturningToPatrolStart}", true);
+        return true;
     }
 
     private bool IsStageCollider(
@@ -545,8 +688,11 @@ public sealed class ChargeEnemySearchStrategy :
         isReturningToPatrolStart = false;
         isAwaitingGroundForPatrol = false;
         ResetReturnProgressTracking();
+        ResetMovementDiagnostics();
+        recentBlockingStageCollider = null;
 
         StopHorizontalMovement();
+        ResumeWalkAnimationIfPaused();
     }
 
     /// <summary>
@@ -580,6 +726,8 @@ public sealed class ChargeEnemySearchStrategy :
     {
         if (!groundChecker.IsStandingOnStageGround())
         {
+            LogSlopeDiagnostic("GroundLostDuringReturn",
+                groundChecker.LastSupportFailureReason, true);
             isReturningToPatrolStart = false;
             isAwaitingGroundForPatrol = true;
             ResetReturnProgressTracking();
@@ -635,6 +783,10 @@ public sealed class ChargeEnemySearchStrategy :
                 Mathf.Abs(deltaX)))
         {
             // 一時的なRayの不発では帰還不能とせず、通行不可が継続した時間を測る。
+            if (blockedGroundPathElapsedTime <= 0f)
+            {
+                LogSlopeDiagnostic("ReturnMovementBlocked", lastMovementFailureReason, true);
+            }
             blockedGroundPathElapsedTime += fixedDeltaTime;
             StopHorizontalMovement();
             return;
@@ -762,6 +914,8 @@ public sealed class ChargeEnemySearchStrategy :
         if (HasReachedPatrolTarget(
                 targetPositionX))
         {
+            LogSlopeDiagnostic("PatrolTurnReachedTarget",
+                $"targetX={targetPositionX:F3}, remainingX={targetPositionX - enemyRigidbody.position.x:F3}");
             BeginTurn();
             return;
         }
@@ -769,6 +923,8 @@ public sealed class ChargeEnemySearchStrategy :
         // 空中では地面に沿うY速度を与えず、再接地まで既存の待機処理へ戻す。
         if (!groundChecker.IsStandingOnStageGround())
         {
+            LogSlopeDiagnostic("GroundLostDuringPatrol",
+                groundChecker.LastSupportFailureReason, true);
             isAwaitingGroundForPatrol = true;
             StopHorizontalMovement();
             return;
@@ -784,6 +940,7 @@ public sealed class ChargeEnemySearchStrategy :
                 expectedMovementDistance,
                 float.PositiveInfinity))
         {
+            LogSlopeDiagnostic("PatrolTurnMovementRejected", lastMovementFailureReason, true);
             BeginTurn();
             return;
         }
@@ -1010,6 +1167,14 @@ public sealed class ChargeEnemySearchStrategy :
             return;
         }
 
+        if (isPhysicalMovementStalled)
+        {
+            PauseWalkAnimationWhenStopped();
+            return;
+        }
+
+        ResumeWalkAnimationIfPaused();
+
         // 準備モーションではAnimator全体の速度を変更する。
         // Searchでは停止速度を引き継がず、移動中のWalkを再開させる。
         if (Mathf.Abs(animator.speed) <= ANIMATION_SPEED_EPSILON)
@@ -1201,14 +1366,30 @@ public sealed class ChargeEnemySearchStrategy :
         float expectedMovementDistance,
         float remainingHorizontalDistance)
     {
+        lastMovementFailureReason = string.Empty;
         if (!groundChecker.TryGetCurrentGroundNormal(
-                out Vector3 supportingGroundNormal) ||
-            !groundChecker.TryGetTraversableGroundNormal(
+                out Vector3 supportingGroundNormal))
+        {
+            lastMovementFailureReason =
+                $"現在の支持面法線を取得できない: {groundChecker.LastSupportFailureReason}";
+            return false;
+        }
+
+        if (!groundChecker.TryGetTraversableGroundNormal(
                 directionSign,
                 expectedMovementDistance,
                 out Vector3 forwardGroundNormal))
         {
+            lastMovementFailureReason =
+                $"進行方向の地面・壁検査に失敗: {groundChecker.LastFailureReason}";
             return false;
+        }
+
+        // Stage接触が前方の通行可能な地面の「端面」に由来する場合だけ、
+        // 位置を少し上げて物理的な引っ掛かりを解く。一般の壁には適用しない。
+        if (TryStepOverGroundConnection(directionSign))
+        {
+            return true;
         }
 
         Vector3 forwardNormal = new Vector3(
@@ -1216,19 +1397,22 @@ public sealed class ChargeEnemySearchStrategy :
         Vector3 supportNormal = new Vector3(
             supportingGroundNormal.x, supportingGroundNormal.y, 0f).normalized;
 
-        // 通行確認済みの前方が現在の支持面より急な上り坂なら、
-        // 法線差が大きくても前方法線を使い、坂入口で水平速度のまま衝突するのを防ぐ。
-        // 下り坂や上り勾配が緩くなる境界では、早すぎる下降・浮き上がりを避けて支持法線を優先する。
+        // 上り入口は前方の斜面に沿って登る必要がある。
+        // 下り入口で「まだ平地に乗っている胴体」を先読みした斜面方向へ押し下げると、
+        // BoxColliderの端面へ食い込むため、実際の支持面が切り替わるまで下降を急がない。
         float forwardRise = -forwardNormal.x * directionSign;
         float supportRise = -supportNormal.x * directionSign;
         bool isSteeperUphillAhead = forwardRise > DIRECTION_EPSILON &&
             forwardRise > supportRise + DIRECTION_EPSILON;
+        bool isDownhillTransition = forwardRise < supportRise - DIRECTION_EPSILON;
         Vector3 movementNormal = isSteeperUphillAhead ||
-            Vector3.Angle(forwardNormal, supportNormal) <= GROUND_NORMAL_TRANSITION_ANGLE
+            (!isDownhillTransition &&
+             Vector3.Angle(forwardNormal, supportNormal) <= GROUND_NORMAL_TRANSITION_ANGLE)
                 ? forwardNormal : supportNormal;
         Vector3 movementDirection = GetGroundTangent(directionSign, movementNormal);
         if (movementDirection.sqrMagnitude <= DIRECTION_EPSILON * DIRECTION_EPSILON)
         {
+            lastMovementFailureReason = $"斜面接線の移動方向がほぼ0: normal={movementNormal}";
             return false;
         }
 
@@ -1239,6 +1423,9 @@ public sealed class ChargeEnemySearchStrategy :
             if (horizontalSpeedRatio <= DIRECTION_EPSILON ||
                 Time.fixedDeltaTime <= DIRECTION_EPSILON)
             {
+                lastMovementFailureReason =
+                    $"水平速度比またはFixedDeltaTimeが不正: xRatio={horizontalSpeedRatio:F4}, " +
+                    $"fixedDeltaTime={Time.fixedDeltaTime:F4}";
                 return false;
             }
 
@@ -1247,12 +1434,10 @@ public sealed class ChargeEnemySearchStrategy :
                 remainingHorizontalDistance / (horizontalSpeedRatio * Time.fixedDeltaTime));
         }
 
-        // 地面切替時の水平速度を前方法線への「食い込み速度」と誤認しないよう、
-        // 落下方向の速度は実際の支持法線で評価・保持する。
+        // 接地中の残留下降速度を毎ステップ持ち越すと、下り坂の継ぎ目へ押し込む。
+        // 支持面の接線速度だけを指定し、重力と接触解決は物理エンジンへ委ねる。
         Vector3 currentVelocity = enemyRigidbody.linearVelocity;
-        float normalVelocity = Mathf.Min(0f, Vector3.Dot(currentVelocity, supportNormal));
-        Vector3 targetVelocity = movementDirection * targetSpeed +
-            supportNormal * normalVelocity;
+        Vector3 targetVelocity = movementDirection * targetSpeed;
         Vector3 velocityChange = targetVelocity - currentVelocity;
         velocityChange.z = 0f;
 
@@ -1261,11 +1446,137 @@ public sealed class ChargeEnemySearchStrategy :
             enemyRigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
         }
 
+        RecordMovementCommandDiagnostic(
+            currentVelocity,
+            targetVelocity,
+            movementDirection,
+            supportNormal,
+            forwardNormal,
+            movementNormal,
+            targetSpeed);
+
         if (targetSpeed > DIRECTION_EPSILON)
         {
             AlignVisualWithHorizontalDirection(directionSign);
         }
         return true;
+    }
+
+    private bool TryStepOverGroundConnection(float directionSign)
+    {
+        Collider blockingCollider = recentBlockingStageCollider;
+        if (blockingCollider == null ||
+            Time.fixedTime - recentBlockingStageContactTime > GROUND_STEP_CONTACT_MAX_AGE ||
+            Time.fixedTime - lastGroundStepTime < GROUND_STEP_RETRY_INTERVAL ||
+            blockingCollider != groundChecker.LastTraversableGroundCollider ||
+            !groundChecker.IsTraversableSlopeEntrance(blockingCollider, directionSign))
+        {
+            return false;
+        }
+
+        float minimumRise = Mathf.Max(
+            MIN_GROUND_STEP_RISE,
+            groundChecker.LastUpwardConnectionRise + GROUND_STEP_SKIN);
+        float maximumRise = Mathf.Min(
+            enemyData.MaxGroundPenetrationRecovery,
+            enemyData.GroundConnectionHeightTolerance + MIN_GROUND_STEP_RISE);
+        if (maximumRise < minimumRise)
+        {
+            return false;
+        }
+
+        // 端面の高さがRayから計算した接続誤差より大きい場合もあるため、
+        // 上限内の候補を小さい順に試し、最初に安全と確認できた量だけ持ち上げる。
+        float stepRise = 0f;
+        for (float candidateRise = minimumRise;
+             candidateRise <= maximumRise + DIRECTION_EPSILON;
+             candidateRise += 0.015f)
+        {
+            float testedRise = Mathf.Min(candidateRise, maximumRise);
+            if (groundChecker.CanLiftBodySafely(testedRise))
+            {
+                stepRise = testedRise;
+                break;
+            }
+        }
+        if (stepRise <= DIRECTION_EPSILON &&
+            groundChecker.CanLiftBodySafely(maximumRise))
+        {
+            stepRise = maximumRise;
+        }
+        if (stepRise <= DIRECTION_EPSILON)
+        {
+            return false;
+        }
+
+        enemyRigidbody.position += Vector3.up * stepRise;
+        RemoveDownwardVelocity();
+        recentBlockingStageCollider = null;
+        lastGroundStepTime = Time.fixedTime;
+        ResetMovementDiagnostics();
+        LogSlopeDiagnostic("GroundConnectionStep", $"collider={blockingCollider.name}, rise={stepRise:F4}");
+        return true;
+    }
+
+    private void RemoveDownwardVelocity()
+    {
+        Vector3 velocity = enemyRigidbody.linearVelocity;
+        if (velocity.y < 0f)
+        {
+            velocity.y = 0f;
+            enemyRigidbody.linearVelocity = velocity;
+        }
+    }
+
+    private void PauseWalkAnimationWhenStopped()
+    {
+        if (!isSearchActive || hasPausedWalkAnimation || !CanPlayWalkAnimation())
+        {
+            return;
+        }
+
+        AnimatorStateInfo state = animator.GetCurrentAnimatorStateInfo(ANIMATION_BASE_LAYER_INDEX);
+        if (state.fullPathHash != walkAnimationStateHash)
+        {
+            return;
+        }
+
+        // 姿勢が動かないのにWalkだけ動く状態を避ける。Search終了時には復帰させる。
+        animator.speed = 0f;
+        hasPausedWalkAnimation = true;
+        ResetWalkProgressSample();
+    }
+
+    private void ResumeWalkAnimationIfPaused()
+    {
+        if (hasPausedWalkAnimation && animator != null)
+        {
+            animator.speed = 1f;
+            hasPausedWalkAnimation = false;
+            ResetWalkProgressSample();
+        }
+    }
+
+    // 診断ログはEditor/Development Buildのみ。移動・折り返し判定には影響させない。
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    [System.Diagnostics.Conditional("DEVELOPMENT_BUILD")]
+    private void LogSlopeDiagnostic(string eventName, string details, bool isWarning = false)
+    {
+        string message =
+            $"[ChargeEnemySlopeDebug] event={eventName}, enemy={enemyObject.name}, " +
+            $"position={enemyRigidbody.position}, velocity={enemyRigidbody.linearVelocity}, " +
+            $"direction={currentMoveDirectionSign:F0}, startX={patrolStartPosition.x:F3}, " +
+            $"activeOffset={activePatrolOffset:F3}, " +
+            $"toEnd={isMovingToPatrolEnd}, returning={isReturningToPatrolStart}. {details}";
+
+        if (isWarning)
+        {
+            Debug.LogWarning(message, enemyObject);
+        }
+        else
+        {
+            Debug.Log(message, enemyObject);
+        }
     }
 
     private static Vector3 GetGroundTangent(float directionSign, Vector3 groundNormal)
@@ -1285,6 +1596,11 @@ public sealed class ChargeEnemySearchStrategy :
         {
             return;
         }
+
+        hasPendingMovementDiagnostic = false;
+        diagnosticStallElapsedTime = 0f;
+        isPhysicalMovementStalled = false;
+        PauseWalkAnimationWhenStopped();
 
         Vector3 currentVelocity = enemyRigidbody.linearVelocity;
         if (groundChecker != null &&
@@ -1309,6 +1625,186 @@ public sealed class ChargeEnemySearchStrategy :
                 new Vector3(-currentVelocity.x, 0f, 0f),
                 ForceMode.VelocityChange);
         }
+    }
+
+    private void RecordMovementCommandDiagnostic(
+        Vector3 preCommandVelocity,
+        Vector3 targetVelocity,
+        Vector3 movementDirection,
+        Vector3 supportNormal,
+        Vector3 forwardNormal,
+        Vector3 movementNormal,
+        float targetSpeed)
+    {
+        diagnosticCommandPosition = enemyRigidbody.position;
+        diagnosticPreCommandVelocity = preCommandVelocity;
+        diagnosticTargetVelocity = targetVelocity;
+        diagnosticMovementDirection = movementDirection;
+        diagnosticSupportNormal = supportNormal;
+        diagnosticForwardNormal = forwardNormal;
+        hasPendingMovementDiagnostic = targetSpeed > MOVEMENT_DIAGNOSTIC_MINIMUM_SPEED;
+
+        bool hasMeaningfulNormalChange = !hasLoggedMovementNormal ||
+            Vector3.Angle(lastLoggedMovementNormal, movementNormal) >
+            GROUND_NORMAL_TRANSITION_ANGLE;
+        if (hasMeaningfulNormalChange &&
+            Time.fixedTime - lastMovementCommandLogTime >=
+            MOVEMENT_COMMAND_LOG_INTERVAL)
+        {
+            hasLoggedMovementNormal = true;
+            lastLoggedMovementNormal = movementNormal;
+            lastMovementCommandLogTime = Time.fixedTime;
+            LogSlopeDiagnostic(
+                "MovementCommandIssued",
+                $"targetVelocity={targetVelocity}, preVelocity={preCommandVelocity}, " +
+                $"movementDirection={movementDirection}, supportNormal={supportNormal}, " +
+                $"forwardNormal={forwardNormal}, movementNormal={movementNormal}");
+        }
+    }
+
+    private void UpdateMovementDiagnostics()
+    {
+        if (!hasPendingMovementDiagnostic || enemyRigidbody == null)
+        {
+            return;
+        }
+
+        Vector3 positionDelta =
+            enemyRigidbody.position - diagnosticCommandPosition;
+        float commandedForwardSpeed = Mathf.Max(
+            0f,
+            Vector3.Dot(diagnosticTargetVelocity, diagnosticMovementDirection));
+        float actualForwardDistance = Mathf.Max(
+            0f,
+            Vector3.Dot(positionDelta, diagnosticMovementDirection));
+        float minimumExpectedDistance = commandedForwardSpeed *
+            Time.fixedDeltaTime * MOVEMENT_DIAGNOSTIC_PROGRESS_RATIO;
+
+        if (commandedForwardSpeed <= MOVEMENT_DIAGNOSTIC_MINIMUM_SPEED ||
+            actualForwardDistance >= minimumExpectedDistance)
+        {
+            diagnosticStallElapsedTime = 0f;
+            isPhysicalMovementStalled = false;
+            return;
+        }
+
+        diagnosticStallElapsedTime += Time.fixedDeltaTime;
+        if (diagnosticStallElapsedTime >= MOVEMENT_DIAGNOSTIC_STALL_SECONDS)
+        {
+            isPhysicalMovementStalled = true;
+            PauseWalkAnimationWhenStopped();
+        }
+        if (diagnosticStallElapsedTime < MOVEMENT_DIAGNOSTIC_STALL_SECONDS ||
+            Time.fixedTime - lastMovementStallLogTime <
+            MOVEMENT_DIAGNOSTIC_LOG_INTERVAL)
+        {
+            return;
+        }
+
+        lastMovementStallLogTime = Time.fixedTime;
+        string contactDetails = HasFreshContactDiagnostic()
+            ? $"contactCollider={diagnosticContactColliderName}, " +
+              $"contactMaterial={diagnosticContactMaterialName}, " +
+              $"contactPoint={diagnosticContactPoint}, " +
+              $"contactNormal={diagnosticContactNormal}, " +
+              $"contactCount={diagnosticContactCount}, " +
+              $"relativeVelocity={diagnosticRelativeVelocity}, " +
+              $"collisionImpulse={diagnosticCollisionImpulse}, " +
+              $"contactFixedFrame={diagnosticContactFixedFrame}"
+            : "contact=none-or-callback-not-forwarded";
+
+        LogSlopeDiagnostic(
+            "MovementCommandStalled",
+            $"commandIssued=true, commandPosition={diagnosticCommandPosition}, " +
+            $"currentPosition={enemyRigidbody.position}, positionDelta={positionDelta}, " +
+            $"targetVelocity={diagnosticTargetVelocity}, " +
+            $"preCommandVelocity={diagnosticPreCommandVelocity}, " +
+            $"actualVelocity={enemyRigidbody.linearVelocity}, " +
+            $"movementDirection={diagnosticMovementDirection}, " +
+            $"actualForwardDistance={actualForwardDistance:F4}, " +
+            $"minimumExpectedDistance={minimumExpectedDistance:F4}, " +
+            $"stallSeconds={diagnosticStallElapsedTime:F2}, " +
+            $"supportNormal={diagnosticSupportNormal}, " +
+            $"forwardNormal={diagnosticForwardNormal}, {contactDetails}, " +
+            $"constraints={enemyRigidbody.constraints}, " +
+            $"collisionDetection={enemyRigidbody.collisionDetectionMode}, " +
+            $"interpolation={enemyRigidbody.interpolation}",
+            true);
+    }
+
+    private void CaptureCollisionDiagnostic(Collision collision)
+    {
+        if (collision == null ||
+            collision.collider == null ||
+            collision.contactCount <= 0 ||
+            Mathf.Abs(currentMoveDirectionSign) <= DIRECTION_EPSILON)
+        {
+            return;
+        }
+
+        Vector3 moveDirection =
+            Vector3.right * currentMoveDirectionSign;
+        ContactPoint selectedContact = collision.GetContact(0);
+        float selectedBlockingDot =
+            Vector3.Dot(selectedContact.normal, moveDirection);
+
+        for (int i = 1; i < collision.contactCount; i++)
+        {
+            ContactPoint contact = collision.GetContact(i);
+            float blockingDot =
+                Vector3.Dot(contact.normal, moveDirection);
+            if (blockingDot < selectedBlockingDot)
+            {
+                selectedContact = contact;
+                selectedBlockingDot = blockingDot;
+            }
+        }
+
+        // 同じ物理ステップで床と坂の両方から通知された場合は、
+        // 最も進行方向に逆らう法線を残す。
+        if (hasRecentContactDiagnostic &&
+            Mathf.Approximately(diagnosticContactTime, Time.fixedTime) &&
+            selectedBlockingDot >= diagnosticContactBlockingDot)
+        {
+            return;
+        }
+
+        hasRecentContactDiagnostic = true;
+        diagnosticContactFixedFrame = Time.frameCount;
+        diagnosticContactTime = Time.fixedTime;
+        diagnosticContactColliderName = collision.collider.name;
+        diagnosticContactMaterialName = collision.collider.sharedMaterial != null
+            ? collision.collider.sharedMaterial.name
+            : "none";
+        diagnosticContactPoint = selectedContact.point;
+        diagnosticContactNormal = selectedContact.normal;
+        diagnosticRelativeVelocity = collision.relativeVelocity;
+        diagnosticCollisionImpulse = collision.impulse;
+        diagnosticContactCount = collision.contactCount;
+        diagnosticContactBlockingDot = selectedBlockingDot;
+    }
+
+    private bool HasFreshContactDiagnostic()
+    {
+        return hasRecentContactDiagnostic &&
+               Time.fixedTime - diagnosticContactTime <=
+               CONTACT_DIAGNOSTIC_MAX_AGE;
+    }
+
+    private void ResetMovementDiagnostics()
+    {
+        hasPendingMovementDiagnostic = false;
+        diagnosticStallElapsedTime = 0f;
+        isPhysicalMovementStalled = false;
+        lastMovementStallLogTime = float.NegativeInfinity;
+        hasLoggedMovementNormal = false;
+        lastMovementCommandLogTime = float.NegativeInfinity;
+        hasRecentContactDiagnostic = false;
+        diagnosticContactFixedFrame = 0;
+        diagnosticContactTime = 0f;
+        diagnosticContactColliderName = string.Empty;
+        diagnosticContactMaterialName = string.Empty;
+        diagnosticContactBlockingDot = float.PositiveInfinity;
     }
 
     /// <summary>

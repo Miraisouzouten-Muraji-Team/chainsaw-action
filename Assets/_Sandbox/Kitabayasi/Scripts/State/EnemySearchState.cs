@@ -20,7 +20,8 @@ using UnityEngine;
 /// </remarks>
 public sealed class EnemySearchState :
     IEnemyState,
-    IEnemyCollisionEnterReceiver
+    IEnemyCollisionEnterReceiver,
+    IEnemyCollisionStayReceiver
 {
     private readonly IEnemySearchStrategy searchStrategy;
     private readonly Animator animator;
@@ -125,6 +126,19 @@ public sealed class EnemySearchState :
         if (hasBegunSearch)
         {
             searchStrategy.HandleCollisionEnter(collision);
+        }
+    }
+
+    /// <summary>
+    /// Search Strategyが継続接触を必要とする場合だけ、
+    /// Collision Stayを委譲する。
+    /// </summary>
+    public void HandleCollisionStay(Collision collision)
+    {
+        if (hasBegunSearch &&
+            searchStrategy is IEnemyCollisionStayReceiver receiver)
+        {
+            receiver.HandleCollisionStay(collision);
         }
     }
 

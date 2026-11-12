@@ -36,8 +36,8 @@ MonoBehaviour:
   attackContactDamagePercent: 100
   stageLayerMask:
     serializedVersion: 2
-    m_Bits: 4294959496
+    m_Bits: 4294943112
   groundCheckForwardOffset: 0.1
   groundCheckDownDistance: 0.25
-  maxGroundHeightDifference: 10
-  maxGroundSlopeAngle: 90
+  maxGroundHeightDifference: 1
+  maxGroundSlopeAngle: 89

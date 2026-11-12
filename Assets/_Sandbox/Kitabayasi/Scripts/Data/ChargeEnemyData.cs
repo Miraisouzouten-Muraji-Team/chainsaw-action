@@ -95,6 +95,23 @@ public sealed class ChargeEnemyData : EnemyData
     [Range(0f, 90f)]
     private float maxGroundSlopeAngle = 5f;
 
+    [Header("坂道・地形の継ぎ目補正")]
+    [Tooltip("別Colliderの地面へ移る際に許す、斜面の自然な高低差を除いた追加段差(m)。Max Ground Height Differenceを超えません。")]
+    [SerializeField, Min(0f)]
+    private float groundConnectionHeightTolerance = 0.08f;
+
+    [Tooltip("前方の地面Rayが欠けたとき、次の支持面を探してよい最大の水平隙間(m)。")]
+    [SerializeField, Min(0f)]
+    private float groundConnectionGapTolerance = 0.1f;
+
+    [Tooltip("軽微な地面めり込みに対する、1回の上方向位置補正の最大量(m)。")]
+    [SerializeField, Min(0f)]
+    private float maxGroundPenetrationRecovery = 0.1f;
+
+    public float GroundConnectionHeightTolerance => groundConnectionHeightTolerance;
+    public float GroundConnectionGapTolerance => groundConnectionGapTolerance;
+    public float MaxGroundPenetrationRecovery => maxGroundPenetrationRecovery;
+
     public float PatrolDistance => patrolDistance;
     public float PatrolMoveSpeed => patrolMoveSpeed;
     public float PatrolTurnDuration => patrolTurnDuration;

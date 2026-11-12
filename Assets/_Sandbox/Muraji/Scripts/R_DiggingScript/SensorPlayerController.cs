@@ -254,7 +254,7 @@ public class SensorPlayerController : MonoBehaviour
 
 
     [Header("見た目の向き")]
-    [Tooltip("モデルとチェーンソーを含む見た目の親")]
+    [Tooltip("モデルとチェーンソーを含む見た目の親です。右向きはXスケール1、左向きは-1にします。右向きの姿勢で設定してください。X以外のスケールは維持します。ピボットは左右反転の中心に置いてください。")]
     [SerializeField] private Transform visualRoot;
 
     private Quaternion rightFacingRotation;
@@ -535,6 +535,7 @@ public class SensorPlayerController : MonoBehaviour
         if (visualRoot != null)
         {
             rightFacingRotation = visualRoot.localRotation;
+            ApplyFacingRotation();
         }
     }
 
@@ -1256,6 +1257,7 @@ public class SensorPlayerController : MonoBehaviour
             chainsawDigging.Surface == ChainsawSurface.Floor ||
             chainsawDigging.Surface == ChainsawSurface.Ceiling;
 
+        // ワールドX方向の入力を使い、見た目の負スケールで移動方向を二重反転させない。
         float moveInput = isAutoMoving
             ? facingDirection
             : Mathf.Clamp(input.MoveInput, -1f, 1f);
@@ -1650,9 +1652,7 @@ public class SensorPlayerController : MonoBehaviour
         }
         else if (velocity.y > 0f)
         {
-            // 上昇中
             fallElapsedTime = 0f;
-
             ascentStartSpeed = Mathf.Max(
                 ascentStartSpeed,
                 velocity.y
@@ -1663,16 +1663,14 @@ public class SensorPlayerController : MonoBehaviour
                 Mathf.Max(ascentStartSpeed, 0.001f)
             );
 
-            // 頂点に近づくほど重力を弱める。
             gravityMultiplier = Mathf.SmoothStep(
                 playerParameter.jumpStartGravityMultiplier,
-                playerParameter.jumpApexGravityMultiplier,
+                1f,
                 ascentProgress
             );
         }
         else
         {
-            // 落下中
             ascentStartSpeed = 0f;
 
             float fallProgress = Mathf.Clamp01(
@@ -1680,9 +1678,8 @@ public class SensorPlayerController : MonoBehaviour
                 Mathf.Max(playerParameter.fallGravityIncreaseTime, 0.01f)
             );
 
-            // 頂点の重力倍率から、従来の最大落下重力倍率へ移行する。
             gravityMultiplier = Mathf.SmoothStep(
-                playerParameter.jumpApexGravityMultiplierFall,
+                1f,
                 playerParameter.maxFallGravityMultiplier,
                 fallProgress
             );
@@ -2105,7 +2102,7 @@ public class SensorPlayerController : MonoBehaviour
         }
     }
 
-    // 初期姿勢と左右の向きを合成し、床食い込み中だけワールド空間の坂の傾きを加える。
+    // 入力方向に合わせてXスケールを切り替え、床食い込み中はワールド空間の坂の傾きを加える。
     private void ApplyFacingRotation()
     {
         if (visualRoot == null)
@@ -2113,10 +2110,11 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
-        float angle = facingDirection < 0f ? 180f : 0f;
-
-        Quaternion facingRotation = rightFacingRotation * Quaternion.Euler(0f, angle, 0f);
-        visualRoot.localRotation = facingRotation;
+        // 移動計算と共通の向きから反転し、回転による反転を重ねない。
+        Vector3 scale = visualRoot.localScale;
+        scale.x = facingDirection < 0f ? -1f : 1f;
+        visualRoot.localScale = scale;
+        visualRoot.localRotation = rightFacingRotation;
 
         if (!alignFloorDiggingVisual || !isActiveAndEnabled ||
             visualRoot == transform || chainsawDigging == null ||

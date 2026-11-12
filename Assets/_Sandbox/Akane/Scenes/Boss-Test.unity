@@ -98837,8 +98837,6 @@ GameObject:
   - component: {fileID: 881111915}
   - component: {fileID: 881111914}
   - component: {fileID: 881111913}
-  - component: {fileID: 881111918}
-  - component: {fileID: 881111917}
   m_Layer: 17
   m_Name: BossModel
   m_TagString: Untagged
@@ -98939,31 +98937,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1531516412}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &881111917
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 881111909}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: fcf1e344629ec4a44abd7efda8e61e7c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossBodyHitReceiver
---- !u!114 &881111918
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 881111909}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a0ae3476952a8c54a86e1970033a8b2a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossHealth
-  maxHealth: 500
 --- !u!4 &886807870 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5519733933652949044, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
@@ -258454,6 +258427,7 @@ GameObject:
   - component: {fileID: 2120808296}
   - component: {fileID: 2120808298}
   - component: {fileID: 2120808297}
+  - component: {fileID: 2120808299}
   m_Layer: 16
   m_Name: TestBoss
   m_TagString: Untagged
@@ -258626,6 +258600,18 @@ Rigidbody:
   m_Interpolate: 0
   m_Constraints: 126
   m_CollisionDetection: 0
+--- !u!114 &2120808299
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2120808288}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fcf1e344629ec4a44abd7efda8e61e7c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossBodyHitReceiver
 --- !u!1 &2122995746
 GameObject:
   m_ObjectHideFlags: 0

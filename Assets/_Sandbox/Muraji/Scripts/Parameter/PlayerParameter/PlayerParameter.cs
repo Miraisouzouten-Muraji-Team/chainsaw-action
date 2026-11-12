@@ -66,6 +66,14 @@ public class PlayerParameter : ScriptableObject
     [Tooltip("通常・二段ジャンプ後の落下重力倍率です。1より小さいと落下加速が緩やかになります。")]
     [SerializeField, Range(0.05f, 1f)] public float jumpFallGravityScale = 0.75f;
 
+    [Header("ジャンプ頂点")]
+    [Tooltip("ジャンプ頂点付近で使用する重力倍率")]
+    [SerializeField, Min(0f)]
+    public float jumpApexGravityMultiplier = 0.4f;
+    [Tooltip("ジャンプ頂点付近で使用する重力倍率(落下時)")]
+    [SerializeField, Min(0f)]
+    public float jumpApexGravityMultiplierFall = 0.9f;
+
     [Header("通常ジャンプの天井接触：落下までの猶予")]
     // 猶予の設定だけを管理する。残り時間や接触状態はController側で管理する。
     [Tooltip("通常ジャンプ・二段ジャンプで天井に当たったとき、残っている上昇の勢いがなくなるまで落下を待ちます。食い込み・壁ジャンプ・被弾には適用しません。")]

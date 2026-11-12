@@ -1650,7 +1650,9 @@ public class SensorPlayerController : MonoBehaviour
         }
         else if (velocity.y > 0f)
         {
+            // 上昇中
             fallElapsedTime = 0f;
+
             ascentStartSpeed = Mathf.Max(
                 ascentStartSpeed,
                 velocity.y
@@ -1661,14 +1663,16 @@ public class SensorPlayerController : MonoBehaviour
                 Mathf.Max(ascentStartSpeed, 0.001f)
             );
 
+            // 頂点に近づくほど重力を弱める。
             gravityMultiplier = Mathf.SmoothStep(
                 playerParameter.jumpStartGravityMultiplier,
-                1f,
+                playerParameter.jumpApexGravityMultiplier,
                 ascentProgress
             );
         }
         else
         {
+            // 落下中
             ascentStartSpeed = 0f;
 
             float fallProgress = Mathf.Clamp01(
@@ -1676,8 +1680,9 @@ public class SensorPlayerController : MonoBehaviour
                 Mathf.Max(playerParameter.fallGravityIncreaseTime, 0.01f)
             );
 
+            // 頂点の重力倍率から、従来の最大落下重力倍率へ移行する。
             gravityMultiplier = Mathf.SmoothStep(
-                1f,
+                playerParameter.jumpApexGravityMultiplierFall,
                 playerParameter.maxFallGravityMultiplier,
                 fallProgress
             );

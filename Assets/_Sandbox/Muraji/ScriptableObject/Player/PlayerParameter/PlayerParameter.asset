@@ -19,10 +19,10 @@ MonoBehaviour:
   moveDeadZone: 0.3
   jumpForce: 35
   airJumpForce: 37.5
-  coyoteTime: 0.1
+  coyoteTime: 0.15
   gravityScale: 8
   jumpStartGravityMultiplier: 0.5
-  maxFallGravityMultiplier: 2
+  maxFallGravityMultiplier: 2.1
   fallGravityIncreaseTime: 0.9
   maxFallSpeed: 40
   jumpLaunchImpulse: 7
@@ -31,8 +31,10 @@ MonoBehaviour:
   jumpHoldGravityScale: 0.05
   jumpReleaseSpeedRatio: 0.9
   jumpFallGravityScale: 1
+  jumpApexGravityMultiplier: 0.4
+  jumpApexGravityMultiplierFall: 0.8
   enableCeilingFallGrace: 1
-  ceilingFallGraceMaxSeconds: 0.25
+  ceilingFallGraceMaxSeconds: 0.15
   groundRayLayers:
     serializedVersion: 2
     m_Bits: 128

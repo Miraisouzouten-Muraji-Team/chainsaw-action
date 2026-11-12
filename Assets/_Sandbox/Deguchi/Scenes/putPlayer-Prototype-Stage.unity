@@ -127985,6 +127985,10 @@ PrefabInstance:
       propertyPath: m_Enabled
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 3515007376542301742, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: hitParticle
+      value: 
+      objectReference: {fileID: 8477330435731155599, guid: 5c90876764cf7c14ab4a85682c95225b, type: 3}
     - target: {fileID: 3595412022903481005, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.z
       value: 0
@@ -128707,10 +128711,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPresenter
   uiFont: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
-  tutorialOpen: {fileID: 0}
-  tutorialClose: {fileID: 0}
-  tutorialNavigate: {fileID: 0}
-  tutorialReleaseGuard: {fileID: 0}
 --- !u!65 &1416235475 stripped
 BoxCollider:
   m_CorrespondingSourceObject: {fileID: 7824983804689355250, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
@@ -239988,10 +239988,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.Tutorial.TutorialPresenter
   uiFont: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
-  tutorialOpen: {fileID: 0}
-  tutorialClose: {fileID: 0}
-  tutorialNavigate: {fileID: 0}
-  tutorialReleaseGuard: {fileID: 0}
 --- !u!114 &2081488317
 MonoBehaviour:
   m_ObjectHideFlags: 0

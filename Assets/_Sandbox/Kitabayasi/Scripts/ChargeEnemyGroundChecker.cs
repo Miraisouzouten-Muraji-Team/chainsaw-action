@@ -19,12 +19,20 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
     private const int RAYCAST_HIT_BUFFER_SIZE = 16;
     private const int MAX_DEBUG_RAY_COUNT = 3;
     private const float DIRECTION_EPSILON = 0.001f;
+    private const float PATH_SAMPLE_SPACING = 0.1f;
+    private const int MAX_PATH_SAMPLE_COUNT = 512;
+    private const float STANDING_HEIGHT_TOLERANCE = 0.12f;
+    private const float STANDING_VERTICAL_SPEED_TOLERANCE = 0.4f;
+    private const float PROBE_SKIN = 0.025f;
+    private const float WALL_NORMAL_X_THRESHOLD = 0.5f;
+    private const float PATH_DISTANCE_EPSILON = 0.001f;
 
     private readonly ChargeEnemyData enemyData;
     private readonly Transform enemyTransform;
     private readonly Rigidbody enemyRigidbody;
     private readonly Collider enemyCollider;
     private readonly RaycastHit[] raycastHitBuffer;
+    private readonly RaycastHit[] wallCastHitBuffer;
     private readonly EnemyDebugRay[] debugRays;
 
     private int debugRayCount;
@@ -57,6 +65,9 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
             : throw new ArgumentNullException(nameof(enemyCollider));
 
         raycastHitBuffer =
+            new RaycastHit[RAYCAST_HIT_BUFFER_SIZE];
+
+        wallCastHitBuffer =
             new RaycastHit[RAYCAST_HIT_BUFFER_SIZE];
 
         debugRays =
@@ -180,6 +191,181 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
             currentGroundHit,
             projectedForwardRayOrigin,
             rayDistance);
+    }
+
+    /// <summary>
+    /// 現在位置がStage上の静止した足場にあるかを判定する。
+    /// 帰還不能時の原点更新にだけ使い、落下中の座標を原点として確定しない。
+    /// </summary>
+    public bool IsStandingOnStageGround()
+    {
+        Bounds bounds = enemyCollider.bounds;
+        if (bounds.size.sqrMagnitude <= DIRECTION_EPSILON ||
+            Mathf.Abs(enemyRigidbody.linearVelocity.y) > STANDING_VERTICAL_SPEED_TOLERANCE)
+        {
+            return false;
+        }
+
+        float rayDistance = bounds.extents.y +
+                            Mathf.Max(enemyData.GroundCheckDownDistance, STANDING_HEIGHT_TOLERANCE);
+        return TryGetNearestGroundHit(bounds.center, rayDistance, out RaycastHit hit) &&
+               IsSlopeAllowed(hit.normal) &&
+               Mathf.Abs(hit.point.y - bounds.min.y) <= STANDING_HEIGHT_TOLERANCE;
+    }
+
+    /// <summary>
+    /// 既に巡回基準のX座標付近まで来ている場合、同じ高さに帰還したか確認する。
+    /// 経路を一括判定するものではなく、実際に移動した結果の到着判定に使う。
+    /// </summary>
+    public bool IsAtGroundHeight(float targetBodyY)
+    {
+        return IsStandingOnStageGround() &&
+               Mathf.Abs(targetBodyY - enemyRigidbody.position.y) <=
+               Mathf.Max(enemyData.MaxGroundHeightDifference, STANDING_HEIGHT_TOLERANCE);
+    }
+
+    /// <summary>
+    /// 指定方向へ直線移動できる距離を、地面の連続性・高低差・傾斜・壁から測定する。
+    /// 値は設定距離を超えず、敵の移動そのものは行わない。
+    /// </summary>
+    public float MeasureSafeHorizontalDistance(float directionSign, float maximumDistance)
+    {
+        return MeasureSafeHorizontalDistance(directionSign, maximumDistance, out _);
+    }
+
+    private float MeasureSafeHorizontalDistance(
+        float directionSign,
+        float maximumDistance,
+        out float reachedBodyY)
+    {
+        reachedBodyY = enemyRigidbody.position.y;
+        if (Mathf.Abs(directionSign) <= DIRECTION_EPSILON ||
+            maximumDistance <= PATH_DISTANCE_EPSILON ||
+            !IsStandingOnStageGround())
+        {
+            return 0f;
+        }
+
+        // 探索距離が極端に長い場合は未検証区間へ進めない。
+        float scanLimit = Mathf.Min(maximumDistance, PATH_SAMPLE_SPACING * MAX_PATH_SAMPLE_COUNT);
+        Bounds bounds = enemyCollider.bounds;
+        float groundRayDistance = bounds.extents.y +
+                                  enemyData.MaxGroundHeightDifference +
+                                  enemyData.GroundCheckDownDistance + PROBE_SKIN;
+        if (!TryGetNearestGroundHit(
+                bounds.center,
+                bounds.extents.y + enemyData.GroundCheckDownDistance,
+                out RaycastHit startGround) ||
+            !IsSlopeAllowed(startGround.normal))
+        {
+            return 0f;
+        }
+
+        float groundHeight = startGround.point.y;
+        float startGroundHeight = groundHeight;
+        float measuredDistance = 0f;
+        float sign = Mathf.Sign(directionSign);
+        int sampleCount = Mathf.CeilToInt(scanLimit / PATH_SAMPLE_SPACING);
+
+        for (int i = 1; i <= sampleCount; i++)
+        {
+            float nextDistance = Mathf.Min(i * PATH_SAMPLE_SPACING, scanLimit);
+            float stepDistance = nextDistance - measuredDistance;
+            if (stepDistance <= PATH_DISTANCE_EPSILON)
+            {
+                break;
+            }
+
+            float nextX = bounds.center.x + sign * nextDistance;
+            float nextGroundRayY = groundHeight + bounds.extents.y +
+                                   enemyData.MaxGroundHeightDifference + PROBE_SKIN;
+            Vector3 centerRayOrigin = new Vector3(
+                nextX, nextGroundRayY, bounds.center.z);
+            Vector3 frontRayOrigin = centerRayOrigin + Vector3.right * sign *
+                (bounds.extents.x + enemyData.GroundCheckForwardOffset);
+
+            if (!TryGetNearestGroundHit(
+                    centerRayOrigin, groundRayDistance, out RaycastHit nextGround) ||
+                !IsCompatibleWithPreviousGround(groundHeight, nextGround) ||
+                !TryGetNearestGroundHit(
+                    frontRayOrigin, groundRayDistance, out RaycastHit frontGround) ||
+                !IsCompatibleWithPreviousGround(nextGround.point.y, frontGround))
+            {
+                break;
+            }
+
+            Vector3 fromCenter = new Vector3(
+                bounds.center.x + sign * measuredDistance,
+                bounds.center.y + (groundHeight - startGroundHeight),
+                bounds.center.z);
+            Vector3 toCenter = new Vector3(
+                nextX,
+                bounds.center.y + (nextGround.point.y - startGroundHeight),
+                bounds.center.z);
+
+            if (HasBlockingStageWall(fromCenter, toCenter, bounds.extents, sign))
+            {
+                break;
+            }
+
+            measuredDistance = nextDistance;
+            groundHeight = nextGround.point.y;
+            reachedBodyY = enemyRigidbody.position.y + (groundHeight - startGroundHeight);
+        }
+
+        return measuredDistance;
+    }
+
+    private bool IsCompatibleWithPreviousGround(float previousGroundY, RaycastHit nextGround)
+    {
+        return IsSlopeAllowed(nextGround.normal) &&
+               Mathf.Abs(nextGround.point.y - previousGroundY) <=
+               enemyData.MaxGroundHeightDifference + PATH_DISTANCE_EPSILON;
+    }
+
+    private bool HasBlockingStageWall(
+        Vector3 startCenter,
+        Vector3 endCenter,
+        Vector3 bodyExtents,
+        float directionSign)
+    {
+        // 接地床を壁として拾いにくくするため、足元を少し縮めたBoxを掃引する。
+        Vector3 castExtents = new Vector3(
+            Mathf.Max(bodyExtents.x - PROBE_SKIN, PROBE_SKIN),
+            Mathf.Max(bodyExtents.y - PROBE_SKIN, PROBE_SKIN),
+            Mathf.Max(bodyExtents.z - PROBE_SKIN, PROBE_SKIN));
+        Vector3 movement = endCenter - startCenter;
+        float castDistance = movement.magnitude;
+        if (castDistance <= PATH_DISTANCE_EPSILON)
+        {
+            return false;
+        }
+
+        int hitCount = Physics.BoxCastNonAlloc(
+            startCenter + Vector3.up * PROBE_SKIN,
+            castExtents,
+            movement / castDistance,
+            wallCastHitBuffer,
+            Quaternion.identity,
+            castDistance,
+            enemyData.StageLayerMask,
+            QueryTriggerInteraction.Ignore);
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            RaycastHit hit = wallCastHitBuffer[i];
+            if (hit.collider == null || IsEnemyOwnedCollider(hit.collider))
+            {
+                continue;
+            }
+
+            if (hit.normal.x * directionSign < -WALL_NORMAL_X_THRESHOLD)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private Vector3 GetForwardRayOrigin(

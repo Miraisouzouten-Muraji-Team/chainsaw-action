@@ -29,7 +29,8 @@ MonoBehaviour:
   patrolMoveSpeed: 3
   patrolTurnDuration: 0.5
   patrolContactDamagePercent: 0
-  attackPreparationDuration: 0.75
+  attackPreparationDuration: 5
+  preparationAnimationSpeed: 1
   chargeDistance: 5
   attackMoveSpeed: 10
   attackContactDamagePercent: 100
@@ -38,5 +39,5 @@ MonoBehaviour:
     m_Bits: 4294959496
   groundCheckForwardOffset: 0.1
   groundCheckDownDistance: 0.25
-  maxGroundHeightDifference: 0.1
-  maxGroundSlopeAngle: 5
+  maxGroundHeightDifference: 10
+  maxGroundSlopeAngle: 90

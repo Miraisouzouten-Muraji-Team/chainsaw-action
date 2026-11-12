@@ -218,6 +218,7 @@ MonoBehaviour:
   attackStrategy:
     rid: 2559746817728970823
   visualRoot: {fileID: 6351129882097626863}
+  discoveryFacingRotationSpeed: 360
   deathStrategy:
     rid: 2559746817728970819
   showPatrolDebugVisualization: 1
@@ -290,6 +291,7 @@ MonoBehaviour:
   maximumPieceMass: 10
   minimumCapsuleAspectRatio: 1.2
   preGeneratedPieceCount: 2
+  keepCutSidesAsSinglePieces: 0
   cutDirectionSampleCount: 4
   cutRangeAxis: 1
   cutRangeMinimumNormalized: 0.21

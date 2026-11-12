@@ -1682,7 +1682,7 @@ public class SensorPlayerController : MonoBehaviour
 
             // 頂点の重力倍率から、従来の最大落下重力倍率へ移行する。
             gravityMultiplier = Mathf.SmoothStep(
-                1f,
+                playerParameter.jumpApexGravityMultiplierFall,
                 playerParameter.maxFallGravityMultiplier,
                 fallProgress
             );

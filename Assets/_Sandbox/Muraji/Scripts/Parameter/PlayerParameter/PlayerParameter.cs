@@ -70,6 +70,9 @@ public class PlayerParameter : ScriptableObject
     [Tooltip("ジャンプ頂点付近で使用する重力倍率")]
     [SerializeField, Min(0f)]
     public float jumpApexGravityMultiplier = 0.4f;
+    [Tooltip("ジャンプ頂点付近で使用する重力倍率(落下時)")]
+    [SerializeField, Min(0f)]
+    public float jumpApexGravityMultiplierFall = 0.9f;
 
     [Header("通常ジャンプの天井接触：落下までの猶予")]
     // 猶予の設定だけを管理する。残り時間や接触状態はController側で管理する。

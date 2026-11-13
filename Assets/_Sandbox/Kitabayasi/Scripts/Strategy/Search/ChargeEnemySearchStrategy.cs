@@ -23,7 +23,11 @@ public sealed class ChargeEnemySearchStrategy :
 {
     private const float ARRIVAL_TOLERANCE = 0.05f;
     private const float DIRECTION_EPSILON = 0.001f;
+    // 診断ログで地面法線の変化を記録するための閾値。移動可否の判定には使用しない。
     private const float GROUND_NORMAL_TRANSITION_ANGLE = 2f;
+    private const float GROUND_CONTACT_PROXIMITY_SKIN = 0.025f;
+    private const float TEMPORARY_GROUND_LOSS_MAX_SECONDS = 0.3f;
+    private const float TEMPORARY_GROUND_LOSS_MAX_HEIGHT_CHANGE = 0.2f;
     private const float WALL_NORMAL_X_THRESHOLD = 0.7f;
     private const int ANIMATION_BASE_LAYER_INDEX = 0;
     private const float ANIMATION_SPEED_EPSILON = 0.0001f;
@@ -43,6 +47,8 @@ public sealed class ChargeEnemySearchStrategy :
     private const float GROUND_STEP_RETRY_INTERVAL = 0.15f;
     private const float MIN_GROUND_STEP_RISE = 0.025f;
     private const float GROUND_STEP_SKIN = 0.005f;
+    // 経路の一時的なRay不発で1物理フレームだけ失敗しても巡回方向を即反転させない。
+    private const float PATROL_REJECTION_CONFIRM_SECONDS = 0.1f;
 
     [Header("個体設定")]
     [Tooltip("このChargeEnemyがPlayerを検知する半径。ChargeEnemyDataのDetectionRadiusは使用しない。")]
@@ -90,6 +96,7 @@ public sealed class ChargeEnemySearchStrategy :
 
     // 巡回移動が失敗した理由を、直後の折り返しログに渡すために保持する。
     private string lastMovementFailureReason = string.Empty;
+    private float patrolMovementRejectionElapsedTime;
 
     private EnemyPlayerReference playerReference;
     private EnemyPlayerDetectionSensor playerDetectionSensor;
@@ -104,6 +111,11 @@ public sealed class ChargeEnemySearchStrategy :
     private bool isSearchActive;
     private bool isReturningToPatrolStart;
     private bool isAwaitingGroundForPatrol;
+    // 巡回中の一時離地から復帰する場合だけ、巡回方向と終点を再計算せず保持する。
+    // Search開始・帰還中の離地からの復帰は引き続き原点への帰還可否を判断する。
+    private bool shouldResumePatrolAfterGroundWait;
+    private float patrolGroundLossStartedAtFixedTime;
+    private float patrolGroundLossStartY;
 
     // 停滞だけでは帰還不能にせず、下段との高低差・壁接触・通行不可の地形で裏付ける。
     private float returnProgressSampleX;
@@ -200,14 +212,24 @@ public sealed class ChargeEnemySearchStrategy :
                 "非KinematicのRigidbodyを使用する前提です。");
         }
 
-        enemyCollider =
-            enemyObject.GetComponentInChildren<Collider>();
+        // 攻撃用Trigger等を誤選択しないよう、本体Rigidbodyに属する物理Capsuleを選ぶ。
+        enemyCollider = null;
+        CapsuleCollider[] bodyColliders = enemyObject.GetComponentsInChildren<CapsuleCollider>();
+        foreach (CapsuleCollider candidate in bodyColliders)
+        {
+            if (candidate.enabled && !candidate.isTrigger &&
+                candidate.attachedRigidbody == enemyRigidbody)
+            {
+                enemyCollider = candidate;
+                break;
+            }
+        }
 
         if (enemyCollider == null)
         {
             throw new InvalidOperationException(
                 $"{nameof(ChargeEnemySearchStrategy)}を使用するEnemyには" +
-                $"{nameof(Collider)}が必要です。");
+                $"有効かつ非Triggerの{nameof(CapsuleCollider)}が必要です。");
         }
 
         playerReference =
@@ -258,6 +280,8 @@ public sealed class ChargeEnemySearchStrategy :
         isMovingToPatrolEnd = true;
         isReturningToPatrolStart = false;
         isAwaitingGroundForPatrol = false;
+        shouldResumePatrolAfterGroundWait = false;
+        patrolMovementRejectionElapsedTime = 0f;
         turnElapsedTime = 0f;
         ResetReturnProgressTracking();
         ResetMovementDiagnostics();
@@ -306,6 +330,7 @@ public sealed class ChargeEnemySearchStrategy :
         }
 
         isAwaitingGroundForPatrol = false;
+        shouldResumePatrolAfterGroundWait = false;
 
         float deltaX = patrolStartPosition.x - enemyRigidbody.position.x;
 
@@ -338,6 +363,7 @@ public sealed class ChargeEnemySearchStrategy :
         patrolStartPosition = enemyRigidbody.position;
         isReturningToPatrolStart = false;
         isAwaitingGroundForPatrol = false;
+        shouldResumePatrolAfterGroundWait = false;
         isMovingToPatrolEnd = true;
         isTurning = false;
         SelectAvailablePatrolDirection();
@@ -437,7 +463,25 @@ public sealed class ChargeEnemySearchStrategy :
             StopHorizontalMovement();
             if (groundChecker.IsStandingOnStageGround())
             {
-                DecideReturnOrPatrol();
+                // 短時間・小さい高低差の離地だけ巡回の継続として扱う。
+                // 崖から別の高さへ落下した場合は従来の帰還可否判定へ戻す。
+                float waitDuration = Time.fixedTime - patrolGroundLossStartedAtFixedTime;
+                float heightChange = Mathf.Abs(enemyRigidbody.position.y - patrolGroundLossStartY);
+                if (shouldResumePatrolAfterGroundWait &&
+                    waitDuration <= TEMPORARY_GROUND_LOSS_MAX_SECONDS &&
+                    heightChange <= TEMPORARY_GROUND_LOSS_MAX_HEIGHT_CHANGE)
+                {
+                    isAwaitingGroundForPatrol = false;
+                    shouldResumePatrolAfterGroundWait = false;
+                    patrolMovementRejectionElapsedTime = 0f;
+                    LogSlopeDiagnostic("PatrolResumedAfterGroundWait",
+                        $"waitSeconds={waitDuration:F3}, heightChange={heightChange:F3}");
+                }
+                else
+                {
+                    shouldResumePatrolAfterGroundWait = false;
+                    DecideReturnOrPatrol();
+                }
             }
             return false;
         }
@@ -685,8 +729,10 @@ public sealed class ChargeEnemySearchStrategy :
 
         isSearchActive = false;
         isTurning = false;
+        patrolMovementRejectionElapsedTime = 0f;
         isReturningToPatrolStart = false;
         isAwaitingGroundForPatrol = false;
+        shouldResumePatrolAfterGroundWait = false;
         ResetReturnProgressTracking();
         ResetMovementDiagnostics();
         recentBlockingStageCollider = null;
@@ -914,6 +960,14 @@ public sealed class ChargeEnemySearchStrategy :
         if (HasReachedPatrolTarget(
                 targetPositionX))
         {
+            // ゲーム開始時の長距離一括検査が坂入口で早めに止まっても、
+            // 実際にそこまで歩いた位置から再検査できれば巡回端を延長する。
+            // 配置時のPatrolOffset上限と地面・壁検査の安全条件は維持する。
+            if (TryExtendPatrolEnd())
+            {
+                return;
+            }
+
             LogSlopeDiagnostic("PatrolTurnReachedTarget",
                 $"targetX={targetPositionX:F3}, remainingX={targetPositionX - enemyRigidbody.position.x:F3}");
             BeginTurn();
@@ -925,6 +979,10 @@ public sealed class ChargeEnemySearchStrategy :
         {
             LogSlopeDiagnostic("GroundLostDuringPatrol",
                 groundChecker.LastSupportFailureReason, true);
+            // 巡回中の一時的な接地喪失からの復帰を、原点への帰還と区別する。
+            shouldResumePatrolAfterGroundWait = true;
+            patrolGroundLossStartedAtFixedTime = Time.fixedTime;
+            patrolGroundLossStartY = enemyRigidbody.position.y;
             isAwaitingGroundForPatrol = true;
             StopHorizontalMovement();
             return;
@@ -940,15 +998,64 @@ public sealed class ChargeEnemySearchStrategy :
                 expectedMovementDistance,
                 float.PositiveInfinity))
         {
-            LogSlopeDiagnostic("PatrolTurnMovementRejected", lastMovementFailureReason, true);
-            BeginTurn();
+            // 危険と判定したステップには進まず停止する。一時的なRayの不発だけで
+            // 向きを変えないよう、短時間継続した失敗のみ反転の根拠にする。
+            StopHorizontalMovement();
+            patrolMovementRejectionElapsedTime += Time.fixedDeltaTime;
+            if (patrolMovementRejectionElapsedTime >= PATROL_REJECTION_CONFIRM_SECONDS)
+            {
+                LogSlopeDiagnostic("PatrolTurnMovementRejected", lastMovementFailureReason, true);
+                BeginTurn();
+            }
             return;
         }
 
+        patrolMovementRejectionElapsedTime = 0f;
         if (enemyData.PatrolMoveSpeed > DIRECTION_EPSILON)
         {
             EnsureWalkAnimation();
         }
+    }
+
+    /// <summary>
+    /// 巡回開始時の事前検査で短縮した終点を、現在位置から再検査して延長する。
+    /// 最大巡回距離と移動方向は変えず、先の地面が再検査で通行可能なときだけ延長する。
+    /// </summary>
+    private bool TryExtendPatrolEnd()
+    {
+        float maximumDistance = Mathf.Abs(patrolOffset);
+        float previousTargetDistance = Mathf.Abs(activePatrolOffset);
+        if (!isMovingToPatrolEnd ||
+            Mathf.Abs(currentMoveDirectionSign) <= DIRECTION_EPSILON ||
+            previousTargetDistance >= maximumDistance - ARRIVAL_TOLERANCE ||
+            !groundChecker.IsStandingOnStageGround())
+        {
+            return false;
+        }
+
+        float traveledDistance = Mathf.Max(0f,
+            (enemyRigidbody.position.x - patrolStartPosition.x) * currentMoveDirectionSign);
+        float remainingAllowance = maximumDistance - traveledDistance;
+        if (remainingAllowance <= ARRIVAL_TOLERANCE)
+        {
+            return false;
+        }
+
+        float additionalSafeDistance = groundChecker.MeasureSafeHorizontalDistance(
+            currentMoveDirectionSign, remainingAllowance);
+        float extendedTargetDistance = Mathf.Min(
+            maximumDistance, traveledDistance + additionalSafeDistance);
+        if (extendedTargetDistance <= previousTargetDistance + ARRIVAL_TOLERANCE)
+        {
+            return false;
+        }
+
+        activePatrolOffset = currentMoveDirectionSign * extendedTargetDistance;
+        patrolMovementRejectionElapsedTime = 0f;
+        LogSlopeDiagnostic("PatrolDistanceExtended",
+            $"previous={previousTargetDistance:F3}, extended={extendedTargetDistance:F3}, " +
+            $"safeAhead={additionalSafeDistance:F3}, stopReason={groundChecker.LastPathScanFailureReason}");
+        return true;
     }
 
     /// <summary>
@@ -1024,6 +1131,7 @@ public sealed class ChargeEnemySearchStrategy :
     /// </summary>
     private void BeginTurn()
     {
+        patrolMovementRejectionElapsedTime = 0f;
         StopHorizontalMovement();
 
         turnElapsedTime = 0f;
@@ -1368,7 +1476,8 @@ public sealed class ChargeEnemySearchStrategy :
     {
         lastMovementFailureReason = string.Empty;
         if (!groundChecker.TryGetCurrentGroundNormal(
-                out Vector3 supportingGroundNormal))
+                out Vector3 supportingGroundNormal,
+                out float supportSurfaceSeparation))
         {
             lastMovementFailureReason =
                 $"現在の支持面法線を取得できない: {groundChecker.LastSupportFailureReason}";
@@ -1397,18 +1506,15 @@ public sealed class ChargeEnemySearchStrategy :
         Vector3 supportNormal = new Vector3(
             supportingGroundNormal.x, supportingGroundNormal.y, 0f).normalized;
 
-        // 上り入口は前方の斜面に沿って登る必要がある。
-        // 下り入口で「まだ平地に乗っている胴体」を先読みした斜面方向へ押し下げると、
-        // BoxColliderの端面へ食い込むため、実際の支持面が切り替わるまで下降を急がない。
-        float forwardRise = -forwardNormal.x * directionSign;
+        // 前方法線は「通行できるか」の先読み用であり、「今この胴体を支える面」ではない。
+        // Capsuleは丸い底が坂に触れる前から前方Rayが坂を捉えるため、
+        // 前方法線で上向き速度を与えると空中へ浮き、接地待ちに入ってしまう。
+        // 上り接線速度は実Colliderが現在の支持面へ十分近づいてから適用する。
         float supportRise = -supportNormal.x * directionSign;
-        bool isSteeperUphillAhead = forwardRise > DIRECTION_EPSILON &&
-            forwardRise > supportRise + DIRECTION_EPSILON;
-        bool isDownhillTransition = forwardRise < supportRise - DIRECTION_EPSILON;
-        Vector3 movementNormal = isSteeperUphillAhead ||
-            (!isDownhillTransition &&
-             Vector3.Angle(forwardNormal, supportNormal) <= GROUND_NORMAL_TRANSITION_ANGLE)
-                ? forwardNormal : supportNormal;
+        float contactSeparationLimit = enemyCollider.contactOffset + GROUND_CONTACT_PROXIMITY_SKIN;
+        Vector3 movementNormal = supportRise > DIRECTION_EPSILON &&
+            supportSurfaceSeparation > contactSeparationLimit
+                ? Vector3.up : supportNormal;
         Vector3 movementDirection = GetGroundTangent(directionSign, movementNormal);
         if (movementDirection.sqrMagnitude <= DIRECTION_EPSILON * DIRECTION_EPSILON)
         {

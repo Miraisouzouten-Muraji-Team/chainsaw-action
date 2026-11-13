@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -124,14 +124,24 @@ public sealed class ChargeEnemyAttackStrategy :
                 "非KinematicのRigidbodyを使用する前提です。");
         }
 
-        enemyCollider =
-            enemyObject.GetComponentInChildren<Collider>();
+        // 攻撃用Trigger等を誤選択しないよう、本体Rigidbodyに属する物理Capsuleを選ぶ。
+        enemyCollider = null;
+        CapsuleCollider[] bodyColliders = enemyObject.GetComponentsInChildren<CapsuleCollider>();
+        foreach (CapsuleCollider candidate in bodyColliders)
+        {
+            if (candidate.enabled && !candidate.isTrigger &&
+                candidate.attachedRigidbody == enemyRigidbody)
+            {
+                enemyCollider = candidate;
+                break;
+            }
+        }
 
         if (enemyCollider == null)
         {
             throw new InvalidOperationException(
                 $"{nameof(ChargeEnemyAttackStrategy)}を使用するEnemyには" +
-                $"{nameof(Collider)}が必要です。");
+                $"有効かつ非Triggerの{nameof(CapsuleCollider)}が必要です。");
         }
 
         InitializeAnimations();

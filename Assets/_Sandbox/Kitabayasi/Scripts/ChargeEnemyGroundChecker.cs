@@ -34,6 +34,7 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
     private readonly Transform enemyTransform;
     private readonly Rigidbody enemyRigidbody;
     private readonly Collider enemyCollider;
+    private readonly CapsuleCollider enemyCapsuleCollider;
     // Attackから共有する判定は従来仕様のままにし、接続誤差の許容はSearchでだけ有効化する。
     private readonly bool allowMinorStageConnections;
     private readonly RaycastHit[] raycastHitBuffer;
@@ -84,6 +85,18 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
             ? enemyCollider
             : throw new ArgumentNullException(nameof(enemyCollider));
 
+        enemyCapsuleCollider = enemyCollider as CapsuleCollider
+            ?? throw new ArgumentException(
+                $"{nameof(ChargeEnemyGroundChecker)}にはCapsuleColliderが必要です。",
+                nameof(enemyCollider));
+
+        if (!enemyCapsuleCollider.enabled || enemyCapsuleCollider.isTrigger)
+        {
+            throw new ArgumentException(
+                "地形判定に使用するCapsuleColliderは有効かつ非Triggerにしてください。",
+                nameof(enemyCollider));
+        }
+
         this.allowMinorStageConnections = allowMinorStageConnections;
 
         raycastHitBuffer =
@@ -117,7 +130,19 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
     /// </summary>
     public bool TryGetCurrentGroundNormal(out Vector3 groundNormal)
     {
+        return TryGetCurrentGroundNormal(out groundNormal, out _);
+    }
+
+    /// <summary>
+    /// 接地判定に採用した地面の法線と、実Collider表面からその地面までの距離を返す。
+    /// 距離は「近くに地面がある」ことと「ほぼ接触している」ことを分けるために使う。
+    /// </summary>
+    public bool TryGetCurrentGroundNormal(
+        out Vector3 groundNormal,
+        out float surfaceSeparation)
+    {
         groundNormal = Vector3.zero;
+        surfaceSeparation = float.PositiveInfinity;
         Bounds bounds = enemyCollider.bounds;
         if (bounds.size.sqrMagnitude <= DIRECTION_EPSILON)
         {
@@ -131,6 +156,8 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         }
 
         groundNormal = groundHit.normal;
+        surfaceSeparation = Vector3.Distance(
+            enemyCollider.ClosestPoint(groundHit.point), groundHit.point);
         return true;
     }
 
@@ -226,7 +253,6 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         if (HasBlockingStageWall(
                 startCenter,
                 endCenter,
-                bounds.extents,
                 sign,
                 currentGround,
                 frontGround))
@@ -262,7 +288,7 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         float rayDistance = bounds.extents.y +
             Mathf.Max(enemyData.GroundCheckDownDistance, STANDING_HEIGHT_TOLERANCE);
 
-        // 中央だけでは、斜面上でColliderの片側が接触するケースを見逃す。
+        // 中央だけでは、斜面上でCapsuleの片側が接触するケースを見逃す。
         // 実際のCollider表面と地面の距離を見ることで、bounds.min.yとの差を使わない。
         if (TryGetStandingHitAt(bounds.center, rayDistance, out supportingHit))
         {
@@ -450,13 +476,12 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
             if (HasBlockingStageWall(
                     fromCenter,
                     toCenter,
-                    bounds.extents,
                     sign,
                     centerGround,
                     nextFrontGround))
             {
                 LastPathScanFailureReason =
-                    $"BoxCastが壁判定: sampleX={nextX:F3}, " + lastBlockingWallHitDetails;
+                    $"CapsuleCastが壁判定: sampleX={nextX:F3}, " + lastBlockingWallHitDetails;
                 break;
             }
 
@@ -746,17 +771,11 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
     private bool HasBlockingStageWall(
         Vector3 startCenter,
         Vector3 endCenter,
-        Vector3 bodyExtents,
         float directionSign,
         RaycastHit currentGround,
         RaycastHit traversableGroundAhead)
     {
         lastBlockingWallHitDetails = string.Empty;
-        // 接地床を壁として拾いにくくするため、足元を少し縮めたBoxを掃引する。
-        Vector3 castExtents = new Vector3(
-            Mathf.Max(bodyExtents.x - PROBE_SKIN, PROBE_SKIN),
-            Mathf.Max(bodyExtents.y - PROBE_SKIN, PROBE_SKIN),
-            Mathf.Max(bodyExtents.z - PROBE_SKIN, PROBE_SKIN));
         Vector3 movement = endCenter - startCenter;
         float castDistance = movement.magnitude;
         if (castDistance <= PATH_DISTANCE_EPSILON)
@@ -764,15 +783,31 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
             return false;
         }
 
-        int hitCount = Physics.BoxCastNonAlloc(
-            startCenter + Vector3.up * PROBE_SKIN,
-            castExtents,
+        // 予測した位置へ実際のCapsule形状を平行移動し、接地面を拾い過ぎないよう
+        // 半径を僅かに縮める。boundsからBoxを作ると坂の端面で偽の壁判定になる。
+        Vector3 poseOffset = startCenter - enemyCollider.bounds.center;
+        GetWorldCapsuleGeometry(
+            poseOffset + Vector3.up * PROBE_SKIN,
+            PROBE_SKIN,
+            out Vector3 pointA,
+            out Vector3 pointB,
+            out float castRadius);
+
+        int hitCount = Physics.CapsuleCastNonAlloc(
+            pointA,
+            pointB,
+            castRadius,
             movement / castDistance,
             wallCastHitBuffer,
-            Quaternion.identity,
             castDistance,
             enemyData.StageLayerMask,
             QueryTriggerInteraction.Ignore);
+
+        if (hitCount >= wallCastHitBuffer.Length)
+        {
+            lastBlockingWallHitDetails = "CapsuleCastのヒットバッファが満杯です。";
+            return true;
+        }
 
         for (int i = 0; i < hitCount; i++)
         {
@@ -782,26 +817,40 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
                 continue;
             }
 
-            // 回転BoxColliderで作られた坂は、上面が許容角内でも入口に
-            // 通行不可角度の端面を持つ。直前の地面追跡が同じColliderの
-            // 斜面上面まで連続している場合だけ、その端面は坂入口として除外する。
-            // 別Colliderの微小段差は上面の連続性と高さ条件を満たす場合だけ通す。
-            // 通行可能な接続先以外の壁は従来どおり拒否する。
+            // 回転したステージColliderの坂入口端面や、許容された微小段差を除外する。
+            // 地面の上面を連続追跡できた場合に限定し、本物の壁は除外しない。
             if (allowMinorStageConnections
                     ? IsTraversableGroundEntrance(
                         hit.collider, currentGround, traversableGroundAhead)
-                    : IsSameTraversableSlope(hit.collider, traversableGroundAhead))
+                    : IsSameTraversableSlope(hit.collider, currentGround) ||
+                      IsSameTraversableSlope(hit.collider, traversableGroundAhead))
             {
                 continue;
             }
 
+            Vector3 hitNormal = hit.normal;
+            // Sweep開始時から重なっている場合、Physicsは進行方向の逆向き法線を
+            // 返すことがある。そのまま壁扱いせず、実際の重なりの分離方向で判定する。
+            if (hit.distance <= PATH_DISTANCE_EPSILON && hit.point == Vector3.zero)
+            {
+                Vector3 colliderPose = enemyCollider.transform.position + poseOffset;
+                if (!Physics.ComputePenetration(
+                        enemyCollider, colliderPose, enemyCollider.transform.rotation,
+                        hit.collider, hit.collider.transform.position,
+                        hit.collider.transform.rotation,
+                        out hitNormal, out _))
+                {
+                    continue;
+                }
+            }
+
             // 正面を向いた接触だけを障害物とし、許容斜面の斜め法線を壁扱いしない。
-            if (hit.normal.x * directionSign < -DIRECTION_EPSILON &&
-                !IsSlopeAllowed(hit.normal))
+            if (hitNormal.x * directionSign < -DIRECTION_EPSILON &&
+                !IsSlopeAllowed(hitNormal))
             {
                 lastBlockingWallHitDetails =
-                    $"collider={hit.collider.name}, normal={hit.normal}, " +
-                    $"angle={Vector3.Angle(hit.normal, Vector3.up):F2}, " +
+                    $"collider={hit.collider.name}, normal={hitNormal}, " +
+                    $"angle={Vector3.Angle(hitNormal, Vector3.up):F2}, " +
                     $"hitPoint={hit.point}, " +
                     $"frontCollider={traversableGroundAhead.collider?.name}";
                 return true;
@@ -857,7 +906,8 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         return allowMinorStageConnections
             ? IsTraversableGroundEntrance(
                 candidateCollider, currentGround, traversableGroundAhead)
-            : IsSameTraversableSlope(candidateCollider, traversableGroundAhead);
+            : IsSameTraversableSlope(candidateCollider, currentGround) ||
+              IsSameTraversableSlope(candidateCollider, traversableGroundAhead);
     }
 
     private bool IsTraversableGroundEntrance(
@@ -865,7 +915,12 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         RaycastHit currentGround,
         RaycastHit traversableGroundAhead)
     {
-        if (IsSameTraversableSlope(candidateCollider, traversableGroundAhead))
+        // 前方の上面だけでなく、現在支持している坂面も確認する。
+        // Capsuleの丸い底面は斜面上に乗っていても進行方向の縁に接触し、
+        // 前方Rayが接続先の別Colliderを捉えると同じ坂の端面が誤って壁になる。
+        // 呼び出し元で前方まで連続して歩ける地面を検証済みの場合に限る。
+        if (IsSameTraversableSlope(candidateCollider, traversableGroundAhead) ||
+            IsSameTraversableSlope(candidateCollider, currentGround))
         {
             return true;
         }
@@ -1070,16 +1125,13 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
             }
         }
 
-        Bounds bounds = enemyCollider.bounds;
-        Vector3 castExtents = bounds.extents -
-            Vector3.one * PROBE_SKIN;
-        castExtents = Vector3.Max(castExtents,
-            Vector3.one * POSITION_CLEARANCE_SKIN);
-        int hits = Physics.BoxCastNonAlloc(
-            bounds.center, castExtents, Vector3.up,
-            wallCastHitBuffer, Quaternion.identity,
-            upwardDistance, enemyData.StageLayerMask,
-            QueryTriggerInteraction.Ignore);
+        GetWorldCapsuleGeometry(
+            Vector3.zero, PROBE_SKIN,
+            out Vector3 pointA, out Vector3 pointB, out float castRadius);
+        int hits = Physics.CapsuleCastNonAlloc(
+            pointA, pointB, castRadius, Vector3.up,
+            wallCastHitBuffer, upwardDistance,
+            enemyData.StageLayerMask, QueryTriggerInteraction.Ignore);
         if (hits >= wallCastHitBuffer.Length)
         {
             return false;
@@ -1089,6 +1141,7 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
             RaycastHit hit = wallCastHitBuffer[i];
             if (hit.collider != null &&
                 !IsEnemyOwnedCollider(hit.collider) &&
+                !(hit.distance <= PATH_DISTANCE_EPSILON && hit.point == Vector3.zero) &&
                 hit.normal.y < -MIN_UPWARD_SEPARATION_NORMAL)
             {
                 return false;
@@ -1097,14 +1150,61 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
         return true;
     }
 
+    /// <summary>
+    /// CapsuleColliderのローカル形状をワールド空間の2端点と半径へ変換する。
+    /// 位置予測時は実Colliderを動かさずoffset分だけ平行移動する。
+    /// </summary>
+    private void GetWorldCapsuleGeometry(
+        Vector3 offset,
+        float radiusInset,
+        out Vector3 pointA,
+        out Vector3 pointB,
+        out float worldRadius)
+    {
+        Transform capsuleTransform = enemyCapsuleCollider.transform;
+        Vector3 scale = capsuleTransform.lossyScale;
+        float axisScale;
+        float transverseScale;
+        Vector3 localAxis;
+
+        switch (enemyCapsuleCollider.direction)
+        {
+            case 0:
+                localAxis = Vector3.right;
+                axisScale = Mathf.Abs(scale.x);
+                transverseScale = Mathf.Max(Mathf.Abs(scale.y), Mathf.Abs(scale.z));
+                break;
+            case 2:
+                localAxis = Vector3.forward;
+                axisScale = Mathf.Abs(scale.z);
+                transverseScale = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.y));
+                break;
+            default:
+                localAxis = Vector3.up;
+                axisScale = Mathf.Abs(scale.y);
+                transverseScale = Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.z));
+                break;
+        }
+
+        float actualRadius = Mathf.Max(
+            POSITION_CLEARANCE_SKIN, enemyCapsuleCollider.radius * transverseScale);
+        float halfStraightLength = Mathf.Max(
+            0f, enemyCapsuleCollider.height * axisScale * 0.5f - actualRadius);
+        Vector3 center = capsuleTransform.TransformPoint(enemyCapsuleCollider.center) + offset;
+        Vector3 axis = capsuleTransform.TransformDirection(localAxis);
+        pointA = center + axis * halfStraightLength;
+        pointB = center - axis * halfStraightLength;
+        worldRadius = Mathf.Max(actualRadius * 0.5f, actualRadius - radiusInset);
+    }
+
     private bool TryCollectNeighbours(Vector3 offset, int collisionMask, out int count)
     {
-        Bounds bounds = enemyCollider.bounds;
-        count = Physics.OverlapBoxNonAlloc(
-            bounds.center + offset,
-            bounds.extents + Vector3.one * POSITION_CLEARANCE_SKIN,
-            nearbyStageColliders, Quaternion.identity,
-            collisionMask, QueryTriggerInteraction.Ignore);
+        GetWorldCapsuleGeometry(
+            offset, 0f,
+            out Vector3 pointA, out Vector3 pointB, out float radius);
+        count = Physics.OverlapCapsuleNonAlloc(
+            pointA, pointB, radius + POSITION_CLEARANCE_SKIN,
+            nearbyStageColliders, collisionMask, QueryTriggerInteraction.Ignore);
         if (count >= nearbyStageColliders.Length)
         {
             // 対象を取りこぼしたまま安全判定を通さない。

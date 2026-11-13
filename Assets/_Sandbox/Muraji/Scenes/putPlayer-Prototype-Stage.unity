@@ -128261,7 +128261,19 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 449071652}
     - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: groundAttackEffect.Prefab
+      value: 
+      objectReference: {fileID: 5588217659967268500, guid: 0370ad69a671aa143906ca2e9b705246, type: 3}
+    - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: airAttackEffect.SpawnPoint
+      value: 
+      objectReference: {fileID: 577497384}
+    - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: groundAttackEffect.Lifetime
+      value: 0.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: groundAttackEffect.SpawnPoint
       value: 
       objectReference: {fileID: 577497384}
     - target: {fileID: 843758398235529087, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}

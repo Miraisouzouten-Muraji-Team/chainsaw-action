@@ -382,6 +382,37 @@ Transform:
   m_Children: []
   m_Father: {fileID: 5719366523003041132}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &3515749916615802555
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6721667708137078184}
+  m_Layer: 0
+  m_Name: EffectPoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6721667708137078184
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3515749916615802555}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0.362, y: 0.992, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2710749393844264851}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &3682622691791027040
 GameObject:
   m_ObjectHideFlags: 0
@@ -824,6 +855,7 @@ Transform:
   - {fileID: 4568879983805974941}
   - {fileID: 7693709834521966597}
   - {fileID: 4452954944320363198}
+  - {fileID: 6721667708137078184}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!54 &1407844629575893527
@@ -881,6 +913,22 @@ MonoBehaviour:
     Prefab: {fileID: 1475400350550726891, guid: 873007ee2dffc354e95a1110312d3377, type: 3}
     SpawnPoint: {fileID: 6037434220760872631}
     Lifetime: 0.3
+  groundAttackEffect:
+    Prefab: {fileID: 0}
+    SpawnPoint: {fileID: 0}
+    Lifetime: 2
+  airAttackEffect:
+    Prefab: {fileID: 5588217659967268500, guid: 0370ad69a671aa143906ca2e9b705246, type: 3}
+    SpawnPoint: {fileID: 6721667708137078184}
+    Lifetime: 0.75
+  groundSwingEffect:
+    Prefab: {fileID: 0}
+    SpawnPoint: {fileID: 0}
+    Lifetime: 2
+  airSwingEffect:
+    Prefab: {fileID: 0}
+    SpawnPoint: {fileID: 0}
+    Lifetime: 2
   walkEffectClips: []
   walkEffectAnimatorLayer: 0
   walkEffectInterval: 0.15

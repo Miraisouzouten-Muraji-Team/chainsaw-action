@@ -5928,6 +5928,37 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: d3e13ece6dbc49f41b4aac2b345d9df0, type: 3}
+--- !u!1 &99688718
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 99688719}
+  m_Layer: 0
+  m_Name: Effect_Point
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &99688719
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 99688718}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.691, y: 0.942, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 733300736}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &110604224
 GameObject:
   m_ObjectHideFlags: 0
@@ -61217,6 +61248,11 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 733012406}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!4 &733300736 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 4137190646497115990, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &733936622
 GameObject:
   m_ObjectHideFlags: 0
@@ -128236,13 +128272,29 @@ PrefabInstance:
       value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: airSwingEffect.Prefab
+      value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: airAttackEffect.Prefab
       value: 
-      objectReference: {fileID: 2823603977324940333, guid: 96e8b8b94590fa84e989a735a1ae3b66, type: 3}
+      objectReference: {fileID: 5588217659967268500, guid: 0370ad69a671aa143906ca2e9b705246, type: 3}
+    - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: airSwingEffect.Lifetime
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: airAttackEffect.Lifetime
+      value: 0.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: airSwingEffect.SpawnPoint
+      value: 
+      objectReference: {fileID: 449071652}
     - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: airAttackEffect.SpawnPoint
       value: 
-      objectReference: {fileID: 449071652}
+      objectReference: {fileID: 99688719}
     - target: {fileID: 843758398235529087, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_IsActive
       value: 1
@@ -128923,6 +128975,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2292058601784843701, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1893948134}
+    - targetCorrespondingSourceObject: {fileID: 4137190646497115990, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 99688719}
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 2326094757250988207, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       insertIndex: -1

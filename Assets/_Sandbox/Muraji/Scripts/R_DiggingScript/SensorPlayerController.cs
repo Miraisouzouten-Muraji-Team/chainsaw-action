@@ -25,6 +25,12 @@ public class SensorPlayerController : MonoBehaviour
     [SerializeField] private MovementEffectSetting groundAttackEffect = new MovementEffectSetting();
     [Tooltip("空中攻撃の開始時に生成し、武器に追従するエフェクトです。Spawn Pointには刃先に配置した武器の子オブジェクトを指定してください。Lifetime秒後に削除します。")]
     [SerializeField] private MovementEffectSetting airAttackEffect = new MovementEffectSetting();
+    [Tooltip("地上の弱攻撃で振り抜く瞬間に刃先から出すエフェクトです。")]
+    [SerializeField] private MovementEffectSetting groundSwingEffect = new MovementEffectSetting();
+    [Tooltip("空中の弱攻撃で振り抜く瞬間に刃先から出すエフェクトです。")]
+    [SerializeField] private MovementEffectSetting airSwingEffect = new MovementEffectSetting();
+    private MovementEffectSetting pendingSwingEffect;
+
 
     [Header("移動エフェクト：歩行と着地の判定")]
     [Tooltip("歩行中に再生されるAnimationClipを登録してください。ステート名ではなく実際のクリップで確認します。未登録なら歩行エフェクトを出しません。")]
@@ -2268,7 +2274,17 @@ public class SensorPlayerController : MonoBehaviour
         stateWaitTime = 0f;
 
         // モーション選択に使った攻撃開始時の空中判定で、生成するエフェクトを選ぶ。
+        pendingSwingEffect = startedInAir ? airSwingEffect : groundSwingEffect;
         SpawnMovementEffect(startedInAir ? airAttackEffect : groundAttackEffect, true);
+    }
+
+    // 振り抜きのイベントで、攻撃開始時に選んだ演出を一度だけ再生する。
+    public void PlayWeakSwingEffect()
+    {
+        if (!IsAttacking || pendingSwingEffect == null) return;
+        MovementEffectSetting effect = pendingSwingEffect;
+        pendingSwingEffect = null;
+        SpawnMovementEffect(effect, true);
     }
 
     private void BeginAttackMovement(AttackData data)
@@ -2358,6 +2374,7 @@ public class SensorPlayerController : MonoBehaviour
 
     void ClearSlashState()
     {
+        pendingSwingEffect = null;
         EndWeakAttackHold();
         ClearAttackMovement();
 
@@ -2931,8 +2948,8 @@ public class SensorPlayerController : MonoBehaviour
         }
     }
 
-    private readonly List<(Transform effect, Transform tip, Quaternion offset)> attackTrails =
-        new List<(Transform, Transform, Quaternion)>();
+    private readonly List<(Transform effect, Transform tip, Quaternion offset, Vector3 scale)> attackTrails =
+        new List<(Transform, Transform, Quaternion, Vector3)>();
 
     // アニメーション後の刃先の位置と回転を、生成済みの放出口に反映する。
     private void FollowAttackTrails()
@@ -2946,8 +2963,26 @@ public class SensorPlayerController : MonoBehaviour
                 attackTrails.RemoveAt(i);
                 continue;
             }
-            trail.effect.SetPositionAndRotation(trail.tip.position, trail.tip.rotation * trail.offset);
+            ApplyAttackTrailPose(trail.effect, trail.tip, trail.offset, trail.scale);
         }
+    }
+
+    // 武器の鏡映を含む座標軸から放出口の姿勢を作り、元のエフェクトの大きさを保つ。
+    private void ApplyAttackTrailPose(Transform effect, Transform tip, Quaternion offset, Vector3 scale)
+    {
+        Quaternion rotation = tip.rotation * offset;
+        if (facingDirection < 0f)
+        {
+            // プレイヤーの左右軸に対して、右向き時の放出方向を鏡写しにする。
+            Vector3 right = visualRoot != null ? visualRoot.right : transform.right;
+            Vector3 forward = Vector3.Reflect(rotation * Vector3.forward, right);
+            Vector3 up = Vector3.Reflect(rotation * Vector3.up, right);
+            rotation = Quaternion.LookRotation(forward, up);
+            scale.x = -scale.x;
+        }
+
+        effect.SetPositionAndRotation(tip.position, rotation);
+        effect.localScale = scale;
     }
 
     // 設定した空オブジェクトから生成し、攻撃時は刃先への追従を登録して再生と寿命を設定する。
@@ -2960,14 +2995,35 @@ public class SensorPlayerController : MonoBehaviour
             setting.SpawnPoint.rotation * setting.Prefab.transform.rotation);
         if (followSpawnPoint)
         {
-            attackTrails.Add((instance.transform, setting.SpawnPoint, setting.Prefab.transform.rotation));
-            // 放出済みの粒子と軌跡を振った場所に残す。
+            Quaternion offset = setting.Prefab.transform.rotation;
+            Vector3 scale = setting.Prefab.transform.localScale;
+            ApplyAttackTrailPose(instance.transform, setting.SpawnPoint, offset, scale);
+            attackTrails.Add((instance.transform, setting.SpawnPoint, offset, scale));
+            // 空中攻撃は放出済みの斬撃も刃先に追従させ、地上攻撃は軌跡を振った場所に残す。
+            bool followAirSwing = setting == airAttackEffect || setting == airSwingEffect;
             foreach (var particles in instance.GetComponentsInChildren<ParticleSystem>(true))
             {
                 var main = particles.main;
-                main.simulationSpace = ParticleSystemSimulationSpace.World;
+                main.simulationSpace = followAirSwing
+                    ? ParticleSystemSimulationSpace.Local
+                    : ParticleSystemSimulationSpace.World;
                 var trails = particles.trails;
-                if (trails.enabled) trails.worldSpace = true;
+                if (trails.enabled) trails.worldSpace = !followAirSwing;
+            }
+            // カメラ向きの粒子は、攻撃開始時の向きに合わせてテクスチャも左右反転する。
+            if (facingDirection < 0f)
+            {
+                foreach (var renderer in instance.GetComponentsInChildren<ParticleSystemRenderer>(true))
+                {
+                    if (renderer.renderMode != ParticleSystemRenderMode.Billboard ||
+                        (renderer.alignment != ParticleSystemRenderSpace.View &&
+                         renderer.alignment != ParticleSystemRenderSpace.Facing))
+                        continue;
+
+                    Vector3 flip = renderer.flip;
+                    flip.x = 1f - flip.x;
+                    renderer.flip = flip;
+                }
             }
             foreach (var trail in instance.GetComponentsInChildren<TrailRenderer>(true))
                 trail.Clear();

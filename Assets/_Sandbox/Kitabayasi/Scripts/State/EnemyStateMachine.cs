@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -295,7 +295,7 @@ public class EnemyStateMachine : MonoBehaviour
     /// </summary>
     /// <remarks>
     /// 既にDamage State中の場合はStateを切り替えず、
-    /// やられ方向・ノックバック・やられ時間・点滅演出を今回の命中で更新する。
+    /// やられ方向・ノックバック可否・やられ時間・点滅演出を今回の命中で更新する。
     /// </remarks>
     /// <param name="hitSourceDirectionSign">
     /// X/Yゲームプレイ平面上で見た攻撃元の左右方向。
@@ -304,9 +304,14 @@ public class EnemyStateMachine : MonoBehaviour
     /// <param name="attackVector">
     /// 今回命中したAttackDataのAttackVector。
     /// </param>
+    /// <param name="hitAttackData">
+    /// 今回命中したAttackData。食い込み攻撃判別に使う。
+    /// 旧呼び出し元との互換用にnullも許可し、その場合は通常攻撃として扱う。
+    /// </param>
     public void RequestDamageState(
         float hitSourceDirectionSign,
-        Vector2 attackVector)
+        Vector2 attackVector,
+        AttackData hitAttackData = null)
     {
         if (!isActiveAndEnabled ||
             !isInitialized ||
@@ -316,9 +321,13 @@ public class EnemyStateMachine : MonoBehaviour
             return;
         }
 
+        bool applyPhysicalKnockback =
+            ShouldApplyPhysicalKnockback(hitAttackData);
+
         damageState.SetHitData(
             hitSourceDirectionSign,
-            attackVector);
+            attackVector,
+            applyPhysicalKnockback);
 
         if (ReferenceEquals(
                 CurrentState,
@@ -329,6 +338,29 @@ public class EnemyStateMachine : MonoBehaviour
         }
 
         ChangeState(damageState);
+    }
+
+    /// <summary>
+    /// 既存の食い込み攻撃設定と固定タレットの仕様から、今回の位置ノックバック可否を決める。
+    /// 攻撃による死亡時の分割片飛散には影響させない。
+    /// </summary>
+    private bool ShouldApplyPhysicalKnockback(
+        AttackData hitAttackData)
+    {
+        if (turretAttackStrategy != null)
+        {
+            return false;
+        }
+
+        if (hitAttackData != null &&
+            deathStrategy is StandardEnemyDeathStrategy standardDeathStrategy &&
+            standardDeathStrategy.DiggingAttackData != null &&
+            hitAttackData == standardDeathStrategy.DiggingAttackData)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private void InitializeStates()
@@ -364,7 +396,7 @@ public class EnemyStateMachine : MonoBehaviour
                 enemyDamageFlash,
                 enemyKnockbackMotor,
                 // 土台まで傾くのを防ぐため、固定タレットは被弾時の見た目の傾斜を行わない。
-                // ダメージ点滅・HP処理とノックバックの扱いは従来のまま。
+                // ダメージ点滅・HP処理は変更せず、物理ノックバックは別途禁止する。
                 turretAttackStrategy != null ? null : visualRoot,
                 enemyData.HitTiltDuration,
                 enemyData.HitTiltRecoveryDuration,

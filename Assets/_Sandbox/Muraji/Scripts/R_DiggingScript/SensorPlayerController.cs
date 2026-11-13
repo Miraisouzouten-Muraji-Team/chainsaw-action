@@ -629,7 +629,8 @@ public class SensorPlayerController : MonoBehaviour
             chainsawDigging.Surface != ChainsawSurface.Wall &&
             chainsawDigging.Surface != ChainsawSurface.Ceiling &&
             chainsawDigging.Surface != ChainsawSurface.Enemy &&
-            input.MoveInput != 0f)
+            // 移動スティックの遊びを超えた場合だけ、入力方向へ向きを変える。
+            Mathf.Abs(input.MoveInput) > Mathf.Clamp01(playerParameter.moveDeadZone))
         {
             facingDirection = Mathf.Sign(input.MoveInput);
             ApplyFacingRotation();
@@ -1261,6 +1262,16 @@ public class SensorPlayerController : MonoBehaviour
         float moveInput = isAutoMoving
             ? facingDirection
             : Mathf.Clamp(input.MoveInput, -1f, 1f);
+
+        // 手動移動では遊びの範囲を無視し、残りの入力範囲を0～1へ補正する。
+        if (!isAutoMoving)
+        {
+            float deadZone = Mathf.Clamp01(playerParameter.moveDeadZone);
+            float inputMagnitude = Mathf.Abs(moveInput);
+            moveInput = inputMagnitude <= deadZone
+                ? 0f
+                : Mathf.Sign(moveInput) * Mathf.InverseLerp(deadZone, 1f, inputMagnitude);
+        }
 
         float speedBonus = chainsawDigging.MoveSpeedBonus;
         float targetSpeed = moveInput * (playerParameter.moveSpeed + speedBonus);

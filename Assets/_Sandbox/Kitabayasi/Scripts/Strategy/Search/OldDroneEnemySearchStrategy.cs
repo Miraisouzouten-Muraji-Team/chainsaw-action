@@ -23,11 +23,11 @@ public sealed class OldDroneEnemySearchStrategy :
     // 既存PrefabのSerializeReference内に保存されたPatrolPoint参照を維持するため、
     // Inspector入力だけはStrategy側に残し、巡回処理本体へ初期化時に渡す。
     [Header("巡回地点")]
-    [Tooltip("巡回地点A。初期化時にEnemy基準のXYオフセットとして保存する。")]
+    [Tooltip("巡回地点A。A/Bとも未設定なら巡回せず待機・索敵する。巡回時はEnemy基準のXYオフセットで保存する。")]
     [SerializeField]
     private Transform patrolPointA;
 
-    [Tooltip("巡回地点B。初期化時にEnemy基準のXYオフセットとして保存する。")]
+    [Tooltip("巡回地点B。巡回する場合はA/B両方設定する。Enemy基準のXYオフセットで保存する。")]
     [SerializeField]
     private Transform patrolPointB;
 
@@ -47,9 +47,11 @@ public sealed class OldDroneEnemySearchStrategy :
     private BoxCollider playerTargetCollider;
 
     private Vector3 patrolOriginPosition;
+    private Quaternion initialVisualRootRotation;
 
     private bool isSearchActive;
     private bool isReturningToPatrolOrigin;
+    private bool canPatrolInCurrentSearch;
 
     /// <summary>
     /// このOldDroneEnemy個体に設定された索敵半径。
@@ -154,8 +156,16 @@ public sealed class OldDroneEnemySearchStrategy :
                 this.enemyData.NavigationStallMinimumMoveSpeed,
                 this.enemyData.NavigationStallDetectionDuration);
 
-        twoPointPatrol =
-            new DroneEnemyTwoPointPatrol(
+        // 巡回の有無にかかわらず、索敵・攻撃後の帰還位置と初期の向きを保持する。
+        patrolOriginPosition = enemyRigidbody.position;
+        initialVisualRootRotation = this.visualRoot.rotation;
+
+        if (DroneEnemyTwoPointPatrol.TryValidatePatrolPoints(
+                patrolPointA,
+                patrolPointB,
+                out string failureReason))
+        {
+            twoPointPatrol = new DroneEnemyTwoPointPatrol(
                 patrolPointA,
                 patrolPointB,
                 enemyTransform,
@@ -165,11 +175,21 @@ public sealed class OldDroneEnemySearchStrategy :
                 planarMotor,
                 playerReference,
                 this.enemyData.NavigationObstacleMask);
+        }
+        else
+        {
+            // 巡回地点の指定がない個体は定位置で索敵する。
+            // 片方だけ指定されていても不完全な巡回を開始しない。
+            twoPointPatrol = null;
 
-        // 帰還処理は共通巡回クラスが固定したゲーム開始時位置を
-        // 同じ巡回原点として利用する。
-        patrolOriginPosition =
-            twoPointPatrol.PatrolOriginPosition;
+            if (patrolPointA != null || patrolPointB != null)
+            {
+                Debug.LogWarning(
+                    $"{nameof(OldDroneEnemySearchStrategy)}: " +
+                    $"{failureReason} 巡回を無効にし、索敵・攻撃を継続します。",
+                    enemyObject);
+            }
+        }
 
         playerReference.TryGetPlayerTransform(
             out _);
@@ -181,29 +201,36 @@ public sealed class OldDroneEnemySearchStrategy :
 
         isSearchActive = true;
         isReturningToPatrolOrigin = false;
+        canPatrolInCurrentSearch = false;
 
         pathNavigator.Reset();
 
         playerReference.TryGetPlayerTransform(
             out _);
 
-        // 帰還完了後の巡回順は固定原点→A→B→A...で開始する。
-        twoPointPatrol.ResetToPointA();
-
-        if (!twoPointPatrol.TryPrepareRoute(
-                out string failureReason))
+        if (twoPointPatrol != null)
         {
-            StopPlanarMovement();
+            // 帰還完了後の巡回順は固定原点→A→B→A...で開始する。
+            twoPointPatrol.ResetToPointA();
 
-            Debug.LogWarning(
-                $"{nameof(OldDroneEnemySearchStrategy)}: " +
-                "安全な巡回地点・経路を確定できないため、" +
-                $"このSearch中の巡回を停止します。{failureReason}",
-                enemyObject);
+            if (twoPointPatrol.TryPrepareRoute(
+                    out string failureReason))
+            {
+                canPatrolInCurrentSearch = true;
+            }
+            else
+            {
+                StopPlanarMovement();
 
-            return;
+                Debug.LogWarning(
+                    $"{nameof(OldDroneEnemySearchStrategy)}: " +
+                    "安全な巡回経路を確定できないため、" +
+                    $"このSearch中の巡回だけ停止します。{failureReason}",
+                    enemyObject);
+            }
         }
 
+        // 巡回地点がなくても、攻撃や被弾で移動した場合は初期位置へ帰還する。
         BeginReturnToPatrolOrigin();
     }
 
@@ -217,7 +244,10 @@ public sealed class OldDroneEnemySearchStrategy :
             return false;
         }
 
-        twoPointPatrol.SyncPointTransforms();
+        if (canPatrolInCurrentSearch)
+        {
+            twoPointPatrol.SyncPointTransforms();
+        }
 
         // 帰還はSearch中の移動方法の1つとして扱い、
         // 帰還中でも通常と同じ条件でPlayerを索敵し続ける。
@@ -239,9 +269,17 @@ public sealed class OldDroneEnemySearchStrategy :
             return false;
         }
 
-        twoPointPatrol.Update(
-            enemyData.PatrolMoveSpeed,
-            enemyData.PatrolTurnDuration);
+        if (canPatrolInCurrentSearch)
+        {
+            twoPointPatrol.Update(
+                enemyData.PatrolMoveSpeed,
+                enemyData.PatrolTurnDuration);
+        }
+        else
+        {
+            // 巡回なしの個体は初期位置で待機し、索敵だけ継続する。
+            StopPlanarMovement();
+        }
 
         return false;
     }
@@ -320,8 +358,9 @@ public sealed class OldDroneEnemySearchStrategy :
 
         isSearchActive = false;
         isReturningToPatrolOrigin = false;
+        canPatrolInCurrentSearch = false;
 
-        twoPointPatrol.End();
+        twoPointPatrol?.End();
 
         pathNavigator.Reset();
         StopPlanarMovement();
@@ -420,8 +459,16 @@ public sealed class OldDroneEnemySearchStrategy :
         pathNavigator.Reset();
         isReturningToPatrolOrigin = false;
 
-        // 帰還後は固定巡回原点からPoint Aへ向かう通常巡回を開始する。
-        twoPointPatrol.ResetToPointA();
+        if (canPatrolInCurrentSearch)
+        {
+            // 巡回可能な個体だけPoint Aから通常巡回を再開する。
+            twoPointPatrol.ResetToPointA();
+        }
+        else
+        {
+            // 巡回なしの個体は攻撃時の向きを残さず、配置時の向きで待機する。
+            visualRoot.rotation = initialVisualRootRotation;
+        }
     }
 
     private void StopPlanarMovement()
@@ -552,15 +599,26 @@ public sealed class OldDroneEnemySearchStrategy :
                 navigationDirectionX);
         }
 
-        float targetDeltaX =
-            twoPointPatrol.CurrentTargetPosition.x -
-            enemyRigidbody.position.x;
-
-        if (Mathf.Abs(targetDeltaX) >
-            DIRECTION_EPSILON)
+        if (canPatrolInCurrentSearch)
         {
-            return Mathf.Sign(
-                targetDeltaX);
+            float targetDeltaX =
+                twoPointPatrol.CurrentTargetPosition.x -
+                enemyRigidbody.position.x;
+
+            if (Mathf.Abs(targetDeltaX) > DIRECTION_EPSILON)
+            {
+                return Mathf.Sign(targetDeltaX);
+            }
+        }
+        else
+        {
+            float initialFacingX =
+                (initialVisualRootRotation * Vector3.forward).x;
+
+            if (Mathf.Abs(initialFacingX) > DIRECTION_EPSILON)
+            {
+                return Mathf.Sign(initialFacingX);
+            }
         }
 
         return 1f;

@@ -43766,6 +43766,11 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_RenderingLayers: 1
   m_ShadowRenderingLayers: 1
+--- !u!4 &449071652 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 6278989849660050634, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1351245142}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &452936784
 GameObject:
   m_ObjectHideFlags: 0
@@ -128230,6 +128235,14 @@ PrefabInstance:
       propertyPath: _pixelRenderingEnabled
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: airAttackEffect.Prefab
+      value: 
+      objectReference: {fileID: 2823603977324940333, guid: 96e8b8b94590fa84e989a735a1ae3b66, type: 3}
+    - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: airAttackEffect.SpawnPoint
+      value: 
+      objectReference: {fileID: 449071652}
     - target: {fileID: 843758398235529087, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_IsActive
       value: 1

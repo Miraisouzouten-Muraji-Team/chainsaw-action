@@ -20,6 +20,12 @@ public class SensorPlayerController : MonoBehaviour
     [SerializeField] private MovementEffectSetting jumpEffect = new MovementEffectSetting();
     [SerializeField] private MovementEffectSetting doubleJumpEffect = new MovementEffectSetting();
     [SerializeField] private MovementEffectSetting landingEffect = new MovementEffectSetting();
+    [Header("攻撃開始エフェクト")]
+    [Tooltip("地上攻撃の開始時に生成し、武器に追従するエフェクトです。Spawn Pointには刃先に配置した武器の子オブジェクトを指定してください。Lifetime秒後に削除します。")]
+    [SerializeField] private MovementEffectSetting groundAttackEffect = new MovementEffectSetting();
+    [Tooltip("空中攻撃の開始時に生成し、武器に追従するエフェクトです。Spawn Pointには刃先に配置した武器の子オブジェクトを指定してください。Lifetime秒後に削除します。")]
+    [SerializeField] private MovementEffectSetting airAttackEffect = new MovementEffectSetting();
+
     [Header("移動エフェクト：歩行と着地の判定")]
     [Tooltip("歩行中に再生されるAnimationClipを登録してください。ステート名ではなく実際のクリップで確認します。未登録なら歩行エフェクトを出しません。")]
     [SerializeField] private AnimationClip[] walkEffectClips = new AnimationClip[0];
@@ -2111,6 +2117,7 @@ public class SensorPlayerController : MonoBehaviour
             floorDiggingVisualApplied = false;
             ApplyFacingRotation();
         }
+        FollowAttackTrails();
     }
 
     // 入力方向に合わせてXスケールを切り替え、床食い込み中はワールド空間の坂の傾きを加える。
@@ -2217,6 +2224,7 @@ public class SensorPlayerController : MonoBehaviour
         }
     }
 
+    // 地上・空中の攻撃を開始し、開始に成功した場合に対応するエフェクトを1回生成する。
     void StartSlash(int step)
     {
         // 食い込み付き弱攻撃は専用SOで開始し、振り抜き命中時まで保持する。
@@ -2229,6 +2237,8 @@ public class SensorPlayerController : MonoBehaviour
             CancelAttack();
             return;
         }
+
+        bool startedInAir = isAirAttackCombo;
 
         // 弱攻撃入力時に確定した空中判定でモーションを選び、途中着地では切り替えない。
         if (!playerAnimator.StartSlash(step, data, isAirAttackCombo))
@@ -2256,6 +2266,9 @@ public class SensorPlayerController : MonoBehaviour
         attackStartFrame = Time.frameCount;
         attackStateObserved = false;
         stateWaitTime = 0f;
+
+        // モーション選択に使った攻撃開始時の空中判定で、生成するエフェクトを選ぶ。
+        SpawnMovementEffect(startedInAir ? airAttackEffect : groundAttackEffect, true);
     }
 
     private void BeginAttackMovement(AttackData data)
@@ -2831,6 +2844,9 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
+        foreach (var trail in attackTrails)
+            if (trail.effect != null) Destroy(trail.effect.gameObject);
+        attackTrails.Clear();
         ClearCeilingJumpRelease();
         ResetCeilingTravelImpact();
         ClearDiggingReleaseMomentum();
@@ -2915,14 +2931,47 @@ public class SensorPlayerController : MonoBehaviour
         }
     }
 
-    // 設定した空オブジェクトからワールド空間へ生成し、再生と寿命を設定する。
-    private void SpawnMovementEffect(MovementEffectSetting setting)
+    private readonly List<(Transform effect, Transform tip, Quaternion offset)> attackTrails =
+        new List<(Transform, Transform, Quaternion)>();
+
+    // アニメーション後の刃先の位置と回転を、生成済みの放出口に反映する。
+    private void FollowAttackTrails()
+    {
+        for (int i = attackTrails.Count - 1; i >= 0; i--)
+        {
+            var trail = attackTrails[i];
+            if (trail.effect == null || trail.tip == null)
+            {
+                if (trail.effect != null) Destroy(trail.effect.gameObject);
+                attackTrails.RemoveAt(i);
+                continue;
+            }
+            trail.effect.SetPositionAndRotation(trail.tip.position, trail.tip.rotation * trail.offset);
+        }
+    }
+
+    // 設定した空オブジェクトから生成し、攻撃時は刃先への追従を登録して再生と寿命を設定する。
+    private void SpawnMovementEffect(MovementEffectSetting setting, bool followSpawnPoint = false)
     {
         if (setting == null || setting.Prefab == null || setting.SpawnPoint == null)
             return;
 
         GameObject instance = Instantiate(setting.Prefab, setting.SpawnPoint.position,
             setting.SpawnPoint.rotation * setting.Prefab.transform.rotation);
+        if (followSpawnPoint)
+        {
+            attackTrails.Add((instance.transform, setting.SpawnPoint, setting.Prefab.transform.rotation));
+            // 放出済みの粒子と軌跡を振った場所に残す。
+            foreach (var particles in instance.GetComponentsInChildren<ParticleSystem>(true))
+            {
+                var main = particles.main;
+                main.simulationSpace = ParticleSystemSimulationSpace.World;
+                var trails = particles.trails;
+                if (trails.enabled) trails.worldSpace = true;
+            }
+            foreach (var trail in instance.GetComponentsInChildren<TrailRenderer>(true))
+                trail.Clear();
+        }
         instance.SetActive(true);
         // Play On AwakeがオフのParticleSystemにも対応する。子の非表示設定は維持する。
         foreach (ParticleSystem particles in instance.GetComponentsInChildren<ParticleSystem>())

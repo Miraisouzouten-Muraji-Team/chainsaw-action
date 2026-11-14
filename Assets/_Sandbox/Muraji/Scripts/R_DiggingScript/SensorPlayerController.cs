@@ -2123,6 +2123,8 @@ public class SensorPlayerController : MonoBehaviour
             floorDiggingVisualApplied = false;
             ApplyFacingRotation();
         }
+        if (weakStartEffect != null && !weakEffectPaused && Time.time >= weakEffectExpiresAt)
+            ReleaseWeakStartEffect();
         FollowAttackTrails();
     }
 
@@ -2159,11 +2161,69 @@ public class SensorPlayerController : MonoBehaviour
     private bool weakAttackHoldActive;
     private Vector3 weakAttackHoldPosition;
 
+    private GameObject weakStartEffect;
+    private float weakEffectExpiresAt;
+    private float weakEffectPausedAt;
+    private bool weakEffectPaused;
+    private readonly List<(ParticleSystem particles, float speed)> pausedWeakParticles =
+        new List<(ParticleSystem, float)>();
+    private readonly List<(Animator animator, float speed)> pausedWeakAnimators =
+        new List<(Animator, float)>();
+
+    // 今回の攻撃開始演出で再生中の粒子とアニメーションだけを現在位置で止める。
+    private void PauseWeakStartEffect()
+    {
+        if (weakStartEffect == null || weakEffectPaused) return;
+        weakEffectPaused = true;
+        weakEffectPausedAt = Time.time;
+        foreach (var particles in weakStartEffect.GetComponentsInChildren<ParticleSystem>())
+        {
+            // Stop後にEmitした粒子も寿命が進まないよう、シミュレーション速度を保持する。
+            var main = particles.main;
+            pausedWeakParticles.Add((particles, main.simulationSpeed));
+            main.simulationSpeed = 0f;
+        }
+        foreach (var animator in weakStartEffect.GetComponentsInChildren<Animator>())
+        {
+            if (!animator.isActiveAndEnabled) continue;
+            pausedWeakAnimators.Add((animator, animator.speed));
+            animator.speed = 0f;
+        }
+    }
+
+    // 食い込み中の時間を寿命から除外し、止めた演出だけを続きから再生する。
+    private void ResumeWeakStartEffect()
+    {
+        if (!weakEffectPaused) return;
+        weakEffectPaused = false;
+        weakEffectExpiresAt += Time.time - weakEffectPausedAt;
+        foreach (var entry in pausedWeakParticles)
+        {
+            if (entry.particles == null) continue;
+            var main = entry.particles.main;
+            main.simulationSpeed = entry.speed;
+        }
+        foreach (var entry in pausedWeakAnimators)
+            if (entry.animator != null) entry.animator.speed = entry.speed;
+        pausedWeakParticles.Clear();
+        pausedWeakAnimators.Clear();
+    }
+
+    // 攻撃が終了した演出は残りの表示時間だけ再生し、次の攻撃の停止対象から外す。
+    private void ReleaseWeakStartEffect()
+    {
+        ResumeWeakStartEffect();
+        if (weakStartEffect != null)
+            Destroy(weakStartEffect, Mathf.Max(0f, weakEffectExpiresAt - Time.time));
+        weakStartEffect = null;
+    }
+
     // 弱攻撃の初段が命中した位置を保存し、食い込み中の踏み込みと移動を止める。
     public void BeginWeakAttackHold()
     {
         ClearCeilingJumpRelease();
         weakAttackHoldActive = true;
+        PauseWeakStartEffect();
         weakAttackHoldPosition = playerRigidbody.position;
         ClearAttackMovement();
         playerRigidbody.linearVelocity = Vector3.zero;
@@ -2173,6 +2233,7 @@ public class SensorPlayerController : MonoBehaviour
     public void EndWeakAttackHold()
     {
         weakAttackHoldActive = false;
+        ResumeWeakStartEffect();
     }
 
     // 弱攻撃は1回のアニメーションだけ実行し、連打で次段を予約しない。
@@ -2374,6 +2435,7 @@ public class SensorPlayerController : MonoBehaviour
 
     void ClearSlashState()
     {
+        ReleaseWeakStartEffect();
         pendingSwingEffect = null;
         EndWeakAttackHold();
         ClearAttackMovement();
@@ -2948,8 +3010,29 @@ public class SensorPlayerController : MonoBehaviour
         }
     }
 
-    private readonly List<(Transform effect, Transform tip, Quaternion offset, Vector3 scale)> attackTrails =
-        new List<(Transform, Transform, Quaternion, Vector3)>();
+    [Tooltip("攻撃エフェクトの斬撃が最後まで進む秒数です。食い込みで止まっている時間は含みません。")]
+    [SerializeField, Min(0.01f)] private float slashEffectDuration = 0.25f;
+    private static readonly int SLASH_PROGRESS = Shader.PropertyToID("_Progress");
+    private static readonly int SLASH_ALPHA = Shader.PropertyToID("_GlobalAlpha");
+    private MaterialPropertyBlock slashProperties;
+
+    // 斬撃シェーダーを使う粒子だけに、その攻撃の進行度を反映する。
+    private void SetSlashProgress(ParticleSystemRenderer[] renderers, float progress)
+    {
+        slashProperties ??= new MaterialPropertyBlock();
+        foreach (var renderer in renderers)
+        {
+            if (renderer == null || renderer.sharedMaterial == null ||
+                !renderer.sharedMaterial.HasProperty(SLASH_PROGRESS)) continue;
+            renderer.GetPropertyBlock(slashProperties);
+            slashProperties.SetFloat(SLASH_PROGRESS, progress);
+            slashProperties.SetFloat(SLASH_ALPHA, 1f);
+            renderer.SetPropertyBlock(slashProperties);
+        }
+    }
+
+    private readonly List<(Transform effect, Transform tip, Quaternion offset, Vector3 scale, ParticleSystemRenderer[] renderers, float progress, bool reverse)> attackTrails =
+        new List<(Transform, Transform, Quaternion, Vector3, ParticleSystemRenderer[], float, bool)>();
 
     // アニメーション後の刃先の位置と回転を、生成済みの放出口に反映する。
     private void FollowAttackTrails()
@@ -2962,6 +3045,12 @@ public class SensorPlayerController : MonoBehaviour
                 if (trail.effect != null) Destroy(trail.effect.gameObject);
                 attackTrails.RemoveAt(i);
                 continue;
+            }
+            if (trail.progress < 1f && !(weakEffectPaused && trail.effect.gameObject == weakStartEffect))
+            {
+                trail.progress = Mathf.Min(1f, trail.progress + Time.deltaTime / Mathf.Max(0.01f, slashEffectDuration));
+                SetSlashProgress(trail.renderers, trail.reverse ? 1f - trail.progress : trail.progress);
+                attackTrails[i] = trail;
             }
             ApplyAttackTrailPose(trail.effect, trail.tip, trail.offset, trail.scale);
         }
@@ -2998,7 +3087,11 @@ public class SensorPlayerController : MonoBehaviour
             Quaternion offset = setting.Prefab.transform.rotation;
             Vector3 scale = setting.Prefab.transform.localScale;
             ApplyAttackTrailPose(instance.transform, setting.SpawnPoint, offset, scale);
-            attackTrails.Add((instance.transform, setting.SpawnPoint, offset, scale));
+            var slashRenderers = instance.GetComponentsInChildren<ParticleSystemRenderer>(true);
+            // 攻撃開始時に選ばれた地上用の演出は、シェーダーの終端から再生する。
+            bool reverse = setting == groundAttackEffect || setting == groundSwingEffect;
+            SetSlashProgress(slashRenderers, reverse ? 1f : 0f);
+            attackTrails.Add((instance.transform, setting.SpawnPoint, offset, scale, slashRenderers, 0f, reverse));
             // 空中攻撃は放出済みの斬撃も刃先に追従させ、地上攻撃は軌跡を振った場所に残す。
             bool followAirSwing = setting == airAttackEffect || setting == airSwingEffect;
             foreach (var particles in instance.GetComponentsInChildren<ParticleSystem>(true))
@@ -3034,7 +3127,18 @@ public class SensorPlayerController : MonoBehaviour
         {
             if (!particles.isPlaying) particles.Play(false);
         }
-        Destroy(instance, Mathf.Max(0.01f, setting.Lifetime));
+        float lifetime = Mathf.Max(0.01f, setting.Lifetime);
+        if (setting == groundAttackEffect || setting == airAttackEffect)
+        {
+            ReleaseWeakStartEffect();
+            weakStartEffect = instance;
+            weakEffectExpiresAt = Time.time + lifetime;
+            if (weakAttackHoldActive) PauseWeakStartEffect();
+        }
+        else
+        {
+            Destroy(instance, lifetime);
+        }
     }
 
     // 登録した歩行クリップが再生され、地面上を移動している間だけ一定間隔で生成する。

@@ -14,6 +14,14 @@ namespace Project.InGame.Boss
         [SerializeField] private Transform player;
         [SerializeField] private Transform visualRoot;
         [SerializeField] private Animator animator;
+        [SerializeField] private BossAttackHitboxController attackHitboxes;
+        [SerializeField] private BossAttackVisualController attackVisuals;
+        [SerializeField] private BossPhysicsMotor physicsMotor;
+
+        public BossAttackHitboxController AttackHitboxes => attackHitboxes;
+        public BossAttackVisualController AttackVisuals => attackVisuals;
+        public BossPhysicsMotor PhysicsMotor => physicsMotor;
+
 
         [Header("行動設定")]
         [SerializeField, Min(0f)] private float idleDuration = 2f;
@@ -31,6 +39,26 @@ namespace Project.InGame.Boss
         [SerializeField] private string deathTrigger = "Dead";
 
         [SerializeField] private BossAttackTelegraph attackTelegraph;
+        [Header("攻撃力")]
+        [SerializeField, Min(0f)] private float attackPower = 50f;
+
+        /// <summary>
+        /// ボスの基本攻撃力。
+        /// </summary>
+        public float AttackPower => attackPower;
+
+        /// <summary>
+        /// 攻撃ごとの倍率からダメージを計算する。
+        /// </summary>
+        public float CalculateAttackDamage(BossAttackDefinition definition)
+        {
+            if (definition == null) { return 0f; }
+
+            float multiplier = definition.GetDamageMultiplier(Shield.IsActive);
+
+            return attackPower * multiplier;
+        }
+
 
         private float lastPlayerDirection = 1f;
         private bool started;
@@ -236,7 +264,7 @@ namespace Project.InGame.Boss
 
             var nextX = Mathf.MoveTowards(currentPosition.x, targetX, moveSpeed * deltaTime);
 
-            transform.position = new Vector3(nextX, currentPosition.y, currentPosition.z);
+            physicsMotor.SetHorizontalTarget(targetX, moveSpeed);
         }
 
         /// <summary>

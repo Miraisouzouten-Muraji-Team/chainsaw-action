@@ -19,3 +19,9 @@ MonoBehaviour:
   activeTime: 1
   recoveryTime: 1
   animatorTrigger: 
+  damageMultiplier: 0.5
+  noShieldDamageMultiplier: 0.6
+  noShieldPreparationTime: 1
+  noShieldActiveTime: 1
+  animationSpeed: 1
+  noShieldAnimationSpeed: 1

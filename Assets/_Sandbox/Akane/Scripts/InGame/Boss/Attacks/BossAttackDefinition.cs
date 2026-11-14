@@ -43,6 +43,45 @@ namespace Project.InGame.Boss
         [Header("アニメーション")]
         [SerializeField] private string animatorTrigger;
 
+        [Header("ダメージ")]
+        [Tooltip("盾あり時の攻撃力に掛ける倍率。100%なら1.0")]
+        [SerializeField, Min(0f)] private float damageMultiplier = 1f;
+
+        [Tooltip("盾なし時の攻撃力に掛ける倍率")]
+        [SerializeField, Min(0f)] private float noShieldDamageMultiplier = 1f;
+
+        [Header("盾なし時の攻撃設定")]
+        [SerializeField, Min(0f)] private float noShieldPreparationTime = 1f;
+        [SerializeField, Min(0f)] private float noShieldActiveTime = 1f;
+
+        [Header("モーション速度")]
+        [SerializeField, Min(0.01f)] private float animationSpeed = 1f;
+        [SerializeField, Min(0.01f)] private float noShieldAnimationSpeed = 1f;
+
+        /// <summary>
+        /// 盾の有無に応じた攻撃倍率を取得する。
+        /// </summary>
+        public float GetDamageMultiplier(bool hasShield)
+        {
+            return hasShield ? damageMultiplier : noShieldDamageMultiplier;
+        }
+
+        public float GetPreparationTime(bool hasShield)
+        {
+            return hasShield ? PreparationTime : noShieldPreparationTime;
+        }
+
+        public float GetActiveTime(bool hasShield)
+        {
+            return hasShield ? ActiveTime : noShieldActiveTime;
+        }
+
+        public float GetAnimationSpeed(bool hasShield)
+        {
+            return hasShield ? animationSpeed : noShieldAnimationSpeed;
+        }
+
+
         public BossAttackType Type => type;
         public float Range => range;
         public float TargetDistanceRatio => targetDistanceRatio;

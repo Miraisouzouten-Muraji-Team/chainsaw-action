@@ -73,6 +73,7 @@ public sealed class ChargeEnemyAttackStrategy :
 
     private EnemyPlayerReference playerReference;
     private ChargeEnemyGroundChecker groundChecker;
+    private ChargeEnemyShieldClearanceAdjuster shieldClearanceAdjuster;
 
     private float preparationElapsedTime;
     private float attackDirectionSign = 1f;
@@ -144,6 +145,9 @@ public sealed class ChargeEnemyAttackStrategy :
                 $"有効かつ非Triggerの{nameof(CapsuleCollider)}が必要です。");
         }
 
+        shieldClearanceAdjuster =
+            enemyObject.GetComponent<ChargeEnemyShieldClearanceAdjuster>();
+
         InitializeAnimations();
 
         playerReference =
@@ -172,6 +176,10 @@ public sealed class ChargeEnemyAttackStrategy :
                 initialAttackDirectionSign);
 
         isPreparationActive = true;
+        if (shieldClearanceAdjuster != null)
+        {
+            shieldClearanceAdjuster.SetAdjustmentActive(true);
+        }
 
         playerReference.TryGetPlayerTransform(
             out _);
@@ -252,6 +260,11 @@ public sealed class ChargeEnemyAttackStrategy :
         // Animator全体に適用した予備動作用の速度と更新モードを突進前に戻す。
         RestoreAnimatorSettings();
         isPreparationActive = false;
+        if (shieldClearanceAdjuster != null)
+        {
+            shieldClearanceAdjuster.SetAdjustmentActive(false);
+        }
+
         isAttackActive = true;
         isAttackComplete = false;
         hasDamagedPlayerThisAttack = false;
@@ -349,6 +362,11 @@ public sealed class ChargeEnemyAttackStrategy :
     {
         groundChecker?.ClearDebugRays();
         RestoreAnimatorSettings();
+        // Death StateでShield PieceへRigidbodyが付く前に、盾の位置補正を解除する。
+        if (shieldClearanceAdjuster != null)
+        {
+            shieldClearanceAdjuster.ResetAdjustment();
+        }
 
         if (isAttackActive || isAttackComplete)
         {

@@ -6,14 +6,19 @@ namespace Project.InGame.Boss
     /// ボス本体への攻撃命中を受信し、HPへ反映する。
     /// </summary>
     [DisallowMultipleComponent]
-    [RequireComponent(typeof(BossHealth))]
     public sealed class BossBodyHitReceiver : MonoBehaviour, IAttackHitReceiver
     {
         private BossHealth health;
 
         private void Awake()
         {
-            health = GetComponent<BossHealth>();
+            health = GetComponentInParent<BossHealth>();
+
+            if (health == null)
+            {
+                Debug.LogError("BossBodyHitReceiver: BossHealthが見つかりません。", this);
+                enabled = false;
+            }
         }
 
         /// <summary>

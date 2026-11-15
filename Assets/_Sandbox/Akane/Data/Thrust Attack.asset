@@ -13,15 +13,11 @@ MonoBehaviour:
   m_Name: Thrust Attack
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackDefinition
   type: 2
-  range: 8
+  range: 5
   targetDistanceRatio: 0.5
-  preparationTime: 0.5
-  activeTime: 1
+  preparationTime: 1
+  activeTime: 2
   recoveryTime: 1
   animatorTrigger: 
   damageMultiplier: 0.5
-  noShieldDamageMultiplier: 0.6
-  noShieldPreparationTime: 1
-  noShieldActiveTime: 1
   animationSpeed: 1
-  noShieldAnimationSpeed: 1

@@ -10,6 +10,8 @@ namespace Project.InGame.Boss
     [RequireComponent(typeof(BossHealth), typeof(BossShieldController))]
     public sealed class BossController : MonoBehaviour
     {
+        private readonly List<Collider> playerColliders = new();
+
         [Header("参照")]
         [SerializeField] private Transform player;
         [SerializeField] private Transform visualRoot;
@@ -17,11 +19,14 @@ namespace Project.InGame.Boss
         [SerializeField] private BossAttackHitboxController attackHitboxes;
         [SerializeField] private BossAttackVisualController attackVisuals;
         [SerializeField] private BossPhysicsMotor physicsMotor;
+        [SerializeField] private BossShieldMotionController shieldMotion;
+        [SerializeField] private BossLaserController laserController;
 
         public BossAttackHitboxController AttackHitboxes => attackHitboxes;
         public BossAttackVisualController AttackVisuals => attackVisuals;
         public BossPhysicsMotor PhysicsMotor => physicsMotor;
-
+        public BossShieldMotionController ShieldMotion => shieldMotion;
+        public BossLaserController LaserController => laserController;
 
         [Header("行動設定")]
         [SerializeField, Min(0f)] private float idleDuration = 2f;
@@ -54,14 +59,13 @@ namespace Project.InGame.Boss
         {
             if (definition == null) { return 0f; }
 
-            float multiplier = definition.GetDamageMultiplier(Shield.IsActive);
-
-            return attackPower * multiplier;
+            return attackPower * definition.DamageMultiplier;
         }
-
 
         private float lastPlayerDirection = 1f;
         private bool started;
+        private EnemyPlayerReference playerReference;
+        private Collider outerCollider;
 
         public BossAttackTelegraph Telegraph => attackTelegraph;
         public Transform Player => player;
@@ -73,9 +77,20 @@ namespace Project.InGame.Boss
         public IBossAttackStrategy SelectedAttack { get; private set; }
 
         public float IdleDuration => idleDuration;
-        public float DistanceToPlayer => player == null
-            ? float.PositiveInfinity
-            : Mathf.Abs(player.position.x - transform.position.x);
+        public float DistanceToPlayer => CalculateHorizontalSurfaceDistance();
+
+        /// <summary>
+        /// Playerの非Trigger Colliderを統合した中心座標を返す。
+        /// </summary>
+        public Vector3 GetPlayerAimPosition()
+        {
+            if (TryGetPlayerBounds(out Bounds playerBounds))
+            {
+                return playerBounds.center;
+            }
+
+            return player != null ? player.position : transform.position;
+        }
 
         // 攻撃判定などの実装時に購読するイベント。
         public event Action<BossAttackType> AttackWindowOpened;
@@ -83,8 +98,16 @@ namespace Project.InGame.Boss
 
         private void Awake()
         {
+            playerReference = new EnemyPlayerReference();
+            outerCollider = GetComponent<Collider>();
             Health = GetComponent<BossHealth>();
             Shield = GetComponent<BossShieldController>();
+
+            attackHitboxes ??= GetComponent<BossAttackHitboxController>();
+            attackVisuals ??= GetComponent<BossAttackVisualController>();
+            physicsMotor ??= GetComponent<BossPhysicsMotor>();
+            shieldMotion ??= GetComponent<BossShieldMotionController>();
+            laserController ??= GetComponent<BossLaserController>();
 
             var context = new BossContext(this);
             var strategies = CreateAttackStrategies();
@@ -121,6 +144,7 @@ namespace Project.InGame.Boss
             // Stateを終了し、実行中の攻撃を中断する。
             StateMachine?.Stop();
             attackTelegraph?.Hide();
+            StopAllRuntimeActions();
         }
 
         private void OnDestroy()
@@ -137,12 +161,15 @@ namespace Project.InGame.Boss
         /// </summary>
         private void BeginBoss()
         {
-            if (player == null)
+            if (!TryResolvePlayer())
             {
-                Debug.LogError("BossController: Playerが設定されていません。", this);
+                Debug.LogError("BossController: Playerを解決できません。", this);
                 enabled = false;
                 return;
             }
+
+            IgnoreOuterCollisionWithPlayer();
+            laserController?.SetPlayer(player);
 
             if (AttackSelector.AttackCount == 0)
             {
@@ -151,9 +178,29 @@ namespace Project.InGame.Boss
                 return;
             }
 
+            if (attackHitboxes == null || attackVisuals == null ||
+                physicsMotor == null || shieldMotion == null ||
+                laserController == null)
+            {
+                Debug.LogError("BossController: 攻撃制御コンポーネントが不足しています。", this);
+                enabled = false;
+                return;
+            }
+
             var initialState = Health.IsDead ? BossStateType.Dead : BossStateType.Idle;
 
             StateMachine.ChangeState(initialState);
+        }
+
+        /// <summary>
+        /// Inspector参照がない場合は共通Player参照から再解決する。
+        /// </summary>
+        private bool TryResolvePlayer()
+        {
+            if (player != null) { return true; }
+
+            return playerReference != null &&
+                playerReference.TryGetPlayerTransform(out player);
         }
 
         private void Update()
@@ -219,32 +266,45 @@ namespace Project.InGame.Boss
         }
 
         /// <summary>
-        /// プレイヤーの方向へ向きを変える。
-        /// </summary>
-        /// <summary>
         /// プレイヤーの方向へモデルの向きを変更する。
         /// </summary>
         public void FacePlayer(float deltaTime)
         {
             if (visualRoot == null || player == null) { return; }
 
-            var distanceX = player.position.x - transform.position.x;
+            Quaternion targetRotation = GetPlayerFacingRotation();
+
+            visualRoot.rotation = Quaternion.RotateTowards(
+                visualRoot.rotation,
+                targetRotation,
+                rotationSpeed * deltaTime);
+        }
+
+        /// <summary>
+        /// 攻撃開始時にPlayerのいる方向へ即座に向きを確定する。
+        /// </summary>
+        public void FacePlayerImmediately()
+        {
+            if (visualRoot == null || player == null) { return; }
+
+            visualRoot.rotation = GetPlayerFacingRotation();
+        }
+
+        private Quaternion GetPlayerFacingRotation()
+        {
+            float distanceX = player.position.x - transform.position.x;
 
             if (Mathf.Abs(distanceX) > 0.001f)
             {
                 lastPlayerDirection = Mathf.Sign(distanceX);
             }
 
-            var targetAngle = lastPlayerDirection > 0f ? rightFacingAngle : leftFacingAngle;
-
-            var targetRotation = Quaternion.Euler(0f, targetAngle, 0f);
-
-            visualRoot.rotation = Quaternion.RotateTowards(visualRoot.rotation, targetRotation, rotationSpeed * deltaTime);
+            float targetAngle = lastPlayerDirection > 0f
+                ? rightFacingAngle
+                : leftFacingAngle;
+            return Quaternion.Euler(0f, targetAngle, 0f);
         }
 
-        /// <summary>
-        /// プレイヤーとの距離が指定値になるまでX軸方向に移動する。
-        /// </summary>
         /// <summary>
         /// プレイヤーとの距離が指定値になるよう、X軸方向に移動する。
         /// </summary>
@@ -260,11 +320,118 @@ namespace Project.InGame.Boss
                 lastPlayerDirection = Mathf.Sign(distanceX);
             }
 
-            var targetX = player.position.x - lastPlayerDirection * Mathf.Max(0f, targetDistance);
+            float safeTargetDistance = Mathf.Max(0f, targetDistance);
+            float targetX;
 
-            var nextX = Mathf.MoveTowards(currentPosition.x, targetX, moveSpeed * deltaTime);
+            if (outerCollider != null && TryGetPlayerBounds(out Bounds playerBounds))
+            {
+                if (lastPlayerDirection > 0f)
+                {
+                    float rootToRight = outerCollider.bounds.max.x - currentPosition.x;
+                    targetX = playerBounds.min.x - safeTargetDistance - rootToRight;
+                }
+                else
+                {
+                    float rootToLeft = currentPosition.x - outerCollider.bounds.min.x;
+                    targetX = playerBounds.max.x + safeTargetDistance + rootToLeft;
+                }
+            }
+            else
+            {
+                targetX = player.position.x -
+                    lastPlayerDirection * safeTargetDistance;
+            }
 
             physicsMotor.SetHorizontalTarget(targetX, moveSpeed);
+        }
+
+        /// <summary>
+        /// 外周Collider同士のX軸方向の表面間距離を返す。
+        /// </summary>
+        private float CalculateHorizontalSurfaceDistance()
+        {
+            if (player == null) { return float.PositiveInfinity; }
+
+            if (outerCollider == null || !TryGetPlayerBounds(out Bounds playerBounds))
+            {
+                return Mathf.Abs(player.position.x - transform.position.x);
+            }
+
+            Bounds bossBounds = outerCollider.bounds;
+
+            if (bossBounds.max.x < playerBounds.min.x)
+            {
+                return playerBounds.min.x - bossBounds.max.x;
+            }
+
+            if (playerBounds.max.x < bossBounds.min.x)
+            {
+                return bossBounds.min.x - playerBounds.max.x;
+            }
+
+            return 0f;
+        }
+
+        private bool TryGetPlayerBounds(out Bounds bounds)
+        {
+            bounds = default;
+
+            if (player == null) { return false; }
+
+            playerColliders.Clear();
+            player.GetComponentsInChildren(true, playerColliders);
+            bool found = false;
+
+            foreach (Collider playerCollider in playerColliders)
+            {
+                if (playerCollider == null || playerCollider.isTrigger ||
+                    !playerCollider.enabled)
+                {
+                    continue;
+                }
+
+                if (!found)
+                {
+                    bounds = playerCollider.bounds;
+                    found = true;
+                    continue;
+                }
+
+                bounds.Encapsulate(playerCollider.bounds);
+            }
+
+            return found;
+        }
+
+        /// <summary>
+        /// 地形用外周ColliderとPlayerの物理衝突だけを無効化する。
+        /// </summary>
+        private void IgnoreOuterCollisionWithPlayer()
+        {
+            if (outerCollider == null || player == null) { return; }
+
+            playerColliders.Clear();
+            player.GetComponentsInChildren(true, playerColliders);
+
+            foreach (Collider playerCollider in playerColliders)
+            {
+                if (playerCollider != null)
+                {
+                    Physics.IgnoreCollision(outerCollider, playerCollider, true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 攻撃・移動・演出を安全な初期状態へ戻す。
+        /// </summary>
+        public void StopAllRuntimeActions()
+        {
+            attackHitboxes?.CloseAll();
+            attackVisuals?.ResetPose();
+            shieldMotion?.CancelMotion();
+            laserController?.CancelAll();
+            physicsMotor?.EndScriptedMotion();
         }
 
         /// <summary>

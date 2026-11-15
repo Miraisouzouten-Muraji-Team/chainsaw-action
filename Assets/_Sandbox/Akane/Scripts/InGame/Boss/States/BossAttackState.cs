@@ -25,6 +25,7 @@ namespace Project.InGame.Boss
                 return;
             }
 
+            context.Boss.FacePlayerImmediately();
             currentAttack.Enter(context);
         }
 

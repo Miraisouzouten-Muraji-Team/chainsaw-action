@@ -13,9 +13,15 @@ MonoBehaviour:
   m_Name: Shield Bash Attack
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackDefinition
   type: 0
-  range: 8
-  targetDistanceRatio: 0.5
+  range: 50
+  targetDistanceRatio: 1
   preparationTime: 0.5
   activeTime: 1
   recoveryTime: 1
   animatorTrigger: 
+  damageMultiplier: 1
+  animationSpeed: 1
+  bashAscentDuration: 1
+  bashAirHoldDuration: 0.5
+  bashFallSpeed: 20
+  shockwaveWidth: 8

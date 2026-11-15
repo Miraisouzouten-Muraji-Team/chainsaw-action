@@ -1,7 +1,10 @@
+using System.Threading;
+using Cysharp.Threading.Tasks;
+
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// プレイヤーを狙ってレーザーを発射する攻撃。
+    /// Playerを狙い、0.5秒間隔でレーザーを5発撃つ。
     /// </summary>
     public sealed class LaserAttack : BossAttackStrategyBase
     {
@@ -10,14 +13,44 @@ namespace Project.InGame.Boss
         {
         }
 
-        protected override void OnActiveStart(BossContext context)
+        protected override async UniTask ExecuteAsync(
+            BossContext context,
+            CancellationToken cancellationToken)
         {
-            // TODO: レーザーの発射処理を開始する。
+            context.Boss.Telegraph?.Show(Definition.PreparationTime);
+            await DelayAsync(Definition.PreparationTime, cancellationToken);
+            context.Boss.Telegraph?.Hide();
+
+            float damage = context.Boss.CalculateAttackDamage(Definition);
+            OpenAttackWindow(context);
+
+            for (int i = 0; i < Definition.LaserShotCount; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                context.Boss.LaserController.Fire(
+                    Definition,
+                    damage,
+                    Definition.LaserAimWidth,
+                    Definition.LaserSpeed);
+
+                if (i < Definition.LaserShotCount - 1)
+                {
+                    await DelayAsync(
+                        Definition.LaserShotInterval,
+                        cancellationToken);
+                }
+            }
+
+            CloseAttackWindow(context);
+            await DelayAsync(Definition.RecoveryTime, cancellationToken);
         }
 
-        protected override void OnActiveEnd(BossContext context)
+        protected override void OnExit(BossContext context)
         {
-            // TODO: レーザーの発射処理を終了する。
+            if (!IsFinished)
+            {
+                context.Boss.LaserController.CancelAll();
+            }
         }
     }
 }

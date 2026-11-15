@@ -1,4 +1,3 @@
-
 using System;
 using UnityEngine;
 
@@ -21,6 +20,8 @@ namespace Project.InGame.Boss
         }
 
         private Rigidbody body;
+        [SerializeField] private Collider bodyCollider;
+        [SerializeField, Min(0f)] private float overheadClearance = 1f;
         private MotionMode motionMode;
 
         private float targetX;
@@ -36,6 +37,7 @@ namespace Project.InGame.Boss
         private void Awake()
         {
             body = GetComponent<Rigidbody>();
+            bodyCollider ??= GetComponent<Collider>();
         }
 
         /// <summary>
@@ -83,6 +85,41 @@ namespace Project.InGame.Boss
         }
 
         /// <summary>
+        /// ボス外周の底面がPlayerの頭上へ来る位置まで上昇する。
+        /// </summary>
+        public void BeginAscentAbove(Transform target, float duration)
+        {
+            if (target == null || bodyCollider == null) { return; }
+
+            Collider[] targetColliders = target.GetComponentsInChildren<Collider>(true);
+            float targetTop = target.position.y;
+            bool foundCollider = false;
+
+            foreach (Collider targetCollider in targetColliders)
+            {
+                if (targetCollider == null || targetCollider.isTrigger ||
+                    !targetCollider.enabled)
+                {
+                    continue;
+                }
+
+                targetTop = foundCollider
+                    ? Mathf.Max(targetTop, targetCollider.bounds.max.y)
+                    : targetCollider.bounds.max.y;
+                foundCollider = true;
+            }
+
+            float rootToBottom = body.position.y - bodyCollider.bounds.min.y;
+            float targetY = targetTop + overheadClearance + rootToBottom;
+
+            body.useGravity = false;
+            IsGrounded = false;
+            ascentTarget = new Vector3(target.position.x, targetY, body.position.z);
+            ascentRemaining = Mathf.Max(Time.fixedDeltaTime, duration);
+            motionMode = MotionMode.Ascending;
+        }
+
+        /// <summary>
         /// 上空で停止する。
         /// </summary>
         public void HoldInAir()
@@ -106,6 +143,8 @@ namespace Project.InGame.Boss
         /// </summary>
         public void EndScriptedMotion()
         {
+            if (body == null) { return; }
+
             motionMode = MotionMode.None;
             body.useGravity = true;
 

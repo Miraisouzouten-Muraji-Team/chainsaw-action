@@ -13,15 +13,16 @@ MonoBehaviour:
   m_Name: Shield Throw Attack
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackDefinition
   type: 1
-  range: 8
-  targetDistanceRatio: 0.5
+  range: 50
+  targetDistanceRatio: 1
   preparationTime: 0.5
   activeTime: 1
   recoveryTime: 1
   animatorTrigger: 
   damageMultiplier: 0.4
-  noShieldDamageMultiplier: 1
-  noShieldPreparationTime: 1
-  noShieldActiveTime: 1
   animationSpeed: 1
-  noShieldAnimationSpeed: 1
+  shieldOutboundDuration: 3
+  shieldReturnDelay: 4
+  shieldReturnMaxSpeed: 10
+  shieldReturnDistance: 3
+  shieldThrowArcHeight: 4

@@ -44,43 +44,32 @@ namespace Project.InGame.Boss
         [SerializeField] private string animatorTrigger;
 
         [Header("ダメージ")]
-        [Tooltip("盾あり時の攻撃力に掛ける倍率。100%なら1.0")]
+        [Tooltip("本体の攻撃力に掛ける倍率。100%なら1.0")]
         [SerializeField, Min(0f)] private float damageMultiplier = 1f;
-
-        [Tooltip("盾なし時の攻撃力に掛ける倍率")]
-        [SerializeField, Min(0f)] private float noShieldDamageMultiplier = 1f;
-
-        [Header("盾なし時の攻撃設定")]
-        [SerializeField, Min(0f)] private float noShieldPreparationTime = 1f;
-        [SerializeField, Min(0f)] private float noShieldActiveTime = 1f;
 
         [Header("モーション速度")]
         [SerializeField, Min(0.01f)] private float animationSpeed = 1f;
-        [SerializeField, Min(0.01f)] private float noShieldAnimationSpeed = 1f;
 
-        /// <summary>
-        /// 盾の有無に応じた攻撃倍率を取得する。
-        /// </summary>
-        public float GetDamageMultiplier(bool hasShield)
-        {
-            return hasShield ? damageMultiplier : noShieldDamageMultiplier;
-        }
+        [Header("盾打ち込み")]
+        [SerializeField, Min(0f)] private float bashAscentDuration = 1f;
+        [SerializeField, Min(0f)] private float bashAirHoldDuration = 0.5f;
+        [SerializeField, Min(0f)] private float bashFallSpeed = 20f;
+        [SerializeField, Min(0.01f)] private float shockwaveWidth = 8f;
 
-        public float GetPreparationTime(bool hasShield)
-        {
-            return hasShield ? PreparationTime : noShieldPreparationTime;
-        }
+        [Header("盾投げ")]
+        [SerializeField, Min(0f)] private float shieldOutboundDuration = 3f;
+        [SerializeField, Min(0f)] private float shieldReturnDelay = 4f;
+        [SerializeField, Min(0f)] private float shieldReturnMaxSpeed = 10f;
+        [SerializeField, Min(0f)] private float shieldReturnDistance = 3f;
+        [SerializeField, Min(0f)] private float shieldThrowArcHeight = 4f;
+        [SerializeField] private AnimationCurve shieldReturnAcceleration =
+            AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
 
-        public float GetActiveTime(bool hasShield)
-        {
-            return hasShield ? ActiveTime : noShieldActiveTime;
-        }
-
-        public float GetAnimationSpeed(bool hasShield)
-        {
-            return hasShield ? animationSpeed : noShieldAnimationSpeed;
-        }
-
+        [Header("レーザー")]
+        [SerializeField, Min(1)] private int laserShotCount = 5;
+        [SerializeField, Min(0f)] private float laserShotInterval = 0.5f;
+        [SerializeField, Min(0f)] private float laserSpeed = 10f;
+        [SerializeField, Min(0f)] private float laserAimWidth = 3f;
 
         public BossAttackType Type => type;
         public float Range => range;
@@ -89,6 +78,22 @@ namespace Project.InGame.Boss
         public float ActiveTime => activeTime;
         public float RecoveryTime => recoveryTime;
         public string AnimatorTrigger => animatorTrigger;
+        public float DamageMultiplier => damageMultiplier;
+        public float AnimationSpeed => animationSpeed;
+        public float BashAscentDuration => bashAscentDuration;
+        public float BashAirHoldDuration => bashAirHoldDuration;
+        public float BashFallSpeed => bashFallSpeed;
+        public float ShockwaveWidth => shockwaveWidth;
+        public float ShieldOutboundDuration => shieldOutboundDuration;
+        public float ShieldReturnDelay => shieldReturnDelay;
+        public float ShieldReturnMaxSpeed => shieldReturnMaxSpeed;
+        public float ShieldReturnDistance => shieldReturnDistance;
+        public float ShieldThrowArcHeight => shieldThrowArcHeight;
+        public AnimationCurve ShieldReturnAcceleration => shieldReturnAcceleration;
+        public int LaserShotCount => laserShotCount;
+        public float LaserShotInterval => laserShotInterval;
+        public float LaserSpeed => laserSpeed;
+        public float LaserAimWidth => laserAimWidth;
 
         // 盾を使う攻撃は盾がある場合に限り選択できる。
         public bool RequiresShield =>

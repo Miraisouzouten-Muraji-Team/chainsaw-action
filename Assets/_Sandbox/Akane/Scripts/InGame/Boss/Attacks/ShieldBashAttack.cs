@@ -1,7 +1,10 @@
+using System.Threading;
+using Cysharp.Threading.Tasks;
+
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// 盾を地面に打ち込む攻撃。
+    /// Playerの頭上へ移動し、落下着地時に横幅8の衝撃波を発生させる。
     /// </summary>
     public sealed class ShieldBashAttack : BossAttackStrategyBase
     {
@@ -10,14 +13,42 @@ namespace Project.InGame.Boss
         {
         }
 
-        protected override void OnActiveStart(BossContext context)
+        protected override async UniTask ExecuteAsync(
+            BossContext context,
+            CancellationToken cancellationToken)
         {
-            // TODO: 盾の打ち込み判定を開始する。
+            context.Boss.Telegraph?.Show(Definition.PreparationTime);
+            await DelayAsync(Definition.PreparationTime, cancellationToken);
+            context.Boss.Telegraph?.Hide();
+
+            context.Boss.PhysicsMotor.BeginAscentAbove(
+                context.Player,
+                Definition.BashAscentDuration);
+            await DelayAsync(Definition.BashAscentDuration, cancellationToken);
+
+            context.Boss.PhysicsMotor.HoldInAir();
+            await DelayAsync(Definition.BashAirHoldDuration, cancellationToken);
+
+            context.Boss.PhysicsMotor.BeginFall(Definition.BashFallSpeed);
+            await UniTask.WaitUntil(
+                () => context.Boss.PhysicsMotor.IsGrounded,
+                cancellationToken: cancellationToken);
+
+            float damage = context.Boss.CalculateAttackDamage(Definition);
+            OpenAttackWindow(context);
+            context.Boss.AttackHitboxes.HitShockwaveOnce(
+                Definition,
+                damage,
+                Definition.ShockwaveWidth);
+            CloseAttackWindow(context);
+
+            await DelayAsync(Definition.RecoveryTime, cancellationToken);
         }
 
-        protected override void OnActiveEnd(BossContext context)
+        protected override void OnExit(BossContext context)
         {
-            // TODO: 盾の打ち込み判定を終了する。
+            context.Boss.AttackHitboxes.CloseShockwave();
+            context.Boss.PhysicsMotor.EndScriptedMotion();
         }
     }
 }

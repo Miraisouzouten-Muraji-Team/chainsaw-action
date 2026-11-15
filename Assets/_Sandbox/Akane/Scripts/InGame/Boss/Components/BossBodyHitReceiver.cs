@@ -8,6 +8,7 @@ namespace Project.InGame.Boss
     [DisallowMultipleComponent]
     public sealed class BossBodyHitReceiver : MonoBehaviour, IAttackHitReceiver
     {
+        [SerializeField] private BossDamageFlash damageFlash;
         private BossHealth health;
 
         private void Awake()
@@ -35,7 +36,10 @@ namespace Project.InGame.Boss
             if (attackData.damage <= 0) { return; }
 
             // 本体のHPにダメージを与える。
-            health.TakeDamage(attackData.damage);
+            if (health.TakeDamage(attackData.damage))
+            {
+                damageFlash?.Play();
+            }
         }
     }
 }

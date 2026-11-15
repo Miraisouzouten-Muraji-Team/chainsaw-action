@@ -1,4 +1,3 @@
-
 using UnityEngine;
 
 namespace Project.InGame.Boss
@@ -15,6 +14,30 @@ namespace Project.InGame.Boss
         [SerializeField] private BossAttackHitbox thrustHitbox;
         [SerializeField] private BossAttackHitbox slashHitbox;
 
+        [Header("武器範囲の同期")]
+        [Tooltip("突きの判定範囲に使用するCube")]
+        [SerializeField] private Transform weaponRangeSource;
+
+        [Header("Editorデバッグ")]
+        [Tooltip("Scene/Gameビューへ攻撃判定Gizmoを表示する")]
+        [SerializeField] private bool showHitboxGizmos = true;
+
+        public bool ShowHitboxGizmos => showHitboxGizmos;
+        public Transform VerticalSlashRangeSource =>
+            slashHitbox != null ? slashHitbox.transform : null;
+        public Transform WeaponRangeSource => weaponRangeSource;
+
+        /// <summary>溜め動作の開始前に縦切りの寸法を攻撃データへ合わせる。</summary>
+        public void PrepareVerticalSlash(BossAttackDefinition definition)
+        {
+            if (definition != null) { slashHitbox?.SetDomeDiameter(definition.Range); }
+        }
+
+        private void Awake()
+        {
+            SynchronizeThrustHitbox();
+        }
+
         /// <summary>
         /// 指定した攻撃の命中判定を開始する。
         /// </summary>
@@ -23,6 +46,16 @@ namespace Project.InGame.Boss
             BossAttackDefinition definition,
             float damage)
         {
+            if (attackType == BossAttackType.Thrust)
+            {
+                SynchronizeThrustHitbox();
+            }
+            else if (attackType == BossAttackType.VerticalSlash &&
+                definition != null)
+            {
+                slashHitbox?.SetDomeDiameter(definition.Range);
+            }
+
             GetHitbox(attackType)?.OpenHitWindow(definition, damage);
         }
 
@@ -42,6 +75,26 @@ namespace Project.InGame.Boss
             shockwaveHitbox?.OpenHitWindow(definition, damage);
         }
 
+        /// <summary>
+        /// 着地点を中心とする指定横幅の衝撃波を一度だけ判定する。
+        /// </summary>
+        public void HitShockwaveOnce(
+            BossAttackDefinition definition,
+            float damage,
+            float width)
+        {
+            if (shockwaveHitbox == null) { return; }
+
+            if (shockwaveHitbox.TryGetComponent(out BoxCollider boxCollider))
+            {
+                Vector3 size = boxCollider.size;
+                size.x = Mathf.Max(0.01f, width);
+                boxCollider.size = size;
+            }
+
+            shockwaveHitbox.HitOnce(definition, damage);
+        }
+
         public void CloseShockwave()
         {
             shockwaveHitbox?.CloseHitWindow();
@@ -56,6 +109,16 @@ namespace Project.InGame.Boss
             shockwaveHitbox?.CloseHitWindow();
             thrustHitbox?.CloseHitWindow();
             slashHitbox?.CloseHitWindow();
+        }
+
+        /// <summary>
+        /// 武器Cubeの位置・回転・大きさを突き判定へ反映する。
+        /// </summary>
+        private void SynchronizeThrustHitbox()
+        {
+            if (weaponRangeSource == null) { return; }
+
+            thrustHitbox?.SynchronizeWithCube(weaponRangeSource);
         }
 
         private BossAttackHitbox GetHitbox(BossAttackType attackType)

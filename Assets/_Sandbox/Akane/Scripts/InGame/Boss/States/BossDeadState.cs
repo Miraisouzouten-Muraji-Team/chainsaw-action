@@ -17,6 +17,7 @@ namespace Project.InGame.Boss
         public void Enter()
         {
             context.Boss.ClearSelectedAttack();
+            context.Boss.StopAllRuntimeActions();
             context.Boss.PlayDeathAnimation();
         }
 

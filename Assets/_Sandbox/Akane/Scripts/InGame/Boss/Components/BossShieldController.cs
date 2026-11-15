@@ -1,4 +1,5 @@
 using System;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 
 namespace Project.InGame.Boss
@@ -15,11 +16,17 @@ namespace Project.InGame.Boss
         [Header("盾オブジェクト")]
         [SerializeField] private GameObject shieldVisual;
         [SerializeField] private Collider[] shieldColliders;
+        [SerializeField] private BossShieldMotionController motionController;
+
+        [Header("再生成演出")]
+        [SerializeField] private Material dissolveMaterial;
+        [SerializeField, Min(0f)] private float dissolveDuration = 1f;
 
         private float currentHealth;
         private float respawnElapsedTime;
 
         public bool IsActive { get; private set; }
+        public bool IsRestoring { get; private set; }
         public float CurrentHealth => currentHealth;
         public float MaxHealth => maxHealth;
 
@@ -31,6 +38,9 @@ namespace Project.InGame.Boss
             currentHealth = maxHealth;
             respawnElapsedTime = 0f;
             IsActive = true;
+            IsRestoring = false;
+
+            motionController ??= GetComponent<BossShieldMotionController>();
 
             SetShieldVisible(true);
         }
@@ -40,7 +50,7 @@ namespace Project.InGame.Boss
         /// </summary>
         public void Tick(float deltaTime)
         {
-            if (IsActive)
+            if (IsActive || IsRestoring)
                 return;
 
             respawnElapsedTime += deltaTime;
@@ -49,15 +59,17 @@ namespace Project.InGame.Boss
         /// <summary>
         /// 盾にダメージを与える。
         /// </summary>
-        public void TakeDamage(float damage)
+        public bool TakeDamage(float damage)
         {
             if (!IsActive || damage <= 0f)
-                return;
+                return false;
 
             currentHealth = Mathf.Max(0f, currentHealth - damage);
 
             if (currentHealth <= 0f)
                 BreakShield();
+
+            return true;
         }
 
         /// <summary>
@@ -72,6 +84,7 @@ namespace Project.InGame.Boss
             currentHealth = 0f;
             respawnElapsedTime = 0f;
 
+            motionController?.CancelMotion();
             SetShieldVisible(false);
             ShieldBroken?.Invoke();
         }
@@ -82,23 +95,45 @@ namespace Project.InGame.Boss
         /// </summary>
         public bool TryRestore()
         {
-            if (IsActive || respawnElapsedTime < respawnTime)
+            if (IsActive || IsRestoring || respawnElapsedTime < respawnTime)
                 return false;
 
-            IsActive = true;
-            currentHealth = maxHealth;
-            respawnElapsedTime = 0f;
-
-            SetShieldVisible(true);
-            ShieldRestored?.Invoke();
+            RestoreAsync().Forget();
 
             return true;
+        }
+
+        private async UniTaskVoid RestoreAsync()
+        {
+            IsRestoring = true;
+            respawnElapsedTime = 0f;
+            SetShieldVisible(true, enableColliders: false);
+            motionController?.SnapToSocket();
+
+            if (EnemyDissolveManager.Instance != null && dissolveMaterial != null)
+            {
+                await EnemyDissolveManager.Instance.PlayAppearAsync(
+                    shieldVisual,
+                    dissolveMaterial,
+                    dissolveDuration);
+            }
+
+            if (this == null || !isActiveAndEnabled)
+            {
+                return;
+            }
+
+            currentHealth = maxHealth;
+            IsActive = true;
+            IsRestoring = false;
+            SetShieldVisible(true);
+            ShieldRestored?.Invoke();
         }
 
         /// <summary>
         /// 盾の表示と当たり判定を切り替える。
         /// </summary>
-        private void SetShieldVisible(bool visible)
+        private void SetShieldVisible(bool visible, bool enableColliders = true)
         {
             if (shieldVisual != null)
                 shieldVisual.SetActive(visible);
@@ -109,7 +144,7 @@ namespace Project.InGame.Boss
             foreach (var shieldCollider in shieldColliders)
             {
                 if (shieldCollider != null)
-                    shieldCollider.enabled = visible;
+                    shieldCollider.enabled = visible && enableColliders;
             }
         }
 

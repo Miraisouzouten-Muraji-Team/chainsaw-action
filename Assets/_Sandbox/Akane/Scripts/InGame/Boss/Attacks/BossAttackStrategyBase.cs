@@ -1,17 +1,18 @@
 using System;
 using System.Threading;
 using Cysharp.Threading.Tasks;
+using UnityEngine;
 
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// 攻撃に共通する開始・実行・終了処理を管理する。
+    /// 攻撃のキャンセル、完了通知、共通後処理を管理する。
     /// </summary>
     public abstract class BossAttackStrategyBase : IBossAttackStrategy
     {
         private CancellationTokenSource attackCancellation;
-        private bool activeStarted;
-        private bool activeEnded;
+        private bool attackWindowOpen;
+        private bool exited;
 
         public BossAttackDefinition Definition { get; }
         public bool IsFinished { get; private set; }
@@ -23,148 +24,125 @@ namespace Project.InGame.Boss
         }
 
         /// <summary>
-        /// 攻撃を開始する。
+        /// 攻撃固有の非同期シーケンスを開始する。
         /// </summary>
-        public virtual void Enter(BossContext context)
+        public void Enter(BossContext context)
         {
-            // 前回の処理が残っていた場合は終了する。
-            attackCancellation?.Cancel();
-            attackCancellation?.Dispose();
+            CancelCurrentAttack();
 
             attackCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 context.Boss.destroyCancellationToken);
-
-            activeStarted = false;
-            activeEnded = false;
+            attackWindowOpen = false;
+            exited = false;
             IsFinished = false;
 
-            var token = attackCancellation.Token;
-
-            // 攻撃アニメーションを再生する。
             if (context.Animator != null &&
                 !string.IsNullOrEmpty(Definition.AnimatorTrigger))
             {
                 context.Animator.SetTrigger(Definition.AnimatorTrigger);
             }
 
-            OnEnter(context);
-
-            if (token.IsCancellationRequested) { return; }
-
-            // DOTweenによる攻撃予告を表示する。
-            context.Boss.Telegraph?.Show(Definition.PreparationTime);
-
-            // UniTaskで攻撃の時間進行を管理する。
-            RunAttackAsync(context, token).Forget();
+            RunAttackAsync(context, attackCancellation.Token).Forget();
         }
 
-        /// <summary>
-        /// 攻撃の予備動作、判定、硬直を順番に実行する。
-        /// </summary>
-        private async UniTask RunAttackAsync(BossContext context, CancellationToken token)
+        private async UniTaskVoid RunAttackAsync(
+            BossContext context,
+            CancellationToken cancellationToken)
         {
             try
             {
-                // 予備動作が終了するまで待つ。
-                await DelayAsync(Definition.PreparationTime, token);
-                token.ThrowIfCancellationRequested();
+                await ExecuteAsync(context, cancellationToken);
 
-                context.Boss.Telegraph?.Hide();
-
-                activeStarted = true;
-                context.Boss.NotifyAttackWindowOpened(Definition.Type);
-                OnActiveStart(context);
-
-                // 攻撃が有効な時間を待つ。
-                await DelayAsync(Definition.ActiveTime, token);
-                token.ThrowIfCancellationRequested();
-
-                activeEnded = true;
-                OnActiveEnd(context);
-                context.Boss.NotifyAttackWindowClosed(Definition.Type);
-
-                // 攻撃後の硬直時間を待つ。
-                await DelayAsync(Definition.RecoveryTime, token);
-                token.ThrowIfCancellationRequested();
-
-                IsFinished = true;
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    IsFinished = true;
+                }
             }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // State終了による正常なキャンセル。
+                // State終了、死亡、無効化による正常な中断。
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception, context.Boss);
+                IsFinished = true;
             }
         }
 
         /// <summary>
-        /// 指定秒数待機する。ゲームのTimeScaleに従う。
+        /// 攻撃固有の処理を順番に実行する。
         /// </summary>
-        private static async UniTask DelayAsync(
+        protected abstract UniTask ExecuteAsync(
+            BossContext context,
+            CancellationToken cancellationToken);
+
+        /// <summary>
+        /// TimeScaleに従って指定秒数待機する。
+        /// </summary>
+        protected static async UniTask DelayAsync(
             float seconds,
-            CancellationToken token)
+            CancellationToken cancellationToken)
         {
-            if (seconds <= 0f) { return; }
+            if (seconds <= 0f)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return;
+            }
 
             await UniTask.Delay(
                 TimeSpan.FromSeconds(seconds),
-                cancellationToken: token);
+                cancellationToken: cancellationToken);
         }
 
         /// <summary>
-        /// 複雑な攻撃が必要に応じて上書きする更新処理。
-        /// 基本攻撃の時間管理はUniTask側で実行する。
+        /// 攻撃判定開始を一度だけ通知する。
         /// </summary>
+        protected void OpenAttackWindow(BossContext context)
+        {
+            if (attackWindowOpen) { return; }
+
+            attackWindowOpen = true;
+            context.Boss.NotifyAttackWindowOpened(Definition.Type);
+        }
+
+        /// <summary>
+        /// 攻撃判定終了を一度だけ通知する。
+        /// </summary>
+        protected void CloseAttackWindow(BossContext context)
+        {
+            if (!attackWindowOpen) { return; }
+
+            attackWindowOpen = false;
+            context.Boss.NotifyAttackWindowClosed(Definition.Type);
+        }
+
         public virtual void Tick(BossContext context, float deltaTime)
         {
         }
 
         /// <summary>
-        /// 攻撃終了時に実行中の処理を中断する。
+        /// 実行中処理を止め、攻撃固有の参照を初期状態へ戻す。
         /// </summary>
-        public virtual void Exit(BossContext context)
+        public void Exit(BossContext context)
+        {
+            if (exited) { return; }
+
+            exited = true;
+            CancelCurrentAttack();
+            CloseAttackWindow(context);
+            context.Boss.Telegraph?.Hide();
+            OnExit(context);
+        }
+
+        protected virtual void OnExit(BossContext context)
+        {
+        }
+
+        private void CancelCurrentAttack()
         {
             attackCancellation?.Cancel();
             attackCancellation?.Dispose();
             attackCancellation = null;
-
-            context.Boss.Telegraph?.Hide();
-
-            // 攻撃中断時も有効判定を必ず終了する。
-            if (activeStarted && !activeEnded)
-            {
-                activeEnded = true;
-                OnActiveEnd(context);
-                context.Boss.NotifyAttackWindowClosed(Definition.Type);
-            }
-
-            OnExit(context);
-        }
-
-        /// <summary>
-        /// 攻撃固有の開始処理。
-        /// </summary>
-        protected virtual void OnEnter(BossContext context)
-        {
-        }
-
-        /// <summary>
-        /// 攻撃固有の判定開始処理。
-        /// </summary>
-        protected virtual void OnActiveStart(BossContext context)
-        {
-        }
-
-        /// <summary>
-        /// 攻撃固有の判定終了処理。
-        /// </summary>
-        protected virtual void OnActiveEnd(BossContext context)
-        {
-        }
-
-        /// <summary>
-        /// 攻撃固有の終了処理。
-        /// </summary>
-        protected virtual void OnExit(BossContext context)
-        {
         }
     }
 }

@@ -1,7 +1,10 @@
+using System.Threading;
+using Cysharp.Threading.Tasks;
+
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// 盾を投げて攻撃する。
+    /// 盾を投げ、地面を加速させながら引き戻す。
     /// </summary>
     public sealed class ShieldThrowAttack : BossAttackStrategyBase
     {
@@ -10,14 +13,28 @@ namespace Project.InGame.Boss
         {
         }
 
-        protected override void OnActiveStart(BossContext context)
+        protected override async UniTask ExecuteAsync(
+            BossContext context,
+            CancellationToken cancellationToken)
         {
-            // TODO: 盾の投擲処理を開始する。
+            context.Boss.Telegraph?.Show(Definition.PreparationTime);
+            await DelayAsync(Definition.PreparationTime, cancellationToken);
+            context.Boss.Telegraph?.Hide();
+
+            OpenAttackWindow(context);
+            await context.Boss.ShieldMotion.ThrowAsync(
+                context.Player,
+                Definition,
+                context.Boss.CalculateAttackDamage(Definition),
+                cancellationToken);
+            CloseAttackWindow(context);
+
+            await DelayAsync(Definition.RecoveryTime, cancellationToken);
         }
 
-        protected override void OnActiveEnd(BossContext context)
+        protected override void OnExit(BossContext context)
         {
-            // TODO: 盾の投擲処理の終了を確認する。
+            context.Boss.ShieldMotion.CancelMotion();
         }
     }
 }

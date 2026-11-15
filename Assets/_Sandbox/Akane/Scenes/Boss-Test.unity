@@ -25539,7 +25539,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: fcf1e344629ec4a44abd7efda8e61e7c, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossBodyHitReceiver
   damageFlash: {fileID: 191249095}
 --- !u!114 &191249095
@@ -25552,7 +25552,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 02e0f0609a6f4df8b613c4a020a93b31, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossDamageFlash
   targetRenderers:
   - {fileID: 881111914}
@@ -25988,7 +25988,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 22ea802b0c12c274f9c13c586b5a4e50, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawContactZone
   allowEnemyDigging: 0
   allowAttack: 1
@@ -41747,7 +41747,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 22ea802b0c12c274f9c13c586b5a4e50, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawContactZone
   allowEnemyDigging: 1
   allowAttack: 0
@@ -99279,8 +99279,14 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a4c89f33f89d259488d9498e8b393782, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackHitbox
+  useDomeShape: 0
+  domeRadius: 4
+  domeDepth: 1.2
+  domeForwardDirection: {x: -1, y: 0, z: 0}
+  domeGroundOffset: -2
+  domeRectangleWidthPadding: 0.5
 --- !u!65 &902641945
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -109790,7 +109796,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a4c89f33f89d259488d9498e8b393782, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackHitbox
   useDomeShape: 1
   domeRadius: 4
@@ -181042,7 +181048,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 22ea802b0c12c274f9c13c586b5a4e50, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawContactZone
   allowEnemyDigging: 0
   allowAttack: 1
@@ -181075,7 +181081,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 02e0f0609a6f4df8b613c4a020a93b31, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossDamageFlash
   targetRenderers:
   - {fileID: 1405627540}
@@ -181331,7 +181337,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 22ea802b0c12c274f9c13c586b5a4e50, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawContactZone
   allowEnemyDigging: 0
   allowAttack: 0
@@ -202495,8 +202501,14 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a4c89f33f89d259488d9498e8b393782, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackHitbox
+  useDomeShape: 0
+  domeRadius: 4
+  domeDepth: 1.2
+  domeForwardDirection: {x: -1, y: 0, z: 0}
+  domeGroundOffset: -2
+  domeRectangleWidthPadding: 0.5
 --- !u!65 &1701419980
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -202514,7 +202526,7 @@ BoxCollider:
   m_LayerOverridePriority: 0
   m_IsTrigger: 1
   m_ProvidesContacts: 0
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 3
   m_Size: {x: 1.3, y: 1.3, z: 1.3}
   m_Center: {x: 0, y: 0, z: 0}
@@ -207754,7 +207766,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 22ea802b0c12c274f9c13c586b5a4e50, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawContactZone
   allowEnemyDigging: 0
   allowAttack: 0
@@ -228489,8 +228501,14 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a4c89f33f89d259488d9498e8b393782, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackHitbox
+  useDomeShape: 0
+  domeRadius: 4
+  domeDepth: 1.2
+  domeForwardDirection: {x: -1, y: 0, z: 0}
+  domeGroundOffset: -2
+  domeRectangleWidthPadding: 0.5
 --- !u!65 &1827317137
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -259567,7 +259585,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3b6859f2c2884f06b6c615abec0c42d7, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossShieldMotionController
   shieldRoot: {fileID: 1405627538}
   shieldSocket: {fileID: 307411274}
@@ -259590,7 +259608,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: da2dda887be081348a44a88f03b821b2, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackVisualController
   weaponPivot: {fileID: 140539506}
   verticalSlashRangeSource: {fileID: 994893594}
@@ -259598,8 +259616,6 @@ MonoBehaviour:
   localAttackDirection: {x: -1, y: 0, z: 0}
   thrustDistance: 2
   thrustPullbackDistance: 0.5
-  slashStartAngle: -180
-  slashEndAngle: 0
   slashDropDistance: 2
 --- !u!114 &2120808302
 MonoBehaviour:
@@ -259611,7 +259627,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1ece7fe5fdf102f4c8e7ac38bc0acd8a, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackHitboxController
   shieldBashHitbox: {fileID: 0}
   shockwaveHitbox: {fileID: 902641944}
@@ -259629,7 +259645,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0dcc4bf3f7c968e4c8d985978c76156a, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossPhysicsMotor
   bodyCollider: {fileID: 2120808297}
   overheadClearance: 1

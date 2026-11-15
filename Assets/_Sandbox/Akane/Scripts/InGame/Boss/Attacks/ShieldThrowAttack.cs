@@ -25,7 +25,7 @@ namespace Project.InGame.Boss
             await context.Boss.ShieldMotion.ThrowAsync(
                 context.Player,
                 Definition,
-                context.Boss.CalculateAttackDamage(Definition),
+                GetAttackDamage(context),
                 cancellationToken);
             CloseAttackWindow(context);
 

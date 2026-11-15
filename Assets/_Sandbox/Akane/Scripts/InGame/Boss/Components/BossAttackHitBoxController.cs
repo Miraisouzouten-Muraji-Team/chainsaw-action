@@ -1,89 +1,123 @@
+
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// ボスが使用する攻撃用Colliderをまとめて管理する。
+    /// ボスの攻撃判定と確認用の範囲表示を管理する。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class BossAttackHitboxController : MonoBehaviour
     {
+        private readonly HashSet<SensorPlayerController> shieldBashHits = new();
+
         [Header("攻撃判定")]
         [SerializeField] private BossAttackHitbox shieldBashHitbox;
         [SerializeField] private BossAttackHitbox shockwaveHitbox;
+
+        [Tooltip("突き・縦振りの実際の刃の命中判定")]
         [SerializeField] private BossAttackHitbox thrustHitbox;
+
+        [Tooltip("縦振りの上半円＋長方形の確認用範囲。ダメージには使わない")]
         [SerializeField] private BossAttackHitbox slashHitbox;
 
         [Header("武器範囲の同期")]
-        [Tooltip("突きの判定範囲に使用するCube")]
         [SerializeField] private Transform weaponRangeSource;
 
         [Header("Editorデバッグ")]
-        [Tooltip("Scene/Gameビューへ攻撃判定Gizmoを表示する")]
         [SerializeField] private bool showHitboxGizmos = true;
 
         public bool ShowHitboxGizmos => showHitboxGizmos;
-        public Transform VerticalSlashRangeSource =>
-            slashHitbox != null ? slashHitbox.transform : null;
         public Transform WeaponRangeSource => weaponRangeSource;
 
-        /// <summary>溜め動作の開始前に縦切りの寸法を攻撃データへ合わせる。</summary>
+        public Transform VerticalSlashRangeSource =>
+            slashHitbox != null ? slashHitbox.transform : null;
+
+        /// <summary>
+        /// 縦振りの表示範囲を攻撃データに合わせる。
+        /// </summary>
         public void PrepareVerticalSlash(BossAttackDefinition definition)
         {
-            if (definition != null) { slashHitbox?.SetDomeDiameter(definition.Range); }
+            if (definition != null)
+            {
+                slashHitbox?.SetDomeDiameter(definition.Range);
+            }
         }
 
         private void Awake()
         {
-            SynchronizeThrustHitbox();
+            SynchronizeWeaponHitbox();
         }
 
         /// <summary>
-        /// 指定した攻撃の命中判定を開始する。
+        /// 武器Cubeの形状を実際の命中Colliderに反映する。
+        /// </summary>
+        public void SynchronizeWeaponHitbox()
+        {
+            if (weaponRangeSource == null) { return; }
+
+            thrustHitbox?.SynchronizeWithCube(weaponRangeSource);
+        }
+
+        /// <summary>
+        /// 突き・縦振りの攻撃判定を開始する。
         /// </summary>
         public void OpenHitbox(
             BossAttackType attackType,
             BossAttackDefinition definition,
             float damage)
         {
-            if (attackType == BossAttackType.Thrust)
+            if (attackType == BossAttackType.VerticalSlash)
             {
-                SynchronizeThrustHitbox();
+                PrepareVerticalSlash(definition);
             }
-            else if (attackType == BossAttackType.VerticalSlash &&
-                definition != null)
-            {
-                slashHitbox?.SetDomeDiameter(definition.Range);
-            }
+
+            SynchronizeWeaponHitbox();
 
             GetHitbox(attackType)?.OpenHitWindow(definition, damage);
         }
 
-        /// <summary>
-        /// 指定した攻撃の命中判定を終了する。
-        /// </summary>
         public void CloseHitbox(BossAttackType attackType)
         {
             GetHitbox(attackType)?.CloseHitWindow();
         }
 
         /// <summary>
-        /// 盾打ち込みによる衝撃波の判定を開始する。
+        /// 盾打ち込みの落下判定を開始する。
         /// </summary>
-        public void OpenShockwave(BossAttackDefinition definition, float damage)
+        public void BeginShieldBash(
+            BossAttackDefinition definition,
+            float damage)
         {
-            shockwaveHitbox?.OpenHitWindow(definition, damage);
+            shieldBashHits.Clear();
+
+            shieldBashHitbox?.SetSharedHitHistory(shieldBashHits);
+            shieldBashHitbox?.OpenHitWindow(definition, damage);
         }
 
         /// <summary>
-        /// 着地点を中心とする指定横幅の衝撃波を一度だけ判定する。
+        /// 落下判定だけ終了する。命中履歴は衝撃波まで保持する。
+        /// </summary>
+        public void EndShieldBash()
+        {
+            shieldBashHitbox?.CloseHitWindow();
+        }
+
+        /// <summary>
+        /// 落下判定の命中履歴を引き継ぎ、着地時の衝撃波を1回判定する。
         /// </summary>
         public void HitShockwaveOnce(
             BossAttackDefinition definition,
             float damage,
             float width)
         {
-            if (shockwaveHitbox == null) { return; }
+            if (shockwaveHitbox == null)
+            {
+                shieldBashHits.Clear();
+                shieldBashHitbox?.SetSharedHitHistory(null);
+                return;
+            }
 
             if (shockwaveHitbox.TryGetComponent(out BoxCollider boxCollider))
             {
@@ -92,7 +126,18 @@ namespace Project.InGame.Boss
                 boxCollider.size = size;
             }
 
-            shockwaveHitbox.HitOnce(definition, damage);
+            shockwaveHitbox.SetSharedHitHistory(shieldBashHits);
+
+            try
+            {
+                shockwaveHitbox.HitOnce(definition, damage);
+            }
+            finally
+            {
+                shockwaveHitbox.SetSharedHitHistory(null);
+                shieldBashHitbox?.SetSharedHitHistory(null);
+                shieldBashHits.Clear();
+            }
         }
 
         public void CloseShockwave()
@@ -101,24 +146,20 @@ namespace Project.InGame.Boss
         }
 
         /// <summary>
-        /// ボスの死亡や攻撃中断時に全判定を無効にする。
+        /// 死亡・中断時にすべての攻撃判定を無効にする。
         /// </summary>
         public void CloseAll()
         {
             shieldBashHitbox?.CloseHitWindow();
             shockwaveHitbox?.CloseHitWindow();
             thrustHitbox?.CloseHitWindow();
+
+            shieldBashHitbox?.SetSharedHitHistory(null);
+            shockwaveHitbox?.SetSharedHitHistory(null);
+            shieldBashHits.Clear();
+
+            // 上半円の範囲表示側は常にダメージ判定OFF。
             slashHitbox?.CloseHitWindow();
-        }
-
-        /// <summary>
-        /// 武器Cubeの位置・回転・大きさを突き判定へ反映する。
-        /// </summary>
-        private void SynchronizeThrustHitbox()
-        {
-            if (weaponRangeSource == null) { return; }
-
-            thrustHitbox?.SynchronizeWithCube(weaponRangeSource);
         }
 
         private BossAttackHitbox GetHitbox(BossAttackType attackType)
@@ -127,7 +168,10 @@ namespace Project.InGame.Boss
             {
                 BossAttackType.ShieldBash => shieldBashHitbox,
                 BossAttackType.Thrust => thrustHitbox,
-                BossAttackType.VerticalSlash => slashHitbox,
+
+                // 縦振りも武器と一緒に動くColliderを使用する。
+                BossAttackType.VerticalSlash => thrustHitbox,
+
                 _ => null
             };
         }

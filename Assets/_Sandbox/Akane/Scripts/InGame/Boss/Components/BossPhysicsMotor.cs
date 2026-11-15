@@ -34,6 +34,11 @@ namespace Project.InGame.Boss
         public bool IsGrounded { get; private set; }
         public event Action Landed;
 
+        /// <summary>
+        /// 上昇中かどうか。
+        /// </summary>
+        public bool IsAscending => motionMode == MotionMode.Ascending;
+
         private void Awake()
         {
             body = GetComponent<Rigidbody>();
@@ -174,18 +179,20 @@ namespace Project.InGame.Boss
 
                 case MotionMode.Ascending:
                     {
-                        float remaining = Mathf.Max(
-                            Time.fixedDeltaTime, ascentRemaining);
+                        // 前の物理更新で最後の移動を終えてから停止させる。
+                        if (ascentRemaining <= 0f)
+                        {
+                            HoldInAir();
+                            break;
+                        }
+
+                        float remaining = Mathf.Max(Time.fixedDeltaTime, ascentRemaining);
 
                         velocity.x = (ascentTarget.x - body.position.x) / remaining;
                         velocity.y = (ascentTarget.y - body.position.y) / remaining;
                         body.linearVelocity = velocity;
 
                         ascentRemaining -= Time.fixedDeltaTime;
-
-                        if (ascentRemaining <= 0f)
-                            HoldInAir();
-
                         break;
                     }
 
@@ -203,11 +210,13 @@ namespace Project.InGame.Boss
 
         private void OnCollisionEnter(Collision collision)
         {
+            CheckCeilingContact(collision);
             CheckGroundContact(collision);
         }
 
         private void OnCollisionStay(Collision collision)
         {
+            CheckCeilingContact(collision);
             CheckGroundContact(collision);
         }
 
@@ -237,6 +246,25 @@ namespace Project.InGame.Boss
                 return;
             }
         }
+
+
+        /// <summary>
+        /// 上昇中に天井へ衝突した場合、上昇を停止する。
+        /// </summary>
+        private void CheckCeilingContact(Collision collision)
+        {
+            if (motionMode != MotionMode.Ascending) { return; }
+
+            for (int i = 0; i < collision.contactCount; i++)
+            {
+                if (collision.GetContact(i).normal.y < -0.5f)
+                {
+                    HoldInAir();
+                    return;
+                }
+            }
+        }
+
 
         private void OnDisable()
         {

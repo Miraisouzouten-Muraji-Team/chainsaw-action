@@ -136,9 +136,11 @@ namespace Project.InGame.Boss
             }
         }
 
-        private async UniTask ReturnAlongGroundAsync(
-            BossAttackDefinition definition,
-            CancellationToken cancellationToken)
+
+        /// <summary>
+        /// 地形の高さに追従しながら、徐々に加速して盾を戻す。
+        /// </summary>
+        private async UniTask ReturnAlongGroundAsync(BossAttackDefinition definition, CancellationToken cancellationToken)
         {
             float elapsed = 0f;
 
@@ -146,23 +148,62 @@ namespace Project.InGame.Boss
                    definition.ShieldReturnDistance)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                elapsed += Time.fixedDeltaTime;
-                float acceleration = definition.ShieldReturnAcceleration == null
-                    ? 1f
-                    : definition.ShieldReturnAcceleration.Evaluate(
-                        Mathf.Clamp01(elapsed / 2f));
-                float speed = definition.ShieldReturnMaxSpeed *
-                    Mathf.Clamp01(acceleration);
-                float nextX = Mathf.MoveTowards(
-                    shieldBody.position.x,
-                    shieldSocket.position.x,
-                    speed * Time.fixedDeltaTime);
-                shieldBody.MovePosition(new Vector3(
-                    nextX,
-                    shieldBody.position.y,
-                    shieldBody.position.z));
+
+                float deltaTime = Time.fixedDeltaTime;
+                elapsed += deltaTime;
+
+                float t = Mathf.Clamp01(elapsed / definition.ShieldReturnAccelerationDuration);
+
+                AnimationCurve curve = definition.ShieldReturnAcceleration;
+                float acceleration = curve != null ? Mathf.Clamp01(curve.Evaluate(t)) : t;
+
+                // 初速を少し持たせ、カーブの初期値が0でも帰還が始まるようにする。
+                float maxSpeed = definition.ShieldReturnMaxSpeed;
+                float speed = Mathf.Lerp(
+                    Mathf.Min(0.2f, maxSpeed),
+                    maxSpeed,
+                    acceleration);
+
+                float nextX = Mathf.MoveTowards(shieldBody.position.x, shieldSocket.position.x, speed * deltaTime);
+
+                float nextY = ResolveGroundHeight(nextX);
+
+                Vector3 nextPosition = new Vector3(nextX, nextY, shieldBody.position.z);
+
+                shieldBody.MovePosition(nextPosition);
+
                 await UniTask.Yield(PlayerLoopTiming.FixedUpdate, cancellationToken);
             }
+        }
+
+        /// <summary>
+        /// 指定したX座標の地面の高さを取得し、盾の底面を合わせる。
+        /// </summary>
+        private float ResolveGroundHeight(float x)
+        {
+            float currentY = shieldBody.position.y;
+
+            Vector3 rayOrigin = new Vector3(
+                x,
+                Mathf.Max(currentY, shieldSocket.position.y) + groundRayHeight,
+                shieldBody.position.z);
+
+            if (!Physics.Raycast(
+                rayOrigin,
+                Vector3.down,
+                out RaycastHit hit,
+                groundRayDistance,
+                stageMask,
+                QueryTriggerInteraction.Ignore))
+            {
+                return currentY;
+            }
+
+            float extent = shieldBodyCollider != null
+                ? shieldBodyCollider.bounds.extents.y
+                : 0f;
+
+            return hit.point.y + extent;
         }
 
         private Vector3 ResolveGroundDestination(Vector3 targetPosition)

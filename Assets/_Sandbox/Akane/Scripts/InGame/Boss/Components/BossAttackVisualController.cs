@@ -65,6 +65,19 @@ namespace Project.InGame.Boss
             SetShieldReturnCue(false);
         }
 
+
+        /// <summary>
+        /// 仮モデルの刃と命中Colliderの形状を一致させる。
+        /// </summary>
+        private void SynchronizeWeaponCollider()
+        {
+            if (TryGetComponent(
+                out BossAttackHitboxController hitboxController))
+            {
+                hitboxController.SynchronizeWeaponHitbox();
+            }
+        }
+
         /// <summary>
         /// 突きの予備動作として武器を後ろへ引く。
         /// </summary>
@@ -253,6 +266,8 @@ namespace Project.InGame.Boss
             scale.x = radius + padding;
             bladeCube.localScale = scale;
             bladeCube.localPosition = localAttackDirection * ((radius - padding) * 0.5f);
+
+            SynchronizeWeaponCollider();
         }
 
         /// <summary>切り下ろしの終点を判定の長方形下端へ合わせる。</summary>
@@ -273,6 +288,8 @@ namespace Project.InGame.Boss
             if (bladeCube == null) { return; }
             bladeCube.localPosition = initialBladePosition;
             bladeCube.localScale = initialBladeScale;
+
+            SynchronizeWeaponCollider();
         }
 
         /// <summary>

@@ -32,6 +32,10 @@ namespace Project.InGame.Boss
         [SerializeField, Min(0f)] private float idleDuration = 2f;
         [SerializeField, Min(0f)] private float moveSpeed = 4f;
 
+        [Header("盾なし時の行動設定")]
+        [SerializeField, Min(0f)] private float noShieldIdleDuration = 1.5f;
+        [SerializeField, Min(0f)] private float noShieldMoveSpeed = 6f;
+
         [Header("向きの設定")]
         [SerializeField] private float rightFacingAngle = 0f;
         [SerializeField] private float leftFacingAngle = -180f;
@@ -52,14 +56,23 @@ namespace Project.InGame.Boss
         /// </summary>
         public float AttackPower => attackPower;
 
+
         /// <summary>
-        /// 攻撃ごとの倍率からダメージを計算する。
+        /// 現在の盾状態で攻撃ダメージを計算する。
         /// </summary>
         public float CalculateAttackDamage(BossAttackDefinition definition)
         {
+            return CalculateAttackDamage(definition, Shield != null && Shield.IsActive);
+        }
+
+        /// <summary>
+        /// 攻撃開始時に確定した盾状態からダメージを計算する。
+        /// </summary>
+        public float CalculateAttackDamage(BossAttackDefinition definition, bool hasShield)
+        {
             if (definition == null) { return 0f; }
 
-            return attackPower * definition.DamageMultiplier;
+            return attackPower * definition.GetDamageMultiplier(hasShield);
         }
 
         private float lastPlayerDirection = 1f;
@@ -75,10 +88,9 @@ namespace Project.InGame.Boss
         public BossStateMachine StateMachine { get; private set; }
         public BossAttackSelector AttackSelector { get; private set; }
         public IBossAttackStrategy SelectedAttack { get; private set; }
-
-        public float IdleDuration => idleDuration;
+        public float IdleDuration => Shield != null && Shield.IsActive ? idleDuration : noShieldIdleDuration;
         public float DistanceToPlayer => CalculateHorizontalSurfaceDistance();
-
+        
         /// <summary>
         /// Playerの非Trigger Colliderを統合した中心座標を返す。
         /// </summary>
@@ -342,7 +354,9 @@ namespace Project.InGame.Boss
                     lastPlayerDirection * safeTargetDistance;
             }
 
-            physicsMotor.SetHorizontalTarget(targetX, moveSpeed);
+            float currentMoveSpeed = Shield != null && Shield.IsActive ? moveSpeed : noShieldMoveSpeed;
+
+            physicsMotor.SetHorizontalTarget(targetX, currentMoveSpeed);
         }
 
         /// <summary>
@@ -423,7 +437,7 @@ namespace Project.InGame.Boss
         }
 
         /// <summary>
-        /// 攻撃・移動・演出を安全な初期状態へ戻す。
+        /// 死亡・無効化時に実行中の攻撃と再生成を停止する。
         /// </summary>
         public void StopAllRuntimeActions()
         {
@@ -431,6 +445,7 @@ namespace Project.InGame.Boss
             attackVisuals?.ResetPose();
             shieldMotion?.CancelMotion();
             laserController?.CancelAll();
+            Shield?.CancelRestoration();
             physicsMotor?.EndScriptedMotion();
         }
 

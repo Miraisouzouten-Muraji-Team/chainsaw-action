@@ -1,10 +1,11 @@
+
 using System.Threading;
 using Cysharp.Threading.Tasks;
 
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// Playerを狙い、0.5秒間隔でレーザーを5発撃つ。
+    /// 胸部からPlayerを狙うレーザーを連続発射する。
     /// </summary>
     public sealed class LaserAttack : BossAttackStrategyBase
     {
@@ -17,27 +18,29 @@ namespace Project.InGame.Boss
             BossContext context,
             CancellationToken cancellationToken)
         {
-            context.Boss.Telegraph?.Show(Definition.PreparationTime);
-            await DelayAsync(Definition.PreparationTime, cancellationToken);
+            float preparationTime =
+                Definition.GetPreparationTime(HasShieldAtStart);
+
+            context.Boss.Telegraph?.Show(preparationTime);
+            await DelayAsync(preparationTime, cancellationToken);
             context.Boss.Telegraph?.Hide();
 
-            float damage = context.Boss.CalculateAttackDamage(Definition);
+            int shotCount = Definition.GetLaserShotCount(HasShieldAtStart);
+            float speed = Definition.GetLaserSpeed(HasShieldAtStart);
+            float aimWidth = Definition.GetLaserAimWidth(HasShieldAtStart);
+            float damage = GetAttackDamage(context);
+
             OpenAttackWindow(context);
 
-            for (int i = 0; i < Definition.LaserShotCount; i++)
+            for (int i = 0; i < shotCount; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                context.Boss.LaserController.Fire(
-                    Definition,
-                    damage,
-                    Definition.LaserAimWidth,
-                    Definition.LaserSpeed);
 
-                if (i < Definition.LaserShotCount - 1)
+                context.Boss.LaserController.Fire(Definition, damage, aimWidth, speed);
+
+                if (i < shotCount - 1)
                 {
-                    await DelayAsync(
-                        Definition.LaserShotInterval,
-                        cancellationToken);
+                    await DelayAsync(Definition.LaserShotInterval, cancellationToken);
                 }
             }
 
@@ -49,7 +52,7 @@ namespace Project.InGame.Boss
         {
             if (!IsFinished)
             {
-                context.Boss.LaserController.CancelAll();
+                context.Boss.LaserController?.CancelAll();
             }
         }
     }

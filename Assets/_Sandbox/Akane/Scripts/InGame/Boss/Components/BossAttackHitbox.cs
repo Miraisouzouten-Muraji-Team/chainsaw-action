@@ -15,6 +15,8 @@ namespace Project.InGame.Boss
     public sealed class BossAttackHitbox : MonoBehaviour
     {
         private readonly HashSet<SensorPlayerController> hitPlayers = new();
+        // 同じ攻撃内の別Hitboxと命中履歴を共有する場合に使用する。
+        private HashSet<SensorPlayerController> sharedHitPlayers;
 
         [Header("特殊形状")]
         [Tooltip("縦切り用の上半円判定として扱う")]
@@ -67,6 +69,14 @@ namespace Project.InGame.Boss
             }
 
             hitCollider.enabled = false;
+        }
+
+        /// <summary>
+        /// 複数のColliderで一つの攻撃を構成する場合、命中履歴を共有する。
+        /// </summary>
+        public void SetSharedHitHistory(HashSet<SensorPlayerController> sharedHits)
+        {
+            sharedHitPlayers = sharedHits;
         }
 
         /// <summary>
@@ -164,6 +174,11 @@ namespace Project.InGame.Boss
 
             if (player == null || hitPlayers.Contains(player)) { return; }
 
+            if (sharedHitPlayers != null && sharedHitPlayers.Contains(player))
+            {
+                return;
+            }
+
             if (!playerReference.TryGetAttackHitReceiver(
                     requireActiveAndEnabled: true,
                     out IAttackHitReceiver receiver,
@@ -174,6 +189,7 @@ namespace Project.InGame.Boss
 
             // 送信前に記録し、同じ攻撃で複数回通知されることを防ぐ。
             hitPlayers.Add(player);
+            sharedHitPlayers?.Add(player);
 
             receiver.ReceiveAttackHit(new EnemyAttackHitData(activeDefinition, activeDamage));
         }

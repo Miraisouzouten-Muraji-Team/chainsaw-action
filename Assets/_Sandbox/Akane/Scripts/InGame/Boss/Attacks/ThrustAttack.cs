@@ -1,47 +1,43 @@
-
 using System.Threading;
 using Cysharp.Threading.Tasks;
 
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// 攻撃直前のPlayer位置を狙って突く。
+    /// 攻撃直前のプレイヤー位置へチェーンソーを突き出す。
     /// </summary>
     public sealed class ThrustAttack : BossAttackStrategyBase
     {
         public ThrustAttack(BossAttackDefinition definition)
-            : base(definition)
-        {
-        }
+            : base(definition) { }
 
         protected override async UniTask ExecuteAsync(
             BossContext context,
             CancellationToken cancellationToken)
         {
-            float preparationTime = Definition.GetPreparationTime(HasShieldAtStart);
-            float activeTime = Definition.GetActiveTime(HasShieldAtStart);
-            float animationSpeed = Definition.GetAnimationSpeed(HasShieldAtStart);
+            BossThrustParameters parameters =
+                Definition.GetParameters<BossThrustParameters>();
+            BossMeleeVariant variant =
+                parameters.GetVariant(HasShieldAtStart);
 
-            context.Boss.Telegraph?.Show(preparationTime);
-            context.Boss.AttackVisuals.PlayThrustPreparation(preparationTime);
+            context.Boss.Telegraph?.Show(variant.PreparationTime);
+            context.Boss.AttackVisuals.PlayThrustPreparation(
+                variant.PreparationTime);
 
-            await DelayAsync(preparationTime, cancellationToken);
+            await DelayAsync(variant.PreparationTime, cancellationToken);
             context.Boss.Telegraph?.Hide();
-
             context.Boss.FacePlayerImmediately();
-            context.Boss.AttackVisuals.AimThrustAt(context.Boss.GetPlayerAimPosition());
+            context.Boss.AttackVisuals.AimThrustAt(
+                context.Boss.GetPlayerAimPosition());
 
             OpenAttackWindow(context);
-
             context.Boss.AttackHitboxes.OpenHitbox(
-                Definition.Type,
-                Definition,
-                GetAttackDamage(context));
+                Definition.Type, Definition, GetAttackDamage(context));
 
-            context.Boss.AttackVisuals.PlayThrust(activeTime / animationSpeed);
+            context.Boss.AttackVisuals.PlayThrust(
+                variant.ActiveTime, variant.AnimationSpeed);
 
-            await DelayAsync(activeTime, cancellationToken);
-
+            await DelayAsync(variant.ActiveTime, cancellationToken);
             context.Boss.AttackHitboxes.CloseHitbox(Definition.Type);
             CloseAttackWindow(context);
 

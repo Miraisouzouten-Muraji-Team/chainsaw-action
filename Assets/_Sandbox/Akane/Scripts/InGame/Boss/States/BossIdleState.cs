@@ -1,7 +1,7 @@
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// ボスの待機状態。
+    /// 行動の区切りと盾の再生成を管理する待機状態。
     /// </summary>
     public sealed class BossIdleState : IBossState
     {
@@ -18,8 +18,6 @@ namespace Project.InGame.Boss
         public void Enter()
         {
             elapsedTime = 0f;
-
-            // 行動の区切りで盾の再生成を確認する。
             context.Shield.TryRestore();
         }
 
@@ -27,15 +25,23 @@ namespace Project.InGame.Boss
         {
             context.Boss.FacePlayer(deltaTime);
 
+            // 盾の再生成が完了するまで新しい行動を開始しない。
+            if (context.Shield.IsRestoring)
+            {
+                return;
+            }
+
             elapsedTime += deltaTime;
 
             if (elapsedTime < context.Boss.IdleDuration)
+            {
                 return;
+            }
 
-            // 次の攻撃を抽選する。
             context.Boss.SelectNextAttack();
 
-            var attack = context.Boss.SelectedAttack;
+            IBossAttackStrategy attack =
+                context.Boss.SelectedAttack;
 
             if (attack == null)
             {
@@ -43,16 +49,14 @@ namespace Project.InGame.Boss
                 return;
             }
 
-            // 射程内なら攻撃、射程外なら移動する。
-            var nextState = context.Boss.DistanceToPlayer <= attack.Definition.Range
-                ? BossStateType.Attack
-                : BossStateType.Move;
+            BossStateType nextState =
+                context.Boss.DistanceToPlayer <= attack.Definition.Range
+                    ? BossStateType.Attack
+                    : BossStateType.Move;
 
             context.Boss.StateMachine.ChangeState(nextState);
         }
 
-        public void Exit()
-        {
-        }
+        public void Exit() { }
     }
 }

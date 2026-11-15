@@ -1,46 +1,43 @@
-
 using System.Threading;
 using Cysharp.Threading.Tasks;
 
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// 胸部からPlayerを狙うレーザーを連続発射する。
+    /// 盾状態に応じた発射数・速度・照準幅でレーザーを連射する。
     /// </summary>
     public sealed class LaserAttack : BossAttackStrategyBase
     {
         public LaserAttack(BossAttackDefinition definition)
-            : base(definition)
-        {
-        }
+            : base(definition) { }
 
         protected override async UniTask ExecuteAsync(
             BossContext context,
             CancellationToken cancellationToken)
         {
-            float preparationTime =
-                Definition.GetPreparationTime(HasShieldAtStart);
+            BossLaserParameters parameters =
+                Definition.GetParameters<BossLaserParameters>();
+            BossLaserVariant variant =
+                parameters.GetVariant(HasShieldAtStart);
 
-            context.Boss.Telegraph?.Show(preparationTime);
-            await DelayAsync(preparationTime, cancellationToken);
+            context.Boss.Telegraph?.Show(variant.PreparationTime);
+            await DelayAsync(variant.PreparationTime, cancellationToken);
             context.Boss.Telegraph?.Hide();
 
-            int shotCount = Definition.GetLaserShotCount(HasShieldAtStart);
-            float speed = Definition.GetLaserSpeed(HasShieldAtStart);
-            float aimWidth = Definition.GetLaserAimWidth(HasShieldAtStart);
             float damage = GetAttackDamage(context);
-
             OpenAttackWindow(context);
 
-            for (int i = 0; i < shotCount; i++)
+            for (int i = 0; i < variant.ShotCount; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                context.Boss.LaserController.Fire(Definition, damage, aimWidth, speed);
+                context.Boss.LaserController.Fire(
+                    Definition, damage, variant.AimWidth, variant.Speed);
 
-                if (i < shotCount - 1)
+                if (i < variant.ShotCount - 1)
                 {
-                    await DelayAsync(Definition.LaserShotInterval, cancellationToken);
+                    await DelayAsync(
+                        parameters.ShotInterval, cancellationToken);
                 }
             }
 

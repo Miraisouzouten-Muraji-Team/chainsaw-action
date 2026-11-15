@@ -94,13 +94,22 @@ namespace Project.InGame.Boss
             // 次の物理更新までに通過する範囲を調べる。
             float distance = speed * Time.fixedDeltaTime;
 
+            int playerBodyLayer = LayerMask.NameToLayer("PlayerBody");
+
+            int queryMask = stageMask.value;
+
+            if (playerBodyLayer >= 0)
+            {
+                queryMask |= 1 << playerBodyLayer;
+            }
+
             int hitCount = Physics.SphereCastNonAlloc(
                 body.position,
                 sweepRadius,
                 direction,
                 hitBuffer,
                 distance,
-                Physics.AllLayers,
+                queryMask,
                 QueryTriggerInteraction.Ignore);
 
             Collider nearestCollider = null;

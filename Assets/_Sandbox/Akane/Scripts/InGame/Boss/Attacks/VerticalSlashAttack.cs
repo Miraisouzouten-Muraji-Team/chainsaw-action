@@ -1,46 +1,44 @@
-
 using System.Threading;
 using Cysharp.Threading.Tasks;
 
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// チェーンソーを上から前方へ振り下ろす。
+    /// 予備動作から振り下ろしまでを連続して実行する。
     /// </summary>
     public sealed class VerticalSlashAttack : BossAttackStrategyBase
     {
         public VerticalSlashAttack(BossAttackDefinition definition)
-            : base(definition)
-        {
-        }
+            : base(definition) { }
 
         protected override async UniTask ExecuteAsync(
             BossContext context,
             CancellationToken cancellationToken)
         {
-            float preparationTime = Definition.GetPreparationTime(HasShieldAtStart);
-            float activeTime = Definition.GetActiveTime(HasShieldAtStart);
-            float animationSpeed = Definition.GetAnimationSpeed(HasShieldAtStart);
+            BossVerticalSlashParameters parameters =
+                Definition.GetParameters<BossVerticalSlashParameters>();
+            BossMeleeVariant variant =
+                parameters.GetVariant(HasShieldAtStart);
 
             context.Boss.AttackHitboxes.PrepareVerticalSlash(Definition);
-            context.Boss.Telegraph?.Show(preparationTime);
-            context.Boss.AttackVisuals.PlayVerticalSlashPreparation(preparationTime);
+            context.Boss.Telegraph?.Show(variant.PreparationTime);
+            context.Boss.AttackVisuals.PlayVerticalSlashPreparation(
+                variant.PreparationTime, parameters.RaiseAngle);
 
-            await DelayAsync(preparationTime, cancellationToken);
+            await DelayAsync(variant.PreparationTime, cancellationToken);
             context.Boss.Telegraph?.Hide();
 
             OpenAttackWindow(context);
-
             context.Boss.AttackHitboxes.OpenHitbox(
-                Definition.Type,
-                Definition,
-                GetAttackDamage(context));
+                Definition.Type, Definition, GetAttackDamage(context));
 
             context.Boss.AttackVisuals.PlayVerticalSlash(
-                activeTime / animationSpeed);
+                variant.ActiveTime,
+                parameters.RaiseAngle,
+                parameters.FinishAngle,
+                variant.AnimationSpeed);
 
-            await DelayAsync(activeTime, cancellationToken);
-
+            await DelayAsync(variant.ActiveTime, cancellationToken);
             context.Boss.AttackHitboxes.CloseHitbox(Definition.Type);
             CloseAttackWindow(context);
 

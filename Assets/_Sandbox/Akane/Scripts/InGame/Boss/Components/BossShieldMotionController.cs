@@ -48,6 +48,7 @@ namespace Project.InGame.Boss
         public async UniTask ThrowAsync(
             Transform target,
             BossAttackDefinition definition,
+            BossShieldThrowParameters parameters,
             float damage,
             CancellationToken cancellationToken)
         {
@@ -59,10 +60,13 @@ namespace Project.InGame.Boss
                 return;
             }
 
-            motionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken,
-                destroyCancellationToken);
-            CancellationToken token = motionCancellation.Token;
+            CancellationTokenSource source =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    destroyCancellationToken);
+
+            motionCancellation = source;
+            CancellationToken token = source.Token;
 
             shieldRoot.SetParent(null, true);
             if (!shieldBody.isKinematic)
@@ -78,27 +82,27 @@ namespace Project.InGame.Boss
                 Vector3 start = shieldBody.position;
                 Vector3 destination = ResolveGroundDestination(target.position);
                 Vector3 control = (start + destination) * 0.5f +
-                    Vector3.up * definition.ShieldThrowArcHeight;
+                    Vector3.up * parameters.ArcHeight;
 
                 attackHitbox?.OpenHitWindow(definition, damage);
                 await MoveAlongArcAsync(
                     start,
                     control,
                     destination,
-                    definition.ShieldOutboundDuration,
+                    parameters.OutboundDuration,
                     token);
                 attackHitbox?.CloseHitWindow();
 
                 float waitDuration = Mathf.Max(
                     0f,
-                    definition.ShieldReturnDelay - definition.ShieldOutboundDuration);
+                    parameters.ReturnDelay - parameters.OutboundDuration);
                 attackVisuals?.SetShieldReturnCue(true);
                 await DelayAsync(waitDuration, token);
                 attackVisuals?.SetShieldReturnCue(false);
 
                 // 復路は往路とは別に1回命中できる。
                 attackHitbox?.OpenHitWindow(definition, damage);
-                await ReturnAlongGroundAsync(definition, token);
+                await ReturnAlongGroundAsync(parameters, token);
                 attackHitbox?.CloseHitWindow();
                 SnapToSocket();
             }
@@ -108,8 +112,15 @@ namespace Project.InGame.Boss
             }
             finally
             {
-                attackHitbox?.CloseHitWindow();
-                attackVisuals?.SetShieldReturnCue(false);
+                if (ReferenceEquals(motionCancellation, source))
+                {
+                    attackHitbox?.CloseHitWindow();
+                    attackVisuals?.SetShieldReturnCue(false);
+                    SnapToSocket();
+                    motionCancellation = null;
+                }
+
+                source.Dispose();
             }
         }
 
@@ -140,25 +151,25 @@ namespace Project.InGame.Boss
         /// <summary>
         /// 地形の高さに追従しながら、徐々に加速して盾を戻す。
         /// </summary>
-        private async UniTask ReturnAlongGroundAsync(BossAttackDefinition definition, CancellationToken cancellationToken)
+        private async UniTask ReturnAlongGroundAsync(BossShieldThrowParameters parameters, CancellationToken cancellationToken)
         {
             float elapsed = 0f;
 
             while (Mathf.Abs(shieldSocket.position.x - shieldBody.position.x) >
-                   definition.ShieldReturnDistance)
+                   parameters.ReturnDistance)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 float deltaTime = Time.fixedDeltaTime;
                 elapsed += deltaTime;
 
-                float t = Mathf.Clamp01(elapsed / definition.ShieldReturnAccelerationDuration);
+                float t = Mathf.Clamp01(elapsed / parameters.AccelerationDuration);
 
-                AnimationCurve curve = definition.ShieldReturnAcceleration;
+                AnimationCurve curve = parameters.AccelerationCurve;
                 float acceleration = curve != null ? Mathf.Clamp01(curve.Evaluate(t)) : t;
 
                 // 初速を少し持たせ、カーブの初期値が0でも帰還が始まるようにする。
-                float maxSpeed = definition.ShieldReturnMaxSpeed;
+                float maxSpeed = parameters.ReturnMaxSpeed;
                 float speed = Mathf.Lerp(
                     Mathf.Min(0.2f, maxSpeed),
                     maxSpeed,

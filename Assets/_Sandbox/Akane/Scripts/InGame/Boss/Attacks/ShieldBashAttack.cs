@@ -1,4 +1,3 @@
-
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
@@ -6,90 +5,84 @@ using UnityEngine;
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// Playerの頭上へ上昇し、落下と衝撃波で攻撃する。
+    /// 上昇・溜め・落下・着地衝撃波を順に実行する。
     /// </summary>
     public sealed class ShieldBashAttack : BossAttackStrategyBase
     {
-        // 地形設定に問題がある場合、無限に落下状態へ留まらないための保険。
+        private const float MAX_ASCENT_WAIT_SECONDS = 5f;
         private const float MAX_FALL_WAIT_SECONDS = 8f;
 
         public ShieldBashAttack(BossAttackDefinition definition)
-            : base(definition)
-        {
-        }
+            : base(definition) { }
 
         protected override async UniTask ExecuteAsync(
             BossContext context,
             CancellationToken cancellationToken)
         {
+            BossShieldBashParameters parameters =
+                Definition.GetParameters<BossShieldBashParameters>();
+
             BossPhysicsMotor motor = context.Boss.PhysicsMotor;
             BossAttackHitboxController hitboxes = context.Boss.AttackHitboxes;
 
-            context.Boss.Telegraph?.Show(Definition.PreparationTime);
-            await DelayAsync(Definition.PreparationTime, cancellationToken);
+            float preparationTime = parameters.GetPreparationTime(true);
+            context.Boss.Telegraph?.Show(preparationTime);
+            await DelayAsync(preparationTime, cancellationToken);
             context.Boss.Telegraph?.Hide();
 
-            // 上昇を開始する。
-            motor.BeginAscentAbove(
-                context.Player,
-                Definition.BashAscentDuration);
+            motor.BeginAscentAbove(context.Player, parameters.AscentDuration);
 
-            // 最後の物理移動が終わってから次の動作へ進む。
-            await UniTask.WaitUntil(
-                () => !motor.IsAscending,
-                PlayerLoopTiming.FixedUpdate,
-                cancellationToken: cancellationToken);
-
-            motor.HoldInAir();
-
-            // 頂点で溜める。
-            await DelayAsync(
-                Definition.BashAirHoldDuration,
-                cancellationToken);
-
-            float damage = GetAttackDamage(context);
-
-            // 落下中の盾Hitboxを有効化する。
-            hitboxes.BeginShieldBash(Definition, damage);
-            OpenAttackWindow(context);
-            motor.BeginFall(Definition.BashFallSpeed);
-
-            float elapsed = 0f;
-
-            while (!motor.IsGrounded)
+            float ascentElapsed = 0f;
+            while (motor.IsAscending)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-
                 await UniTask.Yield(
-                    PlayerLoopTiming.Update,
-                    cancellationToken);
+                    PlayerLoopTiming.FixedUpdate, cancellationToken);
+                ascentElapsed += Time.fixedDeltaTime;
 
-                elapsed += Time.deltaTime;
-
-                if (elapsed >= MAX_FALL_WAIT_SECONDS)
+                if (ascentElapsed >= MAX_ASCENT_WAIT_SECONDS)
                 {
                     Debug.LogWarning(
-                        "ShieldBashAttack: 地面へ着地できませんでした。",
+                        "ShieldBashAttack: 上昇が完了しませんでした。",
                         context.Boss);
-
-                    hitboxes.EndShieldBash();
-                    CloseAttackWindow(context);
+                    motor.EndScriptedMotion();
                     return;
                 }
             }
 
-            // 落下中の当たり判定を終了する。
+            motor.HoldInAir();
+            await DelayAsync(parameters.AirHoldDuration, cancellationToken);
+
+            float damage = GetAttackDamage(context);
+            hitboxes.BeginShieldBash(Definition, damage);
+            OpenAttackWindow(context);
+            motor.BeginFall(parameters.FallSpeed);
+
+            float fallElapsed = 0f;
+            while (!motor.IsGrounded)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await UniTask.Yield(
+                    PlayerLoopTiming.FixedUpdate, cancellationToken);
+                fallElapsed += Time.fixedDeltaTime;
+
+                if (fallElapsed >= MAX_FALL_WAIT_SECONDS)
+                {
+                    Debug.LogWarning(
+                        "ShieldBashAttack: 地面へ着地できませんでした。",
+                        context.Boss);
+                    hitboxes.EndShieldBash();
+                    CloseAttackWindow(context);
+                    motor.EndScriptedMotion();
+                    return;
+                }
+            }
+
             hitboxes.EndShieldBash();
-
-            // 同じ攻撃での命中履歴を引き継いで衝撃波を発生する。
             hitboxes.HitShockwaveOnce(
-                Definition,
-                damage,
-                Definition.ShockwaveWidth);
-
+                Definition, damage, parameters.ShockwaveWidth);
             CloseAttackWindow(context);
 
-            // 着地後の硬直。
             await DelayAsync(Definition.RecoveryTime, cancellationToken);
         }
 

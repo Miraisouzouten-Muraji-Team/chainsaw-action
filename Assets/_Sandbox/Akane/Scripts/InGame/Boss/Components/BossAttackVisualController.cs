@@ -129,21 +129,24 @@ namespace Project.InGame.Boss
                 currentThrustDirection * thrustPullbackDistance;
         }
 
+
         /// <summary>
-        /// チェーンソーを前方へ突き出して戻す。
+        /// 突きの速度倍率を反映しつつ、判定時間内で武器を戻す。
         /// </summary>
-        public void PlayThrust(float duration)
+        public void PlayThrust(float duration, float animationSpeed)
         {
-            if (weaponPivot == null)
-                return;
+            if (weaponPivot == null) { return; }
 
             currentSequence?.Kill();
             currentSequence = null;
 
             float totalDuration = Mathf.Max(0.05f, duration);
-            float extendDuration = totalDuration * 0.25f;
+            float safeSpeed = Mathf.Max(0.05f, animationSpeed);
+            float extendDuration = totalDuration *
+                Mathf.Clamp(0.25f / safeSpeed, 0.05f, 0.4f);
             float returnDuration = totalDuration * 0.25f;
-            float holdDuration = totalDuration - extendDuration - returnDuration;
+            float holdDuration =
+                totalDuration - extendDuration - returnDuration;
 
             currentSequence = DOTween.Sequence()
                 .Append(weaponPivot.DOLocalMove(
@@ -151,62 +154,91 @@ namespace Project.InGame.Boss
                     extendDuration).SetEase(Ease.OutCubic))
                 .AppendInterval(holdDuration)
                 .Append(weaponPivot.DOLocalMove(
-                    initialPosition, returnDuration).SetEase(Ease.InOutSine))
+                    initialPosition,
+                    returnDuration).SetEase(Ease.InOutSine))
                 .SetUpdate(UpdateType.Fixed)
                 .SetLink(gameObject);
         }
 
+
         /// <summary>
-        /// 縦振りの溜めとして武器を振り上げる。
+        /// 通常姿勢から頭上へチェーンソーを振り上げる。
         /// </summary>
-        public void PlayVerticalSlashPreparation(float duration)
+        public void PlayVerticalSlashPreparation(float duration, float raiseAngle)
         {
             if (weaponPivot == null) { return; }
 
             ResetPose();
             ApplyVerticalSlashRangePosition();
             ConfigureVerticalSlashBlade(false);
+
+            Quaternion baseRotation = slashFrontRotation;
+            weaponPivot.localRotation = baseRotation;
+
             currentSequence = DOTween.Sequence()
-                .Append(weaponPivot.DOLocalRotateQuaternion(
-                    slashFrontRotation * Quaternion.Euler(0f, 0f, -180f),
-                    Mathf.Max(0.01f, duration)).SetEase(Ease.OutSine))
+                .Append(DOVirtual.Float(
+                    0f,
+                    raiseAngle,
+                    Mathf.Max(0.01f, duration),
+                    angle =>
+                    {
+                        if (weaponPivot != null)
+                        {
+                            weaponPivot.localRotation =
+                                baseRotation * Quaternion.Euler(0f, 0f, angle);
+                        }
+                    }).SetEase(Ease.OutSine))
                 .SetUpdate(UpdateType.Fixed)
                 .SetLink(gameObject);
         }
 
+
         /// <summary>
-        /// チェーンソーを上から下へ振り下ろす。
+        /// 振り上げた姿勢から前方を通って振り下ろす。
         /// </summary>
-        public void PlayVerticalSlash(float duration)
+        public void PlayVerticalSlash(
+            float duration,
+            float raiseAngle,
+            float finishAngle,
+            float animationSpeed)
         {
-            if (weaponPivot == null)
-                return;
+            if (weaponPivot == null) { return; }
 
-            ResetPose();
-            ApplyVerticalSlashRangePosition();
-            ConfigureVerticalSlashBlade(false);
+            // 予備動作のTweenだけ停止する。ResetPoseは呼ばない。
+            currentSequence?.Kill();
+            currentSequence = null;
 
+            Quaternion baseRotation = slashFrontRotation;
+            weaponPivot.localRotation =
+                baseRotation * Quaternion.Euler(0f, 0f, raiseAngle);
+
+            Vector3 startPosition = weaponPivot.localPosition;
             float totalDuration = Mathf.Max(0.05f, duration);
-            float swingDuration = totalDuration * 0.6f;
-            float dropDuration = totalDuration * 0.25f;
+
+            // 速度倍率は振り下ろしに割り当てる時間へ反映する。
+            // 攻撃全体の有効時間は変えない。
+            float safeSpeed = Mathf.Max(0.05f, animationSpeed);
+            float swingDuration =
+                totalDuration * Mathf.Clamp(0.6f / safeSpeed, 0.1f, 0.75f);
+            float dropDuration = totalDuration * 0.2f;
             float returnDuration = totalDuration - swingDuration - dropDuration;
 
-            weaponPivot.localRotation = slashFrontRotation *
-                Quaternion.Euler(0f, 0f, -180f);
-
-            Vector3 slashStartPosition = weaponPivot.localPosition;
-
             currentSequence = DOTween.Sequence()
-                // 角度を明示的に進め、Quaternionの最短経路で下側を回ることを防ぐ。
-                .Append(DOVirtual.Float(-180f, 0f, swingDuration, angle =>
-                {
-                    ApplyVerticalSlashRangePosition();
-                    weaponPivot.localRotation = slashFrontRotation *
-                        Quaternion.Euler(0f, 0f, angle);
-                }).SetEase(Ease.InCubic))
+                .Append(DOVirtual.Float(
+                    raiseAngle,
+                    finishAngle,
+                    swingDuration,
+                    angle =>
+                    {
+                        if (weaponPivot != null)
+                        {
+                            weaponPivot.localRotation =
+                                baseRotation * Quaternion.Euler(0f, 0f, angle);
+                        }
+                    }).SetEase(Ease.InCubic))
                 .AppendCallback(() => ConfigureVerticalSlashBlade(true))
                 .Append(weaponPivot.DOLocalMove(
-                    slashStartPosition + GetVerticalSlashDropOffset(),
+                    startPosition + GetVerticalSlashDropOffset(),
                     dropDuration).SetEase(Ease.InCubic))
                 .Append(weaponPivot.DOLocalMove(
                     initialPosition,
@@ -327,11 +359,13 @@ namespace Project.InGame.Boss
         }
 
 #if UNITY_EDITOR
-        /// <summary>再生中に縦切りの軌跡をゆっくり確認する。</summary>
         [ContextMenu("縦切りプレビュー（再生中・6秒）")]
         private void PreviewVerticalSlash()
         {
-            if (Application.isPlaying) { PlayVerticalSlash(6f); }
+            if (!Application.isPlaying) { return; }
+
+            PlayVerticalSlashPreparation(0.01f, -90f);
+            PlayVerticalSlash(6f, -90f, 90f, 1f);
         }
 #endif
     }

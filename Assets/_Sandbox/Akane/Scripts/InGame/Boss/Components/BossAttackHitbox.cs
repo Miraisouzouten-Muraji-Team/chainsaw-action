@@ -250,29 +250,46 @@ namespace Project.InGame.Boss
             return forwardDirection.normalized;
         }
 
+
         /// <summary>
-        /// 現在のCollider範囲にいるPlayerを一度だけ即時判定する。
+        /// BoxCollider本来の位置・大きさ・回転に合わせて1回だけ命中判定する。
         /// </summary>
         public void HitOnce(BossAttackDefinition definition, float damage)
         {
-            if (!isActiveAndEnabled || hitCollider == null || definition == null) { return; }
+            if (!isActiveAndEnabled ||
+                !TryGetComponent(out BoxCollider boxCollider) ||
+                definition == null)
+            {
+                return;
+            }
 
             OpenHitWindow(definition, damage);
 
-            Bounds bounds = hitCollider.bounds;
-            Collider[] overlaps = Physics.OverlapBox(
-                bounds.center,
-                bounds.extents,
-                hitCollider.transform.rotation,
-                Physics.AllLayers,
-                QueryTriggerInteraction.Collide);
-
-            foreach (Collider overlap in overlaps)
+            try
             {
-                TryHitPlayer(overlap);
-            }
+                Transform hitTransform = boxCollider.transform;
+                Vector3 scale = hitTransform.lossyScale;
 
-            CloseHitWindow();
+                Vector3 halfExtents = Vector3.Scale(boxCollider.size, new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z))) * 0.5f;
+
+                Vector3 center = hitTransform.TransformPoint(boxCollider.center);
+
+                Collider[] overlaps = Physics.OverlapBox(
+                    center,
+                    halfExtents,
+                    hitTransform.rotation,
+                    Physics.AllLayers,
+                    QueryTriggerInteraction.Collide);
+
+                foreach (Collider overlap in overlaps)
+                {
+                    TryHitPlayer(overlap);
+                }
+            }
+            finally
+            {
+                CloseHitWindow();
+            }
         }
 
         private void OnDisable()

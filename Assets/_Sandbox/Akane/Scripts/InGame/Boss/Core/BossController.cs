@@ -56,7 +56,6 @@ namespace Project.InGame.Boss
         /// </summary>
         public float AttackPower => attackPower;
 
-
         /// <summary>
         /// 現在の盾状態で攻撃ダメージを計算する。
         /// </summary>
@@ -66,11 +65,14 @@ namespace Project.InGame.Boss
         }
 
         /// <summary>
-        /// 攻撃開始時に確定した盾状態からダメージを計算する。
+        /// 攻撃開始時の盾状態からダメージを確定する。
         /// </summary>
         public float CalculateAttackDamage(BossAttackDefinition definition, bool hasShield)
         {
-            if (definition == null) { return 0f; }
+            if (definition == null || !definition.IsConfigured)
+            {
+                return 0f;
+            }
 
             return attackPower * definition.GetDamageMultiplier(hasShield);
         }
@@ -134,6 +136,7 @@ namespace Project.InGame.Boss
             StateMachine.Register(new BossDeadState(context));
 
             Health.Died += HandleDeath;
+            Shield.ShieldBroken += HandleShieldBroken;
         }
 
         private void Start()
@@ -165,7 +168,36 @@ namespace Project.InGame.Boss
             {
                 Health.Died -= HandleDeath;
             }
+
+            if (Shield != null)
+            {
+                Shield.ShieldBroken -= HandleShieldBroken;
+            }
+
             StateMachine?.Dispose();
+        }
+
+        /// <summary>
+        /// 盾を使う攻撃中に盾が壊れた場合、攻撃を終了する。
+        /// </summary>
+        private void HandleShieldBroken()
+        {
+            if (StateMachine == null || Health == null || Health.IsDead)
+            {
+                return;
+            }
+
+            if (StateMachine.CurrentType != BossStateType.Attack)
+            {
+                return;
+            }
+
+            if (SelectedAttack?.Definition.RequiresShield != true)
+            {
+                return;
+            }
+
+            StateMachine.ChangeState(BossStateType.Idle);
         }
 
         /// <summary>
@@ -231,10 +263,18 @@ namespace Project.InGame.Boss
             var strategies = new List<IBossAttackStrategy>();
             var registeredTypes = new HashSet<BossAttackType>();
 
-            foreach (var definition in attackDefinitions)
+            foreach (BossAttackDefinition definition in attackDefinitions)
             {
                 if (definition == null)
                 {
+                    continue;
+                }
+
+                if (!definition.IsConfigured)
+                {
+                    Debug.LogError(
+                        $"BossController: {definition.name}の攻撃設定が未完成です。",
+                        definition);
                     continue;
                 }
 

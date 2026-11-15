@@ -19,6 +19,14 @@ namespace Project.InGame.Boss
         {
             currentAttack = context.Boss.SelectedAttack;
 
+            if (currentAttack?.Definition.RequiresShield == true &&
+                !context.Shield.IsActive)
+            {
+                context.Boss.ClearSelectedAttack();
+                context.Boss.StateMachine.ChangeState(BossStateType.Idle);
+                return;
+            }
+
             if (currentAttack == null)
             {
                 context.Boss.StateMachine.ChangeState(BossStateType.Idle);

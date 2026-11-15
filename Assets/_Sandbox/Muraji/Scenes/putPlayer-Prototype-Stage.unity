@@ -128495,6 +128495,10 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 1674243253151089462, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: m_TagString
+      value: Player
+      objectReference: {fileID: 0}
     - target: {fileID: 1691384145625399883, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: chainsawTip
       value: 
@@ -128522,6 +128526,18 @@ PrefabInstance:
     - target: {fileID: 1881424739761464751, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Name
       value: InGameObjects
+      objectReference: {fileID: 0}
+    - target: {fileID: 1983712753033534727, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: fallState
+      value: Base Layer.Landing
+      objectReference: {fileID: 0}
+    - target: {fileID: 1983712753033534727, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: jumpState
+      value: Base Layer.Jump
+      objectReference: {fileID: 0}
+    - target: {fileID: 1983712753033534727, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: minimumFallDistance
+      value: 0.1
       objectReference: {fileID: 0}
     - target: {fileID: 2054378644020494847, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.z

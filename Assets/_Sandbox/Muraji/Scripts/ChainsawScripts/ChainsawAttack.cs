@@ -8,7 +8,7 @@ public class ChainsawAttack : MonoBehaviour
     private const int SLASH_HIT_COUNT = 4;
     private PlayerAnimator weakAttackAnimator;
     private bool weakAttackStartedInAir;
-    private EnemyAttackHitReceiver weakDigTarget;
+    private MonoBehaviour weakDigTarget;
     private Collider weakDigCollider;
     private Vector3 weakDigPoint;
     private bool weakDigHolding;
@@ -199,8 +199,8 @@ public class ChainsawAttack : MonoBehaviour
     private int slashHitIndex;
 
     // 通常攻撃の1段ごとに、送信済みの敵を記録する。
-    private readonly HashSet<EnemyAttackHitReceiver> hitEnemies =
-        new HashSet<EnemyAttackHitReceiver>();
+    private readonly HashSet<MonoBehaviour> hitEnemies =
+        new HashSet<MonoBehaviour>();
 
     private void Awake()
     {
@@ -358,7 +358,7 @@ public class ChainsawAttack : MonoBehaviour
         EnemyAttackHitReceiver receiver =
             enemy.GetComponentInParent<EnemyAttackHitReceiver>();
 
-        if (receiver == null)
+        if (receiver == null && !(enemy is IAttackHitReceiver))
         {
             return false;
         }
@@ -371,8 +371,14 @@ public class ChainsawAttack : MonoBehaviour
             return false;
         }
 
-        AttackData sendData = GetScaledDiggingData(data, scaledDamage, weakDigHolding);
-        if (!SendAttackHit(receiver, sendData, point))
+        AttackData sendData = GetScaledDiggingData(data, scaledDamage, weakDigHolding || receiver == null);
+        // 専用ReceiverにはHP取得APIがないため、有効な接続先への送信を1撃として数える。
+        if (receiver == null)
+        {
+            ((IAttackHitReceiver)enemy).ReceiveAttackHit(new PlayerAttackHitData(sendData));
+            lastHitDealtDamage = true;
+        }
+        else if (!SendAttackHit(receiver, sendData, point))
         {
             return false;
         }
@@ -404,7 +410,7 @@ public class ChainsawAttack : MonoBehaviour
         EnemyAttackHitReceiver receiver =
             enemy.GetComponentInParent<EnemyAttackHitReceiver>();
 
-        if (receiver == null)
+        if (receiver == null && !(enemy is IAttackHitReceiver))
         {
             return false;
         }
@@ -417,8 +423,12 @@ public class ChainsawAttack : MonoBehaviour
             return false;
         }
 
-        AttackData sendData = GetScaledDiggingData(data, scaledDamage);
-        if (!SendAttackHit(receiver, sendData, point))
+        AttackData sendData = GetScaledDiggingData(data, scaledDamage, receiver == null);
+        if (receiver == null)
+        {
+            ((IAttackHitReceiver)enemy).ReceiveAttackHit(new PlayerAttackHitData(sendData));
+        }
+        else if (!SendAttackHit(receiver, sendData, point))
         {
             return false;
         }
@@ -494,8 +504,10 @@ public class ChainsawAttack : MonoBehaviour
             return;
         }
 
-        EnemyAttackHitReceiver receiver =
-            other.GetComponentInParent<EnemyAttackHitReceiver>();
+        EnemyAttackHitReceiver regular = other.GetComponentInParent<EnemyAttackHitReceiver>();
+        MonoBehaviour receiver = regular;
+        if (regular == null && weakAttackDigging != null && weakAttackDigging.IsEnemyHitLayer(other))
+            receiver = other.GetComponentInParent<IAttackHitReceiver>() as MonoBehaviour;
 
         if (receiver == null ||
             !receiver.isActiveAndEnabled ||
@@ -521,7 +533,7 @@ public class ChainsawAttack : MonoBehaviour
                 return;
             }
             finishingTargetCollider = other;
-            HoldEnemy(receiver, other);
+            if (regular != null) HoldEnemy(regular, other);
             DisableHitBox();
             return;
         }
@@ -534,33 +546,42 @@ public class ChainsawAttack : MonoBehaviour
         bool isFinishingHit = slashHitIndex >= SLASH_HIT_COUNT;
         // OnWeakAttackSwingで開いたこの区間に、開始時の振り抜き専用SOのベクトルを適用する。
         AttackData attackData = currentData;
+        // 専用Receiverには振り抜きダメージだけを送り、物理制御はボスに任せる。
+        if (regular == null)
+        {
+            hitEnemies.Add(receiver);
+            AttackData bossData = GetScaledDiggingData(attackData, attackData.damage, true);
+            ((IAttackHitReceiver)receiver).ReceiveAttackHit(new PlayerAttackHitData(bossData));
+            PlayHitEffects(point, hitStopTime, true, shakeMagnitude);
+            return;
+        }
         bool hasKnockback = TryGetSlashKnockbackVector(
-            receiver,
+            regular,
             currentData,
             out Vector2 knockbackVector);
 
         // 送信先の処理中に再度呼ばれても重複送信しないよう、先に登録する。
-        hitEnemies.Add(receiver);
+        hitEnemies.Add(regular);
 
         if (isFinishingHit)
         {
-            ReleaseHeldEnemy(receiver);
+            ReleaseHeldEnemy(regular);
             if (hasKnockback) ProtectPlayerFromKnockback(other);
         }
-        if (!SendAttackHit(receiver, attackData, point))
+        if (!SendAttackHit(regular, attackData, point))
         {
             // 送信できなかった場合は、次の接触通知で再試行できるようにする。
-            hitEnemies.Remove(receiver);
+            hitEnemies.Remove(regular);
             return;
         }
 
         // 通常攻撃だけに適用する。食い込みの既存の押し出しとは重複させない。
         if (isFinishingHit)
         {
-            ReleaseHeldEnemy(receiver);
+            ReleaseHeldEnemy(regular);
             if (hasKnockback)
             {
-                ApplySlashKnockback(receiver, other, knockbackVector);
+                ApplySlashKnockback(regular, other, knockbackVector);
             }
         }
 

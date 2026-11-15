@@ -8,6 +8,10 @@ public class AttackData : ScriptableObject
     [Tooltip("攻撃力")]
     public int damage;
 
+    [Header("食い込みダメージ")]
+    [Tooltip("オンにすると食い込みダメージへアクセル値に応じた倍率を適用します。移動中の接触攻撃には接触ダメージ倍率も適用します。オフにすると攻撃力をそのまま使用します。ボーナス時の敵食い込み追加倍率は別に適用されます。")]
+    public bool useAcceleratorDamageMultiplier = true;
+
     [Tooltip("攻撃ベクトル")]
     public Vector2 attackVector;
 

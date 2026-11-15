@@ -46,6 +46,7 @@ public class ChainsawDiggingParticles : MonoBehaviour
 
     private ParticleSystem particleInstance;
     private bool isEmitting;
+    private bool activeFloorMirror;
     private ParticleSystem activeParticlePrefab;
 
     // 放出終了後も、生存中の粒子が自然に消えるまで生成物を保持する。
@@ -155,10 +156,19 @@ public class ChainsawDiggingParticles : MonoBehaviour
             Vector3.forward,
             direction);
 
+        // 床の右向きは左向きの噴射姿勢全体を反転し、子ごとの放出方向も合わせる。
+        bool mirrorFloor = chainsawDigging.Surface == ChainsawSurface.Floor && facingDirection > 0f;
+        if (mirrorFloor)
+        {
+            Vector3 leftDirection = new Vector3(-direction.x, direction.y, 0f);
+            rotation = Quaternion.AngleAxis(180f, Vector3.up)
+                * Quaternion.FromToRotation(Vector3.forward, leftDirection);
+        }
+
         Vector3 position = emissionPoint.position;
 
         ParticleSystem selectedPrefab = SelectParticlePrefab();
-        if (particleInstance != null && activeParticlePrefab != selectedPrefab)
+        if (particleInstance != null && (activeParticlePrefab != selectedPrefab || activeFloorMirror != mirrorFloor))
         {
             // 旧段階の粒子は消去せず、その場で寿命まで再生させる。
             StopEmission();
@@ -167,7 +177,7 @@ public class ChainsawDiggingParticles : MonoBehaviour
         // 段階が変わったときだけ作り直し、旧粒子が残る間に新しい放出を開始する。
         if (particleInstance == null)
         {
-            CreateParticles(selectedPrefab, position, rotation);
+            CreateParticles(selectedPrefab, position, rotation, mirrorFloor);
         }
 
         particleInstance.transform.SetPositionAndRotation(
@@ -210,7 +220,8 @@ public class ChainsawDiggingParticles : MonoBehaviour
     private void CreateParticles(
         ParticleSystem selectedPrefab,
         Vector3 position,
-        Quaternion rotation)
+        Quaternion rotation,
+        bool mirrorFloor)
     {
         // 見た目の左右反転やスケールの影響を避けるため、
         // Playerの子にはせず生成する。
@@ -219,6 +230,7 @@ public class ChainsawDiggingParticles : MonoBehaviour
             position,
             rotation);
         activeParticlePrefab = selectedPrefab;
+        activeFloorMirror = mirrorFloor;
 
         ParticleSystem.MainModule main = particleInstance.main;
 
@@ -236,6 +248,25 @@ public class ChainsawDiggingParticles : MonoBehaviour
             ParticleSystem.MainModule childMain = particles.main;
             childMain.stopAction = ParticleSystemStopAction.None;
             childMain.simulationSpace = ParticleSystemSimulationSpace.World;
+            if (mirrorFloor)
+            {
+                // カメラ向きの粒子は放出座標の回転だけでは絵柄と傾きが反転しない。
+                ParticleSystemRenderer particleRenderer = particles.GetComponent<ParticleSystemRenderer>();
+                if (particleRenderer != null && particleRenderer.alignment == ParticleSystemRenderSpace.View &&
+                    (particleRenderer.renderMode == ParticleSystemRenderMode.Billboard ||
+                     particleRenderer.renderMode == ParticleSystemRenderMode.Stretch))
+                {
+                    childMain.startRotation = MirrorCurve(childMain.startRotation);
+                    Vector3 flip = particleRenderer.flip;
+                    flip.x = 1f - flip.x;
+                    particleRenderer.flip = flip;
+                }
+
+                // ワールド指定の速度だけは放出姿勢から独立しているため、横成分を反転する。
+                var velocity = particles.velocityOverLifetime;
+                if (velocity.enabled && velocity.space == ParticleSystemSimulationSpace.World)
+                    velocity.x = MirrorCurve(velocity.x);
+            }
         }
 
         main.loop = true;
@@ -245,6 +276,17 @@ public class ChainsawDiggingParticles : MonoBehaviour
 
         particleInstance.gameObject.SetActive(true);
         isEmitting = false;
+    }
+
+    // 定数、ランダム範囲、カーブそれぞれの分布を維持して符号を反転する。
+    private static ParticleSystem.MinMaxCurve MirrorCurve(ParticleSystem.MinMaxCurve value)
+    {
+        if (value.mode == ParticleSystemCurveMode.Constant)
+            return new ParticleSystem.MinMaxCurve(-value.constant);
+        if (value.mode == ParticleSystemCurveMode.TwoConstants)
+            return new ParticleSystem.MinMaxCurve(-value.constantMax, -value.constantMin);
+        value.curveMultiplier *= -1f;
+        return value;
     }
 
     // 新しい粒子の放出だけを止め、残っている粒子は寿命まで再生する。

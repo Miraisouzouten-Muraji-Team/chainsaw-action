@@ -6,7 +6,7 @@ using UnityEngine;
 public struct SensorChainsawContact
 {
     public Collider Collider;
-    public EnemyAttackHitReceiver Enemy;
+    public MonoBehaviour Enemy;
     public ChainsawSurface Surface;
     public Vector3 Point;
     public Vector3 Normal;
@@ -146,7 +146,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
         Collider target, Vector3 sensorCenter, Vector3 point)
     {
         if (IsOwner(target) || !ChainsawContactZone.AllowsAttack(target)) return;
-        EnemyAttackHitReceiver enemy = target.GetComponentInParent<EnemyAttackHitReceiver>();
+        MonoBehaviour enemy = FindAttackReceiver(target);
         if (!CanReceiveEnemyHit(enemy)) return;
 
         Vector3 sightOrigin = new Vector3(
@@ -186,13 +186,23 @@ public class SensorChainsawContactDetector : MonoBehaviour
     public int TerrainLayerMask => contactDetectorParameter != null ? contactDetectorParameter.TerrainLayers.value : 0;
 
     // Receiverを変更せず、敵の有効状態と同じオブジェクトのHPから食い込み可能かを調べる。
-    public static bool CanReceiveEnemyHit(EnemyAttackHitReceiver enemy)
+    // 接触したCollider自身と親階層から、攻撃情報を受信するコンポーネントを取得する。
+    public static MonoBehaviour FindAttackReceiver(Component target)
+    {
+        if (target == null) return null;
+        return target.GetComponentInParent<IAttackHitReceiver>() as MonoBehaviour;
+    }
+
+    public static bool CanReceiveEnemyHit(MonoBehaviour enemy)
     {
         if (enemy == null || !enemy.isActiveAndEnabled)
         {
             return false;
         }
 
+        // 専用Receiverは有効状態、通常敵は既存のHPも確認する。
+        if (!(enemy is IAttackHitReceiver)) return false;
+        if (!(enemy is EnemyAttackHitReceiver)) return true;
         EnemyHealth health = enemy.GetComponent<EnemyHealth>();
 
         return health != null &&
@@ -760,8 +770,8 @@ public class SensorChainsawContactDetector : MonoBehaviour
                     continue;
                 }
 
-                EnemyAttackHitReceiver enemy =
-                    target.GetComponentInParent<EnemyAttackHitReceiver>();
+                MonoBehaviour enemy =
+                    FindAttackReceiver(target);
 
                 if (!CanReceiveEnemyHit(enemy))
                 {
@@ -1168,7 +1178,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
     private void Consider(
         Collider target,
-        EnemyAttackHitReceiver enemy,
+        MonoBehaviour enemy,
         ChainsawSurface surface,
         Vector3 point,
         Vector3 normal,

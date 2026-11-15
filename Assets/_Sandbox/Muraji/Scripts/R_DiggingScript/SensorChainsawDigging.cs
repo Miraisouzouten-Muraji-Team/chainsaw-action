@@ -34,17 +34,28 @@ public class SensorChainsawDigging : MonoBehaviour
     // 開始時に選んだ攻撃データを保持し、途中着地で攻撃内容が変わることを防ぐ。
     private AttackData activeWeakAttackDiggingData;
 
+    private MonoBehaviour weakTarget;
+
+    // 通常敵以外の受信先を、敵用レイヤーの当たり判定に限定する。
+    public bool IsEnemyHitLayer(Collider other)
+    {
+        return detector != null && (detector.EnemyLayerMask & (1 << other.gameObject.layer)) != 0;
+    }
+
     public bool IsWeakEnemyAttack { get; private set; }
 
     // 弱攻撃の接触情報を通常の敵食い込みへ接続し、命中した場所と敵との位置差を保持する。
-    public bool BeginWeakEnemyAttack(EnemyAttackHitReceiver enemy, Collider enemyCollider, Vector3 point, bool isAirAttack = false)
+    public bool BeginWeakEnemyAttack(MonoBehaviour enemy, Collider enemyCollider, Vector3 point, bool isAirAttack = false)
     {
         // 敵に当たった時点の接地ではなく、攻撃を開始した時点の空中判定を使う。
         AttackData data = isAirAttack && airWeakAttackDiggingData != null
             ? airWeakAttackDiggingData
             : weakAttackDiggingData;
         if (!isActiveAndEnabled || diggingParameter == null || data == null ||
-            accelerator == null || !SensorChainsawContactDetector.CanReceiveEnemyHit(enemy)) return false;
+            accelerator == null || enemy == null || !enemy.isActiveAndEnabled ||
+            !(enemy is IAttackHitReceiver) ||
+            (enemy is EnemyAttackHitReceiver regular && !SensorChainsawContactDetector.CanReceiveEnemyHit(regular))) return false;
+        weakTarget = enemy;
         activeWeakAttackDiggingData = data;
         IsWeakEnemyAttack = true;
         IsRequested = true;
@@ -71,6 +82,7 @@ public class SensorChainsawDigging : MonoBehaviour
     {
         if (!IsWeakEnemyAttack) return;
         IsWeakEnemyAttack = false;
+        weakTarget = null;
         activeWeakAttackDiggingData = null;
         IsRequested = false;
         Surface = ChainsawSurface.None;
@@ -86,9 +98,8 @@ public class SensorChainsawDigging : MonoBehaviour
     // 通常・弱攻撃の敵食い込みで、倍率計算、アクセル消費、命中演出を共用する。
     private bool TrySendEnemyDiggingDamage()
     {
-        float speedRatio = Mathf.Clamp01(accelerator.SpeedRatio);
-        float damageMultiplier = Mathf.Lerp(diggingParameter.minDamageMultiplier,
-            diggingParameter.maxDamageMultiplier, speedRatio);
+        AttackData data = IsWeakEnemyAttack ? activeWeakAttackDiggingData : diggingAttackData;
+        float damageMultiplier = GetAcceleratorDamageMultiplier(data);
         float consumeAmount = HasBonus ? diggingParameter.bonusEnemyConsumeAmount
             : diggingParameter.enemyConsumeAmount;
         if (!accelerator.TryConsume(consumeAmount))
@@ -98,22 +109,52 @@ public class SensorChainsawDigging : MonoBehaviour
             return false;
         }
         // 間隔・倍率・消費は共用し、弱攻撃中だけ専用SOへ切り替える。
-        AttackData data = IsWeakEnemyAttack ? activeWeakAttackDiggingData : diggingAttackData;
-        return chainsawAttack.HitDigging(contact.Enemy, data,
+        return chainsawAttack.HitDigging(IsWeakEnemyAttack ? weakTarget : contact.Enemy, data,
             damageMultiplier * (HasBonus ? diggingParameter.bonusDamageMultiplier : 1f),
             contact.Point);
+    }
+
+    // 攻撃データの設定に従い、アクセル値に応じた食い込みダメージ倍率を取得する。
+    private float GetAcceleratorDamageMultiplier(AttackData data)
+    {
+        if (data == null || !data.useAcceleratorDamageMultiplier)
+            return 1f;
+
+        float speedRatio = accelerator != null ? Mathf.Clamp01(accelerator.SpeedRatio) : 0f;
+        return Mathf.Lerp(diggingParameter.minDamageMultiplier,
+            diggingParameter.maxDamageMultiplier, speedRatio);
+    }
+
+    // 移動中の接触攻撃は、連動が有効な場合だけ接触倍率とアクセル倍率を適用する。
+    private float GetMovementContactDamageMultiplier()
+    {
+        if (diggingAttackData == null || !diggingAttackData.useAcceleratorDamageMultiplier)
+            return 1f;
+
+        return movementContactDamageMultiplier * GetAcceleratorDamageMultiplier(diggingAttackData);
+    }
+
+    // 継続中の弱攻撃は専用Receiver、通常食い込みは既存の敵HPで有効性を確認する。
+    private bool HasActiveEnemyTarget()
+    {
+        if (IsWeakEnemyAttack)
+        {
+            if (weakTarget == null || !weakTarget.isActiveAndEnabled) return false;
+            if (!(weakTarget is EnemyAttackHitReceiver)) return true;
+        }
+        return SensorChainsawContactDetector.CanReceiveEnemyHit(contact.Enemy);
     }
 
     // 通常敵食い込みと同じ間隔・消費・攻撃データでダメージを送り、3回成立で振り抜きへ進める。
     private void TickWeakEnemyAttack(float deltaTime)
     {
-        if (!SensorChainsawContactDetector.CanReceiveEnemyHit(contact.Enemy))
+        if (!HasActiveEnemyTarget())
         {
             EndWeakEnemyAttack();
             chainsawAttack.EndWeakEnemyDamage();
             return;
         }
-        contact.Point = contact.Enemy.transform.TransformPoint(enemyLocalHitPoint);
+        contact.Point = weakTarget.transform.TransformPoint(enemyLocalHitPoint);
         timer += deltaTime;
         float interval = Mathf.Max(0.01f, diggingParameter.enemyAttackInterval);
         // ヒットストップをまたいだ連続送信を防ぐため、1回の物理更新につき1命中とする。
@@ -232,19 +273,19 @@ public class SensorChainsawDigging : MonoBehaviour
 
     // 物理衝突を無視するボーナス中も検出できるよう、Overlapで接触を調べる。
     // 一度触れた敵は離れるまで再攻撃しない。
-    private readonly HashSet<EnemyAttackHitReceiver> touchingEnemies = new HashSet<EnemyAttackHitReceiver>();
-    private readonly HashSet<EnemyAttackHitReceiver> detectedEnemies = new HashSet<EnemyAttackHitReceiver>();
+    private readonly HashSet<MonoBehaviour> touchingEnemies = new HashSet<MonoBehaviour>();
+    private readonly HashSet<MonoBehaviour> detectedEnemies = new HashSet<MonoBehaviour>();
     private readonly List<Collider> movementBodyColliders = new List<Collider>();
     private Collider[] movementOverlapBuffer = new Collider[32];
     private Rigidbody movementBody;
     private readonly List<SensorChainsawContact> movementSweepContacts =
         new List<SensorChainsawContact>();
-    private readonly HashSet<EnemyAttackHitReceiver> normalMovementHitEnemies =
-        new HashSet<EnemyAttackHitReceiver>();
-    private readonly List<EnemyAttackHitReceiver> pendingMovementCollisionEnemies =
-        new List<EnemyAttackHitReceiver>();
-    private readonly HashSet<EnemyAttackHitReceiver> queuedMovementCollisionEnemies =
-        new HashSet<EnemyAttackHitReceiver>();
+    private readonly HashSet<MonoBehaviour> normalMovementHitEnemies =
+        new HashSet<MonoBehaviour>();
+    private readonly List<MonoBehaviour> pendingMovementCollisionEnemies =
+        new List<MonoBehaviour>();
+    private readonly HashSet<MonoBehaviour> queuedMovementCollisionEnemies =
+        new HashSet<MonoBehaviour>();
     private bool movementCollisionWindow;
     private bool flushingMovementCollisions;
 
@@ -264,12 +305,12 @@ public class SensorChainsawDigging : MonoBehaviour
         if (!isActiveAndEnabled ||
             !IsRequested ||
             Surface != ChainsawSurface.Enemy ||
-            !SensorChainsawContactDetector.CanReceiveEnemyHit(contact.Enemy))
+            !HasActiveEnemyTarget())
         {
             return false;
         }
 
-        position = contact.Enemy.transform.position + enemyFollowOffset;
+        position = (IsWeakEnemyAttack ? weakTarget.transform : contact.Enemy.transform).position + enemyFollowOffset;
         return true;
     }
     private float timer;
@@ -795,7 +836,7 @@ public class SensorChainsawDigging : MonoBehaviour
                 }
 
                 // 押し出し済みなら、以降はダメージだけを継続する。
-                if (enemyPushApplied)
+                if (enemyPushApplied || !(contact.Enemy is EnemyAttackHitReceiver))
                 {
                     continue;
                 }
@@ -1121,7 +1162,7 @@ public class SensorChainsawDigging : MonoBehaviour
                      ChainsawContactZone.GetZone(enemyCollider) == null)))
                     continue;
 
-                EnemyAttackHitReceiver enemy = enemyCollider.GetComponentInParent<EnemyAttackHitReceiver>();
+                MonoBehaviour enemy = SensorChainsawContactDetector.FindAttackReceiver(enemyCollider);
                 if (!SensorChainsawContactDetector.CanReceiveEnemyHit(enemy)) continue;
                 if (!Physics.ComputePenetration(bodyCollider,
                         bodyCollider.transform.position, bodyCollider.transform.rotation,
@@ -1140,7 +1181,7 @@ public class SensorChainsawDigging : MonoBehaviour
                     continue;
                 }
                 chainsawAttack.HitMovementContact(enemy, diggingAttackData,
-                    movementContactDamageMultiplier,
+                    GetMovementContactDamageMultiplier(),
                     enemyCollider.ClosestPoint(bounds.center));
             }
         }
@@ -1162,7 +1203,7 @@ public class SensorChainsawDigging : MonoBehaviour
                 continue;
             }
             chainsawAttack.HitMovementContact(candidate.Enemy, diggingAttackData,
-                movementContactDamageMultiplier, candidate.Point);
+                GetMovementContactDamageMultiplier(), candidate.Point);
         }
         touchingEnemies.RemoveWhere(enemy => enemy == null || !detectedEnemies.Contains(enemy));
     }
@@ -1185,7 +1226,7 @@ public class SensorChainsawDigging : MonoBehaviour
     }
 
     // 通常時の専用Triggerへの接触を、既存の遅延命中キューへ一度だけ登録する。
-    private void QueueTriggerMovementHit(EnemyAttackHitReceiver enemy)
+    private void QueueTriggerMovementHit(MonoBehaviour enemy)
     {
         if (!SensorChainsawContactDetector.CanReceiveEnemyHit(enemy) ||
             !normalMovementHitEnemies.Add(enemy) || !queuedMovementCollisionEnemies.Add(enemy)) return;
@@ -1197,8 +1238,8 @@ public class SensorChainsawDigging : MonoBehaviour
     {
         if (!movementCollisionWindow || collision == null || collision.collider == null ||
             !ChainsawContactZone.AllowsAttack(collision.collider)) return;
-        EnemyAttackHitReceiver enemy =
-            collision.collider.GetComponentInParent<EnemyAttackHitReceiver>();
+        MonoBehaviour enemy =
+            SensorChainsawContactDetector.FindAttackReceiver(collision.collider);
         if (!SensorChainsawContactDetector.CanReceiveEnemyHit(enemy) ||
             normalMovementHitEnemies.Contains(enemy) || !queuedMovementCollisionEnemies.Add(enemy))
             return;
@@ -1217,10 +1258,10 @@ public class SensorChainsawDigging : MonoBehaviour
             if (chainsawAttack == null || diggingAttackData == null) return;
             for (int i = 0; i < pendingMovementCollisionEnemies.Count; i++)
             {
-                EnemyAttackHitReceiver enemy = pendingMovementCollisionEnemies[i];
+                MonoBehaviour enemy = pendingMovementCollisionEnemies[i];
                 if (!SensorChainsawContactDetector.CanReceiveEnemyHit(enemy)) continue;
                 chainsawAttack.HitMovementContact(enemy, diggingAttackData,
-                    movementContactDamageMultiplier,
+                    GetMovementContactDamageMultiplier(),
                     enemy.transform.position);
             }
         }

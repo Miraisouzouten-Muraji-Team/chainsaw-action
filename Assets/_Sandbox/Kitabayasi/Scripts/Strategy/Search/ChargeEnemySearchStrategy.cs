@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -212,12 +212,12 @@ public sealed class ChargeEnemySearchStrategy :
                 "非KinematicのRigidbodyを使用する前提です。");
         }
 
-        // 攻撃用Trigger等を誤選択しないよう、本体Rigidbodyに属する物理Capsuleを選ぶ。
+        // 本体のTrigger Capsuleを選ぶ。死亡時の飛散用Colliderは選択しない。
         enemyCollider = null;
         CapsuleCollider[] bodyColliders = enemyObject.GetComponentsInChildren<CapsuleCollider>();
         foreach (CapsuleCollider candidate in bodyColliders)
         {
-            if (candidate.enabled && !candidate.isTrigger &&
+            if (candidate.enabled && candidate.isTrigger &&
                 candidate.attachedRigidbody == enemyRigidbody)
             {
                 enemyCollider = candidate;
@@ -229,7 +229,7 @@ public sealed class ChargeEnemySearchStrategy :
         {
             throw new InvalidOperationException(
                 $"{nameof(ChargeEnemySearchStrategy)}を使用するEnemyには" +
-                $"有効かつ非Triggerの{nameof(CapsuleCollider)}が必要です。");
+                $"有効なTriggerの{nameof(CapsuleCollider)}が必要です。");
         }
 
         playerReference =
@@ -552,16 +552,16 @@ public sealed class ChargeEnemySearchStrategy :
     /// 進行方向を塞ぐ壁との接触時は巡回方向を反転する。
     /// </summary>
     public void HandleCollisionEnter(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         if (!isSearchActive ||
-            collision == null)
+            !collision.IsValid)
         {
             return;
         }
 
         Collider collidedCollider =
-            collision.collider;
+            collision.OtherCollider;
 
         CaptureCollisionDiagnostic(collision);
         CaptureBlockingStageContact(collision);
@@ -627,7 +627,7 @@ public sealed class ChargeEnemySearchStrategy :
     /// 継続接触のColliderと最も進行を塞ぐ法線を保存する。
     /// この情報は診断ログにのみ使用する。
     /// </summary>
-    public void HandleCollisionStay(Collision collision)
+    public void HandleCollisionStay(EnemyContactInfo collision)
     {
         if (isSearchActive)
         {
@@ -636,10 +636,10 @@ public sealed class ChargeEnemySearchStrategy :
         }
     }
 
-    private void CaptureBlockingStageContact(Collision collision)
+    private void CaptureBlockingStageContact(EnemyContactInfo collision)
     {
-        if (collision == null || collision.collider == null ||
-            !IsStageCollider(collision.collider) ||
+        if (!collision.IsValid || collision.OtherCollider == null ||
+            !IsStageCollider(collision.OtherCollider) ||
             Mathf.Abs(currentMoveDirectionSign) <= DIRECTION_EPSILON)
         {
             return;
@@ -649,7 +649,7 @@ public sealed class ChargeEnemySearchStrategy :
                 collision, Vector3.right * currentMoveDirectionSign,
                 WALL_NORMAL_X_THRESHOLD, out _))
         {
-            recentBlockingStageCollider = collision.collider;
+            recentBlockingStageCollider = collision.OtherCollider;
             recentBlockingStageContactTime = Time.fixedTime;
         }
     }
@@ -660,11 +660,11 @@ public sealed class ChargeEnemySearchStrategy :
     /// 壁として扱わない。
     /// </summary>
     private bool IsWallBlockingCurrentMoveDirection(
-        Collision collision)
+        EnemyContactInfo collision)
     {
-        if (collision == null ||
-            collision.collider == null ||
-            !IsStageCollider(collision.collider) ||
+        if (!collision.IsValid ||
+            collision.OtherCollider == null ||
+            !IsStageCollider(collision.OtherCollider) ||
             Mathf.Abs(currentMoveDirectionSign) <=
             DIRECTION_EPSILON)
         {
@@ -679,13 +679,13 @@ public sealed class ChargeEnemySearchStrategy :
                 collision,
                 moveDirection,
                 WALL_NORMAL_X_THRESHOLD,
-                out ContactPoint blockingContact))
+                out EnemyContactInfo blockingContact))
         {
             return false;
         }
 
         // 許容傾斜内の接触を「壁で帰還不能」と誤認しない。
-        if (Vector3.Angle(blockingContact.normal, Vector3.up) <=
+        if (Vector3.Angle(blockingContact.Normal, Vector3.up) <=
             enemyData.MaxGroundSlopeAngle)
         {
             return false;
@@ -695,16 +695,16 @@ public sealed class ChargeEnemySearchStrategy :
         // 発生する。同じColliderの通行可能な斜面上面が直前方へ連続する場合だけ、
         // その端面ContactによるBeginTurnを抑止する。
         if (groundChecker.IsTraversableSlopeEntrance(
-                collision.collider,
+                collision.OtherCollider,
                 currentMoveDirectionSign))
         {
             return false;
         }
 
         LogSlopeDiagnostic("BlockingCollision",
-            $"collider={collision.collider.name}, point={blockingContact.point}, " +
-            $"normal={blockingContact.normal}, " +
-            $"angle={Vector3.Angle(blockingContact.normal, Vector3.up):F2}, " +
+            $"collider={collision.OtherCollider.name}, point={blockingContact.Point}, " +
+            $"normal={blockingContact.Normal}, " +
+            $"angle={Vector3.Angle(blockingContact.Normal, Vector3.up):F2}, " +
             $"returning={isReturningToPatrolStart}", true);
         return true;
     }
@@ -1838,11 +1838,11 @@ public sealed class ChargeEnemySearchStrategy :
             true);
     }
 
-    private void CaptureCollisionDiagnostic(Collision collision)
+    private void CaptureCollisionDiagnostic(EnemyContactInfo collision)
     {
-        if (collision == null ||
-            collision.collider == null ||
-            collision.contactCount <= 0 ||
+        if (!collision.IsValid ||
+            collision.OtherCollider == null ||
+            collision.ContactCount <= 0 ||
             Mathf.Abs(currentMoveDirectionSign) <= DIRECTION_EPSILON)
         {
             return;
@@ -1850,15 +1850,15 @@ public sealed class ChargeEnemySearchStrategy :
 
         Vector3 moveDirection =
             Vector3.right * currentMoveDirectionSign;
-        ContactPoint selectedContact = collision.GetContact(0);
+        EnemyContactInfo selectedContact = collision.GetContact(0);
         float selectedBlockingDot =
-            Vector3.Dot(selectedContact.normal, moveDirection);
+            Vector3.Dot(selectedContact.Normal, moveDirection);
 
-        for (int i = 1; i < collision.contactCount; i++)
+        for (int i = 1; i < collision.ContactCount; i++)
         {
-            ContactPoint contact = collision.GetContact(i);
+            EnemyContactInfo contact = collision.GetContact(i);
             float blockingDot =
-                Vector3.Dot(contact.normal, moveDirection);
+                Vector3.Dot(contact.Normal, moveDirection);
             if (blockingDot < selectedBlockingDot)
             {
                 selectedContact = contact;
@@ -1878,15 +1878,16 @@ public sealed class ChargeEnemySearchStrategy :
         hasRecentContactDiagnostic = true;
         diagnosticContactFixedFrame = Time.frameCount;
         diagnosticContactTime = Time.fixedTime;
-        diagnosticContactColliderName = collision.collider.name;
-        diagnosticContactMaterialName = collision.collider.sharedMaterial != null
-            ? collision.collider.sharedMaterial.name
+        diagnosticContactColliderName = collision.OtherCollider.name;
+        diagnosticContactMaterialName = collision.OtherCollider.sharedMaterial != null
+            ? collision.OtherCollider.sharedMaterial.name
             : "none";
-        diagnosticContactPoint = selectedContact.point;
-        diagnosticContactNormal = selectedContact.normal;
-        diagnosticRelativeVelocity = collision.relativeVelocity;
-        diagnosticCollisionImpulse = collision.impulse;
-        diagnosticContactCount = collision.contactCount;
+        diagnosticContactPoint = selectedContact.Point;
+        diagnosticContactNormal = selectedContact.Normal;
+        // Triggerには物理ソルバーの相対速度・Impulseが存在しない。
+        diagnosticRelativeVelocity = collision.RelativeVelocity;
+        diagnosticCollisionImpulse = collision.Impulse;
+        diagnosticContactCount = collision.ContactCount;
         diagnosticContactBlockingDot = selectedBlockingDot;
     }
 

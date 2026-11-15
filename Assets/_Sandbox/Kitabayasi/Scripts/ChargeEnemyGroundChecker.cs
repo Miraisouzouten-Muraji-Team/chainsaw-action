@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -90,10 +90,10 @@ public sealed class ChargeEnemyGroundChecker : IEnemyDebugRayProvider
                 $"{nameof(ChargeEnemyGroundChecker)}にはCapsuleColliderが必要です。",
                 nameof(enemyCollider));
 
-        if (!enemyCapsuleCollider.enabled || enemyCapsuleCollider.isTrigger)
+        if (!enemyCapsuleCollider.enabled || !enemyCapsuleCollider.isTrigger)
         {
             throw new ArgumentException(
-                "地形判定に使用するCapsuleColliderは有効かつ非Triggerにしてください。",
+                "地形判定に使用する本体CapsuleColliderは有効かつTriggerにしてください。",
                 nameof(enemyCollider));
         }
 

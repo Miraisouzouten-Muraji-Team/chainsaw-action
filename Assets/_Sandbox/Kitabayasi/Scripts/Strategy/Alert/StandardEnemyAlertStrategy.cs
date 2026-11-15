@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -104,13 +104,13 @@ public sealed class StandardEnemyAlertStrategy : IEnemyAlertStrategy
                Mathf.Approximately(elapsedTime, enemyData.AlertDuration);
     }
 
-    public void HandleCollision(Collision collision)
+    public void HandleCollision(EnemyContactInfo collision)
     {
         if (!isAlertActive ||
-            collision == null ||
-            collision.collider == null ||
+            !collision.IsValid ||
+            collision.OtherCollider == null ||
             !playerReference.IsPlayerCollider(
-                collision.collider))
+                collision.OtherCollider))
         {
             return;
         }

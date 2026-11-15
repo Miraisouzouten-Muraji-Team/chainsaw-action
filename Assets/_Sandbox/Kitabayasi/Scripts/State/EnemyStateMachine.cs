@@ -70,7 +70,9 @@ public class EnemyStateMachine : MonoBehaviour
     private EnemyDamageFlash enemyDamageFlash;
     private Rigidbody enemyRigidbody;
     private EnemyKnockbackMotor enemyKnockbackMotor;
+    private EnemyTriggerMovementMotor enemyTriggerMovementMotor;
     private TurretEnemyAttackStrategy turretAttackStrategy;
+    private bool droneStageCollisionMaskIsValid;
 
     private const float MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE = 0.000001f;
     private const string PLAYER_FACING_COLLIDER_NAME = "Mid_Collider";
@@ -180,90 +182,128 @@ public class EnemyStateMachine : MonoBehaviour
         }
 
         CurrentState?.Update();
-    }
 
-    /// <summary>
-    /// UnityからCollision開始通知を受信し、
-    /// 対応可能なCurrentStateへそのまま転送する。
-    /// </summary>
-    /// <remarks>
-    /// EnemyStateMachine自身はCollisionの意味や、
-    /// どのStrategyが使用されているかを判断しない。
-    ///
-    /// 現時点ではMonoBehaviourでしか直接受信できないUnityイベントが
-    /// Collision系のみのため、
-    /// このクラスをUnityイベントの入口として兼用する。
-    ///
-    /// 今後、Triggerやその他のMonoBehaviour依存イベントなど、
-    /// Stateへ転送するUnityイベントが増えて
-    /// StateMachineの責務が肥大化した場合は、
-    /// Enemy専用のUnityイベント受信ハブとなるMonoBehaviourを別途作成し、
-    /// イベント受信・配送責務をこのクラスから分離する。
-    /// </remarks>
-    private void OnCollisionEnter(
-        Collision collision)
-    {
-        if (!isActiveAndEnabled ||
-            !isInitialized ||
-            enemyHealth.IsDead)
+        if (isInitialized && !enemyHealth.IsDead &&
+            turretAttackStrategy == null)
         {
-            return;
-        }
+            // DroneのSearch/AttackではPlanarMotorがStage移動を既に制限する。
+            // 共通MotorはPlayerへの侵入だけを止め、Stageの二重補正を避ける。
+            // Alert/Damage中はPlanarMotorによる移動制限がないのでStageも保護する。
+            bool stageMovementHandledByDrone = droneStageCollisionMaskIsValid && (
+                (ReferenceEquals(CurrentState, searchState) &&
+                 (searchStrategy is OldDroneEnemySearchStrategy ||
+                  searchStrategy is NewDroneEnemySearchStrategy)) ||
+                (ReferenceEquals(CurrentState, attackState) &&
+                 (attackStrategy is OldDroneEnemyAttackStrategy ||
+                  attackStrategy is NewDroneEnemyAttackStrategy)));
 
-        // Knockback開始時点の接地状態を正しく判定できるよう、
-        // Damage State中だけでなく常時Motorへ接触情報を渡す。
-        enemyKnockbackMotor?.HandleCollisionEnter(
-            collision);
-
-        if (CurrentState
-            is IEnemyCollisionEnterReceiver receiver)
-        {
-            receiver.HandleCollisionEnter(
-                collision);
+            enemyTriggerMovementMotor?.Step(
+                HandleMotorContact,
+                HandleContactExit,
+                stageMovementHandledByDrone);
         }
     }
 
     /// <summary>
-    /// UnityからCollision継続通知を受信し、
-    /// 対応可能なCurrentStateへそのまま転送する。
+    /// 移動前Queryが検出した接触と、Triggerが通知したPlayer接触をStateへ配信する。
+    /// UnityのOnCollisionイベントはTrigger本体では発生しない。
     /// </summary>
-    private void OnCollisionStay(
-        Collision collision)
+    private void HandleMotorContact(EnemyContactInfo contact, bool isNewContact)
     {
-        if (!isActiveAndEnabled ||
-            !isInitialized ||
-            enemyHealth.IsDead)
+        if (isNewContact)
         {
-            return;
+            HandleContactEnter(contact);
         }
 
-        enemyKnockbackMotor?.HandleCollisionStay(
-            collision);
-
-        if (CurrentState
-            is IEnemyCollisionStayReceiver receiver)
-        {
-            receiver.HandleCollisionStay(
-                collision);
-        }
+        HandleContactStay(contact);
     }
 
     /// <summary>
-    /// UnityからCollision終了通知を受信し、
-    /// ノックバック用の接地追跡へ通知する。
+    /// 攻撃本体が有効になった瞬間のPlayer接触をAttack Stateへ再通知する。
     /// </summary>
-    private void OnCollisionExit(
-        Collision collision)
+    private void NotifyAttackStartContacts()
     {
-        if (!isActiveAndEnabled ||
-            !isInitialized ||
-            enemyHealth.IsDead)
+        if (!isActiveAndEnabled || !isInitialized || enemyHealth.IsDead ||
+            !ReferenceEquals(CurrentState, attackState))
         {
             return;
         }
 
-        enemyKnockbackMotor?.HandleCollisionExit(
-            collision);
+        enemyTriggerMovementMotor?.NotifyPlayerContactsAtAttackStart(HandleContactStay);
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other != null &&
+            other.gameObject.layer == LayerMask.NameToLayer("PlayerBody") &&
+            enemyTriggerMovementMotor != null &&
+            !enemyTriggerMovementMotor.IsContactTracked(other))
+        {
+            HandleContactEnter(enemyTriggerMovementMotor.CreateTriggerContact(other));
+        }
+    }
+
+    private void OnTriggerStay(Collider other)
+    {
+        if (other != null &&
+            other.gameObject.layer == LayerMask.NameToLayer("PlayerBody") &&
+            enemyTriggerMovementMotor != null &&
+            !enemyTriggerMovementMotor.IsContactTracked(other))
+        {
+            HandleContactStay(enemyTriggerMovementMotor.CreateTriggerContact(other));
+        }
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        if (other != null &&
+            other.gameObject.layer == LayerMask.NameToLayer("PlayerBody") &&
+            enemyTriggerMovementMotor != null &&
+            !enemyTriggerMovementMotor.IsContactTracked(other))
+        {
+            HandleContactExit(enemyTriggerMovementMotor.CreateTriggerContact(other));
+        }
+    }
+
+    private void HandleContactEnter(EnemyContactInfo contact)
+    {
+        if (!isActiveAndEnabled || !isInitialized || enemyHealth.IsDead ||
+            !contact.IsValid)
+        {
+            return;
+        }
+
+        enemyKnockbackMotor?.HandleCollisionEnter(contact);
+        if (CurrentState is IEnemyCollisionEnterReceiver receiver)
+        {
+            receiver.HandleCollisionEnter(contact);
+        }
+    }
+
+    private void HandleContactStay(EnemyContactInfo contact)
+    {
+        if (!isActiveAndEnabled || !isInitialized || enemyHealth.IsDead ||
+            !contact.IsValid)
+        {
+            return;
+        }
+
+        enemyKnockbackMotor?.HandleCollisionStay(contact);
+        if (CurrentState is IEnemyCollisionStayReceiver receiver)
+        {
+            receiver.HandleCollisionStay(contact);
+        }
+    }
+
+    private void HandleContactExit(EnemyContactInfo contact)
+    {
+        if (!isActiveAndEnabled || !isInitialized || enemyHealth.IsDead ||
+            !contact.IsValid)
+        {
+            return;
+        }
+
+        enemyKnockbackMotor?.HandleCollisionExit(contact);
     }
 
     private void OnDisable()
@@ -286,6 +326,7 @@ public class EnemyStateMachine : MonoBehaviour
         // Disable中はCollision Exitを受け取れない場合があるため、
         // 再有効化時へ古い接地参照を持ち越さない。
         enemyKnockbackMotor?.ClearGroundContactTracking();
+        enemyTriggerMovementMotor?.ClearContacts();
         facingPlayerReference?.Clear();
         facingPlayerCollider = null;
     }
@@ -384,6 +425,31 @@ public class EnemyStateMachine : MonoBehaviour
                 this);
         }
 
+
+        // Drone側の障害物MaskにStageColliderが入っていない場合、専用Motorだけに
+        // Stage衝突を任せると通り抜けるため、共通Motorの保護を残す。
+        int stageLayer = LayerMask.NameToLayer("StageCollider");
+        int stageLayerMask = stageLayer >= 0 ? 1 << stageLayer : 0;
+        int droneObstacleMask = enemyData is OldDroneEnemyData oldDroneData
+            ? oldDroneData.NavigationObstacleMask.value
+            : enemyData is NewDroneEnemyData newDroneData
+                ? newDroneData.NavigationObstacleMask.value
+                : 0;
+        droneStageCollisionMaskIsValid = stageLayerMask != 0 &&
+            (droneObstacleMask & stageLayerMask) != 0;
+        if ((enemyData is OldDroneEnemyData || enemyData is NewDroneEnemyData) &&
+            !droneStageCollisionMaskIsValid)
+        {
+            Debug.LogWarning(
+                "DroneのNavigation Obstacle MaskにStageColliderがありません。" +
+                "共通MotorによるStage保護を継続します。",
+                this);
+        }
+
+        // Stateの初期化より先に、本体Colliderを1つだけTrigger化する。
+        // ChargeのStrategyも同じColliderを地形Queryの形状として参照する。
+        enemyTriggerMovementMotor =
+            new EnemyTriggerMovementMotor(enemyRigidbody);
 
         enemyKnockbackMotor =
             new EnemyKnockbackMotor(
@@ -485,7 +551,8 @@ public class EnemyStateMachine : MonoBehaviour
         attackState =
             new EnemyAttackState(
                 attackStrategy,
-                RequestAttackCycleCompletion);
+                RequestAttackCycleCompletion,
+                NotifyAttackStartContacts);
     }
 
     /// <summary>

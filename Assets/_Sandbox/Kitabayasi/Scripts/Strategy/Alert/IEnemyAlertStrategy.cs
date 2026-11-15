@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// Enemyの攻撃予告処理の契約。Stateの保持・切り替えは担当しない。
@@ -22,7 +22,7 @@ public interface IEnemyAlertStrategy
     /// Alert中の接触開始・継続通知を受け取る。
     /// 同じ接触の継続通知による多重ダメージはStrategy側で防止する。
     /// </summary>
-    void HandleCollision(Collision collision);
+    void HandleCollision(EnemyContactInfo collision);
 
     void EndAlert();
 }

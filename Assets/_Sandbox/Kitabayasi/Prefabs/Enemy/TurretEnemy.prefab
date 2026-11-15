@@ -586,7 +586,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -679,6 +679,7 @@ MonoBehaviour:
   attackStrategy:
     rid: 2559747210839588937
   visualRoot: {fileID: 1518330480203777996}
+  discoveryFacingRotationSpeed: 360
   deathStrategy:
     rid: 2559747210839588934
   showPatrolDebugVisualization: 0

@@ -796,12 +796,12 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         return true;
     }
 
-    public void HandleCollisionEnter(Collision collision)
+    public void HandleCollisionEnter(EnemyContactInfo collision)
     {
         // 射撃中の本体接触にダメージを設定しない。
     }
 
-    public void HandleCollisionStay(Collision collision)
+    public void HandleCollisionStay(EnemyContactInfo collision)
     {
         // 射撃中の本体接触にダメージを設定しない。
     }

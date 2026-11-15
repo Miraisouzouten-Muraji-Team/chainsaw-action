@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
 
@@ -207,12 +207,12 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
         return isAttackCycleComplete;
     }
 
-    public void HandleCollisionEnter(Collision collision)
+    public void HandleCollisionEnter(EnemyContactInfo collision)
     {
         HandleCollision(collision);
     }
 
-    public void HandleCollisionStay(Collision collision)
+    public void HandleCollisionStay(EnemyContactInfo collision)
     {
         HandleCollision(collision);
     }
@@ -937,11 +937,11 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
     }
 
     private void HandleCollision(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         if (!isAttackActive ||
-            collision == null ||
-            collision.collider == null)
+            !collision.IsValid ||
+            collision.OtherCollider == null)
         {
             return;
         }
@@ -951,7 +951,7 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
             // 事前Sweepと実接触の両方で、同じNavigationObstacleMaskを
             // 「後退を塞ぐStage障害物」の基準として使用する。
             if (IsNavigationObstacleCollider(
-                    collision.collider) &&
+                    collision.OtherCollider) &&
                 TryGetBlockingContact(
                     collision,
                     retreatDirection,
@@ -969,7 +969,7 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
         }
 
         if (playerReference.IsPlayerCollider(
-                collision.collider))
+                collision.OtherCollider))
         {
             SendPlayerDamageOncePerPass();
 
@@ -996,8 +996,8 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
     /// その接触を「進行を塞ぐ障害物」と判定する。
     /// </summary>
     private bool TryGetBlockingContact(
-        Collision collision,
-        out ContactPoint blockingContact)
+        EnemyContactInfo collision,
+        out EnemyContactInfo blockingContact)
     {
         Vector2 planarMoveDirection =
             currentAttackDirection;
@@ -1027,9 +1027,9 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
     /// その接触を「進行を塞ぐ障害物」と判定する。
     /// </summary>
     private bool TryGetBlockingContact(
-        Collision collision,
+        EnemyContactInfo collision,
         Vector2 planarMoveDirection,
-        out ContactPoint blockingContact)
+        out EnemyContactInfo blockingContact)
     {
         if (planarMoveDirection.sqrMagnitude <=
             DIRECTION_EPSILON * DIRECTION_EPSILON)

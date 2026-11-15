@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 /// <summary>
@@ -120,7 +120,7 @@ public sealed class EnemySearchState :
     /// <param name="collision">
     /// StateMachineから渡されたCollision情報。
     /// </param>
-    public void HandleCollisionEnter(Collision collision)
+    public void HandleCollisionEnter(EnemyContactInfo collision)
     {
         // 待機中はSearch Strategyをまだ開始していない。
         if (hasBegunSearch)
@@ -133,7 +133,7 @@ public sealed class EnemySearchState :
     /// Search Strategyが継続接触を必要とする場合だけ、
     /// Collision Stayを委譲する。
     /// </summary>
-    public void HandleCollisionStay(Collision collision)
+    public void HandleCollisionStay(EnemyContactInfo collision)
     {
         if (hasBegunSearch &&
             searchStrategy is IEnemyCollisionStayReceiver receiver)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -125,12 +125,12 @@ public sealed class ChargeEnemyAttackStrategy :
                 "非KinematicのRigidbodyを使用する前提です。");
         }
 
-        // 攻撃用Trigger等を誤選択しないよう、本体Rigidbodyに属する物理Capsuleを選ぶ。
+        // 本体のTrigger Capsuleを選ぶ。死亡時の飛散用Colliderは選択しない。
         enemyCollider = null;
         CapsuleCollider[] bodyColliders = enemyObject.GetComponentsInChildren<CapsuleCollider>();
         foreach (CapsuleCollider candidate in bodyColliders)
         {
-            if (candidate.enabled && !candidate.isTrigger &&
+            if (candidate.enabled && candidate.isTrigger &&
                 candidate.attachedRigidbody == enemyRigidbody)
             {
                 enemyCollider = candidate;
@@ -142,7 +142,7 @@ public sealed class ChargeEnemyAttackStrategy :
         {
             throw new InvalidOperationException(
                 $"{nameof(ChargeEnemyAttackStrategy)}を使用するEnemyには" +
-                $"有効かつ非Triggerの{nameof(CapsuleCollider)}が必要です。");
+                $"有効なTriggerの{nameof(CapsuleCollider)}が必要です。");
         }
 
         shieldClearanceAdjuster =
@@ -301,7 +301,7 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     public void HandleCollisionEnter(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         HandleCollision(
             collision,
@@ -309,7 +309,7 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     public void HandleCollisionStay(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         HandleCollision(
             collision,
@@ -317,19 +317,19 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     private void HandleCollision(
-        Collision collision,
+        EnemyContactInfo collision,
         bool spawnBlockingCollisionEffect)
     {
         if (!isAttackActive ||
             isAttackComplete ||
-            collision == null ||
-            collision.collider == null)
+            !collision.IsValid ||
+            collision.OtherCollider == null)
         {
             return;
         }
 
         if (playerReference.IsPlayerCollider(
-                collision.collider))
+                collision.OtherCollider))
         {
             HandlePlayerCollision(
                 collision);
@@ -337,11 +337,11 @@ public sealed class ChargeEnemyAttackStrategy :
         }
 
         if (!IsStageCollider(
-                collision.collider) ||
+                collision.OtherCollider) ||
             !TryGetBlockingContact(
                 collision,
                 attackDirectionSign,
-                out ContactPoint blockingContact))
+                out EnemyContactInfo blockingContact))
         {
             return;
         }
@@ -349,12 +349,12 @@ public sealed class ChargeEnemyAttackStrategy :
         // Stage Layerへの接触だけでは床接触も含まれるため、
         // 現在の突進方向を実際に塞ぐContactがある場合だけ攻撃終了とする。
         CompleteAttack(
-            $"Stage壁で進行阻害: collider={collision.collider.name}, layer={collision.collider.gameObject.layer}");
+            $"Stage壁で進行阻害: collider={collision.OtherCollider.name}, layer={collision.OtherCollider.gameObject.layer}");
 
         if (spawnBlockingCollisionEffect)
         {
             SpawnCollisionEffect(
-                blockingContact.point);
+                blockingContact.Point);
         }
     }
 
@@ -522,7 +522,7 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     private void HandlePlayerCollision(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         if (!hasDamagedPlayerThisAttack)
         {
@@ -746,9 +746,9 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     private bool TryGetBlockingContact(
-        Collision collision,
+        EnemyContactInfo collision,
         float moveDirectionSign,
-        out ContactPoint blockingContact)
+        out EnemyContactInfo blockingContact)
     {
         Vector3 moveDirection = Vector3.right * NormalizeDirectionSign(moveDirectionSign);
         float blockingThreshold = Mathf.Min(
@@ -769,20 +769,20 @@ public sealed class ChargeEnemyAttackStrategy :
         bool hasBlockingContact = false;
         bool isTraversableSlopeEntrance =
             groundChecker.IsTraversableSlopeEntrance(
-                collision.collider,
+                collision.OtherCollider,
                 moveDirectionSign);
-        for (int i = 0; i < collision.contactCount; i++)
+        for (int i = 0; i < collision.ContactCount; i++)
         {
-            ContactPoint contact = collision.GetContact(i);
-            float blockingScore = -Vector3.Dot(contact.normal, moveDirection);
+            EnemyContactInfo contact = collision.GetContact(i);
+            float blockingScore = -Vector3.Dot(contact.Normal, moveDirection);
             if (blockingScore < blockingThreshold)
             {
                 continue;
             }
 
             // 地面として通行できる傾斜のContactは、進行方向に逆らっても壁ではない。
-            if (contact.normal.y > DIRECTION_EPSILON &&
-                Vector3.Angle(contact.normal, Vector3.up) <= enemyData.MaxGroundSlopeAngle)
+            if (contact.Normal.y > DIRECTION_EPSILON &&
+                Vector3.Angle(contact.Normal, Vector3.up) <= enemyData.MaxGroundSlopeAngle)
             {
                 continue;
             }
@@ -830,11 +830,11 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     private Vector3 GetCollisionEffectPosition(
-        Collision collision)
+        EnemyContactInfo collision)
     {
-        if (collision.contactCount > 0)
+        if (collision.ContactCount > 0)
         {
-            return collision.GetContact(0).point;
+            return collision.GetContact(0).Point;
         }
 
         return enemyCollider.bounds.center;

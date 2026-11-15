@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// Enemyの索敵Stateで使用する、索敵方法の契約を定義する。
@@ -58,7 +58,7 @@ public interface IEnemySearchStrategy
         out float detectedPlayerDirectionSign);
 
 
-    void HandleCollisionEnter(Collision collision);
+    void HandleCollisionEnter(EnemyContactInfo collision);
 
 
     void EndSearch();

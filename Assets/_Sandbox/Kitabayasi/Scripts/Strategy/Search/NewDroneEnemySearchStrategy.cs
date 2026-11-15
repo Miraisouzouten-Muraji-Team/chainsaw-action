@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -301,7 +301,7 @@ public sealed class NewDroneEnemySearchStrategy :
         return true;
     }
 
-    public void HandleCollisionEnter(Collision collision)
+    public void HandleCollisionEnter(EnemyContactInfo collision)
     {
         // 新型Droneの巡回中はPlayerへの接触ダメージなし。
     }

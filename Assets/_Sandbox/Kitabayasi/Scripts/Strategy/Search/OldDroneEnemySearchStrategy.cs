@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
@@ -312,16 +312,16 @@ public sealed class OldDroneEnemySearchStrategy :
     }
 
     public void HandleCollisionEnter(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         if (!isSearchActive ||
-            collision == null)
+            !collision.IsValid)
         {
             return;
         }
 
         if (!playerReference.IsPlayerCollider(
-                collision.collider))
+                collision.OtherCollider))
         {
             return;
         }

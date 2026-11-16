@@ -15,46 +15,45 @@ MonoBehaviour:
   type: 1
   range: 50
   targetDistanceRatio: 1
-  preparationTime: 0.5
-  activeTime: 1
   recoveryTime: 1
   animatorTrigger: 
-  damageMultiplier: 0.4
-  animationSpeed: 1
-  bashAscentDuration: 1
-  bashAirHoldDuration: 0.5
-  bashFallSpeed: 20
-  shockwaveWidth: 8
-  shieldOutboundDuration: 3
-  shieldReturnDelay: 4
-  shieldReturnMaxSpeed: 10
-  shieldReturnDistance: 3
-  shieldThrowArcHeight: 4
-  shieldReturnAcceleration:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 2
-      outSlope: 2
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  laserShotCount: 5
-  laserShotInterval: 0.5
-  laserSpeed: 10
-  laserAimWidth: 3
+  parameters:
+    rid: 6889452243276005463
+  references:
+    version: 2
+    RefIds:
+    - rid: 6889452243276005463
+      type: {class: BossShieldThrowParameters, ns: Project.InGame.Boss, asm: Assembly-CSharp}
+      data:
+        preparationTime: 0.5
+        damageMultiplier: 0.4
+        outboundDuration: 3
+        returnDelay: 4
+        returnMaxSpeed: 10
+        returnDistance: 3
+        arcHeight: 4
+        accelerationDuration: 2
+        accelerationCurve:
+          serializedVersion: 2
+          m_Curve:
+          - serializedVersion: 3
+            time: 0
+            value: 0
+            inSlope: 0
+            outSlope: 0
+            tangentMode: 0
+            weightedMode: 0
+            inWeight: 0
+            outWeight: 0
+          - serializedVersion: 3
+            time: 1
+            value: 1
+            inSlope: 0
+            outSlope: 0
+            tangentMode: 0
+            weightedMode: 0
+            inWeight: 0
+            outWeight: 0
+          m_PreInfinity: 2
+          m_PostInfinity: 2
+          m_RotationOrder: 4

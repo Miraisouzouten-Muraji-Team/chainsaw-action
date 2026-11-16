@@ -50,6 +50,15 @@ namespace Project.InGame.Boss
                 }
             }
 
+            if (motor.AscentBlocked)
+            {
+                Debug.LogWarning("ShieldBashAttack: 上昇中に障害物へ接触しました。", context.Boss);
+
+                motor.EndScriptedMotion();
+                return;
+            }
+
+            // 正常に上昇できた場合だけ、上空で溜める。
             motor.HoldInAir();
             await DelayAsync(parameters.AirHoldDuration, cancellationToken);
 

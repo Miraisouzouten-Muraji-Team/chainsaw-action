@@ -93914,6 +93914,11 @@ ParticleSystem:
         m_PostInfinity: 2
         m_RotationOrder: 4
     vectorLabel1_3: W
+--- !u!4 &794306738 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 4137190646497115990, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 703966299}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &797253628
 GameObject:
   m_ObjectHideFlags: 0
@@ -109802,7 +109807,7 @@ MonoBehaviour:
   domeRadius: 4
   domeDepth: 1.2
   domeForwardDirection: {x: -1, y: 0, z: 0}
-  domeGroundOffset: -2
+  domeGroundOffset: -3.22
   domeRectangleWidthPadding: 0.5
 --- !u!65 &994893596
 BoxCollider:
@@ -109823,8 +109828,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 0
   serializedVersion: 3
-  m_Size: {x: 8, y: 6, z: 1.2}
-  m_Center: {x: 0, y: 1, z: 0}
+  m_Size: {x: 8, y: 7.2200003, z: 1.2}
+  m_Center: {x: 0, y: 0.39, z: 0}
 --- !u!4 &999679371 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4687296828369897747, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
@@ -228485,8 +228490,8 @@ Transform:
   m_GameObject: {fileID: 1827317134}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -2, y: 0, z: 0}
-  m_LocalScale: {x: 4, y: 0.35, z: 0.45}
+  m_LocalPosition: {x: -4, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 140539506}
@@ -228528,8 +228533,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 0
   serializedVersion: 3
-  m_Size: {x: 1, y: 1, z: 1}
-  m_Center: {x: 0, y: 0, z: 0}
+  m_Size: {x: 8, y: 6, z: 1.2}
+  m_Center: {x: 0, y: 1, z: 0}
 --- !u!1 &1828117897
 GameObject:
   m_ObjectHideFlags: 0
@@ -259447,7 +259452,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 345e7cce80c6a6b4eb66905f14d2ca27, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossController
-  player: {fileID: 0}
+  player: {fileID: 794306738}
   visualRoot: {fileID: 1531516412}
   animator: {fileID: 0}
   attackHitboxes: {fileID: 2120808302}
@@ -259457,6 +259462,8 @@ MonoBehaviour:
   laserController: {fileID: 2120808299}
   idleDuration: 2
   moveSpeed: 4
+  noShieldIdleDuration: 1.5
+  noShieldMoveSpeed: 6
   rightFacingAngle: 180
   leftFacingAngle: 0
   rotationSpeed: 360
@@ -259571,7 +259578,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossLaserController
   projectilePrefab: {fileID: 1487067354402046354, guid: bae4a00c9e2534a4e92fca5b029af771, type: 3}
   firePoint: {fileID: 1361491125}
-  player: {fileID: 0}
+  player: {fileID: 794306738}
   stageMask:
     serializedVersion: 2
     m_Bits: 128
@@ -259629,12 +259636,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1ece7fe5fdf102f4c8e7ac38bc0acd8a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackHitboxController
-  shieldBashHitbox: {fileID: 0}
+  shieldBashHitbox: {fileID: 1701419979}
   shockwaveHitbox: {fileID: 902641944}
-  thrustHitbox: {fileID: 1827317136}
+  weaponHitbox: {fileID: 1827317136}
   slashHitbox: {fileID: 994893595}
   weaponRangeSource: {fileID: 259984935}
-  showHitboxGizmos: 1
+  showHitboxGizmos: 0
 --- !u!114 &2120808303
 MonoBehaviour:
   m_ObjectHideFlags: 0

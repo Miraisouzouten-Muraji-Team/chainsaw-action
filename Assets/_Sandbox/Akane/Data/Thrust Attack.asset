@@ -15,9 +15,23 @@ MonoBehaviour:
   type: 2
   range: 5
   targetDistanceRatio: 0.5
-  preparationTime: 1
-  activeTime: 2
   recoveryTime: 1
   animatorTrigger: 
-  damageMultiplier: 0.5
-  animationSpeed: 1
+  parameters:
+    rid: 6889452243276005460
+  references:
+    version: 2
+    RefIds:
+    - rid: 6889452243276005460
+      type: {class: BossThrustParameters, ns: Project.InGame.Boss, asm: Assembly-CSharp}
+      data:
+        shielded:
+          preparationTime: 1
+          activeTime: 2
+          damageMultiplier: 0.5
+          animationSpeed: 1
+        unshielded:
+          preparationTime: 0.9
+          activeTime: 1
+          damageMultiplier: 0.6
+          animationSpeed: 1.2

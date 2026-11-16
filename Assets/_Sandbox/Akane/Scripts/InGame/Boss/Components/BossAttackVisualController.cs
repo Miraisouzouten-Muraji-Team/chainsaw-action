@@ -4,78 +4,69 @@ using UnityEngine;
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// 仮モデルの武器モーションをDOTweenで再生する。
+    /// ボスの仮モデル用武器モーションを管理する。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class BossAttackVisualController : MonoBehaviour
     {
-        [Header("参照")]
+        [Header("基本参照")]
         [SerializeField] private Transform weaponPivot;
-        [SerializeField] private Transform verticalSlashRangeSource;
         [SerializeField] private GameObject shieldReturnCue;
 
-        [Header("攻撃方向")]
-        [Tooltip("モデル正面に合わせたローカル攻撃方向")]
+        [Header("武器の基準")]
         [SerializeField] private Vector3 localAttackDirection = Vector3.left;
-
-        [Header("突き")]
         [SerializeField, Min(0f)] private float thrustDistance = 2f;
         [SerializeField, Min(0f)] private float thrustPullbackDistance = 0.5f;
 
-        [Header("縦振り")]
-        [Tooltip("縦切り判定が未設定の場合に使う切り下ろし距離")]
-        [SerializeField, Min(0f)] private float slashDropDistance = 2f;
+        [Header("縦切り")]
+        [SerializeField] private Transform verticalSlashPivotAnchor;
+        [SerializeField] private Transform verticalSlashDropEndAnchor;
+        [SerializeField] private BossVerticalSlashRange verticalSlashRange;
 
         private Vector3 initialPosition;
         private Quaternion initialRotation;
-        private Vector3 currentThrustDirection;
-        private Sequence currentSequence;
-        private Transform bladeCube;
         private Vector3 initialBladePosition;
         private Vector3 initialBladeScale;
-        private BossAttackHitbox verticalSlashHitbox;
-        private Quaternion slashFrontRotation;
+        private Vector3 currentThrustDirection;
+        private Quaternion slashBaseRotation;
+
+        private Transform bladeCube;
+        private BossAttackHitboxController hitboxController;
+        private Sequence currentSequence;
 
         private void Awake()
         {
             if (weaponPivot == null)
             {
-                Debug.LogError("BossAttackVisualController: WeaponPivotが未設定です。", this);
+                Debug.LogError(
+                    "BossAttackVisualController: WeaponPivotが未設定です。",
+                    this);
                 enabled = false;
                 return;
             }
 
+            hitboxController = GetComponent<BossAttackHitboxController>();
+            bladeCube = hitboxController != null
+                ? hitboxController.WeaponRangeSource
+                : null;
+
             initialPosition = weaponPivot.localPosition;
             initialRotation = weaponPivot.localRotation;
-            if (TryGetComponent(out BossAttackHitboxController hitboxController))
-            {
-                verticalSlashRangeSource ??= hitboxController.VerticalSlashRangeSource;
-                bladeCube = hitboxController.WeaponRangeSource;
-            }
 
             if (bladeCube != null)
             {
                 initialBladePosition = bladeCube.localPosition;
                 initialBladeScale = bladeCube.localScale;
             }
-            localAttackDirection = localAttackDirection.sqrMagnitude <= 0.0001f
+
+            localAttackDirection = localAttackDirection.sqrMagnitude < 0.0001f
                 ? Vector3.left
                 : localAttackDirection.normalized;
+
             currentThrustDirection = initialRotation * localAttackDirection;
+            slashBaseRotation = initialRotation;
+
             SetShieldReturnCue(false);
-        }
-
-
-        /// <summary>
-        /// 仮モデルの刃と命中Colliderの形状を一致させる。
-        /// </summary>
-        private void SynchronizeWeaponCollider()
-        {
-            if (TryGetComponent(
-                out BossAttackHitboxController hitboxController))
-            {
-                hitboxController.SynchronizeWeaponHitbox();
-            }
         }
 
         /// <summary>
@@ -83,94 +74,87 @@ namespace Project.InGame.Boss
         /// </summary>
         public void PlayThrustPreparation(float duration)
         {
-            if (weaponPivot == null) { return; }
-
             ResetPose();
+
             currentSequence = DOTween.Sequence()
                 .Append(weaponPivot.DOLocalMove(
-                    initialPosition - localAttackDirection * thrustPullbackDistance,
+                    initialPosition -
+                    localAttackDirection * thrustPullbackDistance,
                     Mathf.Max(0.01f, duration)).SetEase(Ease.InOutSine))
                 .SetUpdate(UpdateType.Fixed)
                 .SetLink(gameObject);
         }
 
         /// <summary>
-        /// ダメージ判定開始直前のPlayer位置へ突きの向きを合わせる。
+        /// プレイヤー位置へ武器を向ける。
         /// </summary>
         public void AimThrustAt(Vector3 targetPosition)
         {
-            if (weaponPivot == null) { return; }
-
             currentSequence?.Kill();
             currentSequence = null;
 
             Vector3 worldDirection = targetPosition - weaponPivot.position;
             worldDirection.z = 0f;
 
-            if (worldDirection.sqrMagnitude <= 0.0001f)
-            {
-                currentThrustDirection = initialRotation * localAttackDirection;
+            if (worldDirection.sqrMagnitude < 0.0001f)
                 return;
-            }
 
-            Transform parent = weaponPivot.parent;
-            currentThrustDirection = parent != null
-                ? parent.InverseTransformDirection(worldDirection).normalized
-                : worldDirection.normalized;
-            currentThrustDirection.z = 0f;
-            currentThrustDirection.Normalize();
+            currentThrustDirection =
+                weaponPivot.parent != null
+                    ? weaponPivot.parent.InverseTransformDirection(
+                        worldDirection).normalized
+                    : worldDirection.normalized;
 
-            Vector3 initialDirection = initialRotation * localAttackDirection;
-            Quaternion aimRotation = Quaternion.FromToRotation(
-                initialDirection,
-                currentThrustDirection);
-            weaponPivot.localRotation = aimRotation * initialRotation;
-            weaponPivot.localPosition = initialPosition -
+            Quaternion currentBase = initialRotation;
+
+            weaponPivot.localRotation =
+                Quaternion.FromToRotation(
+                    currentBase * localAttackDirection,
+                    currentThrustDirection) * currentBase;
+
+            weaponPivot.localPosition =
+                initialPosition -
                 currentThrustDirection * thrustPullbackDistance;
         }
 
-
         /// <summary>
-        /// 突きの速度倍率を反映しつつ、判定時間内で武器を戻す。
+        /// 突きの速度倍率を反映して武器を突き出す。
         /// </summary>
         public void PlayThrust(float duration, float animationSpeed)
         {
-            if (weaponPivot == null) { return; }
-
             currentSequence?.Kill();
-            currentSequence = null;
 
-            float totalDuration = Mathf.Max(0.05f, duration);
-            float safeSpeed = Mathf.Max(0.05f, animationSpeed);
-            float extendDuration = totalDuration *
-                Mathf.Clamp(0.25f / safeSpeed, 0.05f, 0.4f);
-            float returnDuration = totalDuration * 0.25f;
-            float holdDuration =
-                totalDuration - extendDuration - returnDuration;
+            float total = Mathf.Max(0.05f, duration);
+            float speed = Mathf.Max(0.05f, animationSpeed);
+            float extend = total * Mathf.Clamp(
+                0.25f / speed, 0.05f, 0.4f);
+            float returnTime = total * 0.25f;
+            float hold = total - extend - returnTime;
 
             currentSequence = DOTween.Sequence()
                 .Append(weaponPivot.DOLocalMove(
-                    initialPosition + currentThrustDirection * thrustDistance,
-                    extendDuration).SetEase(Ease.OutCubic))
-                .AppendInterval(holdDuration)
+                    initialPosition +
+                    currentThrustDirection * thrustDistance,
+                    extend).SetEase(Ease.OutCubic))
+                .AppendInterval(hold)
                 .Append(weaponPivot.DOLocalMove(
                     initialPosition,
-                    returnDuration).SetEase(Ease.InOutSine))
+                    returnTime).SetEase(Ease.InOutSine))
                 .SetUpdate(UpdateType.Fixed)
                 .SetLink(gameObject);
         }
 
 
         /// <summary>
-        /// 通常姿勢から頭上へチェーンソーを振り上げる。
+        /// 肩付近の回転中心へ移動し、刃を頭上へ振り上げる。
         /// </summary>
         public void PlayVerticalSlashPreparation(float duration, float raiseAngle)
         {
-            if (weaponPivot == null) { return; }
+            if (weaponPivot == null)
+                return;
 
             ResetPose();
-            ApplyVerticalSlashRangePosition();
-            ConfigureVerticalSlashBlade(false);
+            SetupVerticalSlashPose();
 
             Quaternion baseRotation = slashFrontRotation;
             weaponPivot.localRotation = baseRotation;
@@ -192,9 +176,8 @@ namespace Project.InGame.Boss
                 .SetLink(gameObject);
         }
 
-
         /// <summary>
-        /// 振り上げた姿勢から前方を通って振り下ろす。
+        /// 半円状に振った後、その位置から真下へ切り下ろす。
         /// </summary>
         public void PlayVerticalSlash(
             float duration,
@@ -202,26 +185,22 @@ namespace Project.InGame.Boss
             float finishAngle,
             float animationSpeed)
         {
-            if (weaponPivot == null) { return; }
-
-            // 予備動作のTweenだけ停止する。ResetPoseは呼ばない。
+            // 予備動作の位置を維持する。ResetPoseは呼ばない。
             currentSequence?.Kill();
             currentSequence = null;
 
-            Quaternion baseRotation = slashFrontRotation;
             weaponPivot.localRotation =
-                baseRotation * Quaternion.Euler(0f, 0f, raiseAngle);
+                slashBaseRotation *
+                Quaternion.Euler(0f, 0f, raiseAngle);
 
-            Vector3 startPosition = weaponPivot.localPosition;
-            float totalDuration = Mathf.Max(0.05f, duration);
+            float total = Mathf.Max(0.05f, duration);
+            float speed = Mathf.Max(0.05f, animationSpeed);
 
-            // 速度倍率は振り下ろしに割り当てる時間へ反映する。
-            // 攻撃全体の有効時間は変えない。
-            float safeSpeed = Mathf.Max(0.05f, animationSpeed);
-            float swingDuration =
-                totalDuration * Mathf.Clamp(0.6f / safeSpeed, 0.1f, 0.75f);
-            float dropDuration = totalDuration * 0.2f;
-            float returnDuration = totalDuration - swingDuration - dropDuration;
+            float swingDuration = total *
+                Mathf.Clamp(0.65f / speed, 0.45f, 0.85f);
+            float dropDuration = total - swingDuration;
+
+            Vector3 dropPosition = GetSlashDropPosition();
 
             currentSequence = DOTween.Sequence()
                 .Append(DOVirtual.Float(
@@ -233,110 +212,146 @@ namespace Project.InGame.Boss
                         if (weaponPivot != null)
                         {
                             weaponPivot.localRotation =
-                                baseRotation * Quaternion.Euler(0f, 0f, angle);
+                                slashBaseRotation *
+                                Quaternion.Euler(0f, 0f, angle);
                         }
                     }).SetEase(Ease.InCubic))
-                .AppendCallback(() => ConfigureVerticalSlashBlade(true))
                 .Append(weaponPivot.DOLocalMove(
-                    startPosition + GetVerticalSlashDropOffset(),
+                    dropPosition,
                     dropDuration).SetEase(Ease.InCubic))
+                .SetUpdate(UpdateType.Fixed)
+                .SetLink(gameObject);
+        }
+
+        /// <summary>
+        /// 攻撃終了後の硬直中に通常姿勢へ戻す。
+        /// </summary>
+        public void PlayVerticalSlashRecovery(float duration)
+        {
+            currentSequence?.Kill();
+
+            float recovery = Mathf.Max(0.01f, duration);
+
+            currentSequence = DOTween.Sequence()
                 .Append(weaponPivot.DOLocalMove(
                     initialPosition,
-                    returnDuration).SetEase(Ease.OutSine))
+                    recovery).SetEase(Ease.OutSine))
                 .Join(weaponPivot.DOLocalRotateQuaternion(
                     initialRotation,
-                    returnDuration).SetEase(Ease.OutSine))
+                    recovery).SetEase(Ease.OutSine))
                 .AppendCallback(ResetBladePose)
                 .SetUpdate(UpdateType.Fixed)
                 .SetLink(gameObject);
         }
 
         /// <summary>
-        /// 縦切りCubeの回転中心を実際の複合判定の中心へ合わせる。
+        /// 任意のアンカー位置を武器Pivotの親座標に変換する。
         /// </summary>
-        private void ApplyVerticalSlashRangePosition()
+        private void SetPivotPosition(Transform anchor)
         {
-            slashFrontRotation = initialRotation;
-            if (verticalSlashRangeSource == null &&
-                TryGetComponent(out BossAttackHitboxController hitboxController))
-            {
-                verticalSlashRangeSource =
-                    hitboxController.VerticalSlashRangeSource;
-            }
+            if (anchor == null)
+                return;
 
-            if (verticalSlashRangeSource == null) { return; }
-
-            verticalSlashHitbox = verticalSlashRangeSource.GetComponent<BossAttackHitbox>();
-            Transform rangeParent = verticalSlashRangeSource.parent;
-            weaponPivot.localPosition = weaponPivot.parent == rangeParent
-                ? verticalSlashRangeSource.localPosition
-                : weaponPivot.parent.InverseTransformPoint(
-                    verticalSlashRangeSource.position);
-
-            if (verticalSlashHitbox != null)
-            {
-                Vector3 forward = verticalSlashRangeSource.TransformDirection(
-                    verticalSlashHitbox.VerticalSlashForward);
-                if (weaponPivot.parent != null)
-                {
-                    forward = weaponPivot.parent.InverseTransformDirection(forward);
-                }
-
-                slashFrontRotation = Quaternion.FromToRotation(
-                    initialRotation * localAttackDirection, forward) * initialRotation;
-            }
-        }
-
-        /// <summary>半円では半径、切り下ろしでは長方形の幅にCubeを合わせる。</summary>
-        private void ConfigureVerticalSlashBlade(bool isDropping)
-        {
-            if (bladeCube == null || verticalSlashHitbox == null) { return; }
-
-            float radius = verticalSlashHitbox.VerticalSlashRadius;
-            float padding = isDropping ? verticalSlashHitbox.VerticalSlashWidthPadding : 0f;
-            Vector3 scale = initialBladeScale;
-            scale.x = radius + padding;
-            bladeCube.localScale = scale;
-            bladeCube.localPosition = localAttackDirection * ((radius - padding) * 0.5f);
-
-            SynchronizeWeaponCollider();
-        }
-
-        /// <summary>切り下ろしの終点を判定の長方形下端へ合わせる。</summary>
-        private Vector3 GetVerticalSlashDropOffset()
-        {
-            if (verticalSlashHitbox == null) { return Vector3.down * slashDropDistance; }
-
-            Vector3 worldOffset = verticalSlashRangeSource.TransformVector(
-                Vector3.up * verticalSlashHitbox.VerticalSlashGroundOffset);
-            return weaponPivot.parent != null
-                ? weaponPivot.parent.InverseTransformVector(worldOffset)
-                : worldOffset;
-        }
-
-        /// <summary>次の攻撃へ寸法変更を持ち越さないようにCubeを戻す。</summary>
-        private void ResetBladePose()
-        {
-            if (bladeCube == null) { return; }
-            bladeCube.localPosition = initialBladePosition;
-            bladeCube.localScale = initialBladeScale;
-
-            SynchronizeWeaponCollider();
+            weaponPivot.localPosition =
+                weaponPivot.parent != null
+                    ? weaponPivot.parent.InverseTransformPoint(
+                        anchor.position)
+                    : anchor.position;
         }
 
         /// <summary>
-        /// 盾が戻り始める予告表示を切り替える。
+        /// 表示範囲で指定した正面方向へ刃を向ける。
         /// </summary>
+        private void CalculateSlashBaseRotation()
+        {
+            slashBaseRotation = initialRotation;
+
+            if (verticalSlashRange == null)
+                return;
+
+            Vector3 worldForward =
+                verticalSlashRange.transform.TransformDirection(
+                    verticalSlashRange.LocalForward);
+
+            Vector3 localForward = weaponPivot.parent != null
+                ? weaponPivot.parent.InverseTransformDirection(
+                    worldForward)
+                : worldForward;
+
+            localForward.z = 0f;
+
+            if (localForward.sqrMagnitude < 0.0001f)
+                return;
+
+            slashBaseRotation =
+                Quaternion.FromToRotation(
+                    initialRotation * localAttackDirection,
+                    localForward.normalized) * initialRotation;
+        }
+
+        /// <summary>
+        /// 半径に応じて仮の刃の長さを変更する。
+        /// </summary>
+        private void ConfigureSlashBlade()
+        {
+            if (bladeCube == null || verticalSlashRange == null)
+                return;
+
+            float length = verticalSlashRange.Radius;
+
+            Vector3 scale = initialBladeScale;
+            scale.x = length;
+            bladeCube.localScale = scale;
+
+            bladeCube.localPosition =
+                localAttackDirection * length * 0.5f;
+
+            hitboxController?.SynchronizeWeaponHitbox();
+        }
+
+        /// <summary>
+        /// 真下への切り下ろし終点を取得する。
+        /// </summary>
+        private Vector3 GetSlashDropPosition()
+        {
+            if (verticalSlashDropEndAnchor != null)
+            {
+                return weaponPivot.parent != null
+                    ? weaponPivot.parent.InverseTransformPoint(
+                        verticalSlashDropEndAnchor.position)
+                    : verticalSlashDropEndAnchor.position;
+            }
+
+            float distance = verticalSlashRange != null
+                ? verticalSlashRange.DropDistance
+                : 2f;
+
+            Vector3 localDown = weaponPivot.parent != null
+                ? weaponPivot.parent.InverseTransformVector(
+                    Vector3.down * distance)
+                : Vector3.down * distance;
+
+            return weaponPivot.localPosition + localDown;
+        }
+
+        private void ResetBladePose()
+        {
+            if (bladeCube == null)
+                return;
+
+            bladeCube.localPosition = initialBladePosition;
+            bladeCube.localScale = initialBladeScale;
+            hitboxController?.SynchronizeWeaponHitbox();
+        }
+
         public void SetShieldReturnCue(bool visible)
         {
             if (shieldReturnCue != null)
-            {
                 shieldReturnCue.SetActive(visible);
-            }
         }
 
         /// <summary>
-        /// 攻撃の途中中断時も元の姿勢へ戻す。
+        /// 中断時も含め、武器を通常姿勢に戻す。
         /// </summary>
         public void ResetPose()
         {
@@ -348,8 +363,10 @@ namespace Project.InGame.Boss
 
             weaponPivot.localPosition = initialPosition;
             weaponPivot.localRotation = initialRotation;
+            currentThrustDirection =
+                initialRotation * localAttackDirection;
+
             ResetBladePose();
-            currentThrustDirection = initialRotation * localAttackDirection;
             SetShieldReturnCue(false);
         }
 
@@ -357,16 +374,5 @@ namespace Project.InGame.Boss
         {
             ResetPose();
         }
-
-#if UNITY_EDITOR
-        [ContextMenu("縦切りプレビュー（再生中・6秒）")]
-        private void PreviewVerticalSlash()
-        {
-            if (!Application.isPlaying) { return; }
-
-            PlayVerticalSlashPreparation(0.01f, -90f);
-            PlayVerticalSlash(6f, -90f, 90f, 1f);
-        }
-#endif
     }
 }

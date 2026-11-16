@@ -15,13 +15,19 @@ MonoBehaviour:
   type: 0
   range: 50
   targetDistanceRatio: 1
-  preparationTime: 0.5
-  activeTime: 1
   recoveryTime: 1
   animatorTrigger: 
-  damageMultiplier: 1
-  animationSpeed: 1
-  bashAscentDuration: 1
-  bashAirHoldDuration: 0.5
-  bashFallSpeed: 20
-  shockwaveWidth: 8
+  parameters:
+    rid: 6889452243276005458
+  references:
+    version: 2
+    RefIds:
+    - rid: 6889452243276005458
+      type: {class: BossShieldBashParameters, ns: Project.InGame.Boss, asm: Assembly-CSharp}
+      data:
+        preparationTime: 0.5
+        damageMultiplier: 1
+        ascentDuration: 1
+        airHoldDuration: 0.5
+        fallSpeed: 20
+        shockwaveWidth: 8

@@ -239,7 +239,7 @@ AnimatorState:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Digging
-  m_Speed: 3
+  m_Speed: 6
   m_CycleOffset: 0
   m_Transitions:
   - {fileID: -4536307285099051507}
@@ -252,7 +252,7 @@ AnimatorState:
   m_MirrorParameterActive: 0
   m_CycleOffsetParameterActive: 0
   m_TimeParameterActive: 0
-  m_Motion: {fileID: -623603649343465320, guid: 41bcbcf3bdfa0ae469e5342139d33fc3, type: 3}
+  m_Motion: {fileID: -2213671350125067512, guid: 44f9bb9d653613b4cb99ab8c43fbc794, type: 3}
   m_Tag: 
   m_SpeedParameter: DiggingPlaybackSpeed
   m_MirrorParameter: 

@@ -1120,6 +1120,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4cb39a7c3855298418d949a6fe31cc11, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
+  fallState: Base Layer.Landing
+  minimumFallDistance: 0.5
   attackHitBox: {fileID: 3797053096475727516}
   slash1State: Base Layer.Slash2
   airSlashState: Base Layer.Slash3
@@ -1132,7 +1134,7 @@ MonoBehaviour:
   wallDiggingState: 
   ceilingDiggingState: 
   enemyDiggingState: 
-  jumpState: 
+  jumpState: Base Layer.Jump
   doubleJumpState: Base Layer.Doublejump
   wallJumpState: Base Layer.Kickjump
 --- !u!114 &2369446601455359112

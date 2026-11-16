@@ -41,16 +41,13 @@ namespace Project.InGame.Boss
             radius = Mathf.Max(0.01f, diameter * 0.5f);
         }
 
-        /// <summary>
-        /// デバッグ表示用の半円上の位置を返す。
-        /// </summary>
+
         public Vector3 GetArcPoint(float t)
         {
-            float angle = Mathf.Lerp(0f, Mathf.PI, Mathf.Clamp01(t));
-            return new Vector3(
-                Mathf.Cos(angle) * radius,
-                Mathf.Sin(angle) * radius,
-                0f);
+            float angle = Mathf.PI * Mathf.Clamp01(t);
+
+            return LocalForward * Mathf.Cos(angle) * radius +
+                Vector3.up * Mathf.Sin(angle) * radius;
         }
     }
 }

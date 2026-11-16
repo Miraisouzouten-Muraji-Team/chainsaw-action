@@ -42,9 +42,7 @@ namespace Project.InGame.Boss
             SnapToSocket();
         }
 
-        /// <summary>
-        /// 往路と復路で命中履歴を分けて盾を投げる。
-        /// </summary>
+
         public async UniTask ThrowAsync(
             Transform target,
             BossAttackDefinition definition,
@@ -52,72 +50,87 @@ namespace Project.InGame.Boss
             float damage,
             CancellationToken cancellationToken)
         {
+            // 前の投擲が残っていれば停止する。
             CancelMotion();
 
-            if (shieldRoot == null || shieldSocket == null || shieldBody == null ||
-                target == null || definition == null)
+            if (shieldRoot == null || shieldSocket == null ||
+                shieldBody == null || target == null ||
+                definition == null || parameters == null)
             {
+                Debug.LogError(
+                    "BossShieldMotionController: 投擲用の参照が不足しています。",
+                    this);
                 return;
             }
 
-            CancellationTokenSource source =
-                CancellationTokenSource.CreateLinkedTokenSource(
-                    cancellationToken,
-                    destroyCancellationToken);
+            var source = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, destroyCancellationToken);
 
             motionCancellation = source;
             CancellationToken token = source.Token;
 
-            shieldRoot.SetParent(null, true);
-            if (!shieldBody.isKinematic)
-            {
-                shieldBody.linearVelocity = Vector3.zero;
-                shieldBody.angularVelocity = Vector3.zero;
-            }
-            shieldBody.isKinematic = true;
-            shieldBody.useGravity = false;
-
             try
             {
+                token.ThrowIfCancellationRequested();
+
+                // 盾をボスから分離する。
+                shieldRoot.SetParent(null, true);
+
+                if (!shieldBody.isKinematic)
+                {
+                    shieldBody.linearVelocity = Vector3.zero;
+                    shieldBody.angularVelocity = Vector3.zero;
+                }
+
+                shieldBody.isKinematic = true;
+                shieldBody.useGravity = false;
+
                 Vector3 start = shieldBody.position;
                 Vector3 destination = ResolveGroundDestination(target.position);
-                Vector3 control = (start + destination) * 0.5f +
-                    Vector3.up * parameters.ArcHeight;
+                Vector3 control = (start + destination) * 0.5f + Vector3.up * parameters.ArcHeight;
 
+                // 往路は1回分の命中履歴を持つ。
                 attackHitbox?.OpenHitWindow(definition, damage);
+
                 await MoveAlongArcAsync(
                     start,
                     control,
                     destination,
                     parameters.OutboundDuration,
                     token);
-                attackHitbox?.CloseHitWindow();
 
-                float waitDuration = Mathf.Max(
-                    0f,
-                    parameters.ReturnDelay - parameters.OutboundDuration);
+                attackHitbox?.CloseHitWindow();
+                token.ThrowIfCancellationRequested();
+
+                // 投擲開始から指定秒数経過後に帰還する。
+                float waitDuration = Mathf.Max(0f, parameters.ReturnDelay - parameters.OutboundDuration);
+
                 attackVisuals?.SetShieldReturnCue(true);
                 await DelayAsync(waitDuration, token);
                 attackVisuals?.SetShieldReturnCue(false);
 
-                // 復路は往路とは別に1回命中できる。
+                token.ThrowIfCancellationRequested();
+
+                // 復路は往路と独立した命中履歴を持つ。
                 attackHitbox?.OpenHitWindow(definition, damage);
+
                 await ReturnAlongGroundAsync(parameters, token);
+
                 attackHitbox?.CloseHitWindow();
-                SnapToSocket();
             }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            catch (OperationCanceledException)
+                when (token.IsCancellationRequested)
             {
-                // 盾破壊、死亡、State終了による正常な中断。
+                // 盾破壊・死亡・状態終了による正常なキャンセル。
             }
             finally
             {
+                // 新しい投擲が始まっていた場合は、その状態を変更しない。
                 if (ReferenceEquals(motionCancellation, source))
                 {
+                    motionCancellation = null;
                     attackHitbox?.CloseHitWindow();
                     attackVisuals?.SetShieldReturnCue(false);
                     SnapToSocket();
-                    motionCancellation = null;
                 }
 
                 source.Dispose();
@@ -155,25 +168,21 @@ namespace Project.InGame.Boss
         {
             float elapsed = 0f;
 
-            while (Mathf.Abs(shieldSocket.position.x - shieldBody.position.x) >
-                   parameters.ReturnDistance)
+            while (Mathf.Abs(shieldSocket.position.x - shieldBody.position.x) > parameters.ReturnDistance)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 float deltaTime = Time.fixedDeltaTime;
                 elapsed += deltaTime;
 
-                float t = Mathf.Clamp01(elapsed / parameters.AccelerationDuration);
+                float t = Mathf.Clamp01(elapsed / Mathf.Max(0.01f, parameters.AccelerationDuration));
 
                 AnimationCurve curve = parameters.AccelerationCurve;
                 float acceleration = curve != null ? Mathf.Clamp01(curve.Evaluate(t)) : t;
 
                 // 初速を少し持たせ、カーブの初期値が0でも帰還が始まるようにする。
                 float maxSpeed = parameters.ReturnMaxSpeed;
-                float speed = Mathf.Lerp(
-                    Mathf.Min(0.2f, maxSpeed),
-                    maxSpeed,
-                    acceleration);
+                float speed = Mathf.Lerp(Mathf.Min(0.2f, maxSpeed), maxSpeed, acceleration);
 
                 float nextX = Mathf.MoveTowards(shieldBody.position.x, shieldSocket.position.x, speed * deltaTime);
 
@@ -249,14 +258,20 @@ namespace Project.InGame.Boss
                 cancellationToken: cancellationToken);
         }
 
+
         /// <summary>
-        /// 投擲を中断し、盾を装備位置へ戻す。
+        /// 盾の投擲へ中断を通知し、直ちに装備位置へ戻す。
         /// </summary>
         public void CancelMotion()
         {
-            motionCancellation?.Cancel();
-            motionCancellation?.Dispose();
+            CancellationTokenSource source = motionCancellation;
             motionCancellation = null;
+
+            if (source != null && !source.IsCancellationRequested)
+            {
+                source.Cancel();
+            }
+
             attackHitbox?.CloseHitWindow();
             attackVisuals?.SetShieldReturnCue(false);
             SnapToSocket();

@@ -125,6 +125,9 @@ namespace Project.InGame.Boss
 
         private bool IsPreviewVisible()
         {
+            if (settings == null || settings.Content == BossHitboxDebugContent.ActualOnly)
+                return false;
+
             if (settings == null || slashPreview == null ||
                 !settings.ShowVerticalSlashPreview ||
                 settings.Scope == BossHitboxDebugScope.None)
@@ -181,18 +184,21 @@ namespace Project.InGame.Boss
             if (!Application.isPlaying)
                 RefreshHitboxes();
 
-            foreach (BossAttackHitbox hitbox in hitboxes)
+            if (settings.Content != BossHitboxDebugContent.PreviewOnly)
             {
-                if (!IsVisible(hitbox) ||
+                foreach (BossAttackHitbox hitbox in hitboxes)
+                {
+                    if (!IsVisible(hitbox) ||
                     !hitbox.TryGetComponent(out BoxCollider collider))
-                    continue;
+                        continue;
 
-                Gizmos.color = hitbox.IsWindowOpen
-                    ? settings.ActiveColor : settings.InactiveColor;
+                    Gizmos.color = hitbox.IsWindowOpen
+                        ? settings.ActiveColor : settings.InactiveColor;
 
-                Gizmos.matrix = collider.transform.localToWorldMatrix;
-                Gizmos.DrawWireCube(collider.center, collider.size);
-                Gizmos.matrix = Matrix4x4.identity;
+                    Gizmos.matrix = collider.transform.localToWorldMatrix;
+                    Gizmos.DrawWireCube(collider.center, collider.size);
+                    Gizmos.matrix = Matrix4x4.identity;
+                }
             }
 
             if (IsPreviewVisible())

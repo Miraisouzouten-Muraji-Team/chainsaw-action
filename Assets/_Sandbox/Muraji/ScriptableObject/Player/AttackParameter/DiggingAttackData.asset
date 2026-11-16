@@ -19,7 +19,7 @@ MonoBehaviour:
   attackVector: {x: 0, y: 0}
   attackMoveRange: 0
   attackMoveDuration: 0.15
-  cameraShack: 0
+  cameraShack: 0.1
   hitStopTime: 0
   airAttackGravityScale: 1
   showDamagePopup: 1

@@ -150,13 +150,16 @@ namespace Project.InGame.Boss
         /// </summary>
         public void PlayVerticalSlashPreparation(float duration, float raiseAngle)
         {
-            if (weaponPivot == null)
-                return;
+            if (weaponPivot == null) { return; }
 
             ResetPose();
-            SetupVerticalSlashPose();
 
-            Quaternion baseRotation = slashFrontRotation;
+            if (!SetupVerticalSlashPose())
+            {
+                return;
+            }
+
+            Quaternion baseRotation = slashBaseRotation;
             weaponPivot.localRotation = baseRotation;
 
             currentSequence = DOTween.Sequence()
@@ -174,6 +177,38 @@ namespace Project.InGame.Boss
                     }).SetEase(Ease.OutSine))
                 .SetUpdate(UpdateType.Fixed)
                 .SetLink(gameObject);
+        }
+
+        /// <summary>
+        /// 縦切りの回転中心、正面方向、刃の長さを確定する。
+        /// </summary>
+        private bool SetupVerticalSlashPose()
+        {
+            if (verticalSlashRange == null)
+            {
+                verticalSlashRange = hitboxController != null
+                    ? hitboxController.SlashRange
+                    : null;
+            }
+
+            if (verticalSlashRange == null)
+            {
+                Debug.LogError(
+                    "BossAttackVisualController: 縦切り範囲が未設定です。",
+                    this);
+                return false;
+            }
+
+            // 肩付近のアンカーを優先する。
+            Transform pivotAnchor = verticalSlashPivotAnchor != null
+                ? verticalSlashPivotAnchor
+                : verticalSlashRange.transform;
+
+            SetPivotPosition(pivotAnchor);
+            CalculateSlashBaseRotation();
+            ConfigureSlashBlade();
+
+            return true;
         }
 
         /// <summary>

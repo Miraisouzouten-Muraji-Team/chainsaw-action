@@ -34,6 +34,14 @@ namespace Project.InGame.Boss
         }
 
         /// <summary>
+        /// 射程を半円の直径として設定する。
+        /// </summary>
+        public void SetDiameter(float diameter)
+        {
+            radius = Mathf.Max(0.01f, diameter * 0.5f);
+        }
+
+        /// <summary>
         /// デバッグ表示用の半円上の位置を返す。
         /// </summary>
         public Vector3 GetArcPoint(float t)

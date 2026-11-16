@@ -55,19 +55,36 @@ namespace Project.InGame.Boss
             weaponHitbox.SynchronizeWithCube(weaponRangeSource);
         }
 
+
         /// <summary>
-        /// 攻撃種類に対応した判定を開始する。
+        /// 指定した攻撃のHitboxを開始する。
         /// </summary>
-        public void OpenHitbox(
-            BossAttackType attackType,
-            BossAttackDefinition definition,
+        public void OpenHitbox(BossAttackType attackType, BossAttackDefinition definition,
             float damage)
         {
             if (attackType == BossAttackType.VerticalSlash)
+            {
                 PrepareVerticalSlash(definition);
+            }
 
             SynchronizeWeaponHitbox();
-            GetHitbox(attackType)?.OpenHitWindow(definition, damage);
+
+            BossAttackHitbox hitbox = GetHitbox(attackType);
+
+            if (hitbox == null)
+            {
+                Debug.LogError(
+                    $"BossAttackHitboxController: {attackType}の判定が未設定です。",
+                    this);
+                return;
+            }
+
+            hitbox.OpenHitWindow(definition, damage);
+
+            if (attackType == BossAttackType.Thrust || attackType == BossAttackType.VerticalSlash)
+            {
+                weaponHitbox.GetComponent<BossWeaponSweepProbe>()?.CaptureCurrentPose();
+            }
         }
 
         public void CloseHitbox(BossAttackType attackType)
@@ -78,9 +95,7 @@ namespace Project.InGame.Boss
         /// <summary>
         /// 盾打ち込みの落下判定を開始する。
         /// </summary>
-        public void BeginShieldBash(
-            BossAttackDefinition definition,
-            float damage)
+        public void BeginShieldBash(BossAttackDefinition definition, float damage)
         {
             shieldBashHits.Clear();
 

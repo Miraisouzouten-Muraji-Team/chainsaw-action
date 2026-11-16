@@ -159,6 +159,14 @@ namespace Project.InGame.Boss
         }
 
         /// <summary>
+        /// 補間判定から検出したColliderを通常の命中処理へ渡す。
+        /// </summary>
+        public void TryHitCollider(Collider other)
+        {
+            TryHitPlayer(other);
+        }
+
+        /// <summary>
         /// 現在のBoxColliderと重なっているプレイヤーを調べる。
         /// </summary>
         private void CheckCurrentOverlaps()

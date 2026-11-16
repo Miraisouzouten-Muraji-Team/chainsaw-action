@@ -17,6 +17,13 @@ namespace Project.InGame.Boss
         OnActualHit
     }
 
+    public enum BossHitboxDebugContent
+    {
+        ActualOnly,
+        PreviewOnly,
+        Both
+    }
+
     /// <summary>
     /// 当たり判定をいつ、どの範囲まで表示するか設定する。
     /// </summary>
@@ -25,13 +32,11 @@ namespace Project.InGame.Boss
     {
         [Header("表示対象")]
         [SerializeField]
-        private BossHitboxDebugScope scope =
-            BossHitboxDebugScope.ActiveOnly;
+        private BossHitboxDebugScope scope = BossHitboxDebugScope.ActiveOnly;
 
         [Header("表示タイミング")]
         [SerializeField]
-        private BossHitboxDebugTiming timing =
-            BossHitboxDebugTiming.DuringAttackWindow;
+        private BossHitboxDebugTiming timing = BossHitboxDebugTiming.DuringAttackWindow;
 
         [Header("表示内容")]
         [SerializeField] private bool showVerticalSlashPreview = true;
@@ -46,6 +51,12 @@ namespace Project.InGame.Boss
         [SerializeField] private Color activeColor = Color.red;
         [SerializeField] private Color inactiveColor = Color.yellow;
         [SerializeField] private Color previewColor = Color.cyan;
+
+        [Header("表示する種類")]
+        [SerializeField]
+        private BossHitboxDebugContent content = BossHitboxDebugContent.Both;
+
+        public BossHitboxDebugContent Content => content;
 
         public BossHitboxDebugScope Scope => scope;
         public BossHitboxDebugTiming Timing => timing;

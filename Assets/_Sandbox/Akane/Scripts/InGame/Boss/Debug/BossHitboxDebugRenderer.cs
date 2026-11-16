@@ -58,49 +58,66 @@ namespace Project.InGame.Boss
             hitboxes.Remove(hitbox);
         }
 
+
+        /// <summary>
+        /// 表示範囲と表示タイミングに応じてHitboxの表示を判定する。
+        /// </summary>
         private bool IsVisible(BossAttackHitbox hitbox)
         {
             if (settings == null || hitbox == null ||
                 settings.Scope == BossHitboxDebugScope.None)
+            {
                 return false;
+            }
 
             bool activeOnly =
                 settings.Scope == BossHitboxDebugScope.ActiveOnly;
 
             bool anyActive = false;
-            float latestOpen = float.NegativeInfinity;
-            float latestHit = float.NegativeInfinity;
+            float latestOpen = -1f;
+            float latestHit = -1f;
 
-            foreach (BossAttackHitbox candidate in hitboxes)
+            if (!activeOnly)
             {
-                if (candidate == null)
-                    continue;
+                foreach (BossAttackHitbox candidate in hitboxes)
+                {
+                    if (candidate == null)
+                        continue;
 
-                anyActive |= candidate.IsHitWindowOpen;
-                latestOpen = Mathf.Max(
-                    latestOpen, candidate.LastOpenedTime);
-                latestHit = Mathf.Max(
-                    latestHit, candidate.LastHitTime);
+                    anyActive |= candidate.IsWindowOpen;
+                    latestOpen = Mathf.Max(
+                        latestOpen, candidate.LastOpenedAt);
+                    latestHit = Mathf.Max(
+                        latestHit, candidate.LastHitAt);
+                }
             }
 
-            float openTime = activeOnly
-                ? hitbox.LastOpenedTime : latestOpen;
-            float hitTime = activeOnly
-                ? hitbox.LastHitTime : latestHit;
+            float openedAt = activeOnly
+                ? hitbox.LastOpenedAt
+                : latestOpen;
+
+            float hitAt = activeOnly
+                ? hitbox.LastHitAt
+                : latestHit;
+
+            float now = Time.realtimeSinceStartup;
+            float duration = settings.MomentDuration;
 
             return settings.Timing switch
             {
                 BossHitboxDebugTiming.Always =>
-                    !activeOnly || hitbox.IsHitWindowOpen,
+                    !activeOnly || hitbox.IsWindowOpen,
 
                 BossHitboxDebugTiming.DuringAttackWindow =>
-                    activeOnly ? hitbox.IsHitWindowOpen : anyActive,
+                    activeOnly ? hitbox.IsWindowOpen : anyActive,
 
                 BossHitboxDebugTiming.OnActivation =>
-                    Time.time - openTime <= settings.MomentDuration,
+                    openedAt >= 0f &&
+                    now - openedAt <= duration,
 
                 BossHitboxDebugTiming.OnActualHit =>
-                    Time.time - hitTime <= settings.MomentDuration,
+                    hitAt >= 0f &&
+                    now - hitAt <= duration,
 
                 _ => false
             };
@@ -122,13 +139,11 @@ namespace Project.InGame.Boss
                     BossAttackType.VerticalSlash &&
                 boss.StateMachine?.CurrentType == BossStateType.Attack;
 
-            if (!slashSelected)
-                return false;
+            if (!slashSelected) { return false; }
 
             foreach (BossAttackHitbox hitbox in hitboxes)
             {
-                if (IsVisible(hitbox))
-                    return true;
+                if (IsVisible(hitbox)) { return true; }
             }
 
             return false;
@@ -172,7 +187,7 @@ namespace Project.InGame.Boss
                     !hitbox.TryGetComponent(out BoxCollider collider))
                     continue;
 
-                Gizmos.color = hitbox.IsHitWindowOpen
+                Gizmos.color = hitbox.IsWindowOpen
                     ? settings.ActiveColor : settings.InactiveColor;
 
                 Gizmos.matrix = collider.transform.localToWorldMatrix;
@@ -231,7 +246,7 @@ namespace Project.InGame.Boss
                     !hitbox.TryGetComponent(out BoxCollider collider))
                     continue;
 
-                Color color = hitbox.IsHitWindowOpen
+                Color color = hitbox.IsWindowOpen
                     ? settings.ActiveColor : settings.InactiveColor;
 
                 Vector3[] corners = GetBoxCorners(collider);
@@ -319,8 +334,9 @@ namespace Project.InGame.Boss
         }
 #endif
 
+
         /// <summary>
-        /// 半円の下に続く長方形の輪郭を返す。
+        /// 半円の中心から真下へ続く切り下ろし範囲を取得する。
         /// </summary>
         private IEnumerable<(Vector3, Vector3)> GetPreviewEdges()
         {
@@ -328,18 +344,22 @@ namespace Project.InGame.Boss
                 yield break;
 
             Vector3 forward = slashPreview.LocalForward;
-            float radius = slashPreview.Radius;
-            float padding = slashPreview.RectangleWidthPadding;
-            float down = slashPreview.DropDistance;
 
-            Vector3 front = forward * radius;
-            Vector3 rear = -forward * padding;
-            Vector3 offset = Vector3.down * down;
+            // 左右の幅は中心線からの距離。
+            float halfWidth = slashPreview.RectangleWidthPadding;
 
-            yield return (front, rear);
-            yield return (front, front + offset);
-            yield return (front + offset, rear + offset);
-            yield return (rear + offset, rear);
+            // 半円の半径分を切り下ろした後、さらに下へ移動する。
+            float totalDepth = slashPreview.Radius + slashPreview.DropDistance;
+
+            Vector3 topLeft = forward * halfWidth;
+            Vector3 topRight = -forward * halfWidth;
+            Vector3 bottomLeft = topLeft + Vector3.down * totalDepth;
+            Vector3 bottomRight = topRight + Vector3.down * totalDepth;
+
+            yield return (topLeft, topRight);
+            yield return (topRight, bottomRight);
+            yield return (bottomRight, bottomLeft);
+            yield return (bottomLeft, topLeft);
         }
     }
 }

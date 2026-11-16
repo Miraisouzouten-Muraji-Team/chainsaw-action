@@ -22,6 +22,12 @@ MonoBehaviour:
   - areaNumber: 3
     position: {x: 262.7, y: -1.39, z: 0}
     faceRight: 0
+  - areaNumber: 4
+    position: {x: 394.28, y: -7.28, z: 0}
+    faceRight: 0
+  - areaNumber: 5
+    position: {x: 530.05, y: -6.56, z: 0}
+    faceRight: 0
   fallbackAreaNumber: 1
   deathMotionSeconds: 0.8
   fadeOutSeconds: 0.4

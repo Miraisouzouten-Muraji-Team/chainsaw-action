@@ -17,16 +17,10 @@ MonoBehaviour:
     position: {x: -0.84, y: -7.45, z: 0}
     faceRight: 0
   - areaNumber: 2
-    position: {x: 129.9, y: -14.41, z: 0}
+    position: {x: 130.26, y: -10.34, z: 0}
     faceRight: 0
   - areaNumber: 3
-    position: {x: 188.7, y: -14.1, z: 0}
-    faceRight: 0
-  - areaNumber: 4
-    position: {x: 245.1, y: -13.434141, z: 0}
-    faceRight: 0
-  - areaNumber: 5
-    position: {x: 300.5, y: -13.434141, z: 0}
+    position: {x: 262.7, y: -1.39, z: 0}
     faceRight: 0
   fallbackAreaNumber: 1
   deathMotionSeconds: 0.8

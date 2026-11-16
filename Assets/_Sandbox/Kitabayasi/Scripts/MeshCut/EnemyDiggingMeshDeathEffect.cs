@@ -1,6 +1,9 @@
 ﻿using System.Collections.Generic;
 using Unity.Profiling;
 using UnityEngine;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 /// <summary>
 /// くい込み攻撃で死亡したEnemyのMeshを、指定した目標Piece数へ分割して物理破片を生成する。
@@ -46,7 +49,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
 
     [Tooltip(
         "MeshTargetCountSplitterへ渡す目標Piece数。" +
-        "連結成分分離によって、この値を超える場合がある。")]
+        "非連結部分を別Pieceに分けず、この数ちょうどのPieceを生成する。")]
     [SerializeField]
     [Min(MIN_TARGET_PIECE_COUNT)]
     private int targetPieceCount = 8;
@@ -85,7 +88,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         new List<GameObject>();
 
     // targetPieceCountを基準に死亡前へ生成コストを移すための事前生成殻。
-    // 連結成分分離で不足した分だけ死亡時に追加生成する。
+    // 分割が成功すれば指定Piece数だけ使用する。
     private readonly List<GameObject> preGeneratedPieceObjects =
         new List<GameObject>();
 
@@ -99,6 +102,115 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     {
         PreGeneratePieceObjects();
     }
+
+#if UNITY_EDITOR
+    // Playモード中だけの物理検証用。通常の死亡フローやプレイヤー攻撃には介入しない。
+    private void Update()
+    {
+#if ENABLE_INPUT_SYSTEM
+        bool isDebugSplitPressed =
+            Keyboard.current != null &&
+            Keyboard.current.yKey.wasPressedThisFrame;
+#elif ENABLE_LEGACY_INPUT_MANAGER
+        bool isDebugSplitPressed =
+            Input.GetKeyDown(KeyCode.Y);
+#else
+        bool isDebugSplitPressed = false;
+#endif
+
+        if (!isDebugSplitPressed || HasCompletedSplit)
+        {
+            return;
+        }
+
+        RunDebugDiggingSplit();
+    }
+
+    /// <summary>
+    /// くい込み死亡のMesh分割と専用飛散のみを手動実行する。
+    /// 生成Pieceのステージ衝突を観察できるよう縮小・Enemy破棄は実行しない。
+    /// </summary>
+    private void RunDebugDiggingSplit()
+    {
+        if (!TryCreatePieces())
+        {
+            return;
+        }
+
+        var pieceTransforms = new List<Transform>();
+        if (!TryGetPieceTransforms(pieceTransforms))
+        {
+            Debug.LogWarning(
+                $"{nameof(EnemyDiggingMeshDeathEffect)}: " +
+                "デバッグ分割後のPieceを取得できませんでした。",
+                this);
+            return;
+        }
+
+        // 生存中のAIや本体ColliderがPieceの物理挙動に介入しないよう、
+        // 分割したPieceのColliderだけを残して本体を停止する。
+        EnemyStateMachine stateMachine = GetComponent<EnemyStateMachine>();
+        if (stateMachine != null)
+        {
+            stateMachine.enabled = false;
+        }
+
+        Animator[] animators = GetComponentsInChildren<Animator>(true);
+        foreach (Animator animator in animators)
+        {
+            if (animator != null)
+            {
+                animator.enabled = false;
+            }
+        }
+
+        Collider[] allColliders = GetComponentsInChildren<Collider>(true);
+        foreach (Collider enemyCollider in allColliders)
+        {
+            if (enemyCollider == null)
+            {
+                continue;
+            }
+
+            bool isPieceCollider = false;
+            for (int pieceIndex = 0; pieceIndex < pieceTransforms.Count; pieceIndex++)
+            {
+                Transform pieceTransform = pieceTransforms[pieceIndex];
+                if (pieceTransform != null &&
+                    enemyCollider.transform.IsChildOf(pieceTransform))
+                {
+                    isPieceCollider = true;
+                    break;
+                }
+            }
+
+            if (!isPieceCollider)
+            {
+                enemyCollider.enabled = false;
+            }
+        }
+
+        Rigidbody enemyRigidbody = GetComponent<Rigidbody>();
+        if (enemyRigidbody != null)
+        {
+            enemyRigidbody.isKinematic = true;
+        }
+
+        EnemyDiggingDeathBurst deathBurst = GetComponent<EnemyDiggingDeathBurst>();
+        if (deathBurst != null)
+        {
+            deathBurst.BeginBurst(pieceTransforms);
+        }
+        else
+        {
+            Debug.LogWarning(
+                $"{nameof(EnemyDiggingMeshDeathEffect)}: " +
+                $"{nameof(EnemyDiggingDeathBurst)}が見つからないため、" +
+                "分割のみ実行しました。",
+                this);
+        }
+    }
+#endif
 
     /// <summary>
     /// このEnemyについて、分割Piece生成と元Rendererの非表示まで完了しているかを示す。
@@ -583,7 +695,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     }
 
     /// <summary>
-    /// 事前生成範囲内なら既存の殻を返し、不足時だけ死亡フレームで追加生成する。
+    /// 事前生成範囲内なら既存の殻を返し、殻が失われていた場合のみ死亡時に追加生成する。
     /// </summary>
     private GameObject GetOrCreatePieceObject(
         int pieceIndex)
@@ -734,6 +846,10 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
 
         pieceCollider.isTrigger =
             false;
+
+        // 死亡処理で事前生成PieceのColliderが無効化されるため、分割後に衝突判定を復帰させる。
+        pieceCollider.enabled =
+            true;
 
         Rigidbody pieceRigidbody =
             pieceObject.GetComponent<Rigidbody>();

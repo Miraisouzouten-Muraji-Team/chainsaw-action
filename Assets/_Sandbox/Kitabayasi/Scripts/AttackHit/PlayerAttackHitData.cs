@@ -34,6 +34,18 @@ public sealed class PlayerAttackHitData : AttackHitData
     public bool HasChainsawRotationRatio { get; }
 
     /// <summary>
+    /// 命中ごとのダメージ上書き値。nullならAttackData.damageを使用する。
+    /// 共有AttackDataを複製・変更せずに倍率ダメージを渡すために使用する。
+    /// </summary>
+    public int? DamageOverride { get; }
+
+    /// <summary>
+    /// 命中ごとの攻撃ベクトル上書き値。nullならAttackData.attackVectorを使用する。
+    /// 食い込み中など、ノックバックを抑制する命中で使用する。
+    /// </summary>
+    public Vector2? AttackVectorOverride { get; }
+
+    /// <summary>
     /// 既存Player実装との互換用。
     /// </summary>
     /// <remarks>
@@ -66,6 +78,22 @@ public sealed class PlayerAttackHitData : AttackHitData
             Mathf.Clamp01(
                 chainsawRotationRatio);
         HasChainsawRotationRatio = true;
+    }
+
+    /// <summary>
+    /// 命中の識別用に元AttackDataを保持し、倍率反映後のダメージ・攻撃ベクトルを別に渡す。
+    /// </summary>
+    public PlayerAttackHitData(
+        AttackData attackData,
+        int hitDamage,
+        Vector2 hitAttackVector)
+        : base(attackData)
+    {
+        ChainsawTrail = null;
+        ChainsawRotationRatio = 0f;
+        HasChainsawRotationRatio = false;
+        DamageOverride = Mathf.Max(0, hitDamage);
+        AttackVectorOverride = hitAttackVector;
     }
 
     /// <summary>

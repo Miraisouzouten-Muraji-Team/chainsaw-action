@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 /// <summary>
@@ -8,8 +8,8 @@ using UnityEngine;
 /// 責務:
 /// ・やられState開始時にダメージ点滅を開始する。
 /// ・やられ中、攻撃を受けた側とは反対方向へ見た目用Transformを傾ける。
-/// ・EnemyKnockbackMotorへ今回の被弾ノックバックを要求する。
-/// ・ノックバック状態と接地状態に合わせて被弾姿勢を復帰する。
+/// ・攻撃に応じてEnemyKnockbackMotorへ被弾ノックバックの開始・停止を要求する。
+/// ・ノックバックを行う場合は接地状態に合わせて、行わない場合はやられ終了時に姿勢を復帰する。
 /// ・指定時間の経過を管理する。
 /// ・やられ終了後に次のStateを決めるための遷移判定を要求する。
 ///
@@ -36,6 +36,7 @@ public sealed class EnemyDamageState : IEnemyState
     private float tiltRecoveryElapsedTime;
     private float hitSourceDirectionSign = 1f;
     private Vector2 attackVector;
+    private bool shouldApplyPhysicalKnockback = true;
 
     private Quaternion originalLocalRotation;
     private Quaternion tiltRecoveryStartLocalRotation;
@@ -95,9 +96,7 @@ public sealed class EnemyDamageState : IEnemyState
         CaptureOriginalRotation();
         ApplyTilt();
 
-        enemyKnockbackMotor.StartKnockback(
-            attackVector,
-            hitSourceDirectionSign);
+        StartOrCancelKnockback();
 
         enemyDamageFlash.PlayDamageFlash();
     }
@@ -156,9 +155,13 @@ public sealed class EnemyDamageState : IEnemyState
     /// <param name="newAttackVector">
     /// 今回命中したAttackDataのAttackVector。
     /// </param>
+    /// <param name="applyPhysicalKnockback">
+    /// falseならRigidbodyへの被弾初速度を設定せず、見た目の傾斜だけ行う。
+    /// </param>
     public void SetHitData(
         float directionSign,
-        Vector2 newAttackVector)
+        Vector2 newAttackVector,
+        bool applyPhysicalKnockback)
     {
         hitSourceDirectionSign =
             directionSign < 0f
@@ -167,11 +170,14 @@ public sealed class EnemyDamageState : IEnemyState
 
         attackVector =
             newAttackVector;
+
+        shouldApplyPhysicalKnockback =
+            applyPhysicalKnockback;
     }
 
     /// <summary>
     /// やられState中に再度攻撃を受けた場合、
-    /// 最新の被弾情報でノックバック・やられ時間・点滅演出を最初からやり直す。
+    /// 最新の被弾情報でノックバックの開始／停止・やられ時間・点滅演出を更新する。
     /// </summary>
     public void Restart()
     {
@@ -187,15 +193,31 @@ public sealed class EnemyDamageState : IEnemyState
 
         ApplyTilt();
 
-        enemyKnockbackMotor.StartKnockback(
-            attackVector,
-            hitSourceDirectionSign);
+        StartOrCancelKnockback();
 
         enemyDamageFlash.PlayDamageFlash();
     }
 
     /// <summary>
-    /// ノックバック軌道に合わせて被弾姿勢を維持・復帰する。
+    /// 攻撃の種類に応じて物理ノックバックを開始するか、中断するかを切り替える。
+    /// </summary>
+    private void StartOrCancelKnockback()
+    {
+        if (shouldApplyPhysicalKnockback)
+        {
+            enemyKnockbackMotor.StartKnockback(
+                attackVector,
+                hitSourceDirectionSign);
+            return;
+        }
+
+        // ノックバック中に食い込み攻撃を受けた場合も、残留速度を止める。
+        enemyKnockbackMotor.StopKnockback();
+    }
+
+    /// <summary>
+    /// 物理ノックバック中は軌道に合わせて姿勢を復帰する。
+    /// 非ノックバック被弾では傾斜をDamage State終了まで維持する。
     /// </summary>
     /// <remarks>
     /// Gravityを使用して実際に離地した場合は、上昇中と通常の落下中は傾きを維持する。
@@ -208,6 +230,13 @@ public sealed class EnemyDamageState : IEnemyState
     private void UpdateHitTilt()
     {
         if (!isTiltApplied)
+        {
+            return;
+        }
+
+        // 移動しない被弾はノックバック終了による復帰を行わない。
+        // 傾斜をDamage State終了まで維持し、Exitで確実に元姿勢へ戻す。
+        if (!shouldApplyPhysicalKnockback)
         {
             return;
         }

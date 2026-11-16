@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -12,10 +12,10 @@ using UnityEngine;
 ///
 /// ノックバック速度は開始時または再被弾時に一度だけX/Yへ設定する。
 /// Gravityを使用するEnemyが一度でも空中へ出た場合は、
-/// 以降の軌道をRigidbodyのGravity・衝突・Damping等の物理結果に任せ、着地時にX/Y速度を停止する。
+/// 以降の軌道をRigidbodyのGravity・DampingとTrigger移動制限の結果に任せ、着地時にX/Y速度を停止する。
 /// 一度も空中へ出ない場合とGravityを使用しないEnemyは、既存のノックバック時間で終了する。
 ///
-/// 接地確定はCollisionの接触法線から追跡する。
+/// 接地確定はEnemyTriggerMovementMotorが通知する接触法線から追跡する。
 /// 着地直前の距離判定だけは、Enemy本体の下端から3D Physicsの下向きRayで確認する。
 /// どちらも上向き法線を持たない面は地面として扱わない。
 ///
@@ -115,7 +115,7 @@ public sealed class EnemyKnockbackMotor
     /// 接地候補となる面があるか判定する。
     /// </summary>
     /// <remarks>
-    /// 着地そのものの確定には既存のCollision接触法線を使用する。
+    /// 着地そのものの確定にはTrigger移動制限が検出した接触法線を使用する。
     /// この判定はDamage Stateが「着地直前」を判断するためだけに使用する。
     ///
     /// Queryは現在のノックバックと同じ3D Physicsを使用し、
@@ -284,7 +284,7 @@ public sealed class EnemyKnockbackMotor
     /// Collision開始時の接触情報から接地状態を更新する。
     /// </summary>
     public void HandleCollisionEnter(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         UpdateGroundContact(
             collision);
@@ -300,7 +300,7 @@ public sealed class EnemyKnockbackMotor
     /// Stayでも現在の接触法線を再評価する。
     /// </remarks>
     public void HandleCollisionStay(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         UpdateGroundContact(
             collision);
@@ -312,16 +312,16 @@ public sealed class EnemyKnockbackMotor
     /// Collision終了時に、そのColliderを接地候補から除外する。
     /// </summary>
     public void HandleCollisionExit(
-        Collision collision)
+        EnemyContactInfo collision)
     {
-        if (collision == null ||
-            collision.collider == null)
+        if (!collision.IsValid ||
+            collision.OtherCollider == null)
         {
             return;
         }
 
         groundContactColliders.Remove(
-            collision.collider);
+            collision.OtherCollider);
 
         UpdateAirborneAndLandingState();
     }
@@ -446,16 +446,16 @@ public sealed class EnemyKnockbackMotor
     }
 
     private void UpdateGroundContact(
-        Collision collision)
+        EnemyContactInfo collision)
     {
-        if (collision == null ||
-            collision.collider == null)
+        if (!collision.IsValid ||
+            collision.OtherCollider == null)
         {
             return;
         }
 
         Collider otherCollider =
-            collision.collider;
+            collision.OtherCollider;
 
         if (HasGroundFacingContact(collision))
         {
@@ -469,7 +469,7 @@ public sealed class EnemyKnockbackMotor
     }
 
     /// <summary>
-    /// Rigidbodyに属する有効な非Trigger ColliderをまとめたワールドBoundsを取得する。
+    /// Rigidbodyに属する有効なColliderのワールドBoundsを取得する。
     /// </summary>
     private bool TryGetEnemyBounds(
         out Bounds enemyBounds)
@@ -487,7 +487,6 @@ public sealed class EnemyKnockbackMotor
 
             if (enemyCollider == null ||
                 !enemyCollider.enabled ||
-                enemyCollider.isTrigger ||
                 enemyCollider.attachedRigidbody != enemyRigidbody)
             {
                 continue;
@@ -513,19 +512,19 @@ public sealed class EnemyKnockbackMotor
     /// 壁ではなく、Enemyを下側から支える向きの接触が含まれるか判定する。
     /// </summary>
     private static bool HasGroundFacingContact(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         int contactCount =
-            collision.contactCount;
+            collision.ContactCount;
 
         for (int i = 0;
              i < contactCount;
              i++)
         {
-            ContactPoint contact =
+            EnemyContactInfo contact =
                 collision.GetContact(i);
 
-            if (contact.normal.y >
+            if (contact.Normal.y >
                 GROUND_NORMAL_EPSILON)
             {
                 return true;

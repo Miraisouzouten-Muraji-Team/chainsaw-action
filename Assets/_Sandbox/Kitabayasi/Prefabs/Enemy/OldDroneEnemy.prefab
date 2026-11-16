@@ -229,6 +229,7 @@ MonoBehaviour:
   attackStrategy:
     rid: 2559746894314340429
   visualRoot: {fileID: 2952497546087976549}
+  discoveryFacingRotationSpeed: 360
   deathStrategy:
     rid: 2559746894314340427
   showPatrolDebugVisualization: 0
@@ -294,6 +295,7 @@ MonoBehaviour:
   maximumPieceMass: 10
   minimumCapsuleAspectRatio: 1.2
   preGeneratedPieceCount: 0
+  keepCutSidesAsSinglePieces: 0
   cutDirectionSampleCount: 4
   cutRangeAxis: 0
   cutRangeMinimumNormalized: 0.2
@@ -368,7 +370,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3

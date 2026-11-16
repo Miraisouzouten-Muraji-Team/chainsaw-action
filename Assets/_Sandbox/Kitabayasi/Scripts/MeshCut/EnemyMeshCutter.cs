@@ -922,6 +922,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         boxCollider.enabled = false;
 
         pieceObject.AddComponent<Rigidbody>();
+        // 事前生成殻の段階でPlayer接触Triggerも準備する。
+        EnemyCutPiecePlayerPushReaction.CreateForPiece(pieceObject);
 
         return pieceObject;
 
@@ -1069,6 +1071,10 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             true;
 
         pieceRigidbody.ResetInertiaTensor();
+
+        playerReference.TryGetPlayerTransform(out Transform playerRoot);
+        pieceObject.GetComponentInChildren<EnemyCutPiecePlayerPushReaction>(true)
+            .Configure(pieceRigidbody, pieceCollider, playerRoot);
 
         // 事前生成時にはPlayer Colliderが変化する可能性があるためIgnoreCollisionを固定せず、
         // Mesh・Collider・Rigidbody・Transform確定後の有効化時に毎回適用する。

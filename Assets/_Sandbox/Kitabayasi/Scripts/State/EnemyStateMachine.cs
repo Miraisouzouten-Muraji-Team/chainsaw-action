@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -13,7 +13,7 @@ using UnityEngine.Serialization;
 /// 対応する受信interfaceを実装しているCurrentStateへ通知する。
 ///
 /// SearchでPlayerを発見した瞬間の方向をAttack Stateへ引き継ぎ、
-/// Alert完了後にAttack Stateへ遷移する。
+/// Alert中はPlayerの現在位置へ見た目を徐々に向ける。Alert完了後にAttack Stateへ遷移する。
 /// HPが0になった場合はDeath Stateへ遷移し、
 /// 死亡処理完了後にEnemy本体を破棄する。
 /// </remarks>
@@ -49,6 +49,9 @@ public class EnemyStateMachine : MonoBehaviour
     [SerializeField]
     private Transform visualRoot;
 
+    [Tooltip("プレイヤー発見後、Alert中にVisualRootを回転させる角速度（度/秒）。")]
+    [SerializeField, Min(0f)]
+    private float discoveryFacingRotationSpeed = 360f;
 
     [Header("死亡")]
     [Tooltip("このEnemyがDeath Stateで使用するStrategy。")]
@@ -67,9 +70,18 @@ public class EnemyStateMachine : MonoBehaviour
     private EnemyDamageFlash enemyDamageFlash;
     private Rigidbody enemyRigidbody;
     private EnemyKnockbackMotor enemyKnockbackMotor;
+    private EnemyTriggerMovementMotor enemyTriggerMovementMotor;
     private TurretEnemyAttackStrategy turretAttackStrategy;
+    private bool droneStageCollisionMaskIsValid;
 
     private const float MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE = 0.000001f;
+    private const string PLAYER_FACING_COLLIDER_NAME = "Mid_Collider";
+
+    private EnemyPlayerReference facingPlayerReference;
+    private Collider facingPlayerCollider;
+    private Quaternion lastDetectedFacingRotation;
+    private float lastDetectedFacingDirectionSign = 1f;
+    private bool hasAlertFacingTarget;
 
     private EnemySearchState searchState;
     private EnemyAlertState alertState;
@@ -163,91 +175,135 @@ public class EnemyStateMachine : MonoBehaviour
             turretAttackStrategy.UpdateTurretRotation();
         }
 
+        // Alert中は同じ物理更新周期で追従回転する。Stateの残り時間は変更しない。
+        if (ReferenceEquals(CurrentState, alertState))
+        {
+            UpdateAlertFacing();
+        }
+
         CurrentState?.Update();
-    }
 
-    /// <summary>
-    /// UnityからCollision開始通知を受信し、
-    /// 対応可能なCurrentStateへそのまま転送する。
-    /// </summary>
-    /// <remarks>
-    /// EnemyStateMachine自身はCollisionの意味や、
-    /// どのStrategyが使用されているかを判断しない。
-    ///
-    /// 現時点ではMonoBehaviourでしか直接受信できないUnityイベントが
-    /// Collision系のみのため、
-    /// このクラスをUnityイベントの入口として兼用する。
-    ///
-    /// 今後、Triggerやその他のMonoBehaviour依存イベントなど、
-    /// Stateへ転送するUnityイベントが増えて
-    /// StateMachineの責務が肥大化した場合は、
-    /// Enemy専用のUnityイベント受信ハブとなるMonoBehaviourを別途作成し、
-    /// イベント受信・配送責務をこのクラスから分離する。
-    /// </remarks>
-    private void OnCollisionEnter(
-        Collision collision)
-    {
-        if (!isActiveAndEnabled ||
-            !isInitialized ||
-            enemyHealth.IsDead)
+        if (isInitialized && !enemyHealth.IsDead &&
+            turretAttackStrategy == null)
         {
-            return;
-        }
+            // DroneのSearch/AttackではPlanarMotorがStage移動を既に制限する。
+            // 共通MotorはPlayerへの侵入だけを止め、Stageの二重補正を避ける。
+            // Alert/Damage中はPlanarMotorによる移動制限がないのでStageも保護する。
+            bool stageMovementHandledByDrone = droneStageCollisionMaskIsValid && (
+                (ReferenceEquals(CurrentState, searchState) &&
+                 (searchStrategy is OldDroneEnemySearchStrategy ||
+                  searchStrategy is NewDroneEnemySearchStrategy)) ||
+                (ReferenceEquals(CurrentState, attackState) &&
+                 (attackStrategy is OldDroneEnemyAttackStrategy ||
+                  attackStrategy is NewDroneEnemyAttackStrategy)));
 
-        // Knockback開始時点の接地状態を正しく判定できるよう、
-        // Damage State中だけでなく常時Motorへ接触情報を渡す。
-        enemyKnockbackMotor?.HandleCollisionEnter(
-            collision);
-
-        if (CurrentState
-            is IEnemyCollisionEnterReceiver receiver)
-        {
-            receiver.HandleCollisionEnter(
-                collision);
+            enemyTriggerMovementMotor?.Step(
+                HandleMotorContact,
+                HandleContactExit,
+                stageMovementHandledByDrone);
         }
     }
 
     /// <summary>
-    /// UnityからCollision継続通知を受信し、
-    /// 対応可能なCurrentStateへそのまま転送する。
+    /// 移動前Queryが検出した接触と、Triggerが通知したPlayer接触をStateへ配信する。
+    /// UnityのOnCollisionイベントはTrigger本体では発生しない。
     /// </summary>
-    private void OnCollisionStay(
-        Collision collision)
+    private void HandleMotorContact(EnemyContactInfo contact, bool isNewContact)
     {
-        if (!isActiveAndEnabled ||
-            !isInitialized ||
-            enemyHealth.IsDead)
+        if (isNewContact)
         {
-            return;
+            HandleContactEnter(contact);
         }
 
-        enemyKnockbackMotor?.HandleCollisionStay(
-            collision);
-
-        if (CurrentState
-            is IEnemyCollisionStayReceiver receiver)
-        {
-            receiver.HandleCollisionStay(
-                collision);
-        }
+        HandleContactStay(contact);
     }
 
     /// <summary>
-    /// UnityからCollision終了通知を受信し、
-    /// ノックバック用の接地追跡へ通知する。
+    /// 攻撃本体が有効になった瞬間のPlayer接触をAttack Stateへ再通知する。
     /// </summary>
-    private void OnCollisionExit(
-        Collision collision)
+    private void NotifyAttackStartContacts()
     {
-        if (!isActiveAndEnabled ||
-            !isInitialized ||
-            enemyHealth.IsDead)
+        if (!isActiveAndEnabled || !isInitialized || enemyHealth.IsDead ||
+            !ReferenceEquals(CurrentState, attackState))
         {
             return;
         }
 
-        enemyKnockbackMotor?.HandleCollisionExit(
-            collision);
+        enemyTriggerMovementMotor?.NotifyPlayerContactsAtAttackStart(HandleContactStay);
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other != null &&
+            other.gameObject.layer == LayerMask.NameToLayer("PlayerBody") &&
+            enemyTriggerMovementMotor != null &&
+            !enemyTriggerMovementMotor.IsContactTracked(other))
+        {
+            HandleContactEnter(enemyTriggerMovementMotor.CreateTriggerContact(other));
+        }
+    }
+
+    private void OnTriggerStay(Collider other)
+    {
+        if (other != null &&
+            other.gameObject.layer == LayerMask.NameToLayer("PlayerBody") &&
+            enemyTriggerMovementMotor != null &&
+            !enemyTriggerMovementMotor.IsContactTracked(other))
+        {
+            HandleContactStay(enemyTriggerMovementMotor.CreateTriggerContact(other));
+        }
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        if (other != null &&
+            other.gameObject.layer == LayerMask.NameToLayer("PlayerBody") &&
+            enemyTriggerMovementMotor != null &&
+            !enemyTriggerMovementMotor.IsContactTracked(other))
+        {
+            HandleContactExit(enemyTriggerMovementMotor.CreateTriggerContact(other));
+        }
+    }
+
+    private void HandleContactEnter(EnemyContactInfo contact)
+    {
+        if (!isActiveAndEnabled || !isInitialized || enemyHealth.IsDead ||
+            !contact.IsValid)
+        {
+            return;
+        }
+
+        enemyKnockbackMotor?.HandleCollisionEnter(contact);
+        if (CurrentState is IEnemyCollisionEnterReceiver receiver)
+        {
+            receiver.HandleCollisionEnter(contact);
+        }
+    }
+
+    private void HandleContactStay(EnemyContactInfo contact)
+    {
+        if (!isActiveAndEnabled || !isInitialized || enemyHealth.IsDead ||
+            !contact.IsValid)
+        {
+            return;
+        }
+
+        enemyKnockbackMotor?.HandleCollisionStay(contact);
+        if (CurrentState is IEnemyCollisionStayReceiver receiver)
+        {
+            receiver.HandleCollisionStay(contact);
+        }
+    }
+
+    private void HandleContactExit(EnemyContactInfo contact)
+    {
+        if (!isActiveAndEnabled || !isInitialized || enemyHealth.IsDead ||
+            !contact.IsValid)
+        {
+            return;
+        }
+
+        enemyKnockbackMotor?.HandleCollisionExit(contact);
     }
 
     private void OnDisable()
@@ -270,6 +326,9 @@ public class EnemyStateMachine : MonoBehaviour
         // Disable中はCollision Exitを受け取れない場合があるため、
         // 再有効化時へ古い接地参照を持ち越さない。
         enemyKnockbackMotor?.ClearGroundContactTracking();
+        enemyTriggerMovementMotor?.ClearContacts();
+        facingPlayerReference?.Clear();
+        facingPlayerCollider = null;
     }
 
     /// <summary>
@@ -277,7 +336,7 @@ public class EnemyStateMachine : MonoBehaviour
     /// </summary>
     /// <remarks>
     /// 既にDamage State中の場合はStateを切り替えず、
-    /// やられ方向・ノックバック・やられ時間・点滅演出を今回の命中で更新する。
+    /// やられ方向・ノックバック可否・やられ時間・点滅演出を今回の命中で更新する。
     /// </remarks>
     /// <param name="hitSourceDirectionSign">
     /// X/Yゲームプレイ平面上で見た攻撃元の左右方向。
@@ -286,9 +345,14 @@ public class EnemyStateMachine : MonoBehaviour
     /// <param name="attackVector">
     /// 今回命中したAttackDataのAttackVector。
     /// </param>
+    /// <param name="hitAttackData">
+    /// 今回命中したAttackData。食い込み攻撃判別に使う。
+    /// 旧呼び出し元との互換用にnullも許可し、その場合は通常攻撃として扱う。
+    /// </param>
     public void RequestDamageState(
         float hitSourceDirectionSign,
-        Vector2 attackVector)
+        Vector2 attackVector,
+        AttackData hitAttackData = null)
     {
         if (!isActiveAndEnabled ||
             !isInitialized ||
@@ -298,9 +362,13 @@ public class EnemyStateMachine : MonoBehaviour
             return;
         }
 
+        bool applyPhysicalKnockback =
+            ShouldApplyPhysicalKnockback(hitAttackData);
+
         damageState.SetHitData(
             hitSourceDirectionSign,
-            attackVector);
+            attackVector,
+            applyPhysicalKnockback);
 
         if (ReferenceEquals(
                 CurrentState,
@@ -311,6 +379,29 @@ public class EnemyStateMachine : MonoBehaviour
         }
 
         ChangeState(damageState);
+    }
+
+    /// <summary>
+    /// 既存の食い込み攻撃設定と固定タレットの仕様から、今回の位置ノックバック可否を決める。
+    /// 攻撃による死亡時の分割片飛散には影響させない。
+    /// </summary>
+    private bool ShouldApplyPhysicalKnockback(
+        AttackData hitAttackData)
+    {
+        if (turretAttackStrategy != null)
+        {
+            return false;
+        }
+
+        if (hitAttackData != null &&
+            deathStrategy is StandardEnemyDeathStrategy standardDeathStrategy &&
+            standardDeathStrategy.DiggingAttackData != null &&
+            hitAttackData == standardDeathStrategy.DiggingAttackData)
+        {
+            return false;
+        }
+
+        return true;
     }
 
     private void InitializeStates()
@@ -335,6 +426,31 @@ public class EnemyStateMachine : MonoBehaviour
         }
 
 
+        // Drone側の障害物MaskにStageColliderが入っていない場合、専用Motorだけに
+        // Stage衝突を任せると通り抜けるため、共通Motorの保護を残す。
+        int stageLayer = LayerMask.NameToLayer("StageCollider");
+        int stageLayerMask = stageLayer >= 0 ? 1 << stageLayer : 0;
+        int droneObstacleMask = enemyData is OldDroneEnemyData oldDroneData
+            ? oldDroneData.NavigationObstacleMask.value
+            : enemyData is NewDroneEnemyData newDroneData
+                ? newDroneData.NavigationObstacleMask.value
+                : 0;
+        droneStageCollisionMaskIsValid = stageLayerMask != 0 &&
+            (droneObstacleMask & stageLayerMask) != 0;
+        if ((enemyData is OldDroneEnemyData || enemyData is NewDroneEnemyData) &&
+            !droneStageCollisionMaskIsValid)
+        {
+            Debug.LogWarning(
+                "DroneのNavigation Obstacle MaskにStageColliderがありません。" +
+                "共通MotorによるStage保護を継続します。",
+                this);
+        }
+
+        // Stateの初期化より先に、本体Colliderを1つだけTrigger化する。
+        // ChargeのStrategyも同じColliderを地形Queryの形状として参照する。
+        enemyTriggerMovementMotor =
+            new EnemyTriggerMovementMotor(enemyRigidbody);
+
         enemyKnockbackMotor =
             new EnemyKnockbackMotor(
                 enemyRigidbody);
@@ -346,7 +462,7 @@ public class EnemyStateMachine : MonoBehaviour
                 enemyDamageFlash,
                 enemyKnockbackMotor,
                 // 土台まで傾くのを防ぐため、固定タレットは被弾時の見た目の傾斜を行わない。
-                // ダメージ点滅・HP処理とノックバックの扱いは従来のまま。
+                // ダメージ点滅・HP処理は変更せず、物理ノックバックは別途禁止する。
                 turretAttackStrategy != null ? null : visualRoot,
                 enemyData.HitTiltDuration,
                 enemyData.HitTiltRecoveryDuration,
@@ -406,6 +522,9 @@ public class EnemyStateMachine : MonoBehaviour
             gameObject,
             visualRoot);
 
+        // 発見後の見た目追従用。索敵判定そのものはSearch Strategyに任せる。
+        facingPlayerReference = new EnemyPlayerReference();
+
         // 攻撃Strategyと同じVisualRoot配下のAnimatorだけを待機中に停止する。
         Animator visualAnimator = null;
         if (visualRoot != null)
@@ -432,7 +551,8 @@ public class EnemyStateMachine : MonoBehaviour
         attackState =
             new EnemyAttackState(
                 attackStrategy,
-                RequestAttackCycleCompletion);
+                RequestAttackCycleCompletion,
+                NotifyAttackStartContacts);
     }
 
     /// <summary>
@@ -454,7 +574,7 @@ public class EnemyStateMachine : MonoBehaviour
         attackState.SetInitialAttackDirection(
             initialAttackDirectionSign);
 
-        // 発見方向へ即時に向いてから、既存のAlertを開始する。
+        // Alertへの遷移時は向きを即時確定せず、既存の予告時間内で回転する。
         FacePlayerAndChangeState(
             alertState,
             initialAttackDirectionSign);
@@ -617,27 +737,136 @@ public class EnemyStateMachine : MonoBehaviour
     }
 
     /// <summary>
-    /// Playerを検知した時点の方向をVisualRootへ即時設定してから次のStateへ移る。
-    /// Damage StateのExitによる見た目の復元が先に行われるよう、Exit後に回転を設定する。
+    /// 発見方向を次のStateへ引き継ぐ。Alert開始時だけ瞬間回転を行わず、
+    /// 他の遷移（攻撃後の直接再攻撃・被弾復帰）は従来の向き制御を維持する。
     /// </summary>
     private void FacePlayerAndChangeState(
         IEnemyState nextState,
         float detectedPlayerDirectionSign)
     {
-        // Damage StateのExitでは被弾時の傾きを戻すため、
-        // 元Stateの終了後に発見方向を設定する。
+        // Damage StateのExitでVisualRootの被弾傾斜が元に戻るため、
+        // 向きの処理は必ず終了処理後に行う。
         ExitCurrentState();
 
+        hasAlertFacingTarget = false;
         if (TryGetDetectedPlayerFacingRotation(
                 detectedPlayerDirectionSign,
                 out Quaternion targetRotation))
         {
-            // プレイヤー発見時は補間せず、VisualRootの向きを即座に確定する。
-            visualRoot.rotation = targetRotation;
+            if (ReferenceEquals(nextState, alertState))
+            {
+                hasAlertFacingTarget = true;
+                lastDetectedFacingRotation = targetRotation;
+                lastDetectedFacingDirectionSign =
+                    detectedPlayerDirectionSign < 0f ? -1f : 1f;
+                facingPlayerCollider = null;
+            }
+            else
+            {
+                // Alertを挟まない再攻撃・被弾復帰では、既存挙動を変更しない。
+                visualRoot.rotation = targetRotation;
+            }
         }
 
         // TurretEnemyなどの対象外Strategyは向きを変えずに遷移する。
         ChangeState(nextState);
+    }
+
+    /// <summary>
+    /// 発見したPlayerの現在位置を追い、Alertの間だけ一定角速度でVisualRootを回転する。
+    /// Playerが一時的に取得できない場合は最後の目標回転を維持する。
+    /// </summary>
+    private void UpdateAlertFacing()
+    {
+        if (!hasAlertFacingTarget ||
+            visualRoot == null ||
+            facingPlayerReference == null)
+        {
+            return;
+        }
+
+        if (TryGetCurrentPlayerFacingRotation(
+                out Quaternion currentTargetRotation))
+        {
+            lastDetectedFacingRotation = currentTargetRotation;
+        }
+
+        visualRoot.rotation = Quaternion.RotateTowards(
+            visualRoot.rotation,
+            lastDetectedFacingRotation,
+            discoveryFacingRotationSpeed * Time.fixedDeltaTime);
+    }
+
+    private bool TryGetCurrentPlayerFacingRotation(
+        out Quaternion targetRotation)
+    {
+        targetRotation = Quaternion.identity;
+
+        if (!facingPlayerReference.TryGetPlayerTransform(
+                out Transform playerTransform) ||
+            !playerTransform.gameObject.activeInHierarchy)
+        {
+            facingPlayerCollider = null;
+            return false;
+        }
+
+        Vector3 facingDirection;
+
+        if (searchStrategy is ChargeEnemySearchStrategy)
+        {
+            // ChargeEnemyは左右だけを向く。ジャンプによる上下方向へは傾けない。
+            float horizontalDelta =
+                playerTransform.position.x - enemyRigidbody.position.x;
+
+            if (horizontalDelta * horizontalDelta >
+                MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE)
+            {
+                lastDetectedFacingDirectionSign = Mathf.Sign(horizontalDelta);
+            }
+
+            facingDirection =
+                Vector3.right * lastDetectedFacingDirectionSign;
+        }
+        else if (searchStrategy is OldDroneEnemySearchStrategy ||
+                 searchStrategy is NewDroneEnemySearchStrategy)
+        {
+            // 初回検知時と同じ代表Colliderを参照し、Player Rootの座標へ
+            // 突然目標が切り替わるのを防ぐ。
+            if (facingPlayerCollider == null ||
+                (facingPlayerCollider.transform != playerTransform &&
+                 !facingPlayerCollider.transform.IsChildOf(playerTransform)))
+            {
+                Transform targetTransform =
+                    playerTransform.Find(PLAYER_FACING_COLLIDER_NAME);
+                facingPlayerCollider = targetTransform != null
+                    ? targetTransform.GetComponent<Collider>()
+                    : null;
+            }
+
+            if (facingPlayerCollider == null ||
+                !facingPlayerCollider.enabled ||
+                !facingPlayerCollider.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            facingDirection =
+                facingPlayerCollider.bounds.center - enemyRigidbody.position;
+            facingDirection.z = 0f;
+
+            if (facingDirection.sqrMagnitude <=
+                MINIMUM_FACING_DIRECTION_SQR_MAGNITUDE)
+            {
+                return false;
+            }
+        }
+        else
+        {
+            return false;
+        }
+
+        targetRotation = Quaternion.LookRotation(facingDirection, Vector3.up);
+        return true;
     }
 
     private bool TryGetDetectedPlayerFacingRotation(

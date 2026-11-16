@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// Enemyが外部から攻撃命中情報を受信するための窓口。
@@ -35,7 +35,8 @@ public sealed class EnemyAttackHitReceiver :
     public PlayerAttackHitData LastPlayerAttackHitData { get; private set; }
 
     /// <summary>
-    /// 最後に受けたPlayer攻撃について、左右判定まで反映した実ノックバック初速度。
+    /// 最後に受けたPlayer攻撃について、左右判定まで反映した初速度。
+    /// 被弾時に位置移動を禁止する攻撃でも、死亡時の切断片飛散に使用するため保持する。
     /// </summary>
     /// <remarks>
     /// EnemyHealth.TakeDamage内で死亡通知が同期的に発火するため、
@@ -155,7 +156,8 @@ public sealed class EnemyAttackHitReceiver :
 
         enemyStateMachine.RequestDamageState(
             hitSourceDirectionSign,
-            playerAttackData.attackVector);
+            playerAttackData.attackVector,
+            playerAttackData);
     }
 
     /// <summary>

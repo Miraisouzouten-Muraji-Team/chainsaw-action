@@ -47,6 +47,11 @@ public sealed class ChargeEnemyData : EnemyData
     [Min(0f)]
     private float attackPreparationDuration = 0.75f;
 
+    [Tooltip("予備動作モーションの再生速度。1で通常速度、0で停止します。予備動作時間には影響しません。")]
+    [SerializeField]
+    [Min(0f)]
+    private float preparationAnimationSpeed = 1f;
+
     [Tooltip("ChargeEnemy個体のCharge Distanceへ最初にコピーする初期値。個体側を初期化した後は、その個体の値が使用されます。")]
     [SerializeField]
     [Min(0f)]
@@ -90,6 +95,23 @@ public sealed class ChargeEnemyData : EnemyData
     [Range(0f, 90f)]
     private float maxGroundSlopeAngle = 5f;
 
+    [Header("坂道・地形の継ぎ目補正")]
+    [Tooltip("別Colliderの地面へ移る際に許す、斜面の自然な高低差を除いた追加段差(m)。Max Ground Height Differenceを超えません。")]
+    [SerializeField, Min(0f)]
+    private float groundConnectionHeightTolerance = 0.08f;
+
+    [Tooltip("前方の地面Rayが欠けたとき、次の支持面を探してよい最大の水平隙間(m)。")]
+    [SerializeField, Min(0f)]
+    private float groundConnectionGapTolerance = 0.1f;
+
+    [Tooltip("軽微な地面めり込みに対する、1回の上方向位置補正の最大量(m)。")]
+    [SerializeField, Min(0f)]
+    private float maxGroundPenetrationRecovery = 0.1f;
+
+    public float GroundConnectionHeightTolerance => groundConnectionHeightTolerance;
+    public float GroundConnectionGapTolerance => groundConnectionGapTolerance;
+    public float MaxGroundPenetrationRecovery => maxGroundPenetrationRecovery;
+
     public float PatrolDistance => patrolDistance;
     public float PatrolMoveSpeed => patrolMoveSpeed;
     public float PatrolTurnDuration => patrolTurnDuration;
@@ -103,6 +125,9 @@ public sealed class ChargeEnemyData : EnemyData
 
     public float AttackPreparationDuration =>
         attackPreparationDuration;
+
+    public float PreparationAnimationSpeed =>
+        preparationAnimationSpeed;
 
     /// <summary>
     /// ChargeEnemy個体へ最初に設定する突進距離の初期値。

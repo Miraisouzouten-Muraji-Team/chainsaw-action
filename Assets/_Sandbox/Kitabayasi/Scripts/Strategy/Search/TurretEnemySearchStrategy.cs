@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -156,7 +156,7 @@ public sealed class TurretEnemySearchStrategy :
     }
 
     public void HandleCollisionEnter(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         // TurretEnemyは固定砲台であり、Search中の接触攻撃を持たない。
     }

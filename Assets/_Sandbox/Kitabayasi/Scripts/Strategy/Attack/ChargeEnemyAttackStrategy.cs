@@ -7,7 +7,7 @@ using UnityEngine;
 /// </summary>
 /// <remarks>
 /// 責務:
-/// ・Preparation中は停止し、設定時間経過後に1回分の突進を開始できる状態へする。
+/// ・Preparation中は停止し、設定時間経過か予備動作モーション終了の早い方で突進を開始可能にする。
 /// ・突進開始地点からChargeDistanceまでを1回の攻撃として扱う。
 /// ・Player命中、Stage壁による進行阻害、崖・段差等の進行不能で現在の攻撃を終了する。
 /// ・Player命中時に攻撃情報を1回だけ送信する。
@@ -26,8 +26,8 @@ public sealed class ChargeEnemyAttackStrategy :
     private const float DIRECTION_EPSILON = 0.001f;
     private const float CHARGE_ARRIVAL_TOLERANCE = 0.2f;
     private const float BLOCKING_NORMAL_THRESHOLD = 0.5f;
+    private const float GROUND_NORMAL_TRANSITION_ANGLE = 2f;
     private const int ANIMATION_BASE_LAYER_INDEX = 0;
-    private const float ANIMATION_SPEED_EPSILON = 0.0001f;
 
     [Header("攻撃アニメーション")]
     [Tooltip("予備動作開始時に再生するAnimator Stateのフルパス（例: Base Layer.Preparation）。")]
@@ -66,18 +66,14 @@ public sealed class ChargeEnemyAttackStrategy :
 
     private int preparationAnimationStateHash;
     private int attackAnimationStateHash;
-    private readonly List<AnimatorClipInfo> preparationAnimationClipInfos =
-        new List<AnimatorClipInfo>(1);
     private float animatorSpeedBeforePreparation = 1f;
     private AnimatorUpdateMode animatorUpdateModeBeforePreparation;
     private bool hasChangedAnimatorUpdateMode;
-    private bool needsPreparationAnimationSpeedAdjustment;
     private bool hasAdjustedPreparationAnimationSpeed;
-    private float preparationAnimationClipLength;
-    private float preparationAnimationStateSpeed;
 
     private EnemyPlayerReference playerReference;
     private ChargeEnemyGroundChecker groundChecker;
+    private ChargeEnemyShieldClearanceAdjuster shieldClearanceAdjuster;
 
     private float preparationElapsedTime;
     private float attackDirectionSign = 1f;
@@ -129,15 +125,28 @@ public sealed class ChargeEnemyAttackStrategy :
                 "非KinematicのRigidbodyを使用する前提です。");
         }
 
-        enemyCollider =
-            enemyObject.GetComponentInChildren<Collider>();
+        // 本体のTrigger Capsuleを選ぶ。死亡時の飛散用Colliderは選択しない。
+        enemyCollider = null;
+        CapsuleCollider[] bodyColliders = enemyObject.GetComponentsInChildren<CapsuleCollider>();
+        foreach (CapsuleCollider candidate in bodyColliders)
+        {
+            if (candidate.enabled && candidate.isTrigger &&
+                candidate.attachedRigidbody == enemyRigidbody)
+            {
+                enemyCollider = candidate;
+                break;
+            }
+        }
 
         if (enemyCollider == null)
         {
             throw new InvalidOperationException(
                 $"{nameof(ChargeEnemyAttackStrategy)}を使用するEnemyには" +
-                $"{nameof(Collider)}が必要です。");
+                $"有効なTriggerの{nameof(CapsuleCollider)}が必要です。");
         }
+
+        shieldClearanceAdjuster =
+            enemyObject.GetComponent<ChargeEnemyShieldClearanceAdjuster>();
 
         InitializeAnimations();
 
@@ -167,6 +176,10 @@ public sealed class ChargeEnemyAttackStrategy :
                 initialAttackDirectionSign);
 
         isPreparationActive = true;
+        if (shieldClearanceAdjuster != null)
+        {
+            shieldClearanceAdjuster.SetAdjustmentActive(true);
+        }
 
         playerReference.TryGetPlayerTransform(
             out _);
@@ -174,13 +187,10 @@ public sealed class ChargeEnemyAttackStrategy :
         FaceAttackDirection();
         StopHorizontalMovement();
 
-        preparationAnimationClipLength = 0f;
-        preparationAnimationStateSpeed = 0f;
-
         if (preparationAnimationStateHash == 0 ||
             animator == null ||
             !animator.isActiveAndEnabled ||
-            enemyData.AttackPreparationDuration <= ANIMATION_SPEED_EPSILON)
+            enemyData.AttackPreparationDuration <= 0f)
         {
             PlayAnimation(preparationAnimationStateHash);
             return;
@@ -197,13 +207,11 @@ public sealed class ChargeEnemyAttackStrategy :
             hasChangedAnimatorUpdateMode = true;
         }
 
-        // Play直後のAnimatorは前Stateの情報を返す場合がある。
-        // 時間を進めずに評価し、最初の再生フレームより前に速度を確定させる。
+        // 予備動作時間からは計算せず、設定されたモーション速度を使用する。
+        // Animator全体へ適用するため、突進開始時とState終了時に元へ戻す。
+        animator.speed = Mathf.Max(0f, enemyData.PreparationAnimationSpeed);
+        hasAdjustedPreparationAnimationSpeed = true;
         PlayAnimation(preparationAnimationStateHash);
-        animator.Update(0f);
-
-        needsPreparationAnimationSpeedAdjustment = true;
-        TrySetPreparationAnimationSpeed();
     }
 
     public bool UpdatePreparation()
@@ -214,9 +222,6 @@ public sealed class ChargeEnemyAttackStrategy :
         {
             return true;
         }
-
-        // 再生対象Clipが取得可能になった時点で、予備動作時間に合わせて速度を1度だけ決める。
-        TrySetPreparationAnimationSpeed();
 
         float preparationDuration =
             enemyData.AttackPreparationDuration;
@@ -231,11 +236,16 @@ public sealed class ChargeEnemyAttackStrategy :
         preparationElapsedTime +=
             Time.fixedDeltaTime;
 
-        if (preparationElapsedTime <
-                preparationDuration &&
-            !Mathf.Approximately(
+        bool hasReachedPreparationDuration =
+            preparationElapsedTime >= preparationDuration ||
+            Mathf.Approximately(
                 preparationElapsedTime,
-                preparationDuration))
+                preparationDuration);
+
+        // アニメーションが先に終わった場合は、設定した待機時間を残して突進する。
+        // Animatorが未設定・無効の場合は、従来どおり時間経過で終了する。
+        if (!hasReachedPreparationDuration &&
+            !HasPreparationAnimationFinished())
         {
             return false;
         }
@@ -250,6 +260,11 @@ public sealed class ChargeEnemyAttackStrategy :
         // Animator全体に適用した予備動作用の速度と更新モードを突進前に戻す。
         RestoreAnimatorSettings();
         isPreparationActive = false;
+        if (shieldClearanceAdjuster != null)
+        {
+            shieldClearanceAdjuster.SetAdjustmentActive(false);
+        }
+
         isAttackActive = true;
         isAttackComplete = false;
         hasDamagedPlayerThisAttack = false;
@@ -286,7 +301,7 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     public void HandleCollisionEnter(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         HandleCollision(
             collision,
@@ -294,7 +309,7 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     public void HandleCollisionStay(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         HandleCollision(
             collision,
@@ -302,19 +317,19 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     private void HandleCollision(
-        Collision collision,
+        EnemyContactInfo collision,
         bool spawnBlockingCollisionEffect)
     {
         if (!isAttackActive ||
             isAttackComplete ||
-            collision == null ||
-            collision.collider == null)
+            !collision.IsValid ||
+            collision.OtherCollider == null)
         {
             return;
         }
 
         if (playerReference.IsPlayerCollider(
-                collision.collider))
+                collision.OtherCollider))
         {
             HandlePlayerCollision(
                 collision);
@@ -322,11 +337,11 @@ public sealed class ChargeEnemyAttackStrategy :
         }
 
         if (!IsStageCollider(
-                collision.collider) ||
+                collision.OtherCollider) ||
             !TryGetBlockingContact(
                 collision,
                 attackDirectionSign,
-                out ContactPoint blockingContact))
+                out EnemyContactInfo blockingContact))
         {
             return;
         }
@@ -334,12 +349,12 @@ public sealed class ChargeEnemyAttackStrategy :
         // Stage Layerへの接触だけでは床接触も含まれるため、
         // 現在の突進方向を実際に塞ぐContactがある場合だけ攻撃終了とする。
         CompleteAttack(
-            $"Stage壁で進行阻害: collider={collision.collider.name}, layer={collision.collider.gameObject.layer}");
+            $"Stage壁で進行阻害: collider={collision.OtherCollider.name}, layer={collision.OtherCollider.gameObject.layer}");
 
         if (spawnBlockingCollisionEffect)
         {
             SpawnCollisionEffect(
-                blockingContact.point);
+                blockingContact.Point);
         }
     }
 
@@ -347,8 +362,21 @@ public sealed class ChargeEnemyAttackStrategy :
     {
         groundChecker?.ClearDebugRays();
         RestoreAnimatorSettings();
+        // Death StateでShield PieceへRigidbodyが付く前に、盾の位置補正を解除する。
+        if (shieldClearanceAdjuster != null)
+        {
+            shieldClearanceAdjuster.ResetAdjustment();
+        }
 
-        StopHorizontalMovement();
+        if (isAttackActive || isAttackComplete)
+        {
+            StopChargeMovement();
+        }
+        else
+        {
+            StopHorizontalMovement();
+        }
+
         ResetRuntimeState();
     }
 
@@ -428,9 +456,12 @@ public sealed class ChargeEnemyAttackStrategy :
                 maximumStepDistance,
                 remainingDistance);
 
-        if (!groundChecker.CanMoveInDirection(
+        bool isGrounded = groundChecker.TryGetCurrentGroundNormal(
+            out Vector3 supportingGroundNormal);
+        if (!groundChecker.TryGetTraversableGroundNormal(
                 attackDirectionSign,
-                expectedMovementDistance))
+                expectedMovementDistance,
+                out Vector3 forwardGroundNormal))
         {
             // 崖・段差・許容外の坂など、既存GroundCheckerが進行不能とした時点で
             // 同一Attack内の方向再評価は行わず再索敵へ返す。
@@ -439,26 +470,59 @@ public sealed class ChargeEnemyAttackStrategy :
             return;
         }
 
-        float targetSpeed =
-            enemyData.AttackMoveSpeed;
-
-        if (Time.fixedDeltaTime >
-            DIRECTION_EPSILON)
+        if (!isGrounded)
         {
-            targetSpeed =
-                Mathf.Min(
-                    targetSpeed,
-                    remainingDistance /
-                    Time.fixedDeltaTime);
+            // 斜面の継ぎ目等で一時的に非接地ならY速度は重力に任せる。
+            float horizontalSpeed = enemyData.AttackMoveSpeed;
+            if (Time.fixedDeltaTime > DIRECTION_EPSILON)
+            {
+                horizontalSpeed = Mathf.Min(
+                    horizontalSpeed, remainingDistance / Time.fixedDeltaTime);
+            }
+
+            SetHorizontalVelocity(attackDirectionSign * horizontalSpeed);
+            return;
         }
 
-        SetHorizontalVelocity(
-            attackDirectionSign *
-            targetSpeed);
+        Vector3 forwardNormal = new Vector3(
+            forwardGroundNormal.x, forwardGroundNormal.y, 0f).normalized;
+        Vector3 supportNormal = new Vector3(
+            supportingGroundNormal.x, supportingGroundNormal.y, 0f).normalized;
+
+        // 通行確認済みの前方が支持面より急な上り坂なら、その法線で登坂速度を作る。
+        // 下り坂や上り勾配が緩くなる境界は支持法線を優先して急な上下動を抑える。
+        float forwardRise = -forwardNormal.x * attackDirectionSign;
+        float supportRise = -supportNormal.x * attackDirectionSign;
+        bool isSteeperUphillAhead = forwardRise > DIRECTION_EPSILON &&
+            forwardRise > supportRise + DIRECTION_EPSILON;
+        Vector3 movementNormal = isSteeperUphillAhead ||
+            Vector3.Angle(forwardNormal, supportNormal) <= GROUND_NORMAL_TRANSITION_ANGLE
+                ? forwardNormal : supportNormal;
+        Vector3 movementDirection = Vector3.ProjectOnPlane(
+            Vector3.right * attackDirectionSign, movementNormal).normalized;
+
+        float horizontalSpeedRatio = Mathf.Abs(movementDirection.x);
+        if (horizontalSpeedRatio <= DIRECTION_EPSILON)
+        {
+            CompleteAttack("斜面の進行方向を計算できません");
+            return;
+        }
+
+        float targetSpeed = enemyData.AttackMoveSpeed;
+        if (Time.fixedDeltaTime > DIRECTION_EPSILON)
+        {
+            // ChargeDistanceは従来どおりX変位で測るため、X成分で終端速度を制限する。
+            targetSpeed = Mathf.Min(
+                targetSpeed,
+                remainingDistance / (horizontalSpeedRatio * Time.fixedDeltaTime));
+        }
+
+        // 法線切替時、旧水平速度を新しい斜面への食い込み速度として保持しない。
+        SetChargeVelocity(movementDirection, supportNormal, targetSpeed);
     }
 
     private void HandlePlayerCollision(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         if (!hasDamagedPlayerThisAttack)
         {
@@ -506,7 +570,7 @@ public sealed class ChargeEnemyAttackStrategy :
             return;
         }
 
-        StopHorizontalMovement();
+        StopChargeMovement();
 
         float traveledDistance =
             Mathf.Abs(
@@ -588,109 +652,27 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     /// <summary>
-    /// 現在の予備動作Stateに設定されたClipを、残り予備時間で最後まで再生する速度にする。
+    /// 予備動作Stateの再生が1周分終了したかを調べる。
     /// </summary>
     /// <remarks>
-    /// BeginPreparationで開始フレーム前に速度を決定する。
-    /// State情報の取得が遅れた場合も、既に再生した部分を考慮して残り時間へ合わせる。
-    /// 対象Stateは単一Clipを再生する構成を前提とする。
+    /// 現在のStateが予備動作以外なら完了扱いにしない。
+    /// Animatorの自動遷移でStateが切り替わると終了を検出できないため、
+    /// 予備動作からの自動遷移はAnimator側で設定しない。
     /// </remarks>
-    private void TrySetPreparationAnimationSpeed()
+    private bool HasPreparationAnimationFinished()
     {
-        if (!needsPreparationAnimationSpeedAdjustment ||
-            animator == null ||
-            !animator.isActiveAndEnabled)
+        if (animator == null ||
+            !animator.isActiveAndEnabled ||
+            preparationAnimationStateHash == 0)
         {
-            return;
+            return false;
         }
 
         AnimatorStateInfo stateInfo =
             animator.GetCurrentAnimatorStateInfo(ANIMATION_BASE_LAYER_INDEX);
 
-        if (stateInfo.fullPathHash != preparationAnimationStateHash)
-        {
-            return;
-        }
-
-        preparationAnimationClipInfos.Clear();
-        animator.GetCurrentAnimatorClipInfo(
-            ANIMATION_BASE_LAYER_INDEX,
-            preparationAnimationClipInfos);
-
-        if (preparationAnimationClipInfos.Count == 0)
-        {
-            return;
-        }
-
-        if (preparationAnimationClipInfos.Count != 1 ||
-            preparationAnimationClipInfos[0].clip == null)
-        {
-            Debug.LogWarning(
-                $"{nameof(ChargeEnemyAttackStrategy)}: " +
-                "予備動作Stateには単一のAnimationClipを設定してください。" +
-                "Clip長を取得できず速度調整を省略します。",
-                enemyObject);
-            needsPreparationAnimationSpeedAdjustment = false;
-            return;
-        }
-
-        preparationAnimationClipLength =
-            preparationAnimationClipInfos[0].clip.length;
-        preparationAnimationStateSpeed =
-            stateInfo.speed * stateInfo.speedMultiplier;
-
-        float remainingPreparationDuration =
-            enemyData.AttackPreparationDuration - preparationElapsedTime;
-        float remainingClipRatio =
-            1f - Mathf.Clamp01(stateInfo.normalizedTime);
-
-        if (preparationAnimationClipLength <= ANIMATION_SPEED_EPSILON ||
-            remainingPreparationDuration <= ANIMATION_SPEED_EPSILON ||
-            remainingClipRatio <= ANIMATION_SPEED_EPSILON ||
-            preparationAnimationStateSpeed <= ANIMATION_SPEED_EPSILON)
-        {
-            Debug.LogWarning(
-                $"{nameof(ChargeEnemyAttackStrategy)}: " +
-                "Clip長・残り予備時間・State速度・残り再生区間を確認してください。" +
-                "再生速度の自動調整を省略します。",
-                enemyObject);
-            needsPreparationAnimationSpeedAdjustment = false;
-            return;
-        }
-
-        // 例: Clip長1秒、予備動作0.5秒、State速度1ならAnimator.speedは2。
-        // 遅延取得時は進んだ分のClipを除外し、終端で待つ時間を作らない。
-        float requiredAnimatorSpeed =
-            (preparationAnimationClipLength * remainingClipRatio) /
-            (remainingPreparationDuration * preparationAnimationStateSpeed);
-
-        if (float.IsNaN(requiredAnimatorSpeed) ||
-            float.IsInfinity(requiredAnimatorSpeed) ||
-            requiredAnimatorSpeed <= ANIMATION_SPEED_EPSILON)
-        {
-            Debug.LogWarning(
-                $"{nameof(ChargeEnemyAttackStrategy)}: " +
-                "予備動作の再生速度を正しく計算できません。",
-                enemyObject);
-            needsPreparationAnimationSpeedAdjustment = false;
-            return;
-        }
-
-        animator.speed = requiredAnimatorSpeed;
-        hasAdjustedPreparationAnimationSpeed = true;
-        needsPreparationAnimationSpeedAdjustment = false;
-
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-        Debug.Log(
-            $"[ChargeEnemyPreparationAnimation] 速度設定。 " +
-            $"clipLength={preparationAnimationClipLength:F3}s, " +
-            $"preparationDuration={enemyData.AttackPreparationDuration:F3}s, " +
-            $"remainingDuration={remainingPreparationDuration:F3}s, " +
-            $"normalizedTime={stateInfo.normalizedTime:F3}, " +
-            $"stateSpeed={preparationAnimationStateSpeed:F3}, " +
-            $"animatorSpeed={animator.speed:F3}",
-            enemyObject);
-#endif
+        return stateInfo.fullPathHash == preparationAnimationStateHash &&
+               stateInfo.normalizedTime >= 1f;
     }
 
     /// <summary>
@@ -725,8 +707,6 @@ public sealed class ChargeEnemyAttackStrategy :
 
     private void RestoreAnimatorSettings()
     {
-        needsPreparationAnimationSpeedAdjustment = false;
-
         if (animator != null)
         {
             if (hasAdjustedPreparationAnimationSpeed)
@@ -766,20 +746,63 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     private bool TryGetBlockingContact(
-        Collision collision,
+        EnemyContactInfo collision,
         float moveDirectionSign,
-        out ContactPoint blockingContact)
+        out EnemyContactInfo blockingContact)
     {
-        Vector3 moveDirection =
-            Vector3.right *
-            NormalizeDirectionSign(
-                moveDirectionSign);
-
-        return EnemyBlockingContactEvaluator.TryGetBlockingContact(
-            collision,
-            moveDirection,
+        Vector3 moveDirection = Vector3.right * NormalizeDirectionSign(moveDirectionSign);
+        float blockingThreshold = Mathf.Min(
             BLOCKING_NORMAL_THRESHOLD,
-            out blockingContact);
+            Mathf.Max(DIRECTION_EPSILON,
+                Mathf.Sin(enemyData.MaxGroundSlopeAngle * Mathf.Deg2Rad)));
+
+        if (!EnemyBlockingContactEvaluator.TryGetBlockingContact(
+                collision, moveDirection, blockingThreshold, out _))
+        {
+            blockingContact = default;
+            return false;
+        }
+
+        // 共通判定が返す最初のContactが坂道でも、同じCollision内の壁を見逃さない。
+        blockingContact = default;
+        float strongestBlockingScore = blockingThreshold;
+        bool hasBlockingContact = false;
+        bool isTraversableSlopeEntrance =
+            groundChecker.IsTraversableSlopeEntrance(
+                collision.OtherCollider,
+                moveDirectionSign);
+        for (int i = 0; i < collision.ContactCount; i++)
+        {
+            EnemyContactInfo contact = collision.GetContact(i);
+            float blockingScore = -Vector3.Dot(contact.Normal, moveDirection);
+            if (blockingScore < blockingThreshold)
+            {
+                continue;
+            }
+
+            // 地面として通行できる傾斜のContactは、進行方向に逆らっても壁ではない。
+            if (contact.Normal.y > DIRECTION_EPSILON &&
+                Vector3.Angle(contact.Normal, Vector3.up) <= enemyData.MaxGroundSlopeAngle)
+            {
+                continue;
+            }
+
+            // 回転Colliderの通行可能な坂では、入口端面だけが壁相当の法線になる。
+            // 同じColliderの斜面上面が直前方へ連続すると確認できた場合だけ除外する。
+            if (isTraversableSlopeEntrance)
+            {
+                continue;
+            }
+
+            if (!hasBlockingContact || blockingScore > strongestBlockingScore)
+            {
+                blockingContact = contact;
+                strongestBlockingScore = blockingScore;
+                hasBlockingContact = true;
+            }
+        }
+
+        return hasBlockingContact;
     }
 
     private bool IsStageCollider(
@@ -807,14 +830,37 @@ public sealed class ChargeEnemyAttackStrategy :
     }
 
     private Vector3 GetCollisionEffectPosition(
-        Collision collision)
+        EnemyContactInfo collision)
     {
-        if (collision.contactCount > 0)
+        if (collision.ContactCount > 0)
         {
-            return collision.GetContact(0).point;
+            return collision.GetContact(0).Point;
         }
 
         return enemyCollider.bounds.center;
+    }
+
+    /// <summary>
+    /// 接地中だけ突進速度を地面接線へ合わせ、地面法線方向の落下速度は保持する。
+    /// </summary>
+    private void SetChargeVelocity(
+        Vector3 movementDirection,
+        Vector3 groundNormal,
+        float targetSpeed)
+    {
+        Vector3 currentVelocity = enemyRigidbody.linearVelocity;
+        float normalVelocity = Mathf.Min(0f, Vector3.Dot(currentVelocity, groundNormal));
+        Vector3 targetVelocity = movementDirection * targetSpeed +
+            groundNormal * normalVelocity;
+        Vector3 velocityChange = targetVelocity - currentVelocity;
+        velocityChange.z = 0f;
+
+        if (velocityChange.sqrMagnitude > DIRECTION_EPSILON * DIRECTION_EPSILON)
+        {
+            enemyRigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
+        }
+
+        AlignVisualWithHorizontalDirection(attackDirectionSign);
     }
 
     private void SetHorizontalVelocity(
@@ -842,6 +888,33 @@ public sealed class ChargeEnemyAttackStrategy :
                 0f,
                 0f),
             ForceMode.VelocityChange);
+    }
+
+    /// <summary>
+    /// 突進終了時は坂道を進む接線速度を消し、法線方向の落下速度は維持する。
+    /// 予備動作時の従来の水平停止処理とは分ける。
+    /// </summary>
+    private void StopChargeMovement()
+    {
+        if (enemyRigidbody == null)
+        {
+            return;
+        }
+
+        if (groundChecker != null &&
+            groundChecker.TryGetCurrentGroundNormal(out Vector3 supportingGroundNormal))
+        {
+            Vector3 groundNormal = new Vector3(
+                supportingGroundNormal.x, supportingGroundNormal.y, 0f).normalized;
+            Vector3 currentVelocity = enemyRigidbody.linearVelocity;
+            float normalVelocity = Mathf.Min(0f, Vector3.Dot(currentVelocity, groundNormal));
+            Vector3 stoppedVelocity = groundNormal * normalVelocity;
+            stoppedVelocity.z = currentVelocity.z;
+            enemyRigidbody.linearVelocity = stoppedVelocity;
+            return;
+        }
+
+        StopHorizontalMovement();
     }
 
     private void StopHorizontalMovement()

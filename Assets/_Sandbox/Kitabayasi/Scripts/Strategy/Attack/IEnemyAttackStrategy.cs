@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// Enemyの攻撃Stateで使用する、攻撃方法の契約を定義する。
@@ -56,10 +56,10 @@ public interface IEnemyAttackStrategy
     bool UpdateAttack();
 
     void HandleCollisionEnter(
-        Collision collision);
+        EnemyContactInfo collision);
 
     void HandleCollisionStay(
-        Collision collision);
+        EnemyContactInfo collision);
 
     void EndAttack();
 }

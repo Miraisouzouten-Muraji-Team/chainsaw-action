@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Unity.Profiling;
 using UnityEngine;
@@ -54,6 +54,13 @@ public sealed class StandardEnemyDeathStrategy :
         "未設定の場合、くい込み死亡ルートは無効。")]
     [SerializeField]
     private AttackData diggingAttackData;
+
+    /// <summary>
+    /// 食い込み攻撃の識別に使用する既存のAttackData設定。
+    /// 被弾時と死亡時で別々の設定を持たないために読み取り専用で公開する。
+    /// </summary>
+    public AttackData DiggingAttackData =>
+        diggingAttackData;
 
     [Header("診断ログ")]
     [Tooltip(

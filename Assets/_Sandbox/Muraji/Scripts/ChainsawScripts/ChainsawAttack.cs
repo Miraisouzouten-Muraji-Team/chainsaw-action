@@ -202,6 +202,23 @@ public class ChainsawAttack : MonoBehaviour
     private readonly HashSet<MonoBehaviour> hitEnemies =
         new HashSet<MonoBehaviour>();
 
+    [Header("アクセルによるダメージボーナス")]
+    [Tooltip("プレイヤーのアクセル管理です。未指定なら、この武器の最上位の親とその子から取得します。")]
+    [SerializeField] private ChainsawAccelerator damageBonusAccelerator;
+
+    // AttackDataのチェック・発動基準・上乗せ割合から、今回のダメージ倍率を求める。
+    private float GetAttackDamageMultiplier(AttackData data)
+    {
+        if (data == null || !data.useAcceleratorDamageMultiplier || damageBonusAccelerator == null)
+            return 1f;
+
+        float ratio = Mathf.Clamp01(damageBonusAccelerator.SpeedRatio);
+        float threshold = Mathf.Clamp01(data.acceleratorDamageBonusThresholdPercent / 100f);
+        if (ratio < threshold) return 1f;
+        return 1f + Mathf.Max(0f, data.acceleratorDamageBonusPercent) / 100f;
+    }
+
+    // 武器の判定と演出の参照、およびダメージボーナス用アクセル参照を初期化する。
     private void Awake()
     {
         if (hitBox == null)
@@ -216,6 +233,8 @@ public class ChainsawAttack : MonoBehaviour
         }
 
         hitBox.enabled = false;
+        if (damageBonusAccelerator == null)
+            damageBonusAccelerator = transform.root.GetComponentInChildren<ChainsawAccelerator>(true);
         if (damagePopupPresenter == null)
             damagePopupPresenter = FindAnyObjectByType<DamagePopupPresenter>();
 
@@ -365,7 +384,9 @@ public class ChainsawAttack : MonoBehaviour
 
         // 敵側の既存APIは倍率を受け取らないため、送信するSOのランタイムコピーに反映。
         // 共有AttackDataは絶対に変更しない。
-        int scaledDamage = Mathf.Max(0, Mathf.RoundToInt(data.damage * Mathf.Max(0f, multiplier)));
+        // 接触などの固定倍率に、このAttackDataで許可したボーナスだけを一度加える。
+        int scaledDamage = Mathf.Max(0, Mathf.RoundToInt(
+            data.damage * Mathf.Max(0f, multiplier) * GetAttackDamageMultiplier(data)));
         if (scaledDamage <= 0)
         {
             return false;
@@ -417,7 +438,9 @@ public class ChainsawAttack : MonoBehaviour
 
         // 敵側の既存APIは倍率を受け取らないため、送信するSOのランタイムコピーに反映。
         // 共有AttackDataは絶対に変更しない。
-        int scaledDamage = Mathf.Max(0, Mathf.RoundToInt(data.damage * Mathf.Max(0f, multiplier)));
+        // 接触などの固定倍率に、このAttackDataで許可したボーナスだけを一度加える。
+        int scaledDamage = Mathf.Max(0, Mathf.RoundToInt(
+            data.damage * Mathf.Max(0f, multiplier) * GetAttackDamageMultiplier(data)));
         if (scaledDamage <= 0)
         {
             return false;
@@ -545,7 +568,11 @@ public class ChainsawAttack : MonoBehaviour
         // 受信側の処理で攻撃が終了しても、命中時のSOと左右判定を維持する。
         bool isFinishingHit = slashHitIndex >= SLASH_HIT_COUNT;
         // OnWeakAttackSwingで開いたこの区間に、開始時の振り抜き専用SOのベクトルを適用する。
-        AttackData attackData = currentData;
+        AttackData sourceData = currentData;
+        int attackDamage = Mathf.Max(0, Mathf.RoundToInt(
+            sourceData.damage * GetAttackDamageMultiplier(sourceData)));
+        // 共有SOを変更せず、今回の命中に使うダメージだけを実行時コピーへ反映する。
+        AttackData attackData = GetScaledDiggingData(sourceData, attackDamage);
         // 専用Receiverには振り抜きダメージだけを送り、物理制御はボスに任せる。
         if (regular == null)
         {

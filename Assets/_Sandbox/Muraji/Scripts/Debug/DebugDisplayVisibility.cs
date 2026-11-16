@@ -14,7 +14,8 @@ public static class DebugDisplayVisibility
     private static CursorLockMode previousLock;
     private static bool previousVisible;
 
-    public static bool IsVisible { get; private set; } = true;
+    // 起動直後は、両方のデバッグUIと付属表示を非表示にする。
+    public static bool IsVisible { get; private set; } = false;
     public static bool ToggledThisFrame => lastToggleFrame == Time.frameCount;
 #if ENABLE_INPUT_SYSTEM
     public static Key ToggleKey { get; set; } = Key.F3;
@@ -27,7 +28,7 @@ public static class DebugDisplayVisibility
     private static void ResetState()
     {
         openMenus.Clear();
-        IsVisible = true;
+        IsVisible = false;
         lastInputFrame = -1;
         lastToggleFrame = -1;
         cursorCaptured = false;

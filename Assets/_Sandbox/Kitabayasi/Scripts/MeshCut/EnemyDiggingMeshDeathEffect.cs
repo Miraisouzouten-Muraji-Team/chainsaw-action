@@ -98,6 +98,11 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     private readonly List<Collider> playerColliders =
         new List<Collider>();
 
+    // 同じSubMesh数のPiece間ではMaterial配列を共有し、Pieceごとの配列生成を避ける。
+    // 対象Rendererは死亡時の1種類だけなので、分割開始時にキャッシュを破棄する。
+    private readonly Dictionary<int, Material[]> pieceMaterialsBySubMeshCount =
+        new Dictionary<int, Material[]>();
+
     private void Awake()
     {
         PreGeneratePieceObjects();
@@ -259,6 +264,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             if (!ValidateSourceMeshMaterialLayout(
                     sourceMesh,
                     sourceRenderer,
+                    out Material[] sourceMaterials,
                     out failureReason))
             {
                 LogFailure(failureReason);
@@ -284,6 +290,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             if (!TryCreatePieceObjects(
                     splitPieceMeshes,
                     sourceRenderer,
+                    sourceMaterials,
                     out failureReason))
             {
                 LogFailure(failureReason);
@@ -522,8 +529,10 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     private bool ValidateSourceMeshMaterialLayout(
         Mesh sourceMesh,
         Renderer sourceRenderer,
+        out Material[] sourceMaterials,
         out string failureReason)
     {
+        sourceMaterials = null;
         if (sourceMesh == null)
         {
             failureReason =
@@ -540,8 +549,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             return false;
         }
 
-        Material[] sourceMaterials =
-            sourceRenderer.sharedMaterials;
+        sourceMaterials = sourceRenderer.sharedMaterials;
 
         if (sourceMaterials == null ||
             sourceMaterials.Length == 0)
@@ -569,6 +577,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     private bool TryCreatePieceObjects(
         IReadOnlyList<Mesh> splitPieceMeshes,
         Renderer sourceRenderer,
+        IReadOnlyList<Material> sourceMaterials,
         out string failureReason)
     {
         if (splitPieceMeshes == null ||
@@ -580,8 +589,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             return false;
         }
 
-        Material[] sourceMaterials =
-            sourceRenderer.sharedMaterials;
+        pieceMaterialsBySubMeshCount.Clear();
+        playerReference.TryGetPlayerTransform(out Transform playerRoot);
 
         try
         {
@@ -603,10 +612,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
                     return false;
                 }
 
-                // MeshPlaneSplitterでもBoundsは構築されるが、
-                // 物理設定がBoundsを直接使用するためPiece生成直前に明示的に更新する。
-                pieceMesh.RecalculateBounds();
-
+                // MeshPlaneSplitter.BuildMeshでBoundsが確定しているため、
+                // 全頂点を再走査するRecalculateBoundsは行わない。
                 Material[] pieceMaterials =
                     BuildPieceMaterials(
                         sourceMaterials,
@@ -621,7 +628,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
                     pieceIndex,
                     pieceMesh,
                     pieceMaterials,
-                    sourceRenderer);
+                    sourceRenderer,
+                    playerRoot);
 
                 runtimePieceMeshes.Add(
                     pieceMesh);
@@ -655,8 +663,13 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         IReadOnlyList<Material> sourceMaterials,
         int pieceSubMeshCount)
     {
-        var pieceMaterials =
-            new Material[pieceSubMeshCount];
+        if (pieceMaterialsBySubMeshCount.TryGetValue(
+                pieceSubMeshCount, out Material[] cachedMaterials))
+        {
+            return cachedMaterials;
+        }
+
+        var pieceMaterials = new Material[pieceSubMeshCount];
 
         for (int materialIndex = 0;
              materialIndex < pieceMaterials.Length;
@@ -668,6 +681,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
                     : cutSurfaceMaterial;
         }
 
+        pieceMaterialsBySubMeshCount.Add(pieceSubMeshCount, pieceMaterials);
         return pieceMaterials;
     }
 
@@ -760,7 +774,8 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         int pieceIndex,
         Mesh mesh,
         Material[] materials,
-        Renderer sourceRenderer)
+        Renderer sourceRenderer,
+        Transform playerRoot)
     {
         pieceObject.name =
             $"{sourceRenderer.name}_DiggingPiece_{pieceIndex:D2}";
@@ -886,7 +901,6 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             RigidbodyConstraints.FreezeRotationX |
             RigidbodyConstraints.FreezeRotationY;
 
-        playerReference.TryGetPlayerTransform(out Transform playerRoot);
         pieceObject.GetComponentInChildren<EnemyCutPiecePlayerPushReaction>(true)
             .Configure(pieceRigidbody, pieceCollider, playerRoot);
 

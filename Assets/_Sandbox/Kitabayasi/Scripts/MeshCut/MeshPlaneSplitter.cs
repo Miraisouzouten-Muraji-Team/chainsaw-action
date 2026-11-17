@@ -65,6 +65,10 @@ public sealed class MeshPlaneSplitter
     private const int MAX_SOURCE_TOPOLOGY_DIAGNOSTIC_TRIANGLES = 20;
     private const float NEARBY_BOUNDARY_ENDPOINT_SEARCH_SCALE = 4.0f;
     private const float SOURCE_SPLIT_VERTEX_MATCH_EPSILON_SCALE = 0.1f;
+    // 小規模境界ではLookup構築より線形探索が安価なため、ノード数が増えてから索引を作る。
+    private const int BOUNDARY_SPATIAL_LOOKUP_MIN_NODE_COUNT = 64;
+    // 浮動小数点の差分・二乗距離の丸めによる境界候補の欠落を防ぐための保守的な余裕。
+    private const double BOUNDARY_SPATIAL_SEARCH_EPSILON_SCALE = 1.000001d;
 
     // 現在のProfiler結果と既知のSource Vertex数（約30,002）を収容する。
     // 通常のEnemy死亡ではこの専用Bufferを直接再利用し、ArrayPoolへ所有権を渡さない。
@@ -85,6 +89,27 @@ public sealed class MeshPlaneSplitter
     private static int[] boundaryNodeGenerationByConnectivityVertexId;
     private static int boundaryConnectivityLookupGeneration;
 
+    // 食い込み側もMesh属性をListへ直接取得して毎Planeの配列生成を避ける。
+    private static readonly Stack<List<Vector3>> sourceVertexListPool =
+        new Stack<List<Vector3>>();
+
+    private static readonly Stack<List<int>> sourceTriangleIndexListPool =
+        new Stack<List<int>>();
+
+    // 分割試行ごとに使用する領域。Cap構築が終わるまで貸し出し、finallyで返却する。
+    private static readonly Stack<List<CutSegment>> cutSegmentListPool =
+        new Stack<List<CutSegment>>();
+    private static readonly Stack<List<VertexData>> clippedPolygonListPool =
+        new Stack<List<VertexData>>();
+    private static readonly Stack<List<Vector3>> cutPointListPool =
+        new Stack<List<Vector3>>();
+    private static readonly Stack<List<int>> cutPointIndexListPool =
+        new Stack<List<int>>();
+
+    // 食い込み分割の境界構築中だけ借りるセル索引。ノードは既存ListのIndexで参照する。
+    private static readonly Stack<Dictionary<Vector3Int, int>> boundarySpatialLookupPool =
+        new Stack<Dictionary<Vector3Int, int>>();
+
     private static readonly Stack<List<Vector3>> sourceNormalListPool =
         new Stack<List<Vector3>>();
 
@@ -94,7 +119,7 @@ public sealed class MeshPlaneSplitter
     private static readonly Stack<List<Vector4>> sourceTangentListPool =
         new Stack<List<Vector4>>();
 
-    // 通常攻撃2分割専用。Enemyごとに保持せず、同時に必要な2個を共有して再利用する。
+    // 通常攻撃は各分割内で返却し、食い込みは最終Piece確定まで貸し出す。
     private static readonly Stack<PieceMeshBuilder> pieceMeshBuilderPool =
         new Stack<PieceMeshBuilder>();
 
@@ -139,6 +164,23 @@ public sealed class MeshPlaneSplitter
         boundaryConnectivityLookupGeneration = 0;
 
         EnsurePooledListAvailable(
+            sourceVertexListPool,
+            SOURCE_MESH_ATTRIBUTE_LIST_WARMUP_CAPACITY);
+
+        EnsurePooledListAvailable(
+            sourceTriangleIndexListPool,
+            SOURCE_MESH_ATTRIBUTE_LIST_WARMUP_CAPACITY * 3);
+
+        EnsurePooledListAvailable(cutSegmentListPool, 128);
+        EnsurePooledListAvailable(clippedPolygonListPool, 4);
+        EnsurePooledListAvailable(cutPointListPool, 3);
+        // 端点ごとの元Edge index 2種類＋接続IDの合計3本を同時に使用する。
+        while (cutPointIndexListPool.Count < 3)
+        {
+            cutPointIndexListPool.Push(new List<int>(3));
+        }
+
+        EnsurePooledListAvailable(
             sourceNormalListPool,
             SOURCE_MESH_ATTRIBUTE_LIST_WARMUP_CAPACITY);
 
@@ -155,6 +197,156 @@ public sealed class MeshPlaneSplitter
 
     private readonly MeshConnectedComponentSplitter connectedComponentSplitter =
         new MeshConnectedComponentSplitter();
+
+    // 目標数分割の同期呼び出し中だけ、Builderから出力Pieceの面積を取得する。
+    private bool isTargetCountSplit;
+    private bool collectTargetPieceSurfaceAreas;
+    private float firstTargetPieceSurfaceArea;
+    private float secondTargetPieceSurfaceArea;
+
+    /// <summary>
+    /// 食い込み分割用の入力を一度だけMeshから読み込み、以後はBuilderをPieceとして保持する。
+    /// 呼び出し側は成功時に受け取ったBuilderを必ずReleaseTargetCountPieceで返却する。
+    /// </summary>
+    internal bool TryAcquireTargetCountSource(
+        Mesh sourceMesh,
+        out PieceMeshBuilder sourcePiece,
+        out string failureReason)
+    {
+        sourcePiece = null;
+        if (sourceMesh == null || sourceMesh.vertexCount == 0 ||
+            sourceMesh.subMeshCount == 0)
+        {
+            failureReason = "分割対象Meshに有効な頂点またはSubMeshがありません。";
+            return false;
+        }
+
+        PieceMeshBuilder builder = AcquirePieceMeshBuilder(
+            sourceMesh.subMeshCount,
+            sourceMesh.HasVertexAttribute(VertexAttribute.Tangent),
+            sourceMesh.vertexCount,
+            sourceMesh.vertexCount,
+            false);
+
+        try
+        {
+            // Get*のList版へ直接読み込む。後続の分割試行はこのBuilderを読み取るだけ。
+            sourceMesh.GetVertices(builder.Vertices);
+            sourceMesh.GetNormals(builder.Normals);
+            sourceMesh.GetUVs(0, builder.Uv);
+            sourceMesh.GetTangents(builder.Tangents);
+
+            if (builder.Normals.Count != builder.Vertices.Count ||
+                (builder.Uv.Count != 0 && builder.Uv.Count != builder.Vertices.Count) ||
+                (builder.Tangents.Count != 0 &&
+                 builder.Tangents.Count != builder.Vertices.Count))
+            {
+                failureReason = "切断対象Meshの頂点属性数がVertex数と一致しません。";
+                return false;
+            }
+
+            for (int subMeshIndex = 0;
+                 subMeshIndex < sourceMesh.subMeshCount;
+                 subMeshIndex++)
+            {
+                if (sourceMesh.GetTopology(subMeshIndex) != MeshTopology.Triangles)
+                {
+                    failureReason =
+                        $"SubMesh {subMeshIndex} がTriangles topologyではありません。";
+                    return false;
+                }
+
+                List<int> indices = builder.TrianglesBySubMesh[subMeshIndex];
+                sourceMesh.GetTriangles(indices, subMeshIndex);
+                if (indices.Count % 3 != 0)
+                {
+                    failureReason = $"SubMesh {subMeshIndex} のTriangle index数が不正です。";
+                    return false;
+                }
+            }
+
+            // 元MeshのBounds設定値を維持する。生成Pieceは従来どおり頂点から計算する。
+            builder.SetSourceBounds(sourceMesh.bounds);
+            sourcePiece = builder;
+            builder = null;
+            failureReason = null;
+            return true;
+        }
+        finally
+        {
+            ReleasePieceMeshBuilder(builder);
+        }
+    }
+
+    /// <summary>
+    /// Builderを破壊せずPlane分割する。失敗時は入力Pieceを保持し、出力のみ返却する。
+    /// 成功時の出力Builderの所有権は呼び出し側へ移る。
+    /// </summary>
+    internal bool TrySplitForTargetCount(
+        PieceMeshBuilder sourcePiece,
+        Plane cutPlane,
+        float cutSurfaceUvScale,
+        bool calculateSurfaceAreas,
+        out PieceMeshBuilder firstPiece,
+        out PieceMeshBuilder secondPiece,
+        out float firstSurfaceArea,
+        out float secondSurfaceArea,
+        out string failureReason)
+    {
+        firstPiece = null;
+        secondPiece = null;
+        firstSurfaceArea = 0f;
+        secondSurfaceArea = 0f;
+
+        if (sourcePiece == null || sourcePiece.Vertices.Count == 0 ||
+            sourcePiece.TrianglesBySubMesh.Count == 0 ||
+            !IsFinite(cutPlane.normal) || !IsFinite(cutPlane.distance) ||
+            cutPlane.normal.sqrMagnitude <= MIN_DIRECTION_SQR_MAGNITUDE ||
+            cutSurfaceUvScale <= 0f)
+        {
+            failureReason = "食い込み分割の入力PieceまたはPlaneが不正です。";
+            return false;
+        }
+
+        isTargetCountSplit = true;
+        collectTargetPieceSurfaceAreas = calculateSurfaceAreas;
+        firstTargetPieceSurfaceArea = 0f;
+        secondTargetPieceSurfaceArea = 0f;
+        try
+        {
+            bool succeeded;
+            using (splitTotalProfilerMarker.Auto())
+            {
+                succeeded = TrySplitMesh(
+                    null,
+                    sourcePiece,
+                    cutPlane,
+                    cutSurfaceUvScale,
+                    CalculateGeometryEpsilon(sourcePiece.BuilderBounds),
+                    null, null, null, null, null,
+                    "MeshPlaneSplit_FirstPiece",
+                    "MeshPlaneSplit_SecondPiece",
+                    null, false, false, false, false,
+                    out _, out _, out _,
+                    out firstPiece, out secondPiece,
+                    out failureReason);
+            }
+
+            firstSurfaceArea = firstTargetPieceSurfaceArea;
+            secondSurfaceArea = secondTargetPieceSurfaceArea;
+            return succeeded;
+        }
+        finally
+        {
+            collectTargetPieceSurfaceAreas = false;
+            isTargetCountSplit = false;
+        }
+    }
+
+    internal void ReleaseTargetCountPiece(PieceMeshBuilder piece)
+    {
+        ReleasePieceMeshBuilder(piece);
+    }
 
     /// <summary>
     /// 指定PlaneでMeshを分割する。
@@ -405,6 +597,7 @@ public sealed class MeshPlaneSplitter
 
         return TrySplitMesh(
             sourceMesh,
+            null,
             cutPlane,
             cutSurfaceUvScale,
             geometryEpsilon,
@@ -423,6 +616,8 @@ public sealed class MeshPlaneSplitter
             out firstPieceMesh,
             out secondPieceMesh,
             out connectedPieceMeshes,
+            out _,
+            out _,
             out failureReason);
 
         }
@@ -569,6 +764,7 @@ public sealed class MeshPlaneSplitter
 
     private bool TrySplitMesh(
         Mesh sourceMesh,
+        PieceMeshBuilder sourceWorkingPiece,
         Plane cutPlane,
         float cutSurfaceUvScale,
         float geometryEpsilon,
@@ -587,6 +783,8 @@ public sealed class MeshPlaneSplitter
         out Mesh firstPieceMesh,
         out Mesh secondPieceMesh,
         out List<Mesh> connectedPieceMeshes,
+        out PieceMeshBuilder firstWorkingPiece,
+        out PieceMeshBuilder secondWorkingPiece,
         out string failureReason)
     {
         using (splitGeometryProfilerMarker.Auto())
@@ -594,6 +792,17 @@ public sealed class MeshPlaneSplitter
         firstPieceMesh = null;
         secondPieceMesh = null;
         connectedPieceMeshes = null;
+        firstWorkingPiece = null;
+        secondWorkingPiece = null;
+
+        bool useWorkingPiece = sourceWorkingPiece != null;
+        Bounds sourceBounds = useWorkingPiece
+            ? sourceWorkingPiece.BuilderBounds
+            : sourceMesh.bounds;
+        IReadOnlyList<List<int>> effectiveSourceTrianglesBySubMesh =
+            useWorkingPiece
+                ? sourceWorkingPiece.TrianglesBySubMesh
+                : cachedSourceTrianglesBySubMesh;
 
         bool useCachedTriangleValidation =
             cachedSourceVertices != null;
@@ -603,64 +812,59 @@ public sealed class MeshPlaneSplitter
         IReadOnlyList<Vector2> sourceUv;
         IReadOnlyList<Vector4> sourceTangents;
 
+        List<Vector3> sourceVertexBuffer = null;
         List<Vector3> sourceNormalBuffer = null;
         List<Vector2> sourceUvBuffer = null;
         List<Vector4> sourceTangentBuffer = null;
+        List<int> triangleIndices = null;
+        List<CutSegment> cutSegments = null;
+        List<VertexData> clippedPolygon = null;
+        List<Vector3> cutPoints = null;
+        List<int> cutPointSourceEdgeVertexIndexA = null;
+        List<int> cutPointSourceEdgeVertexIndexB = null;
+        List<int> cutPointConnectivityVertexIds = null;
 
         PieceMeshBuilder firstBuilder = null;
         PieceMeshBuilder secondBuilder = null;
 
         try
         {
-            if (useCachedTriangleValidation)
+            if (useWorkingPiece)
             {
-                sourceVertices =
-                    cachedSourceVertices;
-
-                sourceNormalBuffer =
-                    AcquireReusableList(
-                        sourceNormalListPool,
-                        sourceVertices.Count);
-
-                sourceUvBuffer =
-                    AcquireReusableList(
-                        sourceUvListPool,
-                        sourceVertices.Count);
-
-                sourceTangentBuffer =
-                    AcquireReusableList(
-                        sourceTangentListPool,
-                        sourceVertices.Count);
-
-                // 通常攻撃死亡経路だけ、配列Propertyではなく再利用Listへ直接読み込む。
-                sourceMesh.GetNormals(sourceNormalBuffer);
-                sourceMesh.GetUVs(0, sourceUvBuffer);
-                sourceMesh.GetTangents(sourceTangentBuffer);
-
-                sourceNormals =
-                    sourceNormalBuffer;
-
-                sourceUv =
-                    sourceUvBuffer;
-
-                sourceTangents =
-                    sourceTangentBuffer;
+                // 中間Pieceを読み取る。Unity Mesh化もList間コピーも不要。
+                sourceVertices = sourceWorkingPiece.Vertices;
+                sourceNormals = sourceWorkingPiece.Normals;
+                sourceUv = sourceWorkingPiece.Uv;
+                sourceTangents = sourceWorkingPiece.Tangents;
             }
             else
             {
-                // 通常攻撃以外の既存MeshPlaneSplitter利用経路は今回の変更対象外。
-                // 既存の配列取得方式を維持し、食い込み攻撃側等の挙動・性能特性を変更しない。
-                sourceVertices =
-                    sourceMesh.vertices;
+                if (useCachedTriangleValidation)
+                {
+                    sourceVertices = cachedSourceVertices;
+                }
+                else
+                {
+                    sourceVertexBuffer = AcquireReusableList(
+                        sourceVertexListPool, sourceMesh.vertexCount);
+                    sourceMesh.GetVertices(sourceVertexBuffer);
+                    sourceVertices = sourceVertexBuffer;
+                }
 
-                sourceNormals =
-                    sourceMesh.normals;
+                sourceNormalBuffer = AcquireReusableList(
+                    sourceNormalListPool, sourceVertices.Count);
+                sourceUvBuffer = AcquireReusableList(
+                    sourceUvListPool, sourceVertices.Count);
+                sourceTangentBuffer = AcquireReusableList(
+                    sourceTangentListPool, sourceVertices.Count);
 
-                sourceUv =
-                    sourceMesh.uv;
-
-                sourceTangents =
-                    sourceMesh.tangents;
+                // 通常攻撃の取得経路は変更しない。
+                sourceMesh.GetNormals(sourceNormalBuffer);
+                sourceMesh.GetUVs(0, sourceUvBuffer);
+                sourceMesh.GetTangents(sourceTangentBuffer);
+                sourceNormals = sourceNormalBuffer;
+                sourceUv = sourceUvBuffer;
+                sourceTangents = sourceTangentBuffer;
             }
 
             if (sourceNormals.Count != sourceVertices.Count)
@@ -687,7 +891,9 @@ public sealed class MeshPlaneSplitter
                 return false;
             }
 
-        int originalSubMeshCount = sourceMesh.subMeshCount;
+        int originalSubMeshCount = useWorkingPiece
+            ? sourceWorkingPiece.TrianglesBySubMesh.Count
+            : sourceMesh.subMeshCount;
         int cutSurfaceSubMeshIndex = originalSubMeshCount;
 
         if (splitConnectedComponents &&
@@ -704,7 +910,7 @@ public sealed class MeshPlaneSplitter
                 ? cachedSourceConnectivityVertexIds ??
                   MeshConnectedComponentSplitter.BuildConnectedVertexIds(
                       sourceVertices,
-                      sourceMesh.bounds)
+                      sourceBounds)
                 : null;
 
         int nextConnectivityVertexId =
@@ -723,55 +929,36 @@ public sealed class MeshPlaneSplitter
 
         using (createPieceMeshBuildersProfilerMarker.Auto())
         {
-            if (splitConnectedComponents)
-            {
-                firstBuilder =
-                    AcquirePieceMeshBuilder(
-                        originalSubMeshCount + 1,
-                        hasTangents,
-                        sourceVertices.Count,
-                        estimatedPieceVertexCapacity);
+            // 通常攻撃・食い込み攻撃とも同じBuilderを再利用する。
+            // 毎回PrepareForUseするので前回のSubMesh/頂点情報は引き継がない。
+            firstBuilder = AcquirePieceMeshBuilder(
+                originalSubMeshCount + 1,
+                hasTangents,
+                sourceVertices.Count,
+                estimatedPieceVertexCapacity,
+                splitConnectedComponents);
 
-                secondBuilder =
-                    AcquirePieceMeshBuilder(
-                        originalSubMeshCount + 1,
-                        hasTangents,
-                        sourceVertices.Count,
-                        estimatedPieceVertexCapacity);
-            }
-            else
-            {
-                // 通常攻撃2分割以外は従来どおり毎回生成し、Pool再利用の対象にしない。
-                firstBuilder = new PieceMeshBuilder(
-                    originalSubMeshCount + 1,
-                    hasTangents,
-                    sourceVertices.Count,
-                    estimatedPieceVertexCapacity,
-                    false);
-
-                secondBuilder = new PieceMeshBuilder(
-                    originalSubMeshCount + 1,
-                    hasTangents,
-                    sourceVertices.Count,
-                    estimatedPieceVertexCapacity,
-                    false);
-            }
+            secondBuilder = AcquirePieceMeshBuilder(
+                originalSubMeshCount + 1,
+                hasTangents,
+                sourceVertices.Count,
+                estimatedPieceVertexCapacity,
+                splitConnectedComponents);
         }
 
-        var cutSegments = new List<CutSegment>();
+        cutSegments = AcquireReusableList(cutSegmentListPool, 0);
 
         // Triangle単位で一時Collectionを生成しないため、分割処理中だけ使う作業領域を再利用する。
         // List.Clear()後もCapacityは維持されるため、交差Triangle数に比例したManaged Allocationを避けられる。
-        List<int> triangleIndices =
-            useCachedTriangleValidation
-                ? null
-                : new List<int>();
+        triangleIndices = useCachedTriangleValidation || useWorkingPiece
+            ? null
+            : AcquireReusableList(sourceTriangleIndexListPool, 0);
 
-        var clippedPolygon = new List<VertexData>(4);
-        var cutPoints = new List<Vector3>(3);
-        var cutPointSourceEdgeVertexIndexA = new List<int>(3);
-        var cutPointSourceEdgeVertexIndexB = new List<int>(3);
-        var cutPointConnectivityVertexIds = new List<int>(3);
+        clippedPolygon = AcquireReusableList(clippedPolygonListPool, 4);
+        cutPoints = AcquireReusableList(cutPointListPool, 3);
+        cutPointSourceEdgeVertexIndexA = AcquireReusableList(cutPointIndexListPool, 3);
+        cutPointSourceEdgeVertexIndexB = AcquireReusableList(cutPointIndexListPool, 3);
+        cutPointConnectivityVertexIds = AcquireReusableList(cutPointIndexListPool, 3);
 
         int positiveOnlyTriangleCount = 0;
         int negativeOnlyTriangleCount = 0;
@@ -781,6 +968,7 @@ public sealed class MeshPlaneSplitter
 
         VertexData[] sourceVertexDataByIndex = null;
         bool returnSourceVertexDataBufferToPool = false;
+        float[] sourcePlaneDistances = null;
 
         try
         {
@@ -788,6 +976,11 @@ public sealed class MeshPlaneSplitter
                     AcquireSourceVertexDataBuffer(
                         sourceVertices.Count,
                         out returnSourceVertexDataBufferToPool);
+
+                if (isTargetCountSplit && !useCachedTriangleValidation)
+                {
+                    sourcePlaneDistances = ArrayPool<float>.Shared.Rent(sourceVertices.Count);
+                }
 
                 // Source Mesh由来の頂点属性はTriangle間で共有されるため、
                 // Source Vertexごとに一度だけVertexData化し、TriangleループではIndex参照だけを行う。
@@ -806,13 +999,19 @@ public sealed class MeshPlaneSplitter
                             hasUv,
                             hasTangents,
                             sourceConnectivityVertexIds);
+                    if (sourcePlaneDistances != null)
+                    {
+                        sourcePlaneDistances[sourceVertexIndex] =
+                            cutPlane.GetDistanceToPoint(sourceVertices[sourceVertexIndex]);
+                    }
                 }
 
             for (int subMeshIndex = 0;
                  subMeshIndex < originalSubMeshCount;
                  subMeshIndex++)
             {
-                if (sourceMesh.GetTopology(subMeshIndex) != MeshTopology.Triangles)
+                if (!useWorkingPiece &&
+                    sourceMesh.GetTopology(subMeshIndex) != MeshTopology.Triangles)
                 {
                     failureReason =
                         $"SubMesh {subMeshIndex} がTriangles topologyではありません。";
@@ -821,7 +1020,12 @@ public sealed class MeshPlaneSplitter
 
                 IReadOnlyList<int> sourceTriangleIndices;
 
-                if (useCachedTriangleValidation)
+                if (useWorkingPiece)
+                {
+                    sourceTriangleIndices =
+                        sourceWorkingPiece.TrianglesBySubMesh[subMeshIndex];
+                }
+                else if (useCachedTriangleValidation)
                 {
                     // Cut Plane検証で取得済みのSubMesh index配列をそのまま使い、
                     // 採用Planeの分割開始時にGetTrianglesを再実行しない。
@@ -911,17 +1115,15 @@ public sealed class MeshPlaneSplitter
                         }
                         else
                         {
-                            distanceA =
-                                cutPlane.GetDistanceToPoint(
-                                    vertexA.Position);
-
-                            distanceB =
-                                cutPlane.GetDistanceToPoint(
-                                    vertexB.Position);
-
-                            distanceC =
-                                cutPlane.GetDistanceToPoint(
-                                    vertexC.Position);
+                            distanceA = sourcePlaneDistances != null
+                                ? sourcePlaneDistances[indexA]
+                                : cutPlane.GetDistanceToPoint(vertexA.Position);
+                            distanceB = sourcePlaneDistances != null
+                                ? sourcePlaneDistances[indexB]
+                                : cutPlane.GetDistanceToPoint(vertexB.Position);
+                            distanceC = sourcePlaneDistances != null
+                                ? sourcePlaneDistances[indexC]
+                                : cutPlane.GetDistanceToPoint(vertexC.Position);
 
                             triangleClassification =
                                 ClassifyTriangle(
@@ -1120,6 +1322,10 @@ public sealed class MeshPlaneSplitter
         }
         finally
         {
+            if (sourcePlaneDistances != null)
+            {
+                ArrayPool<float>.Shared.Return(sourcePlaneDistances);
+            }
             ReleaseSourceVertexDataBuffer(
                 sourceVertexDataByIndex,
                 returnSourceVertexDataBufferToPool);
@@ -1237,8 +1443,10 @@ public sealed class MeshPlaneSplitter
                 boundarySourceVertexIndices,
                 cutSegments,
                 sourceMesh,
+                sourceBounds,
+                originalSubMeshCount,
                 sourceVertices,
-                cachedSourceTrianglesBySubMesh,
+                effectiveSourceTrianglesBySubMesh,
                 sourceConnectivityVertexIds,
                 cutPlane,
                 cutSurfaceUvScale,
@@ -1362,6 +1570,26 @@ public sealed class MeshPlaneSplitter
             return true;
         }
 
+        if (collectTargetPieceSurfaceAreas)
+        {
+            // Meshへ転送後に頂点とIndexを再取得せず、同じSubMesh順で面積を集計する。
+            firstTargetPieceSurfaceArea = firstBuilder.CalculateSurfaceArea();
+            secondTargetPieceSurfaceArea = secondBuilder.CalculateSurfaceArea();
+        }
+
+        if (useWorkingPiece)
+        {
+            // 成功時だけBuilderの所有権を呼び出し側へ移す。finallyでPoolへ返さない。
+            firstBuilder.WorkingMeshName = firstPieceMeshName;
+            secondBuilder.WorkingMeshName = secondPieceMeshName;
+            firstWorkingPiece = firstBuilder;
+            secondWorkingPiece = secondBuilder;
+            firstBuilder = null;
+            secondBuilder = null;
+            failureReason = null;
+            return true;
+        }
+
         firstPieceMesh =
             firstBuilder.BuildMesh(firstPieceMeshName);
 
@@ -1385,13 +1613,18 @@ public sealed class MeshPlaneSplitter
         }
         finally
         {
-            if (splitConnectedComponents)
-            {
-                // Connected Component生成まで同期的に完了した後で返却する。
-                // 途中returnや例外でも、このfinallyを通るため貸し出し状態が残らない。
-                ReleasePieceMeshBuilder(secondBuilder);
-                ReleasePieceMeshBuilder(firstBuilder);
-            }
+            // 通常攻撃・食い込み攻撃の双方がここでBuilderの所有権を返す。
+            // 途中returnや例外でも保持済みの作業領域を解放する。
+            ReleasePieceMeshBuilder(secondBuilder);
+            ReleasePieceMeshBuilder(firstBuilder);
+            ReleaseReusableList(cutPointIndexListPool, cutPointConnectivityVertexIds);
+            ReleaseReusableList(cutPointIndexListPool, cutPointSourceEdgeVertexIndexB);
+            ReleaseReusableList(cutPointIndexListPool, cutPointSourceEdgeVertexIndexA);
+            ReleaseReusableList(cutPointListPool, cutPoints);
+            ReleaseReusableList(clippedPolygonListPool, clippedPolygon);
+            ReleaseReusableList(cutSegmentListPool, cutSegments);
+            ReleaseReusableList(sourceTriangleIndexListPool, triangleIndices);
+            ReleaseReusableList(sourceVertexListPool, sourceVertexBuffer);
 
             ReleaseReusableList(
                 sourceTangentListPool,
@@ -1605,13 +1838,25 @@ public sealed class MeshPlaneSplitter
         // 2個のSubMesh Listを最小Warmup単位として用意する。
         const int warmupSubMeshCount = 2;
 
+        // 食い込み分割で増えたPool Builder全件を最大サイズへ膨らませない。
+        // 従来どおり通常攻撃が使用する2個分だけを事前Warmupする。
+        int warmedBuilderCount = 0;
         foreach (PieceMeshBuilder builder in pieceMeshBuilderPool)
         {
-            builder.PrepareForUse(
-                warmupSubMeshCount,
-                true,
-                SOURCE_VERTEX_DATA_BUFFER_LENGTH,
-                estimatedVertexCapacity);
+            if (warmedBuilderCount < 2)
+            {
+                builder.PrepareForUse(
+                    warmupSubMeshCount,
+                    true,
+                    SOURCE_VERTEX_DATA_BUFFER_LENGTH,
+                    estimatedVertexCapacity,
+                    true);
+            }
+            else
+            {
+                builder.ClearForPool();
+            }
+            warmedBuilderCount++;
         }
 
         while (pieceMeshBuilderPool.Count < 2)
@@ -1622,6 +1867,7 @@ public sealed class MeshPlaneSplitter
                     true,
                     SOURCE_VERTEX_DATA_BUFFER_LENGTH,
                     estimatedVertexCapacity,
+                    true,
                     true));
         }
     }
@@ -1630,7 +1876,8 @@ public sealed class MeshPlaneSplitter
         int subMeshCount,
         bool hasTangents,
         int sourceVertexCount,
-        int estimatedVertexCapacity)
+        int estimatedVertexCapacity,
+        bool storeConnectivityVertexIds)
     {
         if (pieceMeshBuilderPool.Count == 0)
         {
@@ -1640,7 +1887,8 @@ public sealed class MeshPlaneSplitter
                 hasTangents,
                 sourceVertexCount,
                 estimatedVertexCapacity,
-                true);
+                true,
+                storeConnectivityVertexIds);
         }
 
         PieceMeshBuilder builder =
@@ -1652,7 +1900,8 @@ public sealed class MeshPlaneSplitter
                 subMeshCount,
                 hasTangents,
                 sourceVertexCount,
-                estimatedVertexCapacity);
+                estimatedVertexCapacity,
+                storeConnectivityVertexIds);
 
             return builder;
         }
@@ -1672,6 +1921,7 @@ public sealed class MeshPlaneSplitter
             return;
         }
 
+        builder.ClearForPool();
         pieceMeshBuilderPool.Push(builder);
     }
 
@@ -3036,6 +3286,19 @@ public sealed class MeshPlaneSplitter
         int collapsedSegmentCount = 0;
         int duplicateEdgeCount = 0;
 
+        // 通常攻撃のConnectivity ID索引には触れない。食い込み分割だけ大規模化時に索引を作る。
+        bool spatialLookupUsable =
+            !useConnectivityLookup &&
+            geometryEpsilon > 0f &&
+            !float.IsNaN(geometryEpsilon) &&
+            !float.IsInfinity(geometryEpsilon) &&
+            !float.IsInfinity(geometryEpsilon * geometryEpsilon);
+
+        Dictionary<Vector3Int, int> spatialNodeHeads = null;
+        Vector3 spatialLookupOrigin = Vector3.zero;
+
+        try
+        {
         for (int i = 0;
              i < cutSegments.Count;
              i++)
@@ -3044,28 +3307,54 @@ public sealed class MeshPlaneSplitter
                 cutSegments[i];
 
             int firstNodeIndex =
-                FindOrCreateBoundaryNode(
-                    nodes,
-                    boundaryConnectivityLookupGeneration,
-                    cutSegment.First,
-                    cutSegment.FirstSourceEdgeVertexIndexA,
-                    cutSegment.FirstSourceEdgeVertexIndexB,
-                    cutSegment.FirstConnectivityVertexId,
-                    sourceVertices,
-                    geometryEpsilon,
-                    sourceSplitVertexMatchEpsilon);
+                !useConnectivityLookup
+                    ? FindOrCreateBoundaryNodeBySpatialLookup(
+                        nodes,
+                        ref spatialNodeHeads,
+                        ref spatialLookupOrigin,
+                        ref spatialLookupUsable,
+                        cutSegment.First,
+                        cutSegment.FirstSourceEdgeVertexIndexA,
+                        cutSegment.FirstSourceEdgeVertexIndexB,
+                        cutSegment.FirstConnectivityVertexId,
+                        sourceVertices,
+                        geometryEpsilon,
+                        sourceSplitVertexMatchEpsilon)
+                    : FindOrCreateBoundaryNode(
+                        nodes,
+                        boundaryConnectivityLookupGeneration,
+                        cutSegment.First,
+                        cutSegment.FirstSourceEdgeVertexIndexA,
+                        cutSegment.FirstSourceEdgeVertexIndexB,
+                        cutSegment.FirstConnectivityVertexId,
+                        sourceVertices,
+                        geometryEpsilon,
+                        sourceSplitVertexMatchEpsilon);
 
             int secondNodeIndex =
-                FindOrCreateBoundaryNode(
-                    nodes,
-                    boundaryConnectivityLookupGeneration,
-                    cutSegment.Second,
-                    cutSegment.SecondSourceEdgeVertexIndexA,
-                    cutSegment.SecondSourceEdgeVertexIndexB,
-                    cutSegment.SecondConnectivityVertexId,
-                    sourceVertices,
-                    geometryEpsilon,
-                    sourceSplitVertexMatchEpsilon);
+                !useConnectivityLookup
+                    ? FindOrCreateBoundaryNodeBySpatialLookup(
+                        nodes,
+                        ref spatialNodeHeads,
+                        ref spatialLookupOrigin,
+                        ref spatialLookupUsable,
+                        cutSegment.Second,
+                        cutSegment.SecondSourceEdgeVertexIndexA,
+                        cutSegment.SecondSourceEdgeVertexIndexB,
+                        cutSegment.SecondConnectivityVertexId,
+                        sourceVertices,
+                        geometryEpsilon,
+                        sourceSplitVertexMatchEpsilon)
+                    : FindOrCreateBoundaryNode(
+                        nodes,
+                        boundaryConnectivityLookupGeneration,
+                        cutSegment.Second,
+                        cutSegment.SecondSourceEdgeVertexIndexA,
+                        cutSegment.SecondSourceEdgeVertexIndexB,
+                        cutSegment.SecondConnectivityVertexId,
+                        sourceVertices,
+                        geometryEpsilon,
+                        sourceSplitVertexMatchEpsilon);
 
             if (firstNodeIndex ==
                 secondNodeIndex)
@@ -3119,6 +3408,15 @@ public sealed class MeshPlaneSplitter
             nodes[secondNodeIndex]
                 .Neighbors
                 .Add(firstNodeIndex);
+        }
+        }
+        finally
+        {
+            if (spatialNodeHeads != null)
+            {
+                spatialNodeHeads.Clear();
+                boundarySpatialLookupPool.Push(spatialNodeHeads);
+            }
         }
 
         if (enableDiagnostics)
@@ -4220,6 +4518,235 @@ public sealed class MeshPlaneSplitter
         return nodeIndex;
     }
 
+    /// <summary>
+    /// 食い込み分割の境界ノードだけをセル索引で候補削減する。
+    /// </summary>
+    /// <remarks>
+    /// Node Indexは生成順のため、一致候補の最小Indexを選べば従来の先頭からの線形探索と一致する。
+    /// 位置は候補選別にのみ使い、Seam / 元Edge / Connectivityの最終判定は既存処理を維持する。
+    /// </remarks>
+    private static int FindOrCreateBoundaryNodeBySpatialLookup(
+        List<BoundaryNode> nodes,
+        ref Dictionary<Vector3Int, int> spatialNodeHeads,
+        ref Vector3 spatialLookupOrigin,
+        ref bool spatialLookupUsable,
+        Vector3 position,
+        int sourceEdgeVertexIndexA,
+        int sourceEdgeVertexIndexB,
+        int connectivityVertexId,
+        IReadOnlyList<Vector3> sourceVertices,
+        float geometryEpsilon,
+        float sourceSplitVertexMatchEpsilon)
+    {
+        if (!spatialLookupUsable ||
+            (spatialNodeHeads == null &&
+             nodes.Count < BOUNDARY_SPATIAL_LOOKUP_MIN_NODE_COUNT))
+        {
+            return FindOrCreateBoundaryNodeByLinearSearch(
+                nodes, position, sourceEdgeVertexIndexA, sourceEdgeVertexIndexB,
+                connectivityVertexId, sourceVertices, geometryEpsilon,
+                sourceSplitVertexMatchEpsilon);
+        }
+
+        double cellSize = (double)geometryEpsilon * 2d;
+
+        if (spatialNodeHeads == null)
+        {
+            spatialLookupOrigin = nodes[0].Position;
+            spatialNodeHeads = boundarySpatialLookupPool.Count > 0
+                ? boundarySpatialLookupPool.Pop()
+                : new Dictionary<Vector3Int, int>(
+                    BOUNDARY_SPATIAL_LOOKUP_MIN_NODE_COUNT * 2);
+
+            // 64ノードまでは追加順の線形探索。索引構築時も同じ生成Indexを維持する。
+            for (int nodeIndex = 0; nodeIndex < nodes.Count; nodeIndex++)
+            {
+                if (!TryGetBoundarySpatialCell(
+                        nodes[nodeIndex].Position,
+                        spatialLookupOrigin,
+                        cellSize,
+                        out Vector3Int cell))
+                {
+                    spatialLookupUsable = false;
+                    break;
+                }
+
+                AddNodeToBoundarySpatialCell(
+                    nodes, spatialNodeHeads, cell, nodeIndex);
+            }
+        }
+
+        // 無効座標や整数セルの範囲外ではセル近傍を保証できないため線形探索へ戻す。
+        // 一度無効と判定した境界では、未索引ノードを取りこぼさないよう復帰しない。
+        if (!spatialLookupUsable ||
+            !TryGetBoundarySpatialCellRange(
+                position,
+                spatialLookupOrigin,
+                cellSize,
+                (double)geometryEpsilon * BOUNDARY_SPATIAL_SEARCH_EPSILON_SCALE,
+                out Vector3Int minimumCell,
+                out Vector3Int maximumCell))
+        {
+            spatialLookupUsable = false;
+            return FindOrCreateBoundaryNodeByLinearSearch(
+                nodes, position, sourceEdgeVertexIndexA, sourceEdgeVertexIndexB,
+                connectivityVertexId, sourceVertices, geometryEpsilon,
+                sourceSplitVertexMatchEpsilon);
+        }
+
+        int firstMatchingNodeIndex = int.MaxValue;
+
+        for (int z = minimumCell.z; z <= maximumCell.z; z++)
+        {
+            for (int y = minimumCell.y; y <= maximumCell.y; y++)
+            {
+                for (int x = minimumCell.x; x <= maximumCell.x; x++)
+                {
+                    if (!spatialNodeHeads.TryGetValue(
+                            new Vector3Int(x, y, z),
+                            out int nodeIndex))
+                    {
+                        continue;
+                    }
+
+                    while (nodeIndex >= 0)
+                    {
+                        BoundaryNode node = nodes[nodeIndex];
+
+                        if (nodeIndex < firstMatchingNodeIndex &&
+                            (connectivityVertexId < 0 ||
+                             node.ConnectivityVertexId < 0 ||
+                             node.ConnectivityVertexId == connectivityVertexId) &&
+                            IsMatchingBoundaryNode(
+                                node, position,
+                                sourceEdgeVertexIndexA,
+                                sourceEdgeVertexIndexB,
+                                sourceVertices, geometryEpsilon,
+                                sourceSplitVertexMatchEpsilon))
+                        {
+                            firstMatchingNodeIndex = nodeIndex;
+                        }
+
+                        nodeIndex = node.NextSameSpatialCellNodeIndex;
+                    }
+                }
+            }
+        }
+
+        if (firstMatchingNodeIndex != int.MaxValue)
+        {
+            nodes[firstMatchingNodeIndex].AddSourceOrigin(
+                sourceEdgeVertexIndexA, sourceEdgeVertexIndexB);
+            return firstMatchingNodeIndex;
+        }
+
+        int newNodeIndex = AddBoundaryNode(
+            nodes, position, sourceEdgeVertexIndexA,
+            sourceEdgeVertexIndexB, connectivityVertexId);
+
+        if (TryGetBoundarySpatialCell(
+                position,
+                spatialLookupOrigin,
+                cellSize,
+                out Vector3Int newNodeCell))
+        {
+            AddNodeToBoundarySpatialCell(
+                nodes, spatialNodeHeads, newNodeCell, newNodeIndex);
+        }
+        else
+        {
+            spatialLookupUsable = false;
+        }
+
+        return newNodeIndex;
+    }
+
+    private static void AddNodeToBoundarySpatialCell(
+        List<BoundaryNode> nodes,
+        Dictionary<Vector3Int, int> spatialNodeHeads,
+        Vector3Int cell,
+        int nodeIndex)
+    {
+        nodes[nodeIndex].NextSameSpatialCellNodeIndex =
+            spatialNodeHeads.TryGetValue(cell, out int previousHeadIndex)
+                ? previousHeadIndex
+                : -1;
+
+        spatialNodeHeads[cell] = nodeIndex;
+    }
+
+    private static bool TryGetBoundarySpatialCell(
+        Vector3 position,
+        Vector3 origin,
+        double cellSize,
+        out Vector3Int cell)
+    {
+        cell = default(Vector3Int);
+        if (!TryGetBoundarySpatialCoordinate(
+                (double)position.x - origin.x, cellSize, out int x) ||
+            !TryGetBoundarySpatialCoordinate(
+                (double)position.y - origin.y, cellSize, out int y) ||
+            !TryGetBoundarySpatialCoordinate(
+                (double)position.z - origin.z, cellSize, out int z))
+        {
+            return false;
+        }
+
+        cell = new Vector3Int(x, y, z);
+        return true;
+    }
+
+    private static bool TryGetBoundarySpatialCellRange(
+        Vector3 position,
+        Vector3 origin,
+        double cellSize,
+        double radius,
+        out Vector3Int minimumCell,
+        out Vector3Int maximumCell)
+    {
+        minimumCell = default(Vector3Int);
+        maximumCell = default(Vector3Int);
+
+        double x = (double)position.x - origin.x;
+        double y = (double)position.y - origin.y;
+        double z = (double)position.z - origin.z;
+
+        if (!TryGetBoundarySpatialCoordinate(x - radius, cellSize, out int minX) ||
+            !TryGetBoundarySpatialCoordinate(y - radius, cellSize, out int minY) ||
+            !TryGetBoundarySpatialCoordinate(z - radius, cellSize, out int minZ) ||
+            !TryGetBoundarySpatialCoordinate(x + radius, cellSize, out int maxX) ||
+            !TryGetBoundarySpatialCoordinate(y + radius, cellSize, out int maxY) ||
+            !TryGetBoundarySpatialCoordinate(z + radius, cellSize, out int maxZ))
+        {
+            return false;
+        }
+
+        minimumCell = new Vector3Int(minX, minY, minZ);
+        maximumCell = new Vector3Int(maxX, maxY, maxZ);
+        return true;
+    }
+
+    private static bool TryGetBoundarySpatialCoordinate(
+        double offset,
+        double cellSize,
+        out int coordinate)
+    {
+        coordinate = 0;
+        double value = Math.Floor(offset / cellSize);
+
+        // 近傍セルの列挙でintがオーバーフローしない範囲だけを索引化する。
+        if (double.IsNaN(value) ||
+            double.IsInfinity(value) ||
+            value <= int.MinValue ||
+            value >= int.MaxValue)
+        {
+            return false;
+        }
+
+        coordinate = (int)value;
+        return true;
+    }
+
     private static int FindOrCreateBoundaryNodeByLinearSearch(
         List<BoundaryNode> nodes,
         Vector3 position,
@@ -4534,6 +5061,8 @@ public sealed class MeshPlaneSplitter
         IReadOnlyList<List<int>> boundarySourceVertexIndices,
         IReadOnlyList<CutSegment> cutSegments,
         Mesh sourceMesh,
+        Bounds sourceBounds,
+        int sourceSubMeshCount,
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<List<int>> cachedSourceTrianglesBySubMesh,
         IReadOnlyList<int> sourceConnectivityVertexIds,
@@ -4657,10 +5186,12 @@ public sealed class MeshPlaneSplitter
             IReadOnlyList<int> weldedSourceVertexIds =
                 sourceConnectivityVertexIds ??
                 MeshConnectedComponentSplitter.BuildConnectedVertexIds(
-                    sourceVertices, sourceMesh.bounds);
+                    sourceVertices, sourceBounds);
 
             int[] sourceComponentByVertexIndex = BuildSourceVertexComponents(
                 sourceMesh,
+                sourceBounds,
+                sourceSubMeshCount,
                 sourceVertices,
                 cachedSourceTrianglesBySubMesh,
                 weldedSourceVertexIds,
@@ -5053,6 +5584,8 @@ public sealed class MeshPlaneSplitter
     /// </summary>
     private static int[] BuildSourceVertexComponents(
         Mesh sourceMesh,
+        Bounds sourceBounds,
+        int sourceSubMeshCount,
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<List<int>> cachedSourceTrianglesBySubMesh,
         IReadOnlyList<int> cachedSourceConnectivityVertexIds,
@@ -5071,7 +5604,7 @@ public sealed class MeshPlaneSplitter
         IReadOnlyList<int> weldedVertexIds =
             cachedSourceConnectivityVertexIds ??
             MeshConnectedComponentSplitter.BuildConnectedVertexIds(
-                sourceVertices, sourceMesh.bounds);
+                sourceVertices, sourceBounds);
 
         // 切断点を生成したSource Edgeに限って、全Triangleでの共有回数を数える。
         // CutSegmentの数だけでは、Planeに接している3枚目の面を検出できない。
@@ -5108,7 +5641,7 @@ public sealed class MeshPlaneSplitter
         var triangleIndexScratch =
             cachedSourceTrianglesBySubMesh == null ? new List<int>() : null;
 
-        for (int subMeshIndex = 0; subMeshIndex < sourceMesh.subMeshCount; subMeshIndex++)
+        for (int subMeshIndex = 0; subMeshIndex < sourceSubMeshCount; subMeshIndex++)
         {
             IReadOnlyList<int> indices;
             if (cachedSourceTrianglesBySubMesh != null)
@@ -5746,18 +6279,25 @@ public sealed class MeshPlaneSplitter
             return false;
         }
 
+        float absoluteArea = Mathf.Abs(signedArea);
+
         if (signedArea < 0.0f)
         {
             positions.Reverse();
             projectedPoints.Reverse();
             connectivityVertexIds.Reverse();
+
+            // 階層判定は反転後の頂点順で面積を求めていたため、
+            // 浮動小数点の加算順まで変えないよう反転時のみ再計算する。
+            absoluteArea = Mathf.Abs(CalculateSignedArea(projectedPoints));
         }
 
         preparedLoop =
             new PreparedBoundaryLoop(
                 positions,
                 projectedPoints,
-                connectivityVertexIds);
+                connectivityVertexIds,
+                absoluteArea);
 
         return true;
     }
@@ -5947,10 +6487,7 @@ public sealed class MeshPlaneSplitter
             innerLoop.ParentIndex = -1;
             innerLoop.NestingDepth = 0;
 
-            float innerArea =
-                Mathf.Abs(
-                    CalculateSignedArea(
-                        innerLoop.ProjectedPoints));
+            float innerArea = innerLoop.AbsoluteArea;
 
             float bestParentArea =
                 float.PositiveInfinity;
@@ -5974,10 +6511,7 @@ public sealed class MeshPlaneSplitter
                 PreparedBoundaryLoop outerLoop =
                     loops[outerIndex];
 
-                float outerArea =
-                    Mathf.Abs(
-                        CalculateSignedArea(
-                            outerLoop.ProjectedPoints));
+                float outerArea = outerLoop.AbsoluteArea;
 
                 if (outerArea <=
                     innerArea + areaEpsilon)
@@ -6850,7 +7384,7 @@ public sealed class MeshPlaneSplitter
         }
     }
 
-    private readonly struct VertexData
+    internal readonly struct VertexData
     {
         private const int NO_SOURCE_VERTEX_INDEX = -1;
 
@@ -7083,6 +7617,7 @@ public sealed class MeshPlaneSplitter
         public Vector3 Position { get; }
         public int ConnectivityVertexId { get; }
         public int NextSameConnectivityNodeIndex { get; set; }
+        public int NextSameSpatialCellNodeIndex { get; set; }
         public List<int> Neighbors { get; }
         public int SourceOriginCount =>
             sourceOriginVertexIndexA.Count;
@@ -7099,6 +7634,7 @@ public sealed class MeshPlaneSplitter
             Position = position;
             ConnectivityVertexId = connectivityVertexId;
             NextSameConnectivityNodeIndex = -1;
+            NextSameSpatialCellNodeIndex = -1;
 
             Neighbors =
                 new List<int>(2);
@@ -7179,13 +7715,15 @@ public sealed class MeshPlaneSplitter
         public List<Vector3> Positions { get; }
         public List<Vector2> ProjectedPoints { get; }
         public List<int> ConnectivityVertexIds { get; }
+        public float AbsoluteArea { get; }
         public int ParentIndex { get; set; }
         public int NestingDepth { get; set; }
 
         public PreparedBoundaryLoop(
             List<Vector3> positions,
             List<Vector2> projectedPoints,
-            List<int> connectivityVertexIds)
+            List<int> connectivityVertexIds,
+            float absoluteArea)
         {
             Positions =
                 positions;
@@ -7195,6 +7733,9 @@ public sealed class MeshPlaneSplitter
 
             ConnectivityVertexIds =
                 connectivityVertexIds;
+
+            // 冗長点除去と向きの正規化が完了したループの面積を保持する。
+            AbsoluteArea = absoluteArea;
 
             ParentIndex = -1;
             NestingDepth = 0;
@@ -7224,7 +7765,8 @@ public sealed class MeshPlaneSplitter
         return estimatedTriangleCount * 3;
     }
 
-    private sealed class PieceMeshBuilder
+    // 既存Builderを食い込み分割中のPiece保持にも使用する。新しいデータ型は作らない。
+    internal sealed class PieceMeshBuilder
     {
         private readonly List<Vector3> vertices;
 
@@ -7240,17 +7782,18 @@ public sealed class MeshPlaneSplitter
             trianglesBySubMesh;
 
         // SubMesh数が減った場合もList本体とBacking Arrayを捨てず、
-        // 次にSubMesh数が増えたときへ再利用する。通常攻撃2分割のPool Builderだけが保持する。
+        // 次にSubMesh数が増えたときへ再利用する。Pool Builderが保持する。
         private readonly Stack<List<int>>
             spareTrianglesBySubMesh;
 
-        // 元Mesh由来の頂点だけを再利用する。位置一致では統合せず、
+        // Source頂点だけを再利用する。位置一致では統合せず、
         // UV seam / hard edgeとして分離された別Source Vertex Indexは維持する。
         // 0を未登録として使えるよう、実際のOutput Vertex Index + 1を格納する。
         private int[]
             outputVertexIndexBySourceVertexIndex;
 
         private bool hasTangents;
+        private bool storeConnectivityVertexIds;
 
         private bool hasBounds;
         private Vector3 minimumPosition;
@@ -7275,6 +7818,7 @@ public sealed class MeshPlaneSplitter
         public List<int> ConnectivityVertexIds => connectivityVertexIds;
         public List<List<int>> TrianglesBySubMesh => trianglesBySubMesh;
         public bool HasTangents => hasTangents;
+        public string WorkingMeshName { get; set; }
         public Bounds BuilderBounds =>
             hasBounds
                 ? new Bounds(
@@ -7287,10 +7831,12 @@ public sealed class MeshPlaneSplitter
             bool hasTangents,
             int sourceVertexCount,
             int estimatedVertexCapacity,
-            bool supportsReuse)
+            bool supportsReuse,
+            bool storeConnectivityVertexIds)
         {
             this.hasTangents =
                 hasTangents;
+            this.storeConnectivityVertexIds = storeConnectivityVertexIds;
 
             vertices =
                 new List<Vector3>(
@@ -7312,7 +7858,9 @@ public sealed class MeshPlaneSplitter
 
             connectivityVertexIds =
                 new List<int>(
-                    estimatedVertexCapacity);
+                    storeConnectivityVertexIds
+                        ? estimatedVertexCapacity
+                        : 0);
 
             outputVertexIndexBySourceVertexIndex =
                 new int[sourceVertexCount];
@@ -7339,8 +7887,12 @@ public sealed class MeshPlaneSplitter
             int subMeshCount,
             bool useTangents,
             int sourceVertexCount,
-            int estimatedVertexCapacity)
+            int estimatedVertexCapacity,
+            bool storeConnectivityVertexIds)
         {
+            // Poolから取得するたびに保存設定とデータをリセットする。
+            this.storeConnectivityVertexIds = storeConnectivityVertexIds;
+
             vertices.Clear();
             normals.Clear();
             uv.Clear();
@@ -7368,7 +7920,8 @@ public sealed class MeshPlaneSplitter
                 tangents.Capacity = estimatedVertexCapacity;
             }
 
-            if (connectivityVertexIds.Capacity < estimatedVertexCapacity)
+            if (storeConnectivityVertexIds &&
+                connectivityVertexIds.Capacity < estimatedVertexCapacity)
             {
                 connectivityVertexIds.Capacity = estimatedVertexCapacity;
             }
@@ -7391,11 +7944,37 @@ public sealed class MeshPlaneSplitter
             ResetSubMeshTriangleLists(subMeshCount);
 
             hasTangents = useTangents;
+            WorkingMeshName = null;
             OriginalTriangleCount = 0;
             TotalTriangleCount = 0;
             hasBounds = false;
             minimumPosition = default;
             maximumPosition = default;
+        }
+
+        public void SetSourceBounds(Bounds bounds)
+        {
+            minimumPosition = bounds.min;
+            maximumPosition = bounds.max;
+            hasBounds = true;
+        }
+
+        // Poolへ戻す際に件数をゼロにする。ListのCapacityは再利用する。
+        public void ClearForPool()
+        {
+            vertices.Clear();
+            normals.Clear();
+            uv.Clear();
+            tangents.Clear();
+            connectivityVertexIds.Clear();
+            foreach (List<int> triangles in trianglesBySubMesh)
+            {
+                triangles.Clear();
+            }
+            WorkingMeshName = null;
+            hasBounds = false;
+            OriginalTriangleCount = 0;
+            TotalTriangleCount = 0;
         }
 
         private void ResetSubMeshTriangleLists(
@@ -7410,8 +7989,7 @@ public sealed class MeshPlaneSplitter
 
             if (trianglesBySubMesh.Count > requiredSubMeshCount)
             {
-                // Pool BuilderだけがSubMesh List退避領域を持つ。
-                // PrepareForUseはPool Builderに対してのみ呼ばれる。
+                // Pool Builderは減ったSubMeshのListも次の分割用に退避する。
                 while (trianglesBySubMesh.Count > requiredSubMeshCount)
                 {
                     int lastIndex =
@@ -7525,6 +8103,23 @@ public sealed class MeshPlaneSplitter
             }
         }
 
+        public float CalculateSurfaceArea()
+        {
+            float totalArea = 0f;
+            for (int subMeshIndex = 0; subMeshIndex < trianglesBySubMesh.Count; subMeshIndex++)
+            {
+                List<int> indices = trianglesBySubMesh[subMeshIndex];
+                for (int index = 0; index < indices.Count; index += 3)
+                {
+                    Vector3 a = vertices[indices[index]];
+                    Vector3 b = vertices[indices[index + 1]];
+                    Vector3 c = vertices[indices[index + 2]];
+                    totalArea += Vector3.Cross(b - a, c - a).magnitude * 0.5f;
+                }
+            }
+            return totalArea;
+        }
+
         public Mesh BuildMesh(
             string meshName)
         {
@@ -7546,6 +8141,8 @@ public sealed class MeshPlaneSplitter
                             : IndexFormat.UInt16
                 };
 
+            try
+            {
             mesh.SetVertices(
                 vertices);
 
@@ -7580,6 +8177,19 @@ public sealed class MeshPlaneSplitter
             mesh.bounds = BuilderBounds;
 
             return mesh;
+            }
+            catch
+            {
+                if (Application.isPlaying)
+                {
+                    UnityEngine.Object.Destroy(mesh);
+                }
+                else
+                {
+                    UnityEngine.Object.DestroyImmediate(mesh);
+                }
+                throw;
+            }
 
             }
         }
@@ -7617,8 +8227,10 @@ public sealed class MeshPlaneSplitter
                     vertex.Tangent);
             }
 
-            connectivityVertexIds.Add(
-                vertex.ConnectivityVertexId);
+            if (storeConnectivityVertexIds)
+            {
+                connectivityVertexIds.Add(vertex.ConnectivityVertexId);
+            }
 
             UpdateBounds(vertex.Position);
 

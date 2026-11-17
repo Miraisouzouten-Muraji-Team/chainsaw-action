@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using Unity.Profiling;
 using UnityEngine;
+using WorkingPiece = MeshPlaneSplitter.PieceMeshBuilder;
 
 /// <summary>
 /// 食い込み死亡用Meshを、非連結部分を追加分離せず指定されたPiece数へ分割する。
@@ -14,6 +15,8 @@ public sealed class MeshTargetCountSplitter
 {
     private static readonly ProfilerMarker targetCountTotalProfilerMarker =
             new ProfilerMarker("EnemyMeshCut.Digging.TargetCount.Total");
+    private static readonly ProfilerMarker buildFinalPiecesProfilerMarker =
+            new ProfilerMarker("EnemyMeshCut.Digging.TargetCount.BuildFinalMeshes");
 
 
 
@@ -25,11 +28,17 @@ public sealed class MeshTargetCountSplitter
     private readonly MeshPlaneSplitter meshPlaneSplitter =
         new MeshPlaneSplitter();
 
-    // 面積分布の集計時、毎回Meshの頂点・Index配列を確保しないための作業領域。
-    private readonly List<Vector3> vertexBuffer = new List<Vector3>();
-    private readonly List<int> triangleIndexBuffer = new List<int>();
+    // 面積分布は保持中のPieceデータを直接参照するため、入力配列をコピーしない。
     private readonly float[] splitPositionWeights =
         new float[SPLIT_POSITION_BIN_COUNT];
+    private readonly int[] axisOrderBuffer = new int[3];
+
+    // 反復分割の候補ごとに同じ三角形を毎回走査しないため、Piece順に表面積を保持する。
+    // Split成功時のみ該当要素を差し替え、失敗時は次の候補を探す。
+    private readonly List<float> pieceSurfaceAreas = new List<float>();
+    private readonly HashSet<WorkingPiece> unsplittablePieces =
+        new HashSet<WorkingPiece>();
+    private readonly List<WorkingPiece> workingPieces = new List<WorkingPiece>(8);
 
     /// <summary>
     /// 入力Meshを、指定Piece数ちょうどになるまで繰り返し分割する。
@@ -52,103 +61,172 @@ public sealed class MeshTargetCountSplitter
     {
         using (targetCountTotalProfilerMarker.Auto())
         {
-        pieceMeshes = new List<Mesh>();
-        failureReason = null;
-
-        if (!ValidateInputs(
-                sourceMesh,
-                targetPieceCount,
-                cutSurfaceUvScale,
-                out failureReason))
-        {
-            return false;
-        }
-
-        if (!TrySplitPiece(
-                sourceMesh,
-                cutSurfaceUvScale,
-                out List<Mesh> initialPieces,
-                out failureReason))
-        {
-            return false;
-        }
-
-        pieceMeshes.AddRange(initialPieces);
-
-        var unsplittablePieces = new HashSet<Mesh>();
-        string lastSplitFailureReason = null;
-
-        while (pieceMeshes.Count < targetPieceCount)
-        {
-            int splitTargetIndex =
-                FindLargestSplittablePieceIndex(
-                    pieceMeshes,
-                    unsplittablePieces);
-
-            if (splitTargetIndex < 0)
+            pieceMeshes = new List<Mesh>();
+            failureReason = null;
+            if (!ValidateInputs(
+                    sourceMesh, targetPieceCount, cutSurfaceUvScale,
+                    out failureReason))
             {
-                DestroyMeshes(pieceMeshes);
-                pieceMeshes.Clear();
-
-                failureReason =
-                    $"目標Piece数 {targetPieceCount} へ到達する前に、" +
-                    $"追加分割できるPieceがなくなりました。" +
-                    $" 最終分割失敗理由={lastSplitFailureReason ?? "取得できませんでした。"}";
-
                 return false;
             }
 
-            Mesh splitTarget =
-                pieceMeshes[splitTargetIndex];
+            pieceMeshes.Capacity = Mathf.Min(targetPieceCount, 64);
+            pieceSurfaceAreas.Clear();
+            unsplittablePieces.Clear();
 
-            if (!TrySplitPiece(
-                    splitTarget,
-                    cutSurfaceUvScale,
-                    out List<Mesh> splitResults,
-                    out string splitFailureReason))
+            // Builderの所有権はこのリストだけが保持する。Plane分割失敗時は元Pieceを残し、
+            // 成功時は入力Pieceを返却して、2つの出力Pieceで置き換える。
+            workingPieces.Clear();
+            if (workingPieces.Capacity < targetPieceCount)
             {
-                unsplittablePieces.Add(splitTarget);
-                lastSplitFailureReason = splitFailureReason;
-                continue;
+                workingPieces.Capacity = targetPieceCount;
             }
+            bool completed = false;
 
-            pieceMeshes.RemoveAt(splitTargetIndex);
+            try
+            {
+                if (!meshPlaneSplitter.TryAcquireTargetCountSource(
+                        sourceMesh,
+                        out WorkingPiece sourcePiece,
+                        out failureReason))
+                {
+                    return false;
+                }
+                workingPieces.Add(sourcePiece);
 
-            // current Piecesはこのクラスが生成したRuntime Meshのみで構成される。
-            // 再分割後は置き換え前Meshを残す必要がないため、その場で破棄する。
-            DestroyMesh(splitTarget);
+                if (!TrySplitPiece(
+                        sourcePiece,
+                        cutSurfaceUvScale,
+                        targetPieceCount > 2,
+                        out WorkingPiece initialFirst,
+                        out WorkingPiece initialSecond,
+                        out float initialFirstArea,
+                        out float initialSecondArea,
+                        out failureReason))
+                {
+                    return false;
+                }
 
-            pieceMeshes.AddRange(splitResults);
-        }
+                workingPieces.Clear();
+                meshPlaneSplitter.ReleaseTargetCountPiece(sourcePiece);
+                workingPieces.Add(initialFirst);
+                workingPieces.Add(initialSecond);
+                if (workingPieces.Count < targetPieceCount)
+                {
+                    pieceSurfaceAreas.Add(initialFirstArea);
+                    pieceSurfaceAreas.Add(initialSecondArea);
+                }
 
-        failureReason = null;
-        return true;
+                string lastSplitFailureReason = null;
+                while (workingPieces.Count < targetPieceCount)
+                {
+                    int splitTargetIndex = FindLargestSplittablePieceIndex(
+                        workingPieces, pieceSurfaceAreas, unsplittablePieces);
+                    if (splitTargetIndex < 0)
+                    {
+                        failureReason =
+                            $"目標Piece数 {targetPieceCount} へ到達する前に、" +
+                            "追加分割できるPieceがなくなりました。" +
+                            $" 最終分割失敗理由={lastSplitFailureReason ?? "取得できませんでした。"}";
+                        return false;
+                    }
 
+                    WorkingPiece splitTarget = workingPieces[splitTargetIndex];
+                    if (!TrySplitPiece(
+                            splitTarget,
+                            cutSurfaceUvScale,
+                            workingPieces.Count + 1 < targetPieceCount,
+                            out WorkingPiece firstHalf,
+                            out WorkingPiece secondHalf,
+                            out float firstHalfArea,
+                            out float secondHalfArea,
+                            out string splitFailureReason))
+                    {
+                        unsplittablePieces.Add(splitTarget);
+                        lastSplitFailureReason = splitFailureReason;
+                        continue;
+                    }
+
+                    // RemoveAtで入力をリストから外してからPoolへ返し、解放後参照を防ぐ。
+                    workingPieces.RemoveAt(splitTargetIndex);
+                    pieceSurfaceAreas.RemoveAt(splitTargetIndex);
+                    meshPlaneSplitter.ReleaseTargetCountPiece(splitTarget);
+                    workingPieces.Add(firstHalf);
+                    workingPieces.Add(secondHalf);
+                    if (workingPieces.Count < targetPieceCount)
+                    {
+                        pieceSurfaceAreas.Add(firstHalfArea);
+                        pieceSurfaceAreas.Add(secondHalfArea);
+                    }
+                }
+
+                // ここまでUnity Meshを生成しない。最終結果のMesh化は総計測内でまとめる。
+                using (buildFinalPiecesProfilerMarker.Auto())
+                {
+                    foreach (WorkingPiece piece in workingPieces)
+                    {
+                        Mesh mesh = piece.BuildMesh(piece.WorkingMeshName);
+                        if (mesh == null)
+                        {
+                            failureReason = "最終PieceのMesh構築に失敗しました。";
+                            return false;
+                        }
+                        pieceMeshes.Add(mesh);
+                    }
+                }
+
+                completed = true;
+                failureReason = null;
+                return true;
+            }
+            finally
+            {
+                // 成功・失敗・例外を問わず、Builderはすべて返却する。
+                // 出力Meshは成功時だけ呼び出し側へ所有権を渡す。
+                foreach (WorkingPiece piece in workingPieces)
+                {
+                    meshPlaneSplitter.ReleaseTargetCountPiece(piece);
+                }
+                workingPieces.Clear();
+                pieceSurfaceAreas.Clear();
+                unsplittablePieces.Clear();
+                if (!completed)
+                {
+                    DestroyMeshes(pieceMeshes);
+                    pieceMeshes.Clear();
+                }
+            }
         }
     }
 
     private bool TrySplitPiece(
-        Mesh sourceMesh,
+        WorkingPiece sourcePiece,
         float cutSurfaceUvScale,
-        out List<Mesh> splitPieceMeshes,
+        bool calculateSurfaceAreas,
+        out WorkingPiece firstPiece,
+        out WorkingPiece secondPiece,
+        out float firstSurfaceArea,
+        out float secondSurfaceArea,
         out string failureReason)
     {
-        splitPieceMeshes = new List<Mesh>(2);
+        firstPiece = null;
+        secondPiece = null;
+        firstSurfaceArea = 0f;
+        secondSurfaceArea = 0f;
         failureReason = null;
 
-        int[] axisOrder =
-            CreateAxisOrderByExtent(sourceMesh.bounds.size);
+        int[] axisOrder = CreateAxisOrderByExtent(sourcePiece.BuilderBounds.size);
         string lastFailureReason = null;
-
         for (int axisOrderIndex = 0;
              axisOrderIndex < axisOrder.Length;
              axisOrderIndex++)
         {
             int axisIndex = axisOrder[axisOrderIndex];
-            Plane balancedPlane = CreateBalancedSplitPlane(sourceMesh, axisIndex);
-            Plane centerPlane = CreateCenterSplitPlane(sourceMesh.bounds, axisIndex);
+            Plane balancedPlane = CreateBalancedSplitPlane(sourcePiece, axisIndex);
+            Plane centerPlane = CreateCenterSplitPlane(
+                sourcePiece.BuilderBounds, axisIndex);
 
-            // 面積分布から求めた位置で切れなければ、従来のBounds中心を試す。
+            // 試行中も入力Builderを変更しないので、軸・位置の再試行では再取得不要。
             for (int attemptIndex = 0; attemptIndex < 2; attemptIndex++)
             {
                 if (attemptIndex == 1 &&
@@ -158,37 +236,38 @@ public sealed class MeshTargetCountSplitter
                 }
 
                 Plane splitPlane = attemptIndex == 0 ? balancedPlane : centerPlane;
-                if (meshPlaneSplitter.TrySplit(
-                        sourceMesh,
+                if (meshPlaneSplitter.TrySplitForTargetCount(
+                        sourcePiece,
                         splitPlane,
                         cutSurfaceUvScale,
-                        out Mesh firstHalfMesh,
-                        out Mesh secondHalfMesh,
+                        calculateSurfaceAreas,
+                        out WorkingPiece firstHalf,
+                        out WorkingPiece secondHalf,
+                        out float firstHalfArea,
+                        out float secondHalfArea,
                         out string planeSplitFailureReason))
                 {
-                    // 左右1Meshずつを保持し、つながっていない領域は追加分離しない。
-                    splitPieceMeshes.Add(firstHalfMesh);
-                    splitPieceMeshes.Add(secondHalfMesh);
+                    firstPiece = firstHalf;
+                    secondPiece = secondHalf;
+                    firstSurfaceArea = firstHalfArea;
+                    secondSurfaceArea = secondHalfArea;
                     return true;
                 }
 
-                DestroyMesh(firstHalfMesh);
-                DestroyMesh(secondHalfMesh);
                 lastFailureReason =
                     $"{GetAxisName(axisIndex)}軸Planeでの分割に失敗しました。" +
                     $" {planeSplitFailureReason}";
             }
         }
 
-        failureReason =
-            lastFailureReason ??
-            "追加分割用Planeを決定できませんでした。";
+        failureReason = lastFailureReason ?? "追加分割用Planeを決定できませんでした。";
         return false;
     }
 
     private int FindLargestSplittablePieceIndex(
-        IReadOnlyList<Mesh> pieces,
-        HashSet<Mesh> unsplittablePieces)
+        IReadOnlyList<WorkingPiece> pieces,
+        IReadOnlyList<float> surfaceAreas,
+        HashSet<WorkingPiece> unsplittablePieces)
     {
         int largestPieceIndex = -1;
         float largestSurfaceArea = float.NegativeInfinity;
@@ -198,7 +277,7 @@ public sealed class MeshTargetCountSplitter
              pieceIndex < pieces.Count;
              pieceIndex++)
         {
-            Mesh piece = pieces[pieceIndex];
+            WorkingPiece piece = pieces[pieceIndex];
 
             if (piece == null ||
                 unsplittablePieces.Contains(piece))
@@ -207,9 +286,9 @@ public sealed class MeshTargetCountSplitter
             }
 
             Vector3 boundsSize =
-                piece.bounds.size;
+                piece.BuilderBounds.size;
 
-            float surfaceArea = CalculateSurfaceArea(piece);
+            float surfaceArea = surfaceAreas[pieceIndex];
 
             float boundsMagnitude =
                 boundsSize.sqrMagnitude;
@@ -236,35 +315,9 @@ public sealed class MeshTargetCountSplitter
 
     }
 
-    // 入力Meshが非閉鎖形状でも比較できるように、Bounds体積ではなく三角形表面積を用いる。
-    private float CalculateSurfaceArea(Mesh mesh)
+    private Plane CreateBalancedSplitPlane(WorkingPiece piece, int axisIndex)
     {
-        mesh.GetVertices(vertexBuffer);
-        float totalArea = 0f;
-
-        for (int subMeshIndex = 0; subMeshIndex < mesh.subMeshCount; subMeshIndex++)
-        {
-            if (mesh.GetTopology(subMeshIndex) != MeshTopology.Triangles)
-            {
-                continue;
-            }
-
-            mesh.GetTriangles(triangleIndexBuffer, subMeshIndex);
-            for (int index = 0; index < triangleIndexBuffer.Count; index += 3)
-            {
-                Vector3 a = vertexBuffer[triangleIndexBuffer[index]];
-                Vector3 b = vertexBuffer[triangleIndexBuffer[index + 1]];
-                Vector3 c = vertexBuffer[triangleIndexBuffer[index + 2]];
-                totalArea += Vector3.Cross(b - a, c - a).magnitude * 0.5f;
-            }
-        }
-
-        return totalArea;
-    }
-
-    private Plane CreateBalancedSplitPlane(Mesh mesh, int axisIndex)
-    {
-        Bounds bounds = mesh.bounds;
+        Bounds bounds = piece.BuilderBounds;
         float minPosition = GetAxisValue(bounds.min, axisIndex);
         float extent = GetAxisValue(bounds.size, axisIndex);
         if (extent <= Mathf.Epsilon)
@@ -273,29 +326,27 @@ public sealed class MeshTargetCountSplitter
         }
 
         System.Array.Clear(splitPositionWeights, 0, splitPositionWeights.Length);
-        mesh.GetVertices(vertexBuffer);
+        // 入力Meshから取得した頂点・Index、または直前の分割結果をそのまま参照。
+        IReadOnlyList<Vector3> vertices = piece.Vertices;
+        IReadOnlyList<List<int>> trianglesBySubMesh = piece.TrianglesBySubMesh;
         float totalWeight = 0f;
 
-        for (int subMeshIndex = 0; subMeshIndex < mesh.subMeshCount; subMeshIndex++)
+        for (int subMeshIndex = 0;
+             subMeshIndex < trianglesBySubMesh.Count;
+             subMeshIndex++)
         {
-            if (mesh.GetTopology(subMeshIndex) != MeshTopology.Triangles)
+            IReadOnlyList<int> indices = trianglesBySubMesh[subMeshIndex];
+            for (int index = 0; index < indices.Count; index += 3)
             {
-                continue;
-            }
-
-            mesh.GetTriangles(triangleIndexBuffer, subMeshIndex);
-            for (int index = 0; index < triangleIndexBuffer.Count; index += 3)
-            {
-                Vector3 a = vertexBuffer[triangleIndexBuffer[index]];
-                Vector3 b = vertexBuffer[triangleIndexBuffer[index + 1]];
-                Vector3 c = vertexBuffer[triangleIndexBuffer[index + 2]];
+                Vector3 a = vertices[indices[index]];
+                Vector3 b = vertices[indices[index + 1]];
+                Vector3 c = vertices[indices[index + 2]];
                 float vertexWeight = Vector3.Cross(b - a, c - a).magnitude / 6f;
                 if (vertexWeight <= 0f)
                 {
                     continue;
                 }
 
-                // 各Triangleの面積を3頂点へ均等に配分した近似中央値を使う。
                 AddPositionWeight(a, axisIndex, minPosition, extent, vertexWeight);
                 AddPositionWeight(b, axisIndex, minPosition, extent, vertexWeight);
                 AddPositionWeight(c, axisIndex, minPosition, extent, vertexWeight);
@@ -364,15 +415,14 @@ public sealed class MeshTargetCountSplitter
             bounds.center);
     }
 
-    private static int[] CreateAxisOrderByExtent(
+    private int[] CreateAxisOrderByExtent(
         Vector3 boundsSize)
     {
-        int[] axisOrder =
-        {
-            0,
-            1,
-            2
-        };
+        // 各TrySplitPieceの同期処理内でのみ使用する3要素の作業配列。
+        int[] axisOrder = axisOrderBuffer;
+        axisOrder[0] = 0;
+        axisOrder[1] = 1;
+        axisOrder[2] = 2;
 
         for (int currentIndex = 1;
              currentIndex < axisOrder.Length;

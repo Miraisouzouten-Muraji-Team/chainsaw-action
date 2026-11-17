@@ -265,6 +265,9 @@ public sealed class MeshPlaneSplitter
                 }
             }
 
+            // 初回の切断位置計算用に、SourceのTriangle面積を一度だけ求める。
+            builder.EnableTriangleAreaCache();
+
             // 元MeshのBounds設定値を維持する。生成Pieceは従来どおり頂点から計算する。
             builder.SetSourceBounds(sourceMesh.bounds);
             sourcePiece = builder;
@@ -671,7 +674,7 @@ public sealed class MeshPlaneSplitter
         if (sourceVertices == null ||
             sourceVertices.Count != sourceMesh.vertexCount ||
             sourceVertexPlaneDistances == null ||
-            sourceVertexPlaneDistances.Length != sourceVertices.Count ||
+            sourceVertexPlaneDistances.Length < sourceVertices.Count ||
             sourceTrianglesBySubMesh == null ||
             sourceTrianglesBySubMesh.Count != sourceMesh.subMeshCount ||
             triangleClassificationsBySubMesh == null ||
@@ -695,7 +698,7 @@ public sealed class MeshPlaneSplitter
             if (triangles == null ||
                 triangles.Count % 3 != 0 ||
                 triangleClassifications == null ||
-                triangleClassifications.Length != triangles.Count / 3)
+                triangleClassifications.Length < triangles.Count / 3)
             {
                 failureReason =
                     $"SubMesh {subMeshIndex} の事前検証済みTriangle情報が不正です。";
@@ -944,6 +947,13 @@ public sealed class MeshPlaneSplitter
                 sourceVertices.Count,
                 estimatedPieceVertexCapacity,
                 splitConnectedComponents);
+
+            // 次の8分割候補になるPieceだけ、Triangle面積を生成時に一度計算する。
+            if (collectTargetPieceSurfaceAreas)
+            {
+                firstBuilder.EnableTriangleAreaCache();
+                secondBuilder.EnableTriangleAreaCache();
+            }
         }
 
         cutSegments = AcquireReusableList(cutSegmentListPool, 0);
@@ -7781,6 +7791,13 @@ public sealed class MeshPlaneSplitter
         private readonly List<List<int>>
             trianglesBySubMesh;
 
+        // 食い込み側だけ使用する。SubMeshごとにTriangle index順と1:1で対応させる。
+        // Crossのmagnitudeを保持し、表面積集計と次の切断位置の重み付けで使い回す。
+        private readonly List<List<float>> triangleDoubleAreasBySubMesh =
+            new List<List<float>>();
+
+        private bool cacheTriangleAreas;
+
         // SubMesh数が減った場合もList本体とBacking Arrayを捨てず、
         // 次にSubMesh数が増えたときへ再利用する。Pool Builderが保持する。
         private readonly Stack<List<int>>
@@ -7817,6 +7834,8 @@ public sealed class MeshPlaneSplitter
         public List<Vector4> Tangents => tangents;
         public List<int> ConnectivityVertexIds => connectivityVertexIds;
         public List<List<int>> TrianglesBySubMesh => trianglesBySubMesh;
+        public IReadOnlyList<List<float>> TriangleDoubleAreasBySubMesh =>
+            triangleDoubleAreasBySubMesh;
         public bool HasTangents => hasTangents;
         public string WorkingMeshName { get; set; }
         public Bounds BuilderBounds =>
@@ -7892,6 +7911,11 @@ public sealed class MeshPlaneSplitter
         {
             // Poolから取得するたびに保存設定とデータをリセットする。
             this.storeConnectivityVertexIds = storeConnectivityVertexIds;
+            cacheTriangleAreas = false;
+            foreach (List<float> triangleAreas in triangleDoubleAreasBySubMesh)
+            {
+                triangleAreas.Clear();
+            }
 
             vertices.Clear();
             normals.Clear();
@@ -7952,6 +7976,38 @@ public sealed class MeshPlaneSplitter
             maximumPosition = default;
         }
 
+        /// <summary>
+        /// 次の分割処理で使うTriangle面積を保持する。
+        /// Source MeshのようにIndex設定済みならここで計算し、生成途中のPieceでは
+        /// 以降のAddTriangle時に求める。通常分割には適用しない。
+        /// </summary>
+        public void EnableTriangleAreaCache()
+        {
+            for (int subMeshIndex = 0;
+                 subMeshIndex < trianglesBySubMesh.Count;
+                 subMeshIndex++)
+            {
+                if (triangleDoubleAreasBySubMesh.Count <= subMeshIndex)
+                {
+                    triangleDoubleAreasBySubMesh.Add(new List<float>());
+                }
+
+                List<float> triangleAreas = triangleDoubleAreasBySubMesh[subMeshIndex];
+                triangleAreas.Clear();
+
+                List<int> indices = trianglesBySubMesh[subMeshIndex];
+                for (int index = 0; index < indices.Count; index += 3)
+                {
+                    Vector3 a = vertices[indices[index]];
+                    Vector3 b = vertices[indices[index + 1]];
+                    Vector3 c = vertices[indices[index + 2]];
+                    triangleAreas.Add(Vector3.Cross(b - a, c - a).magnitude);
+                }
+            }
+
+            cacheTriangleAreas = true;
+        }
+
         public void SetSourceBounds(Bounds bounds)
         {
             minimumPosition = bounds.min;
@@ -7962,6 +8018,12 @@ public sealed class MeshPlaneSplitter
         // Poolへ戻す際に件数をゼロにする。ListのCapacityは再利用する。
         public void ClearForPool()
         {
+            cacheTriangleAreas = false;
+            foreach (List<float> triangleAreas in triangleDoubleAreasBySubMesh)
+            {
+                triangleAreas.Clear();
+            }
+
             vertices.Clear();
             normals.Clear();
             uv.Clear();
@@ -8097,6 +8159,14 @@ public sealed class MeshPlaneSplitter
             // BuilderがTriangle追加時点で総数を保持する。Capも連結判定対象なので総数へ含める。
             TotalTriangleCount++;
 
+            if (cacheTriangleAreas)
+            {
+                triangleDoubleAreasBySubMesh[subMeshIndex].Add(
+                    Vector3.Cross(
+                        second.Position - first.Position,
+                        third.Position - first.Position).magnitude);
+            }
+
             if (!isCap)
             {
                 OriginalTriangleCount++;
@@ -8108,13 +8178,25 @@ public sealed class MeshPlaneSplitter
             float totalArea = 0f;
             for (int subMeshIndex = 0; subMeshIndex < trianglesBySubMesh.Count; subMeshIndex++)
             {
-                List<int> indices = trianglesBySubMesh[subMeshIndex];
-                for (int index = 0; index < indices.Count; index += 3)
+                if (cacheTriangleAreas)
                 {
-                    Vector3 a = vertices[indices[index]];
-                    Vector3 b = vertices[indices[index + 1]];
-                    Vector3 c = vertices[indices[index + 2]];
-                    totalArea += Vector3.Cross(b - a, c - a).magnitude * 0.5f;
+                    List<float> doubleAreas = triangleDoubleAreasBySubMesh[subMeshIndex];
+                    for (int index = 0; index < doubleAreas.Count; index++)
+                    {
+                        totalArea += doubleAreas[index] * 0.5f;
+                    }
+                }
+                else
+                {
+                    // 通常分割やキャッシュを使わない呼出元の結果は従来どおり計算する。
+                    List<int> indices = trianglesBySubMesh[subMeshIndex];
+                    for (int index = 0; index < indices.Count; index += 3)
+                    {
+                        Vector3 a = vertices[indices[index]];
+                        Vector3 b = vertices[indices[index + 1]];
+                        Vector3 c = vertices[indices[index + 2]];
+                        totalArea += Vector3.Cross(b - a, c - a).magnitude * 0.5f;
+                    }
                 }
             }
             return totalArea;

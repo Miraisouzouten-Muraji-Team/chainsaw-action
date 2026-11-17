@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Threading;
@@ -51,6 +51,11 @@ public sealed class ChainsawMeshCutProcessor
     private static readonly Stack<List<List<int>>> sourceTrianglesBySubMeshListPool =
         new Stack<List<List<int>>>();
 
+    // 採用したPlaneでは全Triangleの分類結果を書き終えている。
+    // 途中で棄却した候補の残存値を参照しないため、Rent配列の初期化は不要。
+    private static readonly Stack<List<byte[]>> triangleClassificationListPool =
+        new Stack<List<byte[]>>();
+
     // 通常攻撃のMeshFilter.sharedMesh専用。Source Mesh自体をKeyにすることで、
     // 同一sharedMeshを使うEnemy間でPositionベースConnectivity結果を共有する。
     // SkinnedMeshRendererのBakeMeshは姿勢ごとに頂点位置が変わるため、このCacheへ入れない。
@@ -100,6 +105,11 @@ public sealed class ChainsawMeshCutProcessor
 
         EnsurePooledListCount(
             sourceTrianglesBySubMeshListPool,
+            1,
+            SOURCE_MESH_SUBMESH_LIST_WARMUP_CAPACITY);
+
+        EnsurePooledListCount(
+            triangleClassificationListPool,
             1,
             SOURCE_MESH_SUBMESH_LIST_WARMUP_CAPACITY);
     }
@@ -161,6 +171,8 @@ public sealed class ChainsawMeshCutProcessor
                 sourceMesh.vertexCount);
 
         List<List<int>> sourceTrianglesBySubMesh = null;
+        List<byte[]> triangleClassificationsBySubMesh = null;
+        float[] sourceVertexPlaneDistances = null;
 
         try
         {
@@ -184,12 +196,12 @@ public sealed class ChainsawMeshCutProcessor
                 return false;
             }
 
-            List<byte[]> triangleClassificationsBySubMesh =
-                CreateTriangleClassificationBuffers(
-                    sourceTrianglesBySubMesh);
+            triangleClassificationsBySubMesh =
+                AcquireTriangleClassificationBuffers(sourceTrianglesBySubMesh);
 
-            var sourceVertexPlaneDistances =
-                new float[sourceVertices.Count];
+            // ArrayPoolは要求長以上の配列を返すため、有効範囲は頂点数までとする。
+            sourceVertexPlaneDistances =
+                ArrayPool<float>.Shared.Rent(sourceVertices.Count);
 
             float geometryEpsilon =
                 MeshPlaneSplitter.CalculateGeometryEpsilon(sourceMesh.bounds);
@@ -335,12 +347,14 @@ public sealed class ChainsawMeshCutProcessor
         }
         finally
         {
-            ReleaseSourceTrianglesBySubMeshBuffer(
-                sourceTrianglesBySubMesh);
+            if (sourceVertexPlaneDistances != null)
+            {
+                ArrayPool<float>.Shared.Return(sourceVertexPlaneDistances, false);
+            }
 
-            ReleaseReusableList(
-                sourceVertexListPool,
-                sourceVertices);
+            ReleaseTriangleClassificationBuffers(triangleClassificationsBySubMesh);
+            ReleaseSourceTrianglesBySubMeshBuffer(sourceTrianglesBySubMesh);
+            ReleaseReusableList(sourceVertexListPool, sourceVertices);
         }
         }
     }
@@ -605,22 +619,46 @@ public sealed class ChainsawMeshCutProcessor
         return true;
     }
 
-    private static List<byte[]> CreateTriangleClassificationBuffers(
+    private static List<byte[]> AcquireTriangleClassificationBuffers(
         IReadOnlyList<List<int>> sourceTrianglesBySubMesh)
     {
-        var result =
-            new List<byte[]>(sourceTrianglesBySubMesh.Count);
+        List<byte[]> buffers = AcquireReusableList(
+            triangleClassificationListPool,
+            sourceTrianglesBySubMesh.Count);
 
-        for (int subMeshIndex = 0;
-             subMeshIndex < sourceTrianglesBySubMesh.Count;
-             subMeshIndex++)
+        try
         {
-            result.Add(
-                new byte[
-                    sourceTrianglesBySubMesh[subMeshIndex].Count / 3]);
+            for (int subMeshIndex = 0;
+                 subMeshIndex < sourceTrianglesBySubMesh.Count;
+                 subMeshIndex++)
+            {
+                int triangleCount =
+                    sourceTrianglesBySubMesh[subMeshIndex].Count / 3;
+                buffers.Add(ArrayPool<byte>.Shared.Rent(triangleCount));
+            }
+
+            return buffers;
+        }
+        catch
+        {
+            ReleaseTriangleClassificationBuffers(buffers);
+            throw;
+        }
+    }
+
+    private static void ReleaseTriangleClassificationBuffers(List<byte[]> buffers)
+    {
+        if (buffers == null)
+        {
+            return;
         }
 
-        return result;
+        foreach (byte[] buffer in buffers)
+        {
+            ArrayPool<byte>.Shared.Return(buffer, false);
+        }
+
+        ReleaseReusableList(triangleClassificationListPool, buffers);
     }
 
 
@@ -1106,7 +1144,7 @@ public sealed class ChainsawMeshCutProcessor
             0;
 
         if (sourceVertexPlaneDistances == null ||
-            sourceVertexPlaneDistances.Length != sourceVertices.Count ||
+            sourceVertexPlaneDistances.Length < sourceVertices.Count ||
             sourceVertexPlaneDistanceGenerations == null ||
             sourceVertexPlaneDistanceGenerations.Length < sourceVertices.Count ||
             triangleClassificationsBySubMesh == null ||
@@ -1151,7 +1189,7 @@ public sealed class ChainsawMeshCutProcessor
                 triangleClassificationsBySubMesh[subMeshIndex];
 
             if (triangleClassifications == null ||
-                triangleClassifications.Length !=
+                triangleClassifications.Length <
                     triangles.Count / 3)
             {
                 failureReason =

@@ -329,6 +329,8 @@ public sealed class MeshTargetCountSplitter
         // 入力Meshから取得した頂点・Index、または直前の分割結果をそのまま参照。
         IReadOnlyList<Vector3> vertices = piece.Vertices;
         IReadOnlyList<List<int>> trianglesBySubMesh = piece.TrianglesBySubMesh;
+        IReadOnlyList<List<float>> doubleAreasBySubMesh =
+            piece.TriangleDoubleAreasBySubMesh;
         float totalWeight = 0f;
 
         for (int subMeshIndex = 0;
@@ -336,12 +338,13 @@ public sealed class MeshTargetCountSplitter
              subMeshIndex++)
         {
             IReadOnlyList<int> indices = trianglesBySubMesh[subMeshIndex];
+            IReadOnlyList<float> doubleAreas = doubleAreasBySubMesh[subMeshIndex];
             for (int index = 0; index < indices.Count; index += 3)
             {
                 Vector3 a = vertices[indices[index]];
                 Vector3 b = vertices[indices[index + 1]];
                 Vector3 c = vertices[indices[index + 2]];
-                float vertexWeight = Vector3.Cross(b - a, c - a).magnitude / 6f;
+                float vertexWeight = doubleAreas[index / 3] / 6f;
                 if (vertexWeight <= 0f)
                 {
                     continue;

@@ -21,6 +21,13 @@ public sealed class MeshTargetCountSplitter
 
 
 
+    private static readonly ProfilerMarker splitPieceProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.Digging.TargetCount.TrySplitPiece");
+    private static readonly ProfilerMarker chooseLargestPieceProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.Digging.TargetCount.ChooseLargestPiece");
+    private static readonly ProfilerMarker balancedPlaneProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.Digging.TargetCount.CalculateBalancedPlane");
+
     private const int MIN_TARGET_PIECE_COUNT = 2;
     private const int SPLIT_POSITION_BIN_COUNT = 24;
     private const float MIN_SPLIT_POSITION_FRACTION = 0.15f;
@@ -209,6 +216,7 @@ public sealed class MeshTargetCountSplitter
         out float secondSurfaceArea,
         out string failureReason)
     {
+        using var trySplitPieceProfileScope = splitPieceProfilerMarker.Auto();
         firstPiece = null;
         secondPiece = null;
         firstSurfaceArea = 0f;
@@ -269,6 +277,7 @@ public sealed class MeshTargetCountSplitter
         IReadOnlyList<float> surfaceAreas,
         HashSet<WorkingPiece> unsplittablePieces)
     {
+        using var findLargestSplittablePieceIndexProfileScope = chooseLargestPieceProfilerMarker.Auto();
         int largestPieceIndex = -1;
         float largestSurfaceArea = float.NegativeInfinity;
         float largestBoundsMagnitude = float.NegativeInfinity;
@@ -317,6 +326,7 @@ public sealed class MeshTargetCountSplitter
 
     private Plane CreateBalancedSplitPlane(WorkingPiece piece, int axisIndex)
     {
+        using var createBalancedSplitPlaneProfileScope = balancedPlaneProfilerMarker.Auto();
         Bounds bounds = piece.BuilderBounds;
         float minPosition = GetAxisValue(bounds.min, axisIndex);
         float extent = GetAxisValue(bounds.size, axisIndex);

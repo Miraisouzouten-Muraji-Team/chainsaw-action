@@ -24,6 +24,13 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
 
 
 
+    private static readonly ProfilerMarker acquireSourceMeshProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.Digging.Effect.GetSourceMesh");
+    private static readonly ProfilerMarker createPieceObjectsProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.Digging.Effect.CreatePieceObjects");
+    private static readonly ProfilerMarker configurePieceProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.Digging.Effect.ConfigurePiece");
+
     private const int MIN_TARGET_PIECE_COUNT = 2;
 
     [Header("分割対象")]
@@ -465,6 +472,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         out bool destroySourceMeshAfterSplit,
         out string failureReason)
     {
+        using var tryGetSplitSourceProfileScope = acquireSourceMeshProfilerMarker.Auto();
         sourceMesh = null;
         sourceRenderer = null;
         destroySourceMeshAfterSplit = false;
@@ -580,6 +588,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         IReadOnlyList<Material> sourceMaterials,
         out string failureReason)
     {
+        using var tryCreatePieceObjectsProfileScope = createPieceObjectsProfilerMarker.Auto();
         if (splitPieceMeshes == null ||
             splitPieceMeshes.Count == 0)
         {
@@ -777,6 +786,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         Renderer sourceRenderer,
         Transform playerRoot)
     {
+        using var configurePieceObjectProfileScope = configurePieceProfilerMarker.Auto();
         pieceObject.name =
             $"{sourceRenderer.name}_DiggingPiece_{pieceIndex:D2}";
 

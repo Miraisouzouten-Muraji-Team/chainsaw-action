@@ -493,6 +493,7 @@ GameObject:
   - component: {fileID: 4650627760080565291}
   - component: {fileID: 4746507366798335141}
   - component: {fileID: 4834754917676779231}
+  - component: {fileID: 5783662436067355301}
   m_Layer: 0
   m_Name: Mid_Collider
   m_TagString: Player
@@ -532,7 +533,7 @@ BoxCollider:
   m_LayerOverridePriority: 0
   m_IsTrigger: 0
   m_ProvidesContacts: 0
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 3
   m_Size: {x: 0.006625871, y: 0.023006644, z: 0.007033432}
   m_Center: {x: 0.00030876612, y: 0.0011416419, z: 0.00034260473}
@@ -608,6 +609,29 @@ MonoBehaviour:
   flashRenderers: []
   flashMaterial: {fileID: 2100000, guid: e7276798a66027b429efebfb3e455121, type: 2}
   flashInterval: 0.08
+--- !u!136 &5783662436067355301
+CapsuleCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4008145242277067646}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 2
+  m_Radius: 0.0030478002
+  m_Height: 0.024759492
+  m_Direction: 1
+  m_Center: {x: -0.00038057013, y: 0.0021032903, z: 1.344042e-13}
 --- !u!1 &5408783177094120700
 GameObject:
   m_ObjectHideFlags: 0

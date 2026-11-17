@@ -355,13 +355,30 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
         float bestScore = float.PositiveInfinity;
 
-        CollectContacts(
-            upperSensor,
-            preferred,
-            currentSurface,
-            ref contact,
-            ref bestScore
-        );
+        // 天井継続中は有効な支持面を候補へ登録し、その後に他の種別と比較する。
+        // 選択後に天井で上書きすると、優先度の高い敵の候補が失われるため先に登録する。
+        if (currentSurface == ChainsawSurface.Ceiling)
+        {
+            if (TryGetCeilingBodySupport(ceilingMoveSpeed, ceilingDeltaTime,
+                ceilingPreviousNormal, out SensorChainsawContact support))
+            {
+                Consider(support.Collider, support.Enemy, support.Surface,
+                    support.Point, support.Normal, preferred, currentSurface,
+                    ref contact, ref bestScore);
+                // 天井追従で使う本体の目標位置も維持する。
+                contact = support;
+            }
+        }
+        else
+        {
+            CollectContacts(
+                upperSensor,
+                preferred,
+                currentSurface,
+                ref contact,
+                ref bestScore
+            );
+        }
 
         // 中央センサーは壁用Triggerの継続確認にも使用する。
         // 敵への新規食い込みはCollectContacts内で未食い込み時だけに制限する。
@@ -387,18 +404,6 @@ public class SensorChainsawContactDetector : MonoBehaviour
             ref contact,
             ref bestScore
         );
-
-        // 開始時はUpper、継続中は本体の次の移動位置を支える天井で判定する。
-        // 前方の遠い面や、後ろに残った斜面の法線だけで移動方向を決めない。
-        if (currentSurface == ChainsawSurface.Ceiling)
-        {
-            if (contact.Surface != ChainsawSurface.Wall &&
-                TryGetCeilingBodySupport(ceilingMoveSpeed, ceilingDeltaTime,
-                ceilingPreviousNormal, out SensorChainsawContact support))
-                contact = support;
-            else if (contact.Surface == ChainsawSurface.Ceiling)
-                contact = default;
-        }
 
         // 床候補は通常移動と同じ支持面へそろえる。
         // 敵・壁・天井の優先順位は既存どおり維持する。
@@ -1176,6 +1181,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
         return false;
     }
 
+    // 種別の優先順位を最初に比較し、同じ種別の中だけで盾・継続対象・距離を比較する。
     private void Consider(
         Collider target,
         MonoBehaviour enemy,
@@ -1187,6 +1193,21 @@ public class SensorChainsawContactDetector : MonoBehaviour
         ref SensorChainsawContact contact,
         ref float bestScore)
     {
+        if (contact.Collider != null)
+        {
+            int candidatePriority = GetSurfacePriority(surface);
+            int selectedPriority = GetSurfacePriority(contact.Surface);
+            if (candidatePriority > selectedPriority)
+            {
+                return;
+            }
+
+            if (candidatePriority < selectedPriority)
+            {
+                bestScore = float.PositiveInfinity;
+            }
+        }
+
         float distance = Vector3.Distance(
             ownerRoot.position,
             point
@@ -1194,7 +1215,8 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
         float score = distance / (1f + distance);
 
-        // 同時に盾と胴体へ届いても、明示した壁用Triggerを優先する。
+        // 同じ壁候補の中では、明示した壁用Triggerの優先を維持する。
+        // 種別比較を済ませているため、盾が敵や天井より優先されることはない。
         ChainsawContactZone zone = ChainsawContactZone.GetZone(target);
         if (surface == ChainsawSurface.Wall && zone != null &&
             zone.TryGetWallNormal(target, out _))
@@ -1242,6 +1264,19 @@ public class SensorChainsawContactDetector : MonoBehaviour
             Point = point,
             Normal = normal
         };
+    }
+
+    // 数字が小さい種別ほど優先する。候補との距離や現在の食い込み先には依存しない。
+    private static int GetSurfacePriority(ChainsawSurface surface)
+    {
+        switch (surface)
+        {
+            case ChainsawSurface.Enemy: return 0;
+            case ChainsawSurface.Ceiling: return 1;
+            case ChainsawSurface.Wall: return 2;
+            case ChainsawSurface.Floor: return 3;
+            default: return 4;
+        }
     }
 
     private bool IsOwner(Collider target)
@@ -1300,3 +1335,4 @@ public class SensorChainsawContactDetector : MonoBehaviour
         Gizmos.color = previousColor;
     }
 }
+

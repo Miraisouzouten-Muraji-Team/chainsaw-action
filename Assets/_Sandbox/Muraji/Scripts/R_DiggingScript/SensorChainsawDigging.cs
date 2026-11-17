@@ -95,11 +95,10 @@ public class SensorChainsawDigging : MonoBehaviour
         DiggingParticleFrameChanged?.Invoke();
     }
 
-    // 通常・弱攻撃の敵食い込みで、倍率計算、アクセル消費、命中演出を共用する。
+    // 通常・弱攻撃の敵食い込みで、固定ダメージ、アクセル消費、命中演出を共用する。
     private bool TrySendEnemyDiggingDamage()
     {
         AttackData data = IsWeakEnemyAttack ? activeWeakAttackDiggingData : diggingAttackData;
-        float damageMultiplier = GetAcceleratorDamageMultiplier(data);
         float consumeAmount = HasBonus ? diggingParameter.bonusEnemyConsumeAmount
             : diggingParameter.enemyConsumeAmount;
         if (!accelerator.TryConsume(consumeAmount))
@@ -108,30 +107,16 @@ public class SensorChainsawDigging : MonoBehaviour
             timer = 0f;
             return false;
         }
-        // 間隔・倍率・消費は共用し、弱攻撃中だけ専用SOへ切り替える。
+        // 攻撃間隔と消費は維持し、ダメージは選択中のSOに設定した値をそのまま使う。
         return chainsawAttack.HitDigging(IsWeakEnemyAttack ? weakTarget : contact.Enemy, data,
-            damageMultiplier * (HasBonus ? diggingParameter.bonusDamageMultiplier : 1f),
+            1f,
             contact.Point);
     }
 
-    // 攻撃データの設定に従い、アクセル値に応じた食い込みダメージ倍率を取得する。
-    private float GetAcceleratorDamageMultiplier(AttackData data)
-    {
-        if (data == null || !data.useAcceleratorDamageMultiplier)
-            return 1f;
-
-        float speedRatio = accelerator != null ? Mathf.Clamp01(accelerator.SpeedRatio) : 0f;
-        return Mathf.Lerp(diggingParameter.minDamageMultiplier,
-            diggingParameter.maxDamageMultiplier, speedRatio);
-    }
-
-    // 移動中の接触攻撃は、連動が有効な場合だけ接触倍率とアクセル倍率を適用する。
+    // 移動中の接触攻撃は、アクセル値とボーナスに関係なく設定済みの固定倍率を返す。
     private float GetMovementContactDamageMultiplier()
     {
-        if (diggingAttackData == null || !diggingAttackData.useAcceleratorDamageMultiplier)
-            return 1f;
-
-        return movementContactDamageMultiplier * GetAcceleratorDamageMultiplier(diggingAttackData);
+        return Mathf.Clamp01(movementContactDamageMultiplier);
     }
 
     // 継続中の弱攻撃は専用Receiver、通常食い込みは既存の敵HPで有効性を確認する。
@@ -268,7 +253,7 @@ public class SensorChainsawDigging : MonoBehaviour
                     : 0f;
 
     [Header("移動食い込み中の接触攻撃")]
-    [Tooltip("床・壁・天井への食い込み移動で敵に触れたときの、食い込み攻撃力に対する倍率。0.3なら30%。")]
+    [Tooltip("床・壁・天井への食い込み移動で敵に触れたときの固定ダメージ倍率です。0.3なら食い込み攻撃力の30%。アクセル値とボーナスでは変化しません。")]
     [SerializeField, Range(0f, 1f)] private float movementContactDamageMultiplier = 0.3f;
 
     // 物理衝突を無視するボーナス中も検出できるよう、Overlapで接触を調べる。

@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-// 通常の実行順（0）の敵FixedUpdateより後で、ノックバック速度を反映する。
+// 敵の通常更新後に、弱攻撃の進行と接触無視の残り時間を更新する。
 [DefaultExecutionOrder(10000)]
 public class ChainsawAttack : MonoBehaviour
 {
@@ -44,8 +44,8 @@ public class ChainsawAttack : MonoBehaviour
     [Header("通常攻撃の判定。食い込み検出とは別")]
     [SerializeField] private Collider hitBox;
 
-    [Header("通常攻撃のノックバック")]
-    [Tooltip("命中後、敵の通常移動より攻撃ベクトルを優先する秒数です。終了時にX/Y速度を一度0にして残留速度を止めます。時間は物理更新単位で扱い、ヒットストップ中は進みません。重力が有効な敵には通常の重力加速を加えます。")]
+    [Header("振り抜き後のプレイヤーとの接触無視")]
+    [Tooltip("振り抜き後に敵がプレイヤーを押さないよう、両者の接触を一時的に無視する秒数です。敵の速度・位置・地面衝突は敵側で制御します。")]
     [SerializeField, Min(0.01f)]
     private float slashKnockbackPriorityDuration = 0.15f;
 
@@ -132,32 +132,16 @@ public class ChainsawAttack : MonoBehaviour
             RestoreKnockbackCollisionPair(index);
     }
 
-    // 敵ごとの優先速度と残り時間を保持する。再命中時は同じRigidbodyの記録を更新する。
-    private sealed class SlashKnockbackState
-    {
-        public EnemyAttackHitReceiver Target;
-        public EnemyHealth Health;
-        public Rigidbody Body;
-        public Vector2 Velocity;
-        public float RemainingTime;
-    }
-
-    // 1～3撃目で敵を固定し、4撃目または攻撃終了時に元の制約へ戻す。
+    // 1～3撃目の見た目の震えだけを管理する。敵の物理制御は変更しない。
     private sealed class HeldEnemyState
     {
         public EnemyAttackHitReceiver Target;
         public EnemyHealth Health;
         public Rigidbody Body;
-        public RigidbodyConstraints OriginalConstraints;
-        public Vector3 Position;
-        public Quaternion Rotation;
         public Vector3 ShakeDirection;
         public float ShakeTime;
         public readonly List<EnemyShakeVisual> ShakeVisuals = new List<EnemyShakeVisual>();
     }
-
-    private readonly List<SlashKnockbackState> activeSlashKnockbacks =
-        new List<SlashKnockbackState>();
 
     private readonly List<HeldEnemyState> heldEnemies =
         new List<HeldEnemyState>();
@@ -202,6 +186,23 @@ public class ChainsawAttack : MonoBehaviour
     private readonly HashSet<MonoBehaviour> hitEnemies =
         new HashSet<MonoBehaviour>();
 
+    [Header("アクセルによるダメージボーナス")]
+    [Tooltip("プレイヤーのアクセル管理です。未指定なら、この武器の最上位の親とその子から取得します。")]
+    [SerializeField] private ChainsawAccelerator damageBonusAccelerator;
+
+    // AttackDataのチェック・発動基準・上乗せ割合から、今回のダメージ倍率を求める。
+    private float GetAttackDamageMultiplier(AttackData data)
+    {
+        if (data == null || !data.useAcceleratorDamageMultiplier || damageBonusAccelerator == null)
+            return 1f;
+
+        float ratio = Mathf.Clamp01(damageBonusAccelerator.SpeedRatio);
+        float threshold = Mathf.Clamp01(data.acceleratorDamageBonusThresholdPercent / 100f);
+        if (ratio < threshold) return 1f;
+        return 1f + Mathf.Max(0f, data.acceleratorDamageBonusPercent) / 100f;
+    }
+
+    // 武器の判定と演出の参照、およびダメージボーナス用アクセル参照を初期化する。
     private void Awake()
     {
         if (hitBox == null)
@@ -216,6 +217,8 @@ public class ChainsawAttack : MonoBehaviour
         }
 
         hitBox.enabled = false;
+        if (damageBonusAccelerator == null)
+            damageBonusAccelerator = transform.root.GetComponentInChildren<ChainsawAccelerator>(true);
         if (damagePopupPresenter == null)
             damagePopupPresenter = FindAnyObjectByType<DamagePopupPresenter>();
 
@@ -365,7 +368,9 @@ public class ChainsawAttack : MonoBehaviour
 
         // 敵側の既存APIは倍率を受け取らないため、送信するSOのランタイムコピーに反映。
         // 共有AttackDataは絶対に変更しない。
-        int scaledDamage = Mathf.Max(0, Mathf.RoundToInt(data.damage * Mathf.Max(0f, multiplier)));
+        // 接触などの固定倍率に、このAttackDataで許可したボーナスだけを一度加える。
+        int scaledDamage = Mathf.Max(0, Mathf.RoundToInt(
+            data.damage * Mathf.Max(0f, multiplier) * GetAttackDamageMultiplier(data)));
         if (scaledDamage <= 0)
         {
             return false;
@@ -417,7 +422,9 @@ public class ChainsawAttack : MonoBehaviour
 
         // 敵側の既存APIは倍率を受け取らないため、送信するSOのランタイムコピーに反映。
         // 共有AttackDataは絶対に変更しない。
-        int scaledDamage = Mathf.Max(0, Mathf.RoundToInt(data.damage * Mathf.Max(0f, multiplier)));
+        // 接触などの固定倍率に、このAttackDataで許可したボーナスだけを一度加える。
+        int scaledDamage = Mathf.Max(0, Mathf.RoundToInt(
+            data.damage * Mathf.Max(0f, multiplier) * GetAttackDamageMultiplier(data)));
         if (scaledDamage <= 0)
         {
             return false;
@@ -545,7 +552,11 @@ public class ChainsawAttack : MonoBehaviour
         // 受信側の処理で攻撃が終了しても、命中時のSOと左右判定を維持する。
         bool isFinishingHit = slashHitIndex >= SLASH_HIT_COUNT;
         // OnWeakAttackSwingで開いたこの区間に、開始時の振り抜き専用SOのベクトルを適用する。
-        AttackData attackData = currentData;
+        AttackData sourceData = currentData;
+        int attackDamage = Mathf.Max(0, Mathf.RoundToInt(
+            sourceData.damage * GetAttackDamageMultiplier(sourceData)));
+        // 共有SOを変更せず、今回の命中に使うダメージだけを実行時コピーへ反映する。
+        AttackData attackData = GetScaledDiggingData(sourceData, attackDamage);
         // 専用Receiverには振り抜きダメージだけを送り、物理制御はボスに任せる。
         if (regular == null)
         {
@@ -575,15 +586,7 @@ public class ChainsawAttack : MonoBehaviour
             return;
         }
 
-        // 通常攻撃だけに適用する。食い込みの既存の押し出しとは重複させない。
-        if (isFinishingHit)
-        {
-            ReleaseHeldEnemy(regular);
-            if (hasKnockback)
-            {
-                ApplySlashKnockback(regular, other, knockbackVector);
-            }
-        }
+        // ベクトルは既存の命中情報で敵側へ送信済み。速度をプレイヤー側から再設定しない。
 
         PlayHitEffects(
             point,
@@ -609,7 +612,7 @@ public class ChainsawAttack : MonoBehaviour
         if (!target.TryGetPlayerTransform(out Transform playerTransform))
         {
             WarnKnockbackConfiguration(
-                "Player本体を取得できないためノックバックを適用できません。" +
+                "Player本体を取得できないため、震え方向と接触無視の左右判定を取得できません。" +
                 "Player本体にPlayerタグを設定してください。",
                 target);
             return false;
@@ -626,136 +629,12 @@ public class ChainsawAttack : MonoBehaviour
         return true;
     }
 
-    // 生存している敵の初速を設定し、通常移動より優先する速度と時間を登録する。
-    private void ApplySlashKnockback(
-        EnemyAttackHitReceiver target,
-        Collider targetCollider,
-        Vector2 knockbackVector)
-    {
-        if (target == null || !target.isActiveAndEnabled)
-        {
-            return;
-        }
-
-        EnemyHealth enemyHealth = target.GetComponent<EnemyHealth>();
-        if (enemyHealth == null || enemyHealth.IsDead)
-        {
-            // 死亡時の移動・切断演出には干渉しない。
-            return;
-        }
-
-        // 命中したColliderを実際に動かすRigidbodyを優先する。
-        Rigidbody enemyRigidbody = targetCollider != null
-            ? targetCollider.attachedRigidbody
-            : null;
-        if (enemyRigidbody == null)
-        {
-            enemyRigidbody = target.GetComponentInParent<Rigidbody>();
-        }
-
-        if (enemyRigidbody == null || enemyRigidbody.isKinematic)
-        {
-            WarnKnockbackConfiguration(
-                "ノックバックには敵のColliderを動かすRigidbodyが必要です。" +
-                "Rigidbodyの有無とIs Kinematicがオフかを確認してください。" +
-                "ダメージ処理は継続します。",
-                target);
-            return;
-        }
-
-        if (!enemyRigidbody.gameObject.activeInHierarchy)
-        {
-            return;
-        }
-
-        // 毎回SOの初速でX/Yを置き換え、連続命中による速度の積み上がりを防ぐ。
-        // XY平面外のZ速度、重力、質量、位置固定などの設定は変更しない。
-        Vector3 velocity = enemyRigidbody.linearVelocity;
-        velocity.x = knockbackVector.x;
-        velocity.y = knockbackVector.y;
-        enemyRigidbody.linearVelocity = velocity;
-
-        // 別の段で再命中したときは、最新のベクトルと優先時間で置き換える。
-        SlashKnockbackState knockbackState = null;
-        for (int index = 0; index < activeSlashKnockbacks.Count; index++)
-        {
-            if (activeSlashKnockbacks[index].Body == enemyRigidbody)
-            {
-                knockbackState = activeSlashKnockbacks[index];
-                break;
-            }
-        }
-
-        if (knockbackState == null)
-        {
-            knockbackState = new SlashKnockbackState();
-            activeSlashKnockbacks.Add(knockbackState);
-        }
-
-        knockbackState.Target = target;
-        knockbackState.Health = enemyHealth;
-        knockbackState.Body = enemyRigidbody;
-        knockbackState.Velocity = knockbackVector;
-        knockbackState.RemainingTime = Mathf.Max(
-            Time.fixedDeltaTime,
-            slashKnockbackPriorityDuration);
-    }
-
-    // 敵の通常の物理更新後にノックバック速度を反映し、優先時間の終了で制御を返す。
+    // 弱攻撃の進行・震え対象の有効性・一時的な接触無視を更新する。
     private void FixedUpdate()
     {
         UpdateKnockbackCollisionPairs();
         TickWeakDigHold();
         UpdateHeldEnemies();
-        float deltaTime = Time.fixedDeltaTime;
-        if (deltaTime <= 0f)
-        {
-            return;
-        }
-
-        for (int index = activeSlashKnockbacks.Count - 1; index >= 0; index--)
-        {
-            SlashKnockbackState knockbackState = activeSlashKnockbacks[index];
-            Rigidbody enemyRigidbody = knockbackState.Body;
-
-            if (knockbackState.Target == null ||
-                !knockbackState.Target.isActiveAndEnabled ||
-                knockbackState.Health == null ||
-                knockbackState.Health.IsDead ||
-                enemyRigidbody == null ||
-                !enemyRigidbody.gameObject.activeInHierarchy ||
-                enemyRigidbody.isKinematic)
-            {
-                activeSlashKnockbacks.RemoveAt(index);
-                continue;
-            }
-
-            if (knockbackState.RemainingTime <= 0f)
-            {
-                StopSlashKnockback(knockbackState);
-                activeSlashKnockbacks.RemoveAt(index);
-                continue;
-            }
-
-            // 敵側の通常移動による速度の上書きを、この物理ステップで置き換える。
-            // Z速度は引き継ぎ、SOのベクトルは変更しない。
-            Vector3 velocity = enemyRigidbody.linearVelocity;
-            velocity.x = knockbackState.Velocity.x;
-            velocity.y = knockbackState.Velocity.y;
-            enemyRigidbody.linearVelocity = velocity;
-
-            // この後の物理演算が加える重力を、次のステップ用の速度にも引き継ぐ。
-            // 初速のYを毎回再設定して、空中で浮き続けることを防ぐ。
-            if (enemyRigidbody.useGravity)
-            {
-                Vector3 gravity = Physics.gravity;
-                knockbackState.Velocity += new Vector2(gravity.x, gravity.y) * deltaTime;
-            }
-
-            knockbackState.RemainingTime -= deltaTime;
-            // 今回設定した速度は、この後の物理演算で使用する。
-            // 次の物理更新で残り時間を確認して停止するため、最終ステップも移動できる。
-        }
     }
 
     // 接続先の消失やアニメーション中断を監視する。ダメージ間隔は通常食い込み側で管理する。
@@ -780,7 +659,7 @@ public class ChainsawAttack : MonoBehaviour
         return true;
     }
 
-    // 食い込みの停止だけを解除し、振り抜き判定が来るまで敵の固定を維持する。
+    // プレイヤーの食い込み停止姿勢を解除し、次の判定を振り抜きとして扱う。
     private void FinishWeakDigHold()
     {
         if (weakDigHolding) DisableHitBox();
@@ -801,7 +680,7 @@ public class ChainsawAttack : MonoBehaviour
         ReleaseAllHeldEnemies();
     }
 
-    // 最初の3撃で命中した敵を、その時点の位置と制約で固定する。
+    // 最初の3撃で命中した敵を、物理状態を変更せず震えの対象に登録する。
     private void HoldEnemy(EnemyAttackHitReceiver target, Collider targetCollider)
     {
         if (target == null || !target.isActiveAndEnabled)
@@ -834,28 +713,13 @@ public class ChainsawAttack : MonoBehaviour
             }
         }
 
-        // 管理中のノックバックがあれば解除し、敵の通常移動を凍結する。
-        for (int index = activeSlashKnockbacks.Count - 1; index >= 0; index--)
-        {
-            if (activeSlashKnockbacks[index].Body == body)
-            {
-                activeSlashKnockbacks.RemoveAt(index);
-            }
-        }
-
         HeldEnemyState state = new HeldEnemyState
         {
             Target = target,
             Health = health,
-            Body = body,
-            OriginalConstraints = body.constraints,
-            Position = body.position,
-            Rotation = body.rotation
+            Body = body
         };
 
-        body.linearVelocity = Vector3.zero;
-        body.angularVelocity = Vector3.zero;
-        body.constraints = RigidbodyConstraints.FreezeAll;
         if (TryGetSlashKnockbackVector(target, currentData, out Vector2 vector))
             state.ShakeDirection = new Vector3(vector.x, vector.y, 0f).normalized;
         CollectEnemyShakeVisuals(state);
@@ -934,7 +798,7 @@ public class ChainsawAttack : MonoBehaviour
         }
     }
 
-    // 固定中の敵モデルに加えた震えを解除する。
+    // 食い込み中の敵モデルに加えた震えを解除する。
     private void RestoreEnemyShake(HeldEnemyState state)
     {
         foreach (EnemyShakeVisual visual in state.ShakeVisuals) RestoreEnemyShakeVisual(visual);
@@ -950,7 +814,7 @@ public class ChainsawAttack : MonoBehaviour
         visual.LastOffset = Vector3.zero;
     }
 
-    // 固定中の敵が死亡・無効化した場合は安全に解除し、通常は同じ位置へ固定し続ける。
+    // 震え対象の敵が死亡・無効化した場合に、表示補正と記録だけを解除する。
     private void UpdateHeldEnemies()
     {
         for (int index = heldEnemies.Count - 1; index >= 0; index--)
@@ -964,14 +828,10 @@ public class ChainsawAttack : MonoBehaviour
                 continue;
             }
 
-            state.Body.position = state.Position;
-            state.Body.rotation = state.Rotation;
-            state.Body.linearVelocity = Vector3.zero;
-            state.Body.angularVelocity = Vector3.zero;
         }
     }
 
-    // 4撃目が当たった敵だけ固定を解除して、ほかの敵の固定は攻撃終了まで維持する。
+    // 振り抜きが当たった敵の震えを終了する。
     private void ReleaseHeldEnemy(EnemyAttackHitReceiver target)
     {
         for (int index = heldEnemies.Count - 1; index >= 0; index--)
@@ -983,7 +843,7 @@ public class ChainsawAttack : MonoBehaviour
         }
     }
 
-    // 攻撃終了時に、固定中のすべての敵を元の制約へ戻す。
+    // 攻撃終了時に、すべての敵の震えを終了する。
     private void ReleaseAllHeldEnemies()
     {
         for (int index = heldEnemies.Count - 1; index >= 0; index--)
@@ -992,41 +852,13 @@ public class ChainsawAttack : MonoBehaviour
         }
     }
 
-    // Rigidbodyが残っている場合に、固定前の制約を復元して管理対象から外す。
+    // 見た目に加えた震えを戻し、敵の物理設定に触れず管理対象から外す。
     private void RestoreHeldEnemy(int index)
     {
         HeldEnemyState state = heldEnemies[index];
         RestoreEnemyShake(state);
-        if (state.Body != null)
-        {
-            state.Body.constraints = state.OriginalConstraints;
-        }
 
         heldEnemies.RemoveAt(index);
-    }
-
-    // 優先時間終了・武器無効化時に、生存中の敵のX/Y残留速度を一度だけ止める。
-    private void StopSlashKnockback(SlashKnockbackState knockbackState)
-    {
-        Rigidbody enemyRigidbody = knockbackState.Body;
-        if (knockbackState.Target == null ||
-            !knockbackState.Target.isActiveAndEnabled ||
-            knockbackState.Health == null ||
-            knockbackState.Health.IsDead ||
-            enemyRigidbody == null ||
-            enemyRigidbody.isKinematic ||
-            !enemyRigidbody.gameObject.activeInHierarchy)
-        {
-            // 死亡処理や無効化済みの敵の速度には干渉しない。
-            return;
-        }
-
-        // 通常移動が同じステップで設定したX/Y速度もここで一度止まる。
-        // 次の更新からは敵自身が通常移動を再開し、重力も通常どおり適用される。
-        Vector3 velocity = enemyRigidbody.linearVelocity;
-        velocity.x = 0f;
-        velocity.y = 0f;
-        enemyRigidbody.linearVelocity = velocity;
     }
 
     // ノックバックに必要な設定が不足している場合、このコンポーネントにつき一度だけ知らせる。
@@ -1160,16 +992,12 @@ public class ChainsawAttack : MonoBehaviour
             damagePopupPresenter.Show(point, actualDamage, attackData);
         return true;
     }
-    // 武器が無効になった場合は攻撃を終了し、管理中の敵の残留速度も停止する。
+    // 武器が無効になった場合は攻撃と震えを終了し、一時的な接触無視を解除する。
     private void OnDisable()
     {
         RestoreAllKnockbackCollisions();
         EndDigging();
         EndAttack();
-        for (int index = 0; index < activeSlashKnockbacks.Count; index++)
-        {
-            StopSlashKnockback(activeSlashKnockbacks[index]);
-        }
-        activeSlashKnockbacks.Clear();
+
     }
 }

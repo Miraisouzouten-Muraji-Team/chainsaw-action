@@ -3092,16 +3092,15 @@ public class SensorPlayerController : MonoBehaviour
             bool reverse = setting == groundAttackEffect || setting == groundSwingEffect;
             SetSlashProgress(slashRenderers, reverse ? 1f : 0f);
             attackTrails.Add((instance.transform, setting.SpawnPoint, offset, scale, slashRenderers, 0f, reverse));
-            // 空中攻撃は放出済みの斬撃も刃先に追従させ、地上攻撃は軌跡を振った場所に残す。
-            bool followAirSwing = setting == airAttackEffect || setting == airSwingEffect;
+            // 地上・空中とも放出済みの斬撃を放出口へ追従させ、高速移動中の置き去りを防ぐ。
             foreach (var particles in instance.GetComponentsInChildren<ParticleSystem>(true))
             {
+                // 自動再生で設定前に出た粒子を消し、座標空間を確定してから下の共通処理で再生する。
+                particles.Stop(false, ParticleSystemStopBehavior.StopEmittingAndClear);
                 var main = particles.main;
-                main.simulationSpace = followAirSwing
-                    ? ParticleSystemSimulationSpace.Local
-                    : ParticleSystemSimulationSpace.World;
+                main.simulationSpace = ParticleSystemSimulationSpace.Local;
                 var trails = particles.trails;
-                if (trails.enabled) trails.worldSpace = !followAirSwing;
+                if (trails.enabled) trails.worldSpace = false;
             }
             // カメラ向きの粒子は、攻撃開始時の向きに合わせてテクスチャも左右反転する。
             if (facingDirection < 0f)

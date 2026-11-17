@@ -739,6 +739,7 @@ MonoBehaviour:
   cameraShake: {fileID: 0}
   duration: 0.05
   hitStopSystem: {fileID: 2890008487338418416}
+  damageBonusAccelerator: {fileID: 0}
 --- !u!114 &2890008487338418416
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -829,7 +830,7 @@ Transform:
   m_GameObject: {fileID: 6525042271655962021}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 1.4, y: 0.992, z: 0}
+  m_LocalPosition: {x: 0.876, y: 0.992, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1120,6 +1121,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4cb39a7c3855298418d949a6fe31cc11, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimator
+  fallState: Base Layer.Landing
+  minimumFallDistance: 0.5
   attackHitBox: {fileID: 3797053096475727516}
   slash1State: Base Layer.Slash2
   airSlashState: Base Layer.Slash3
@@ -1132,7 +1135,7 @@ MonoBehaviour:
   wallDiggingState: 
   ceilingDiggingState: 
   enemyDiggingState: 
-  jumpState: 
+  jumpState: Base Layer.Jump
   doubleJumpState: Base Layer.Doublejump
   wallJumpState: Base Layer.Kickjump
 --- !u!114 &2369446601455359112

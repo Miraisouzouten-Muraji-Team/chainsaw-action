@@ -14,22 +14,22 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::StageRespawnData
   respawnPoints:
   - areaNumber: 1
-    position: {x: -0.11, y: 5.56, z: 0}
+    position: {x: -0.11, y: 0.7503967, z: 0}
     faceRight: 0
   - areaNumber: 2
-    position: {x: 53.03, y: 20.4, z: 0}
+    position: {x: 53.03, y: 15.590397, z: 0}
     faceRight: 0
   - areaNumber: 3
-    position: {x: 112, y: 21, z: 0}
+    position: {x: 112, y: 16.190397, z: 0}
     faceRight: 0
   - areaNumber: 4
-    position: {x: 168.5, y: 40.5, z: 0}
+    position: {x: 168.5, y: 35.690395, z: 0}
     faceRight: 0
   - areaNumber: 5
-    position: {x: 205, y: 40, z: 0}
+    position: {x: 205, y: 35.190395, z: 0}
     faceRight: 0
   - areaNumber: 6
-    position: {x: 260, y: 40, z: 0}
+    position: {x: 260, y: 35.190395, z: 0}
     faceRight: 0
   fallbackAreaNumber: 1
   deathMotionSeconds: 0.8

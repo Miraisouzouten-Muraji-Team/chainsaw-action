@@ -26,10 +26,10 @@ MonoBehaviour:
     position: {x: 206.67, y: 45.38, z: 0}
     faceRight: 0
   - areaNumber: 5
-    position: {x: 281.7, y: 45.87, z: 0}
+    position: {x: 292.52, y: 62.64, z: 0}
     faceRight: 0
   - areaNumber: 6
-    position: {x: 374.81, y: 67.06, z: 0}
+    position: {x: 393.38, y: 85.68, z: 0}
     faceRight: 0
   fallbackAreaNumber: 1
   deathMotionSeconds: 0.8

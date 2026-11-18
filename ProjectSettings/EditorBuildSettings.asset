@@ -32,6 +32,18 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/_Sandbox/Yonekura/Scenes/Stage1Area1.unity
     guid: d2d0ba0c3c3285a478d6c4f1094b2276
+  - enabled: 1
+    path: Assets/_Sandbox/Akane/RiftPrototypeA/Scenes/RiftA_StageSelect.unity
+    guid: ff5af4882a7224e44b64cd8b02427f30
+  - enabled: 1
+    path: Assets/_Sandbox/Akane/RiftPrototypeA/Scenes/RiftA_Stage1.unity
+    guid: f75105fa44bc4c74eb0ba1712b8028c9
+  - enabled: 1
+    path: Assets/_Sandbox/Akane/RiftPrototype/Scenes/RiftA_StageSelect.unity
+    guid: d9b5a2e6a36519e41b688e19035fa050
+  - enabled: 1
+    path: Assets/_Sandbox/Akane/RiftPrototype/Scenes/RiftA_Stage1.unity
+    guid: d8e728935d4025242a626e4553c01e85
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: e52471430125d4b46a32fe8525f6523e, type: 3}
   m_UseUCBPForAssetBundles: 0

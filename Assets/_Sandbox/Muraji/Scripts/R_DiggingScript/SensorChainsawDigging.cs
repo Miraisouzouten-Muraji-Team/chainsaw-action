@@ -474,13 +474,9 @@ public class SensorChainsawDigging : MonoBehaviour
         particleFrameSurface = ChainsawSurface.None;
         DiggingParticleFrameChanged?.Invoke();
         detector.SetFacingDirection(facingDirection);
-        // 天井専用センサーの接触を優先し、それ以外は既存の面選択を使用する。
-        bool hasContact = detector.TryGetCeilingContact(out SensorChainsawContact initialContact);
-        if (!hasContact)
-        {
-            hasContact = detector.TryGetContact(null, out initialContact,
-                ChainsawSurface.None, facingDirection);
-        }
+        // 全候補を同じ照会で比較し、敵・天井・壁・床の優先順位で開始対象を決める。
+        bool hasContact = detector.TryGetContact(null, out SensorChainsawContact initialContact,
+            ChainsawSurface.None, facingDirection);
 
         contact = initialContact;
         Surface = ChainsawSurface.None;
@@ -615,7 +611,9 @@ public class SensorChainsawDigging : MonoBehaviour
             foundContact &&
             next.Surface == ChainsawSurface.Enemy;
 
-        if (Surface == ChainsawSurface.Wall && !foundEnemy)
+        // 壁の接触猶予で、より優先度の高い天井への切り替えを打ち消さない。
+        bool foundCeiling = foundContact && next.Surface == ChainsawSurface.Ceiling;
+        if (Surface == ChainsawSurface.Wall && !foundEnemy && !foundCeiling)
         {
             bool foundWall =
                 foundContact &&
@@ -738,11 +736,12 @@ public class SensorChainsawDigging : MonoBehaviour
                     $"{contact.Collider.name}",
                     contact.Collider);
             }
-            else if (next.Surface == ChainsawSurface.Enemy &&
-                     Surface != ChainsawSurface.Enemy)
+            else if ((next.Surface == ChainsawSurface.Enemy &&
+                      Surface != ChainsawSurface.Enemy) ||
+                     (next.Surface == ChainsawSurface.Ceiling &&
+                      (Surface == ChainsawSurface.Floor || Surface == ChainsawSurface.Wall)))
             {
-                // 判定範囲内で検出した敵へ、
-                // 食い込み要求を維持したまま切り替える。
+                // 敵、または床・壁より優先する天井へ、要求を維持したまま切り替える。
                 contact = next;
                 Surface = ChainsawSurface.None;
 

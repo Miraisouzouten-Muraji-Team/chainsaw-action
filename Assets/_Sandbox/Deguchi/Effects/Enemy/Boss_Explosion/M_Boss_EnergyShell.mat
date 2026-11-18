@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: M_Explosion_DiamondFlare
+  m_Name: M_Boss_EnergyShell
   m_Shader: {fileID: 4800000, guid: 1bc5c6a70411243779ce486a98012125, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
@@ -59,7 +59,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _BaseMap:
-        m_Texture: {fileID: 2800000, guid: 3ff8f0347f587a849afad5056d56a78e, type: 3}
+        m_Texture: {fileID: 2800000, guid: 496a8c2a0c7230144a987b0de30a0524, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _BaseMap2DArray:
@@ -248,7 +248,7 @@ Material:
     - _DstBlendAlpha: 0
     - _EmissionAreaType: 1
     - _EmissionColorType: 0
-    - _EmissionIntensity: 0.5
+    - _EmissionIntensity: 0.6
     - _EmissionIntensityCoord: 0
     - _EmissionMapChannelsX: 0
     - _EmissionMapMode: 0
@@ -324,7 +324,7 @@ Material:
     - _SrcBlendAlpha: 1
     - _Surface: 0
     - _TintAreaMode: 1
-    - _TintBlendRate: 0.98
+    - _TintBlendRate: 1
     - _TintBlendRateCoord: 0
     - _TintColorMode: 0
     - _TintMap3DProgress: 0
@@ -368,15 +368,15 @@ Material:
     - _BaseMapToneMidtonesColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
     - _BaseMapToneShadowsColor: {r: 0, g: 0, b: 0, a: 1}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
-    - _EmissionColor: {r: 0.3056603, g: 0.3056603, b: 0.3056603, a: 1}
+    - _EmissionColor: {r: 0, g: 0.1462102, b: 1, a: 1}
     - _EmissionMapRotationOffsets: {r: 0, g: 0, b: 0, a: 0}
     - _FlowMapRotationOffsets: {r: 0, g: 0, b: 0, a: 0}
     - _SpecColor: {r: 0.2, g: 0.2, b: 0.2, a: 1}
-    - _TintColor: {r: 0.6320754, g: 0.9464251, b: 1, a: 1}
+    - _TintColor: {r: 0, g: 0.12698412, b: 1, a: 1}
     - _TintMapRotationOffsets: {r: 0, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
---- !u!114 &4961106274798621987
+--- !u!114 &2543581884728167741
 MonoBehaviour:
   m_ObjectHideFlags: 11
   m_CorrespondingSourceObject: {fileID: 0}

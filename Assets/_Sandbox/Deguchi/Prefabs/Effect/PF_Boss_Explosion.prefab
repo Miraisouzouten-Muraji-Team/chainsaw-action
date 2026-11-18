@@ -77,7 +77,7 @@ ParticleSystem:
   m_GameObject: {fileID: 74374699310804766}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -1011,7 +1011,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 2.42
+      time: 1.42
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -1069,7 +1069,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.57
+      time: 1.57
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -5074,7 +5074,7 @@ ParticleSystem:
   m_GameObject: {fileID: 135529277857665846}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -6008,7 +6008,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 2.13
+      time: 1.13
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -9977,7 +9977,7 @@ ParticleSystem:
   m_GameObject: {fileID: 343947848469344150}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -10911,7 +10911,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 2.23
+      time: 1.23
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -10969,7 +10969,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.25
+      time: 1.25
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -14956,7 +14956,7 @@ ParticleSystem:
   m_GameObject: {fileID: 347505744402885801}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -15890,7 +15890,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.94
+      time: 0.94
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -19868,7 +19868,7 @@ ParticleSystem:
   m_GameObject: {fileID: 351617191464247085}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -20802,7 +20802,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 2.13
+      time: 1.13
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -20860,7 +20860,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.16
+      time: 1.16
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -24882,7 +24882,7 @@ ParticleSystem:
   m_GameObject: {fileID: 743338978945908132}
   serializedVersion: 8
   lengthInSec: 1.4
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -25816,7 +25816,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 0.58
+      time: 0.04
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -30728,7 +30728,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 3
+      time: 2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -30786,7 +30786,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.1
+      time: 2.1
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -30844,7 +30844,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.2
+      time: 2.2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -34831,7 +34831,7 @@ ParticleSystem:
   m_GameObject: {fileID: 1007699608172953079}
   serializedVersion: 8
   lengthInSec: 3.5
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -35765,7 +35765,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 2.2
+      time: 1.2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -35823,7 +35823,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.3
+      time: 1.3
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -35881,7 +35881,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.4
+      time: 1.4
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -39895,7 +39895,7 @@ ParticleSystem:
   m_GameObject: {fileID: 1204231118648092089}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -40829,7 +40829,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 2
+      time: 1
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -44825,7 +44825,7 @@ ParticleSystem:
   m_GameObject: {fileID: 1281030218579142013}
   serializedVersion: 8
   lengthInSec: 2.5
-  simulationSpeed: 2
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -45759,7 +45759,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.65
+      time: 0.65
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -49772,7 +49772,7 @@ ParticleSystem:
   m_GameObject: {fileID: 1401974995977661117}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -50706,7 +50706,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 2.01
+      time: 1.01
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -50764,7 +50764,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.05
+      time: 1.05
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -55658,7 +55658,7 @@ ParticleSystem:
     m_BurstCount: 4
     m_Bursts:
     - serializedVersion: 2
-      time: 0.63
+      time: 0.09
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -55716,7 +55716,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 0.81
+      time: 0.099
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -55774,7 +55774,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 1
+      time: 0.1
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -55832,7 +55832,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 1.17
+      time: 0.11
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -59810,7 +59810,7 @@ ParticleSystem:
   m_GameObject: {fileID: 1530581665120380823}
   serializedVersion: 8
   lengthInSec: 1.4
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -60744,7 +60744,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 0.76
+      time: 0.06
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -64757,7 +64757,7 @@ ParticleSystem:
   m_GameObject: {fileID: 1747733671248530018}
   serializedVersion: 8
   lengthInSec: 1.8
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -65691,7 +65691,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 1.15
+      time: 0.15
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -65749,7 +65749,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 1.2
+      time: 0.2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -65807,7 +65807,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 1.26
+      time: 0.26
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -70710,7 +70710,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 3
+      time: 2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -70768,7 +70768,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.1
+      time: 2.1
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -70826,7 +70826,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.2
+      time: 2.2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -74813,7 +74813,7 @@ ParticleSystem:
   m_GameObject: {fileID: 1829289054382923013}
   serializedVersion: 8
   lengthInSec: 2.5
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -75747,7 +75747,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.7
+      time: 0.7
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -80641,7 +80641,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 3
+      time: 2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -80699,7 +80699,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.1
+      time: 2.1
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -80757,7 +80757,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.2
+      time: 2.2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -84744,7 +84744,7 @@ ParticleSystem:
   m_GameObject: {fileID: 1954492540591198794}
   serializedVersion: 8
   lengthInSec: 3.2
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -85678,7 +85678,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 2.03
+      time: 1.03
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -85736,7 +85736,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.09
+      time: 1.09
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -85794,7 +85794,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.16
+      time: 1.16
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -89808,7 +89808,7 @@ ParticleSystem:
   m_GameObject: {fileID: 1980134539619857039}
   serializedVersion: 8
   lengthInSec: 3.5
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -90742,7 +90742,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 2.2
+      time: 1.2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -90800,7 +90800,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.3
+      time: 1.3
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -90858,7 +90858,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.4
+      time: 1.4
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -94872,7 +94872,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2075141035671621071}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -95806,7 +95806,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 2.22
+      time: 1.22
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -95864,7 +95864,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.32
+      time: 1.32
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -99833,7 +99833,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2111036440510539907}
   serializedVersion: 8
   lengthInSec: 2.5
-  simulationSpeed: 2
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -100767,7 +100767,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.66
+      time: 0.66
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -104754,7 +104754,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2164360359320596049}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -105688,7 +105688,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 1.96
+      time: 0.96
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -105746,7 +105746,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2
+      time: 1
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -109733,7 +109733,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2270198964574420243}
   serializedVersion: 8
   lengthInSec: 1.8
-  simulationSpeed: 2
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -110667,7 +110667,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.19
+      time: 0.19
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -115579,7 +115579,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 3
+      time: 2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -115637,7 +115637,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.1
+      time: 2.1
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -115695,7 +115695,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.2
+      time: 2.2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -119682,7 +119682,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2288688379640348412}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -120616,7 +120616,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 1.95
+      time: 0.95
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -120674,7 +120674,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2
+      time: 1
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -124661,7 +124661,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2392868099416518958}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -125595,7 +125595,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 2.04
+      time: 1.04
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -125653,7 +125653,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.06
+      time: 1.06
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -129678,7 +129678,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2570167572051881719}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -130612,7 +130612,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 2.03
+      time: 1.03
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -134590,7 +134590,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2587514187202866507}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -135524,7 +135524,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 2.27
+      time: 1.27
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -135582,7 +135582,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.3
+      time: 1.3
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -139560,7 +139560,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2617147512069992241}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -140494,7 +140494,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 1.85
+      time: 0.85
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -140552,7 +140552,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 1.9
+      time: 0.9
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -150425,7 +150425,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 2.8
+      time: 1.8
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -154385,7 +154385,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2785563061524900380}
   serializedVersion: 8
   lengthInSec: 3.2
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -155319,7 +155319,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 2.03
+      time: 1.03
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -155377,7 +155377,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.09
+      time: 1.09
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -155435,7 +155435,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.16
+      time: 1.16
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -159449,7 +159449,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2798000127240483898}
   serializedVersion: 8
   lengthInSec: 1.4
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -160383,7 +160383,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 0.75
+      time: 0.09
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -160441,7 +160441,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 0.96
+      time: 0.1
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -160499,7 +160499,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 1.16
+      time: 0.12
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -164477,7 +164477,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2841931623027998127}
   serializedVersion: 8
   lengthInSec: 1
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -169389,7 +169389,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2909721437013310280}
   serializedVersion: 8
   lengthInSec: 2.5
-  simulationSpeed: 2
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -170323,7 +170323,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.66
+      time: 0.66
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -174310,7 +174310,7 @@ ParticleSystem:
   m_GameObject: {fileID: 2931865027752171314}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -175244,7 +175244,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 2.02
+      time: 1.02
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -175302,7 +175302,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.12
+      time: 1.12
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -180214,7 +180214,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 2.8
+      time: 1.8
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -184192,7 +184192,7 @@ ParticleSystem:
   m_GameObject: {fileID: 3038262897934252483}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -185126,7 +185126,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 2.04
+      time: 1.04
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -189095,7 +189095,7 @@ ParticleSystem:
   m_GameObject: {fileID: 3186253060826418605}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -190029,7 +190029,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 2.12
+      time: 1.12
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -194007,7 +194007,7 @@ ParticleSystem:
   m_GameObject: {fileID: 3396376033742343681}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -194941,7 +194941,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 2
+      time: 1
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -194999,7 +194999,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.04
+      time: 1.04
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -199016,7 +199016,7 @@ ParticleSystem:
   m_GameObject: {fileID: 3619926407870442007}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -199950,7 +199950,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 2.15
+      time: 1.15
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -200008,7 +200008,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.23
+      time: 1.23
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -200066,7 +200066,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.28
+      time: 1.28
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -204978,7 +204978,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 3.2
+      time: 1.2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -208938,7 +208938,7 @@ ParticleSystem:
   m_GameObject: {fileID: 3813530902797602453}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -209872,7 +209872,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 2.18
+      time: 1.18
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -213850,7 +213850,7 @@ ParticleSystem:
   m_GameObject: {fileID: 3952531636398140102}
   serializedVersion: 8
   lengthInSec: 2.5
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -214784,7 +214784,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.65
+      time: 0.65
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -218771,7 +218771,7 @@ ParticleSystem:
   m_GameObject: {fileID: 4112289817439750108}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -219705,7 +219705,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 1.98
+      time: 0.98
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -219763,7 +219763,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.03
+      time: 1.03
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -219821,7 +219821,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.09
+      time: 1.09
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -223808,7 +223808,7 @@ ParticleSystem:
   m_GameObject: {fileID: 4131689632623365089}
   serializedVersion: 8
   lengthInSec: 1.4
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -224742,7 +224742,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 0.97
+      time: 0.09
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -228789,7 +228789,7 @@ ParticleSystem:
   m_GameObject: {fileID: 4493435417641245684}
   serializedVersion: 8
   lengthInSec: 1
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -229723,7 +229723,7 @@ ParticleSystem:
     m_BurstCount: 4
     m_Bursts:
     - serializedVersion: 2
-      time: 0.05
+      time: 0.001
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -229781,7 +229781,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 0.2
+      time: 0.01
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -229839,7 +229839,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 0.35
+      time: 0.03
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -229897,7 +229897,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 0.5
+      time: 0.07
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -233875,7 +233875,7 @@ ParticleSystem:
   m_GameObject: {fileID: 4548451997054328052}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -234809,7 +234809,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.96
+      time: 0.96
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -238778,7 +238778,7 @@ ParticleSystem:
   m_GameObject: {fileID: 4646117929354957447}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -239712,7 +239712,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 2.22
+      time: 1.22
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -244624,7 +244624,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 2.8
+      time: 1.8
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -248645,7 +248645,7 @@ ParticleSystem:
   m_GameObject: {fileID: 4946858075142634680}
   serializedVersion: 8
   lengthInSec: 1.4
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -249579,7 +249579,7 @@ ParticleSystem:
     m_BurstCount: 4
     m_Bursts:
     - serializedVersion: 2
-      time: 0.59
+      time: 0.04
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -249699,7 +249699,7 @@ ParticleSystem:
       countCurve:
         serializedVersion: 2
         minMaxState: 0
-        scalar: 81.13
+        scalar: 1
         minScalar: 30
         maxCurve:
           serializedVersion: 2
@@ -249749,7 +249749,7 @@ ParticleSystem:
           m_PreInfinity: 2
           m_PostInfinity: 2
           m_RotationOrder: 4
-      cycleCount: 5
+      cycleCount: 1
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
@@ -253722,7 +253722,7 @@ ParticleSystem:
   m_GameObject: {fileID: 5220672108350669991}
   serializedVersion: 8
   lengthInSec: 1.4
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -254656,7 +254656,7 @@ ParticleSystem:
     m_BurstCount: 4
     m_Bursts:
     - serializedVersion: 2
-      time: 0.59
+      time: 0.06
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -254776,7 +254776,7 @@ ParticleSystem:
       countCurve:
         serializedVersion: 2
         minMaxState: 0
-        scalar: 81.13
+        scalar: 1
         minScalar: 30
         maxCurve:
           serializedVersion: 2
@@ -254826,7 +254826,7 @@ ParticleSystem:
           m_PreInfinity: 2
           m_PostInfinity: 2
           m_RotationOrder: 4
-      cycleCount: 5
+      cycleCount: 1
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
@@ -258799,7 +258799,7 @@ ParticleSystem:
   m_GameObject: {fileID: 5317839006354109291}
   serializedVersion: 8
   lengthInSec: 1.4
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -259733,7 +259733,7 @@ ParticleSystem:
     m_BurstCount: 4
     m_Bursts:
     - serializedVersion: 2
-      time: 0.59
+      time: 0.09
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -259853,7 +259853,7 @@ ParticleSystem:
       countCurve:
         serializedVersion: 2
         minMaxState: 0
-        scalar: 81.13
+        scalar: 1
         minScalar: 30
         maxCurve:
           serializedVersion: 2
@@ -259903,7 +259903,7 @@ ParticleSystem:
           m_PreInfinity: 2
           m_PostInfinity: 2
           m_RotationOrder: 4
-      cycleCount: 5
+      cycleCount: 1
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
@@ -263876,7 +263876,7 @@ ParticleSystem:
   m_GameObject: {fileID: 5374496525617346348}
   serializedVersion: 8
   lengthInSec: 1.8
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -264810,7 +264810,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.51
+      time: 0.51
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -268871,7 +268871,7 @@ ParticleSystem:
   m_GameObject: {fileID: 5498063606203462800}
   serializedVersion: 8
   lengthInSec: 1.4
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -269805,7 +269805,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 0.58
+      time: 0.04
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -273827,7 +273827,7 @@ ParticleSystem:
   m_GameObject: {fileID: 5685348313922768417}
   serializedVersion: 8
   lengthInSec: 1.4
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -274761,7 +274761,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 0.76
+      time: 0.06
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -278739,7 +278739,7 @@ ParticleSystem:
   m_GameObject: {fileID: 5734467499627865261}
   serializedVersion: 8
   lengthInSec: 1.8
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -279673,7 +279673,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.22
+      time: 0.22
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -284585,7 +284585,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 3.1
+      time: 2.1
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -284643,7 +284643,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.2
+      time: 2.2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -284701,7 +284701,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.3
+      time: 2.3
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -288688,7 +288688,7 @@ ParticleSystem:
   m_GameObject: {fileID: 6091279137776454593}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -289622,7 +289622,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.95
+      time: 0.95
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -293600,7 +293600,7 @@ ParticleSystem:
   m_GameObject: {fileID: 6226162272413116928}
   serializedVersion: 8
   lengthInSec: 1.4
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -294534,7 +294534,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 0.97
+      time: 0.09
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -298512,7 +298512,7 @@ ParticleSystem:
   m_GameObject: {fileID: 6406362270992561141}
   serializedVersion: 8
   lengthInSec: 2.5
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -299446,7 +299446,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 1.7
+      time: 0.7
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -299504,7 +299504,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 1.75
+      time: 0.75
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -299562,7 +299562,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 1.8
+      time: 0.8
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -303549,7 +303549,7 @@ ParticleSystem:
   m_GameObject: {fileID: 6498127077826730594}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -304483,7 +304483,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 2.15
+      time: 1.15
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -304541,7 +304541,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.23
+      time: 1.23
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -304599,7 +304599,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.28
+      time: 1.28
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -309511,7 +309511,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 2.9
+      time: 1.9
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -309569,7 +309569,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.97
+      time: 1.97
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -309627,7 +309627,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.05
+      time: 2.05
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -313623,7 +313623,7 @@ ParticleSystem:
   m_GameObject: {fileID: 6763885426867775010}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -314557,7 +314557,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.85
+      time: 0.85
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -318526,7 +318526,7 @@ ParticleSystem:
   m_GameObject: {fileID: 7334420643695418261}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -319460,7 +319460,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 1.84
+      time: 0.84
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -323438,7 +323438,7 @@ ParticleSystem:
   m_GameObject: {fileID: 7365362060900085185}
   serializedVersion: 8
   lengthInSec: 2.5
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -324372,7 +324372,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 1.68
+      time: 0.68
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -324430,7 +324430,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 1.72
+      time: 0.72
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -324488,7 +324488,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 1.78
+      time: 0.78
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -328457,7 +328457,7 @@ ParticleSystem:
   m_GameObject: {fileID: 7613367955904233904}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -329391,7 +329391,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 2.18
+      time: 1.28
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -329449,7 +329449,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.25
+      time: 1.25
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -333410,6 +333410,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 7047978127709443884}
+  - component: {fileID: 5387807013959192049}
   m_Layer: 0
   m_Name: PF_Boss_Explosion
   m_TagString: Untagged
@@ -333440,6 +333441,19 @@ Transform:
   - {fileID: 6680434127845991444}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &5387807013959192049
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8542020770122436281}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1167590c12a273043a926dcdb5492ac6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.PixelRenderOverride
+  _group: 3
 --- !u!1 &8588430004618284485
 GameObject:
   m_ObjectHideFlags: 0
@@ -333482,7 +333496,7 @@ ParticleSystem:
   m_GameObject: {fileID: 8588430004618284485}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -334416,7 +334430,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 2.08
+      time: 1.08
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -334474,7 +334488,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.1
+      time: 1.01
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -338485,7 +338499,7 @@ ParticleSystem:
   m_GameObject: {fileID: 8708360536160069903}
   serializedVersion: 8
   lengthInSec: 1
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -344496,7 +344510,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 2.9
+      time: 1.9
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -344554,7 +344568,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.97
+      time: 1.97
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -344612,7 +344626,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.05
+      time: 2.05
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -348608,7 +348622,7 @@ ParticleSystem:
   m_GameObject: {fileID: 8861628688305183076}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -349542,7 +349556,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 2.17
+      time: 1.17
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -349600,7 +349614,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.2
+      time: 1.2
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -353578,7 +353592,7 @@ ParticleSystem:
   m_GameObject: {fileID: 9016808925896282445}
   serializedVersion: 8
   lengthInSec: 3
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -354512,7 +354526,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 1.99
+      time: 0.99
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -354570,7 +354584,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.04
+      time: 1.04
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -354628,7 +354642,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.09
+      time: 1.09
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -358597,7 +358611,7 @@ ParticleSystem:
   m_GameObject: {fileID: 9097787610743849027}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -359531,7 +359545,7 @@ ParticleSystem:
     m_BurstCount: 2
     m_Bursts:
     - serializedVersion: 2
-      time: 1.9
+      time: 0.9
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -359589,7 +359603,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 1.94
+      time: 0.94
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -364501,7 +364515,7 @@ ParticleSystem:
     m_BurstCount: 3
     m_Bursts:
     - serializedVersion: 2
-      time: 2.9
+      time: 1.9
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -364559,7 +364573,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 2.97
+      time: 1.97
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -364617,7 +364631,7 @@ ParticleSystem:
       repeatInterval: 0.01
       probability: 1
     - serializedVersion: 2
-      time: 3.05
+      time: 2.05
       countCurve:
         serializedVersion: 2
         minMaxState: 0
@@ -368674,7 +368688,7 @@ ParticleSystem:
   m_GameObject: {fileID: 9216449012338329789}
   serializedVersion: 8
   lengthInSec: 2.7
-  simulationSpeed: 1
+  simulationSpeed: 1.2
   stopAction: 0
   cullingMode: 0
   ringBufferMode: 0
@@ -369608,7 +369622,7 @@ ParticleSystem:
     m_BurstCount: 1
     m_Bursts:
     - serializedVersion: 2
-      time: 2.23
+      time: 1.23
       countCurve:
         serializedVersion: 2
         minMaxState: 0

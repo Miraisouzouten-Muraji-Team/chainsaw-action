@@ -79,8 +79,30 @@ public sealed class MeshPlaneSplitter
         new ProfilerMarker("EnemyMeshCut.SplitPlane.Cap.BuildLocalSheets");
     private static readonly ProfilerMarker mergeCapHoleProfilerMarker =
         new ProfilerMarker("EnemyMeshCut.SplitPlane.Cap.MergeHole");
+    private static readonly ProfilerMarker searchCapBridgeProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Cap.MergeHole.SearchBridge");
+    private static readonly ProfilerMarker rebuildCapPolygonProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Cap.MergeHole.RebuildPolygon");
     private static readonly ProfilerMarker triangulateCapProfilerMarker =
         new ProfilerMarker("EnemyMeshCut.SplitPlane.Cap.EarClipping");
+    private static readonly ProfilerMarker findCapEarProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Cap.EarClipping.FindEar");
+    private static readonly ProfilerMarker removeCapEarVertexProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Cap.EarClipping.RemoveVertex");
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+    // Profiling Coreパッケージへの依存を避け、同一Cap生成試行内の回数を集計する。
+    // ホットループでは整数加算だけを行い、完了後にConsoleへ1行だけ出力する。
+    private static int mergeHoleVisibilityChecksCounter;
+    private static int mergeHoleEdgeVisitsCounter;
+    private static int mergeHoleIntersectionTestsCounter;
+    private static int mergeHoleInputVerticesCounter;
+    private static int mergeHoleSiblingHolesCounter;
+    private static int earClippingCandidatesCounter;
+    private static int earClippingTriangleTestsCounter;
+    private static int earClippingInputVerticesCounter;
+    private static int earClippingRemovedVerticesCounter;
+#endif
     private static readonly ProfilerMarker emitCapTrianglesProfilerMarker =
         new ProfilerMarker("EnemyMeshCut.SplitPlane.Cap.EmitTriangles");
     private static readonly ProfilerMarker overlapCapBoundaryProfilerMarker =
@@ -5246,6 +5268,10 @@ public sealed class MeshPlaneSplitter
         out int skippedCapRegionCount,
         out string failureReason)
     {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        try
+        {
+#endif
         using (addCutSurfaceCapsProfilerMarker.Auto())
         {
         generatedCapRegionCount = 0;
@@ -5745,6 +5771,13 @@ public sealed class MeshPlaneSplitter
         return true;
 
         }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        }
+        finally
+        {
+            FlushCapDiagnostics();
+        }
+#endif
     }
 
     /// <summary>
@@ -6785,6 +6818,12 @@ public sealed class MeshPlaneSplitter
         out string failureReason)
     {
         using var tryMergeHoleIntoPolygonProfileScope = mergeCapHoleProfilerMarker.Auto();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        int inputPolygonVertexCount = polygonProjectedPoints.Count;
+        int visibilityCheckCount = 0;
+        int visitedEdgeCount = 0;
+        int segmentIntersectionTestCount = 0;
+#endif
         int holeBridgeIndex =
             FindRightmostVertexIndex(
                 hole.ProjectedPoints);
@@ -6797,151 +6836,175 @@ public sealed class MeshPlaneSplitter
         float bestSqrDistance =
             float.PositiveInfinity;
 
-        for (int candidateIndex = 0;
-             candidateIndex < polygonProjectedPoints.Count;
-             candidateIndex++)
+        using (searchCapBridgeProfilerMarker.Auto())
         {
-            Vector2 candidatePoint =
-                polygonProjectedPoints[
-                    candidateIndex];
-
-            float sqrDistance =
-                (candidatePoint -
-                 holeBridgePoint).sqrMagnitude;
-
-            if (sqrDistance <=
-                geometryEpsilon * geometryEpsilon ||
-                sqrDistance >= bestSqrDistance)
+            for (int candidateIndex = 0;
+                 candidateIndex < polygonProjectedPoints.Count;
+                 candidateIndex++)
             {
-                continue;
+                Vector2 candidatePoint =
+                    polygonProjectedPoints[
+                        candidateIndex];
+
+                float sqrDistance =
+                    (candidatePoint -
+                     holeBridgePoint).sqrMagnitude;
+
+                if (sqrDistance <=
+                    geometryEpsilon * geometryEpsilon ||
+                    sqrDistance >= bestSqrDistance)
+                {
+                    continue;
+                }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                visibilityCheckCount++;
+#endif
+                if (!IsBridgeVisible(
+                        holeBridgePoint,
+                        candidatePoint,
+                        candidateIndex,
+                        polygonProjectedPoints,
+                        holeBridgeIndex,
+                        hole.ProjectedPoints,
+                        siblingHoles,
+                        hole,
+                        geometryEpsilon
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                        , ref visitedEdgeCount,
+                        ref segmentIntersectionTestCount
+#endif
+                        ))
+                {
+                    continue;
+                }
+
+                polygonBridgeIndex =
+                    candidateIndex;
+
+                bestSqrDistance =
+                    sqrDistance;
             }
-
-            if (!IsBridgeVisible(
-                    holeBridgePoint,
-                    candidatePoint,
-                    candidateIndex,
-                    polygonProjectedPoints,
-                    holeBridgeIndex,
-                    hole.ProjectedPoints,
-                    siblingHoles,
-                    hole,
-                    geometryEpsilon))
-            {
-                continue;
-            }
-
-            polygonBridgeIndex =
-                candidateIndex;
-
-            bestSqrDistance =
-                sqrDistance;
         }
 
         if (polygonBridgeIndex < 0)
         {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            RecordMergeHoleDiagnostics(inputPolygonVertexCount, hole.ProjectedPoints.Count,
+                siblingHoles.Count, visibilityCheckCount, visitedEdgeCount,
+                segmentIntersectionTestCount);
+#endif
             failureReason =
                 "切断面Holeを外周へ接続できるBridgeが見つかりませんでした。";
 
             return false;
         }
 
-        var mergedPositions =
-            new List<Vector3>(
-                polygonPositions.Count +
-                hole.Positions.Count +
-                2);
-
-        var mergedProjectedPoints =
-            new List<Vector2>(
-                polygonProjectedPoints.Count +
-                hole.ProjectedPoints.Count +
-                2);
-
-        var mergedConnectivityVertexIds =
-            new List<int>(
-                polygonConnectivityVertexIds.Count +
-                hole.ConnectivityVertexIds.Count +
-                2);
-
-        for (int i = 0;
-             i <= polygonBridgeIndex;
-             i++)
+        using (rebuildCapPolygonProfilerMarker.Auto())
         {
+            var mergedPositions =
+                new List<Vector3>(
+                    polygonPositions.Count +
+                    hole.Positions.Count +
+                    2);
+
+            var mergedProjectedPoints =
+                new List<Vector2>(
+                    polygonProjectedPoints.Count +
+                    hole.ProjectedPoints.Count +
+                    2);
+
+            var mergedConnectivityVertexIds =
+                new List<int>(
+                    polygonConnectivityVertexIds.Count +
+                    hole.ConnectivityVertexIds.Count +
+                    2);
+
+            for (int i = 0;
+                 i <= polygonBridgeIndex;
+                 i++)
+            {
+                mergedPositions.Add(
+                    polygonPositions[i]);
+
+                mergedProjectedPoints.Add(
+                    polygonProjectedPoints[i]);
+
+                mergedConnectivityVertexIds.Add(
+                    polygonConnectivityVertexIds[i]);
+            }
+
+            // PreparedBoundaryLoopは全てCCWへ正規化されている。
+            // Holeは逆向き(CW)に辿ることでeven-oddの空洞を維持する。
+            for (int offset = 0;
+                 offset < hole.Positions.Count;
+                 offset++)
+            {
+                int holeIndex =
+                    (holeBridgeIndex - offset +
+                     hole.Positions.Count) %
+                    hole.Positions.Count;
+
+                mergedPositions.Add(
+                    hole.Positions[holeIndex]);
+
+                mergedProjectedPoints.Add(
+                    hole.ProjectedPoints[holeIndex]);
+
+                mergedConnectivityVertexIds.Add(
+                    hole.ConnectivityVertexIds[holeIndex]);
+            }
+
             mergedPositions.Add(
-                polygonPositions[i]);
+                hole.Positions[holeBridgeIndex]);
 
             mergedProjectedPoints.Add(
-                polygonProjectedPoints[i]);
+                hole.ProjectedPoints[holeBridgeIndex]);
 
             mergedConnectivityVertexIds.Add(
-                polygonConnectivityVertexIds[i]);
-        }
-
-        // PreparedBoundaryLoopは全てCCWへ正規化されている。
-        // Holeは逆向き(CW)に辿ることでeven-oddの空洞を維持する。
-        for (int offset = 0;
-             offset < hole.Positions.Count;
-             offset++)
-        {
-            int holeIndex =
-                (holeBridgeIndex - offset +
-                 hole.Positions.Count) %
-                hole.Positions.Count;
+                hole.ConnectivityVertexIds[holeBridgeIndex]);
 
             mergedPositions.Add(
-                hole.Positions[holeIndex]);
+                polygonPositions[polygonBridgeIndex]);
 
             mergedProjectedPoints.Add(
-                hole.ProjectedPoints[holeIndex]);
+                polygonProjectedPoints[polygonBridgeIndex]);
 
             mergedConnectivityVertexIds.Add(
-                hole.ConnectivityVertexIds[holeIndex]);
+                polygonConnectivityVertexIds[polygonBridgeIndex]);
+
+            for (int i = polygonBridgeIndex + 1;
+                 i < polygonPositions.Count;
+                 i++)
+            {
+                mergedPositions.Add(
+                    polygonPositions[i]);
+
+                mergedProjectedPoints.Add(
+                    polygonProjectedPoints[i]);
+
+                mergedConnectivityVertexIds.Add(
+                    polygonConnectivityVertexIds[i]);
+            }
+
+            polygonPositions.Clear();
+            polygonPositions.AddRange(
+                mergedPositions);
+
+            polygonProjectedPoints.Clear();
+            polygonProjectedPoints.AddRange(
+                mergedProjectedPoints);
+
+            polygonConnectivityVertexIds.Clear();
+            polygonConnectivityVertexIds.AddRange(
+                mergedConnectivityVertexIds);
         }
 
-        mergedPositions.Add(
-            hole.Positions[holeBridgeIndex]);
-
-        mergedProjectedPoints.Add(
-            hole.ProjectedPoints[holeBridgeIndex]);
-
-        mergedConnectivityVertexIds.Add(
-            hole.ConnectivityVertexIds[holeBridgeIndex]);
-
-        mergedPositions.Add(
-            polygonPositions[polygonBridgeIndex]);
-
-        mergedProjectedPoints.Add(
-            polygonProjectedPoints[polygonBridgeIndex]);
-
-        mergedConnectivityVertexIds.Add(
-            polygonConnectivityVertexIds[polygonBridgeIndex]);
-
-        for (int i = polygonBridgeIndex + 1;
-             i < polygonPositions.Count;
-             i++)
-        {
-            mergedPositions.Add(
-                polygonPositions[i]);
-
-            mergedProjectedPoints.Add(
-                polygonProjectedPoints[i]);
-
-            mergedConnectivityVertexIds.Add(
-                polygonConnectivityVertexIds[i]);
-        }
-
-        polygonPositions.Clear();
-        polygonPositions.AddRange(
-            mergedPositions);
-
-        polygonProjectedPoints.Clear();
-        polygonProjectedPoints.AddRange(
-            mergedProjectedPoints);
-
-        polygonConnectivityVertexIds.Clear();
-        polygonConnectivityVertexIds.AddRange(
-            mergedConnectivityVertexIds);
-
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        RecordMergeHoleDiagnostics(inputPolygonVertexCount, hole.ProjectedPoints.Count,
+            siblingHoles.Count, visibilityCheckCount, visitedEdgeCount,
+            segmentIntersectionTestCount);
+#endif
         failureReason = null;
         return true;
     }
@@ -6983,14 +7046,24 @@ public sealed class MeshPlaneSplitter
         IReadOnlyList<Vector2> hole,
         IReadOnlyList<PreparedBoundaryLoop> siblingHoles,
         PreparedBoundaryLoop currentHole,
-        float geometryEpsilon)
+        float geometryEpsilon
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        , ref int visitedEdgeCount,
+        ref int segmentIntersectionTestCount
+#endif
+        )
     {
         if (SegmentIntersectsPolygon(
                 holePoint,
                 polygonPoint,
                 polygon,
                 polygonPointIndex,
-                geometryEpsilon))
+                geometryEpsilon
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                , ref visitedEdgeCount,
+                ref segmentIntersectionTestCount
+#endif
+                ))
         {
             return false;
         }
@@ -7000,7 +7073,12 @@ public sealed class MeshPlaneSplitter
                 polygonPoint,
                 hole,
                 holePointIndex,
-                geometryEpsilon))
+                geometryEpsilon
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                , ref visitedEdgeCount,
+                ref segmentIntersectionTestCount
+#endif
+                ))
         {
             return false;
         }
@@ -7024,7 +7102,12 @@ public sealed class MeshPlaneSplitter
                     polygonPoint,
                     siblingHole.ProjectedPoints,
                     -1,
-                    geometryEpsilon))
+                    geometryEpsilon
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    , ref visitedEdgeCount,
+                    ref segmentIntersectionTestCount
+#endif
+                    ))
             {
                 return false;
             }
@@ -7038,15 +7121,30 @@ public sealed class MeshPlaneSplitter
         Vector2 segmentEnd,
         IReadOnlyList<Vector2> polygon,
         int allowedEndpointIndex,
-        float geometryEpsilon)
+        float geometryEpsilon
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        , ref int visitedEdgeCount,
+        ref int segmentIntersectionTestCount
+#endif
+        )
     {
         float sqrEpsilon =
             geometryEpsilon * geometryEpsilon;
+
+        // IsPointOnSegmentは座標ごとにgeometryEpsilonを許容するため、
+        // BridgeのAABBも同じ幅だけ広げる。交差し得ない辺だけを除外する。
+        float segmentMinX = Mathf.Min(segmentStart.x, segmentEnd.x) - geometryEpsilon;
+        float segmentMaxX = Mathf.Max(segmentStart.x, segmentEnd.x) + geometryEpsilon;
+        float segmentMinY = Mathf.Min(segmentStart.y, segmentEnd.y) - geometryEpsilon;
+        float segmentMaxY = Mathf.Max(segmentStart.y, segmentEnd.y) + geometryEpsilon;
 
         for (int edgeStartIndex = 0;
              edgeStartIndex < polygon.Count;
              edgeStartIndex++)
         {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            visitedEdgeCount++;
+#endif
             int edgeEndIndex =
                 (edgeStartIndex + 1) %
                 polygon.Count;
@@ -7064,6 +7162,16 @@ public sealed class MeshPlaneSplitter
                 continue;
             }
 
+            // AABBが離れていれば厳密交差も許容誤差内の端点接触も起こらない。
+            // 重複Bridge端点の判定と詳細な外積計算を行う前に除外する。
+            if ((edgeStart.x < segmentMinX && edgeEnd.x < segmentMinX) ||
+                (edgeStart.x > segmentMaxX && edgeEnd.x > segmentMaxX) ||
+                (edgeStart.y < segmentMinY && edgeEnd.y < segmentMinY) ||
+                (edgeStart.y > segmentMaxY && edgeEnd.y > segmentMaxY))
+            {
+                continue;
+            }
+
             // Holeを複数Bridgeした後は同じ座標のBridge端点が
             // 非隣接Indexとして残るため、座標一致も共有端点として扱う。
             if ((edgeStart - segmentEnd).sqrMagnitude <= sqrEpsilon ||
@@ -7074,6 +7182,9 @@ public sealed class MeshPlaneSplitter
                 continue;
             }
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            segmentIntersectionTestCount++;
+#endif
             if (DoSegmentsIntersect(
                     segmentStart,
                     segmentEnd,
@@ -7226,11 +7337,19 @@ public sealed class MeshPlaneSplitter
         out List<int> triangleIndices)
     {
         using var tryTriangulateEarClippingProfileScope = triangulateCapProfilerMarker.Auto();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        int testedEarCandidateCount = 0;
+        int pointInsideTriangleTestCount = 0;
+        int removedVertexCount = 0;
+#endif
         triangleIndices =
             new List<int>();
 
         if (polygon.Count < 3)
         {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            RecordEarClippingDiagnostics(polygon.Count, 0, 0, 0);
+#endif
             return false;
         }
 
@@ -7250,127 +7369,195 @@ public sealed class MeshPlaneSplitter
         int maximumIterations =
             polygon.Count * polygon.Count;
 
-        while (remainingIndices.Count > 3)
+        using (findCapEarProfilerMarker.Auto())
         {
-            bool foundEar = false;
-
-            for (int i = 0;
-                 i < remainingIndices.Count;
-                 i++)
+            while (remainingIndices.Count > 3)
             {
-                int previousListIndex =
-                    (i - 1 +
-                     remainingIndices.Count) %
-                    remainingIndices.Count;
+                bool foundEar = false;
 
-                int nextListIndex =
-                    (i + 1) %
-                    remainingIndices.Count;
-
-                int previousIndex =
-                    remainingIndices[
-                        previousListIndex];
-
-                int currentIndex =
-                    remainingIndices[i];
-
-                int nextIndex =
-                    remainingIndices[
-                        nextListIndex];
-
-                Vector2 previous =
-                    polygon[previousIndex];
-
-                Vector2 current =
-                    polygon[currentIndex];
-
-                Vector2 next =
-                    polygon[nextIndex];
-
-                float cornerCross =
-                    Cross2D(
-                        current - previous,
-                        next - current);
-
-                if (cornerCross <= areaEpsilon)
+                for (int i = 0;
+                     i < remainingIndices.Count;
+                     i++)
                 {
-                    continue;
-                }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    testedEarCandidateCount++;
+#endif
+                    int previousListIndex =
+                        (i - 1 +
+                         remainingIndices.Count) %
+                        remainingIndices.Count;
 
-                bool containsOtherVertex = false;
+                    int nextListIndex =
+                        (i + 1) %
+                        remainingIndices.Count;
 
-                for (int testListIndex = 0;
-                     testListIndex < remainingIndices.Count;
-                     testListIndex++)
-                {
-                    int testIndex =
+                    int previousIndex =
                         remainingIndices[
-                            testListIndex];
+                            previousListIndex];
 
-                    if (testIndex == previousIndex ||
-                        testIndex == currentIndex ||
-                        testIndex == nextIndex)
+                    int currentIndex =
+                        remainingIndices[i];
+
+                    int nextIndex =
+                        remainingIndices[
+                            nextListIndex];
+
+                    Vector2 previous =
+                        polygon[previousIndex];
+
+                    Vector2 current =
+                        polygon[currentIndex];
+
+                    Vector2 next =
+                        polygon[nextIndex];
+
+                    float cornerCross =
+                        Cross2D(
+                            current - previous,
+                            next - current);
+
+                    if (cornerCross <= areaEpsilon)
                     {
                         continue;
                     }
 
-                    Vector2 testPoint =
-                        polygon[testIndex];
+                    // IsPointInsideTriangleは各辺の外積に-areaEpsilonまでの
+                    // はみ出しを許容する。通常の三角形AABBではその点を誤って
+                    // 除外するため、面積比から求めた安全側の範囲を使用する。
+                    // 正の面積をAとすると、各頂点の重みは-areaEpsilon/A以上。
+                    // その制約下で到達し得る座標の上下限を三角形ごとに計算する。
+                    float minX = Mathf.Min(previous.x, Mathf.Min(current.x, next.x));
+                    float maxX = Mathf.Max(previous.x, Mathf.Max(current.x, next.x));
+                    float minY = Mathf.Min(previous.y, Mathf.Min(current.y, next.y));
+                    float maxY = Mathf.Max(previous.y, Mathf.Max(current.y, next.y));
 
-                    // Hole Bridgeでは同一座標が意図的に2回現れる。
-                    // それを「Ear内部の別頂点」と判定すると、Bridge周辺の
-                    // Earが永久に除外されて三角形分割できなくなる。
-                    if ((testPoint - previous).sqrMagnitude <= areaEpsilon ||
-                        (testPoint - current).sqrMagnitude <= areaEpsilon ||
-                        (testPoint - next).sqrMagnitude <= areaEpsilon)
+                    // ほぼ一直線の3点ではfloatの外積の丸め誤差が支配的になり、
+                    // 面積比から求めた範囲でも元の内外判定と食い違うため、
+                    // その場合は従来どおり全頂点を詳細判定する。
+                    double maximumSpan = Math.Max((double)maxX - minX, (double)maxY - minY);
+                    bool useEarBounds = cornerCross > maximumSpan * maximumSpan * 0.0001;
+                    double earMinX = 0.0;
+                    double earMaxX = 0.0;
+                    double earMinY = 0.0;
+                    double earMaxY = 0.0;
+                    if (useEarBounds)
+                    {
+                        double toleranceRatio = (double)areaEpsilon / cornerCross;
+                        double sumX = (double)previous.x + current.x + next.x;
+                        double sumY = (double)previous.y + current.y + next.y;
+
+                        // float外積の丸めで境界付近の候補を落とさないため、
+                        // AABBはさらに座標スケールに応じて保守的に広げる。
+                        double coordinateScale = Math.Max(1.0,
+                            Math.Max(Math.Max(Math.Abs(minX), Math.Abs(maxX)),
+                                     Math.Max(Math.Abs(minY), Math.Abs(maxY))));
+                        double roundingMargin = coordinateScale * 0.00001;
+
+                        earMinX = minX - toleranceRatio * (sumX - 3.0 * minX) - roundingMargin;
+                        earMaxX = maxX + toleranceRatio * (3.0 * maxX - sumX) + roundingMargin;
+                        earMinY = minY - toleranceRatio * (sumY - 3.0 * minY) - roundingMargin;
+                        earMaxY = maxY + toleranceRatio * (3.0 * maxY - sumY) + roundingMargin;
+                    }
+
+                    bool containsOtherVertex = false;
+
+                    for (int testListIndex = 0;
+                         testListIndex < remainingIndices.Count;
+                         testListIndex++)
+                    {
+                        int testIndex =
+                            remainingIndices[
+                                testListIndex];
+
+                        if (testIndex == previousIndex ||
+                            testIndex == currentIndex ||
+                            testIndex == nextIndex)
+                        {
+                            continue;
+                        }
+
+                        Vector2 testPoint =
+                            polygon[testIndex];
+
+                        if (useEarBounds &&
+                            (testPoint.x < earMinX || testPoint.x > earMaxX ||
+                             testPoint.y < earMinY || testPoint.y > earMaxY))
+                        {
+                            continue;
+                        }
+
+                        // Hole Bridgeでは同一座標が意図的に2回現れる。
+                        // それを「Ear内部の別頂点」と判定すると、Bridge周辺の
+                        // Earが永久に除外されて三角形分割できなくなる。
+                        if ((testPoint - previous).sqrMagnitude <= areaEpsilon ||
+                            (testPoint - current).sqrMagnitude <= areaEpsilon ||
+                            (testPoint - next).sqrMagnitude <= areaEpsilon)
+                        {
+                            continue;
+                        }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                        pointInsideTriangleTestCount++;
+#endif
+                        if (IsPointInsideTriangle(
+                                testPoint,
+                                previous,
+                                current,
+                                next,
+                                areaEpsilon))
+                        {
+                            containsOtherVertex = true;
+                            break;
+                        }
+                    }
+
+                    if (containsOtherVertex)
                     {
                         continue;
                     }
 
-                    if (IsPointInsideTriangle(
-                            testPoint,
-                            previous,
-                            current,
-                            next,
-                            areaEpsilon))
+                    triangleIndices.Add(
+                        previousIndex);
+
+                    triangleIndices.Add(
+                        currentIndex);
+
+                    triangleIndices.Add(
+                        nextIndex);
+
+                    using (removeCapEarVertexProfilerMarker.Auto())
                     {
-                        containsOtherVertex = true;
-                        break;
+                        remainingIndices.RemoveAt(i);
                     }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    removedVertexCount++;
+#endif
+
+                    foundEar = true;
+                    break;
                 }
 
-                if (containsOtherVertex)
+                if (!foundEar)
                 {
-                    continue;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    RecordEarClippingDiagnostics(polygon.Count, testedEarCandidateCount,
+                        pointInsideTriangleTestCount, removedVertexCount);
+#endif
+                    triangleIndices = null;
+                    return false;
                 }
 
-                triangleIndices.Add(
-                    previousIndex);
+                guard++;
 
-                triangleIndices.Add(
-                    currentIndex);
-
-                triangleIndices.Add(
-                    nextIndex);
-
-                remainingIndices.RemoveAt(i);
-
-                foundEar = true;
-                break;
-            }
-
-            if (!foundEar)
-            {
-                triangleIndices = null;
-                return false;
-            }
-
-            guard++;
-
-            if (guard > maximumIterations)
-            {
-                triangleIndices = null;
-                return false;
+                if (guard > maximumIterations)
+                {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    RecordEarClippingDiagnostics(polygon.Count, testedEarCandidateCount,
+                        pointInsideTriangleTestCount, removedVertexCount);
+#endif
+                    triangleIndices = null;
+                    return false;
+                }
             }
         }
 
@@ -7383,6 +7570,10 @@ public sealed class MeshPlaneSplitter
         triangleIndices.Add(
             remainingIndices[2]);
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        RecordEarClippingDiagnostics(polygon.Count, testedEarCandidateCount,
+            pointInsideTriangleTestCount, removedVertexCount);
+#endif
         return true;
 
     }
@@ -7413,6 +7604,69 @@ public sealed class MeshPlaneSplitter
                secondCross >= -areaEpsilon &&
                thirdCross >= -areaEpsilon;
     }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+    // 失敗した分割試行も含め、Cap生成試行ごとの実行回数を集計する。
+    private static void RecordMergeHoleDiagnostics(
+        int polygonVertexCount,
+        int holeVertexCount,
+        int siblingHoleCount,
+        int visibilityChecks,
+        int visitedEdges,
+        int segmentIntersectionTests)
+    {
+        mergeHoleVisibilityChecksCounter += visibilityChecks;
+        mergeHoleEdgeVisitsCounter += visitedEdges;
+        mergeHoleIntersectionTestsCounter += segmentIntersectionTests;
+        mergeHoleInputVerticesCounter += polygonVertexCount + holeVertexCount;
+        mergeHoleSiblingHolesCounter += siblingHoleCount;
+    }
+
+    private static void RecordEarClippingDiagnostics(
+        int polygonVertexCount,
+        int candidatesChecked,
+        int pointInsideTriangleTests,
+        int removedVertices)
+    {
+        earClippingCandidatesCounter += candidatesChecked;
+        earClippingTriangleTestsCounter += pointInsideTriangleTests;
+        earClippingInputVerticesCounter += polygonVertexCount;
+        earClippingRemovedVerticesCounter += removedVertices;
+    }
+
+    private static void FlushCapDiagnostics()
+    {
+        // ログ生成はBuildCutSurfaceCapsマーカー外で行い、CPU測定への影響を抑える。
+        if (mergeHoleVisibilityChecksCounter != 0 ||
+            earClippingCandidatesCounter != 0 ||
+            mergeHoleInputVerticesCounter != 0 ||
+            earClippingInputVerticesCounter != 0)
+        {
+            Debug.Log(
+                "[EnemyMeshCutCapDiagnostic] " +
+                $"Frame={Time.frameCount}, " +
+                $"MergeHole.VisibilityChecks={mergeHoleVisibilityChecksCounter}, " +
+                $"MergeHole.EdgeVisits={mergeHoleEdgeVisitsCounter}, " +
+                $"MergeHole.SegmentTests={mergeHoleIntersectionTestsCounter}, " +
+                $"MergeHole.InputVerticesTotal={mergeHoleInputVerticesCounter}, " +
+                $"MergeHole.SiblingHolesTotal={mergeHoleSiblingHolesCounter}, " +
+                $"EarClipping.Candidates={earClippingCandidatesCounter}, " +
+                $"EarClipping.PointTests={earClippingTriangleTestsCounter}, " +
+                $"EarClipping.InputVerticesTotal={earClippingInputVerticesCounter}, " +
+                $"EarClipping.RemovedVertices={earClippingRemovedVerticesCounter}");
+        }
+
+        mergeHoleVisibilityChecksCounter = 0;
+        mergeHoleEdgeVisitsCounter = 0;
+        mergeHoleIntersectionTestsCounter = 0;
+        mergeHoleInputVerticesCounter = 0;
+        mergeHoleSiblingHolesCounter = 0;
+        earClippingCandidatesCounter = 0;
+        earClippingTriangleTestsCounter = 0;
+        earClippingInputVerticesCounter = 0;
+        earClippingRemovedVerticesCounter = 0;
+    }
+#endif
 
     private static float Cross2D(
         Vector2 first,

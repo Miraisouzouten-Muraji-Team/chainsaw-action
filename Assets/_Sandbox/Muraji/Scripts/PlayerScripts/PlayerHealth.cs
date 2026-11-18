@@ -5,6 +5,8 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public sealed class PlayerHealth : MonoBehaviour
 {
+    private const double DIGGING_FLOOR_SECONDS_TO_ZERO = 1d;
+
     [Tooltip("最大HPと、自動回復の待ち時間・回復量・回復間隔を設定するアセットです。")]
     [SerializeField] private PlayerHealthData healthData;
 
@@ -174,7 +176,7 @@ public sealed class PlayerHealth : MonoBehaviour
         return false;
     }
 
-    // 通常時だけ床の接触時間と差分ダメージを進める。ボーナス中は履歴も進めない。
+    // 食い込み状態に応じた速さで床の接触時間と差分ダメージを進める。ボーナス中は履歴も進めない。
     public void ApplyFloorContact(DamageFloorData data)
     {
         if (!initialized || !isActiveAndEnabled || IsDead || data == null ||
@@ -193,7 +195,15 @@ public sealed class PlayerHealth : MonoBehaviour
         state.LastFixedTime = fixedTime;
 
         double secondsToZero = data.SecondsToZero;
-        double elapsedSeconds = state.ElapsedSeconds + Math.Max(0d, Time.fixedDeltaTime);
+        bool isDigging = chainsawDigging != null &&
+            chainsawDigging.isActiveAndEnabled && chainsawDigging.IsDigging;
+        double contactSeconds = Math.Max(0d, Time.fixedDeltaTime);
+        if (isDigging)
+        {
+            // 通常秒数を基準に記録し、途中で切り替えてもカーブの現在位置を保つ。
+            contactSeconds *= secondsToZero / DIGGING_FLOOR_SECONDS_TO_ZERO;
+        }
+        double elapsedSeconds = state.ElapsedSeconds + contactSeconds;
         double completedCycles = Math.Floor(elapsedSeconds / secondsToZero);
         double nextElapsedSeconds = elapsedSeconds % secondsToZero;
         float normalizedTime = Mathf.Clamp01((float)(nextElapsedSeconds / secondsToZero));

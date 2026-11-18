@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9eed7deb3d0276c4f9c77f87ba00ab9d, type: 3}
   m_Name: DiggingParameter
   m_EditorClassIdentifier: Assembly-CSharp::DiggingParameter
-  inputMode: 0
+  inputMode: 1
   bonusThreshold: 0.8
   floorSpeedDivisor: 3
   floorDashPower: 15

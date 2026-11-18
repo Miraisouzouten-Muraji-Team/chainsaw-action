@@ -13,3 +13,6 @@ MonoBehaviour:
   m_Name: PlayerHealthData
   m_EditorClassIdentifier: Assembly-CSharp::PlayerHealthData
   maxHealth: 100
+  recoveryDelay: 5
+  recoveryAmount: 0.05
+  recoveryInterval: 0.01

@@ -1,6 +1,6 @@
+
 using System.Collections;
 using System.Collections.Generic;
-using Unity.VectorGraphics;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -19,12 +19,14 @@ public class ClearSceneChange : MonoBehaviour
 
     private bool isChangingScene;
 
-    LoadScene ls = null;
+    private LoadScene ls = null;
 
+    [Header("無効化するBehaviour")]
     [SerializeField]
-    List<Behaviour> behaviours = null;
+    private List<Behaviour> behaviours = new List<Behaviour>();
 
     static bool startPlayFead = false;
+
     private void Awake()
     {
         ls = GetComponent<LoadScene>();
@@ -39,18 +41,42 @@ public class ClearSceneChange : MonoBehaviour
         {
             isChangingScene = true;
 
-            Debug.Log("Player has reached the goal!");
+            // 登録されたBehaviourを無効化
+            DisableBehaviours();
 
-            foreach (var behaviour in behaviours)
-            {
-                behaviour.enabled = false;
-            }
             StartCoroutine(ChangeScene());
         }
     }
 
+    /// <summary>
+    /// 登録されたBehaviourを無効化する
+    /// </summary>
+    private void DisableBehaviours()
+    {
+        if (behaviours == null)
+            return;
+
+        foreach (var behaviour in behaviours)
+        {
+            // 未設定の要素はスキップ
+            if (behaviour == null)
+                continue;
+
+            behaviour.enabled = false;
+        }
+    }
+
+    /// <summary>
+    /// シーン遷移とフェードアウト
+    /// </summary>
     private IEnumerator ChangeScene()
     {
+        if (fadeCanvasGroup == null)
+        {
+            Debug.LogError("FadeCanvasGroupが設定されていません。");
+            yield break;
+        }
+
         // Canvasを表示状態にする
         fadeCanvasGroup.gameObject.SetActive(true);
         fadeCanvasGroup.alpha = 0f;
@@ -72,20 +98,35 @@ public class ClearSceneChange : MonoBehaviour
         fadeCanvasGroup.alpha = 1f;
 
         startPlayFead = true;
-        // 次のシーンへ遷移
-        ls.LoadSceneNext(nextSceneName);
-    }
 
+        // 次のシーンへ遷移
+        if (ls != null)
+        {
+            ls.LoadSceneNext(nextSceneName);
+        }
+        else
+        {
+            Debug.LogError("LoadSceneコンポーネントが見つかりません。");
+        }
+    }
 
     private void Start()
     {
+        if (fadeCanvasGroup == null)
+        {
+            Debug.LogError("FadeCanvasGroupが設定されていません。");
+            return;
+        }
+
         StartCoroutine(FadeIn());
     }
 
+    /// <summary>
+    /// シーン開始時のフェードイン
+    /// </summary>
     private IEnumerator FadeIn()
     {
         // Canvasを不透明な状態にする
-        //fadeCanvasGroup.gameObject.SetActive(true);
         fadeCanvasGroup.alpha = 1f;
 
         float elapsedTime = 0f;
@@ -103,8 +144,5 @@ public class ClearSceneChange : MonoBehaviour
 
         // フェード完了
         fadeCanvasGroup.alpha = 0f;
-
-        // フェード用Canvasを非表示にする
-        //fadeCanvasGroup.gameObject.SetActive(false);
     }
 }

@@ -1337,4 +1337,3 @@ public class SensorChainsawDigging : MonoBehaviour
         queuedMovementCollisionEnemies.Clear();
     }
 }
-

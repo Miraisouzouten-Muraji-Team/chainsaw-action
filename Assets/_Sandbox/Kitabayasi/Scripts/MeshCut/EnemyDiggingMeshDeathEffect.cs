@@ -112,6 +112,17 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
 
     private void Awake()
     {
+        // BeforeSceneLoadで用意した共有Builder Poolに、実際の対象Meshの
+        // SubMesh別Index数と目標Piece数を反映する。死亡時には確保しない。
+        // SkinnedMeshは死亡時にBakeするが、頂点/Index数は元Meshから見積もる。
+        Mesh sourceMesh = targetSkinnedMeshRenderer != null
+            ? targetSkinnedMeshRenderer.sharedMesh
+            : targetMeshFilter != null ? targetMeshFilter.sharedMesh : null;
+        if (sourceMesh != null)
+        {
+            MeshPlaneSplitter.WarmupTargetCountBuffers(sourceMesh, targetPieceCount);
+        }
+
         PreGeneratePieceObjects();
     }
 

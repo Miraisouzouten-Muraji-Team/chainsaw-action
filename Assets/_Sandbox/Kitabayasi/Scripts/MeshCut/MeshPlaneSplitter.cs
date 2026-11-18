@@ -101,6 +101,8 @@ public sealed class MeshPlaneSplitter
         new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.GrowTriangleAreas");
     private static readonly ProfilerMarker cutSegmentGrowthProfilerMarker =
         new ProfilerMarker("EnemyMeshCut.SplitPlane.TriangleLoop.GrowCutSegments");
+    private static readonly ProfilerMarker warmupTriangleBuffersProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.WarmupTriangleBuffers");
     private static readonly ProfilerMarker buildBoundaryGraphProfilerMarker =
         new ProfilerMarker("EnemyMeshCut.SplitPlane.Boundary.BuildGraph");
     private static readonly ProfilerMarker traceBoundaryComponentsProfilerMarker =
@@ -497,6 +499,367 @@ public sealed class MeshPlaneSplitter
     }
 #endif
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+    // 診断専用。falseで新規カウンタとログを無効化できる。Releaseビルドには含めない。
+    private const bool ENABLE_TRIANGLE_LOOP_DIAGNOSTICS = true;
+    private const int MAX_TRIANGLE_LOOP_GROWTH_RECORDS = 96;
+    private const int LOOP_POSITION = 0;
+    private const int LOOP_NORMAL = 1;
+    private const int LOOP_UV = 2;
+    private const int LOOP_TANGENT = 3;
+    private const int LOOP_CONNECTIVITY = 4;
+    private const int LOOP_INDEX = 5;
+    private const int LOOP_AREA = 6;
+    private const int LOOP_SEGMENT = 7;
+    private const int LOOP_CLIPPED_POLYGON = 8;
+    private const int LOOP_CUT_POINT = 9;
+    private const int LOOP_CUT_POINT_INDEX = 10;
+    private const int LOOP_BUFFER_KIND_COUNT = 11;
+
+    // MeshTargetCountSplitterごとの呼出し先インスタンスに保持する。
+    // List/文字列の生成はTriangleLoop内で行わず、記録上限を超えた件数は明示する。
+    private readonly int[,] triangleLoopGrowthRecords =
+        new int[MAX_TRIANGLE_LOOP_GROWTH_RECORDS, 5];
+    private readonly int[] triangleLoopGrowthCounts = new int[LOOP_BUFFER_KIND_COUNT];
+    private readonly int[] triangleLoopPeakCounts = new int[LOOP_BUFFER_KIND_COUNT];
+    private readonly int[] triangleLoopPeakCapacities = new int[LOOP_BUFFER_KIND_COUNT];
+    private readonly int[] triangleLoopPeakUnusedCapacities = new int[LOOP_BUFFER_KIND_COUNT];
+    private readonly long[] triangleLoopEstimatedGrowthBytes = new long[LOOP_BUFFER_KIND_COUNT];
+    private bool triangleLoopDiagnosticsActive;
+    private bool triangleLoopDiagnosticsInsideLoop;
+    private int triangleLoopDiagnosticRunNumber;
+    private int triangleLoopDiagnosticFrame;
+    private int triangleLoopGrowthRecordCount;
+    private int triangleLoopOmittedGrowthRecords;
+    private int triangleLoopSplitAttempts;
+    private int triangleLoopInputSourceVertices;
+    private int triangleLoopInputSourceIndices;
+    private long triangleLoopAttemptInputVertices;
+    private long triangleLoopAttemptInputIndices;
+    private long triangleLoopAttemptOutputVertices;
+    private long triangleLoopAttemptOutputIndices;
+    private int triangleLoopPeakBuilderVertices;
+    private int triangleLoopPeakBuilderVertexCapacity;
+    private int triangleLoopPeakBuilderIndices;
+    private int triangleLoopPeakBuilderIndexCapacity;
+    private int triangleLoopAcquiredNewBuilders;
+    private int triangleLoopAcquiredReusedBuilders;
+    private int triangleLoopReleasedBuilders;
+    private int triangleLoopFinalOutputVertices;
+    private int triangleLoopFinalOutputIndices;
+    private int triangleLoopFinalOutputPieces;
+    private int triangleLoopTemporaryNewLists;
+    private int triangleLoopTemporarySourceArrayPoolRents;
+    private int triangleLoopTemporaryDistanceArrayPoolRents;
+    private int triangleLoopDedicatedSourceBufferUses;
+
+    internal void BeginTriangleLoopDiagnostics()
+    {
+        if (!ENABLE_TRIANGLE_LOOP_DIAGNOSTICS)
+        {
+            triangleLoopDiagnosticsActive = false;
+            return;
+        }
+
+        triangleLoopDiagnosticsActive = true;
+        triangleLoopDiagnosticsInsideLoop = false;
+        triangleLoopDiagnosticRunNumber++;
+        triangleLoopDiagnosticFrame = Time.frameCount;
+        triangleLoopGrowthRecordCount = 0;
+        triangleLoopOmittedGrowthRecords = 0;
+        triangleLoopSplitAttempts = 0;
+        triangleLoopInputSourceVertices = 0;
+        triangleLoopInputSourceIndices = 0;
+        triangleLoopAttemptInputVertices = 0;
+        triangleLoopAttemptInputIndices = 0;
+        triangleLoopAttemptOutputVertices = 0;
+        triangleLoopAttemptOutputIndices = 0;
+        triangleLoopPeakBuilderVertices = 0;
+        triangleLoopPeakBuilderVertexCapacity = 0;
+        triangleLoopPeakBuilderIndices = 0;
+        triangleLoopPeakBuilderIndexCapacity = 0;
+        triangleLoopAcquiredNewBuilders = 0;
+        triangleLoopAcquiredReusedBuilders = 0;
+        triangleLoopReleasedBuilders = 0;
+        triangleLoopFinalOutputVertices = 0;
+        triangleLoopFinalOutputIndices = 0;
+        triangleLoopFinalOutputPieces = 0;
+        triangleLoopTemporaryNewLists = 0;
+        triangleLoopTemporarySourceArrayPoolRents = 0;
+        triangleLoopTemporaryDistanceArrayPoolRents = 0;
+        triangleLoopDedicatedSourceBufferUses = 0;
+        Array.Clear(triangleLoopGrowthCounts, 0, triangleLoopGrowthCounts.Length);
+        Array.Clear(triangleLoopPeakCounts, 0, triangleLoopPeakCounts.Length);
+        Array.Clear(triangleLoopPeakCapacities, 0, triangleLoopPeakCapacities.Length);
+        Array.Clear(triangleLoopPeakUnusedCapacities, 0, triangleLoopPeakUnusedCapacities.Length);
+        Array.Clear(triangleLoopEstimatedGrowthBytes, 0, triangleLoopEstimatedGrowthBytes.Length);
+    }
+
+    internal void RecordFinalTargetCountOutput(IReadOnlyList<PieceMeshBuilder> pieces)
+    {
+        if (!triangleLoopDiagnosticsActive)
+        {
+            return;
+        }
+        triangleLoopFinalOutputPieces = pieces.Count;
+        for (int pieceIndex = 0; pieceIndex < pieces.Count; pieceIndex++)
+        {
+            PieceMeshBuilder piece = pieces[pieceIndex];
+            triangleLoopFinalOutputVertices += piece.Vertices.Count;
+            foreach (List<int> indices in piece.TrianglesBySubMesh)
+            {
+                triangleLoopFinalOutputIndices += indices.Count;
+            }
+        }
+    }
+
+    private void RecordTriangleLoopSource(PieceMeshBuilder source)
+    {
+        if (!triangleLoopDiagnosticsActive)
+        {
+            return;
+        }
+        triangleLoopInputSourceVertices = source.Vertices.Count;
+        foreach (List<int> indices in source.TrianglesBySubMesh)
+        {
+            triangleLoopInputSourceIndices += indices.Count;
+        }
+    }
+
+    private void RecordTriangleLoopAcquisition(bool isNew)
+    {
+        if (!triangleLoopDiagnosticsActive)
+        {
+            return;
+        }
+        if (isNew) triangleLoopAcquiredNewBuilders++;
+        else triangleLoopAcquiredReusedBuilders++;
+    }
+
+    private void RecordTriangleLoopRelease(PieceMeshBuilder builder)
+    {
+        if (!triangleLoopDiagnosticsActive)
+        {
+            return;
+        }
+        triangleLoopReleasedBuilders++;
+        // Release前の使用量。Source・中間Piece・最終Pieceを別途重複加算しない。
+        triangleLoopPeakBuilderVertices = Mathf.Max(triangleLoopPeakBuilderVertices, builder.Vertices.Count);
+        triangleLoopPeakBuilderVertexCapacity = Mathf.Max(triangleLoopPeakBuilderVertexCapacity, builder.Vertices.Capacity);
+        int indexCount = 0;
+        int indexCapacity = 0;
+        foreach (List<int> indices in builder.TrianglesBySubMesh)
+        {
+            indexCount += indices.Count;
+            indexCapacity += indices.Capacity;
+        }
+        triangleLoopPeakBuilderIndices = Mathf.Max(triangleLoopPeakBuilderIndices, indexCount);
+        triangleLoopPeakBuilderIndexCapacity = Mathf.Max(triangleLoopPeakBuilderIndexCapacity, indexCapacity);
+    }
+
+    private void RecordTriangleLoopBegin(PieceMeshBuilder source)
+    {
+        if (!triangleLoopDiagnosticsActive)
+        {
+            return;
+        }
+        triangleLoopSplitAttempts++;
+        triangleLoopAttemptInputVertices += source.Vertices.Count;
+        foreach (List<int> indices in source.TrianglesBySubMesh)
+        {
+            triangleLoopAttemptInputIndices += indices.Count;
+        }
+        triangleLoopDiagnosticsInsideLoop = true;
+    }
+
+    private void RecordTriangleLoopEnd(
+        PieceMeshBuilder first, PieceMeshBuilder second,
+        List<CutSegment> segments, List<VertexData> polygon,
+        List<Vector3> cutPoints, List<int> pointA, List<int> pointB, List<int> pointIds)
+    {
+        if (!triangleLoopDiagnosticsActive)
+        {
+            return;
+        }
+        triangleLoopDiagnosticsInsideLoop = false;
+        RecordTriangleLoopBuilderUsage(first);
+        RecordTriangleLoopBuilderUsage(second);
+        RecordTriangleLoopBufferUsage(LOOP_SEGMENT, segments.Count, segments.Capacity);
+        RecordTriangleLoopBufferUsage(LOOP_CLIPPED_POLYGON, polygon.Count, polygon.Capacity);
+        RecordTriangleLoopBufferUsage(LOOP_CUT_POINT, cutPoints.Count, cutPoints.Capacity);
+        RecordTriangleLoopBufferUsage(LOOP_CUT_POINT_INDEX, pointA.Count, pointA.Capacity);
+        RecordTriangleLoopBufferUsage(LOOP_CUT_POINT_INDEX, pointB.Count, pointB.Capacity);
+        RecordTriangleLoopBufferUsage(LOOP_CUT_POINT_INDEX, pointIds.Count, pointIds.Capacity);
+    }
+
+    private void RecordTriangleLoopBuilderUsage(PieceMeshBuilder builder)
+    {
+        triangleLoopAttemptOutputVertices += builder.Vertices.Count;
+        RecordTriangleLoopBufferUsage(LOOP_POSITION, builder.Vertices.Count, builder.Vertices.Capacity);
+        RecordTriangleLoopBufferUsage(LOOP_NORMAL, builder.Normals.Count, builder.Normals.Capacity);
+        RecordTriangleLoopBufferUsage(LOOP_UV, builder.Uv.Count, builder.Uv.Capacity);
+        if (builder.HasTangents)
+        {
+            RecordTriangleLoopBufferUsage(LOOP_TANGENT, builder.Tangents.Count, builder.Tangents.Capacity);
+        }
+        foreach (List<int> indices in builder.TrianglesBySubMesh)
+        {
+            triangleLoopAttemptOutputIndices += indices.Count;
+            RecordTriangleLoopBufferUsage(LOOP_INDEX, indices.Count, indices.Capacity);
+        }
+        foreach (List<float> areas in builder.TriangleDoubleAreasBySubMesh)
+        {
+            RecordTriangleLoopBufferUsage(LOOP_AREA, areas.Count, areas.Capacity);
+        }
+    }
+
+    private void RecordTriangleLoopBufferUsage(int kind, int count, int capacity)
+    {
+        triangleLoopPeakCounts[kind] = Mathf.Max(triangleLoopPeakCounts[kind], count);
+        triangleLoopPeakCapacities[kind] = Mathf.Max(triangleLoopPeakCapacities[kind], capacity);
+        // Count/Capacityを同じ観測点で比較。異なるBuilderの最大値同士を引かない。
+        triangleLoopPeakUnusedCapacities[kind] = Mathf.Max(
+            triangleLoopPeakUnusedCapacities[kind], capacity - count);
+    }
+
+    private void RecordTriangleLoopBufferGrowth(int kind, int before, int after, int builderId = 0)
+    {
+        if (!triangleLoopDiagnosticsActive || !triangleLoopDiagnosticsInsideLoop || after <= before)
+        {
+            return;
+        }
+        triangleLoopGrowthCounts[kind]++;
+        int bytesPerElement = GetTriangleLoopElementSize(kind);
+        if (bytesPerElement > 0)
+        {
+            // 新Backing Arrayのペイロード全体。差分ではなく新Capacity分を計上する。
+            triangleLoopEstimatedGrowthBytes[kind] += (long)after * bytesPerElement;
+        }
+        triangleLoopPeakCapacities[kind] = Mathf.Max(triangleLoopPeakCapacities[kind], after);
+        if (triangleLoopGrowthRecordCount < MAX_TRIANGLE_LOOP_GROWTH_RECORDS)
+        {
+            int index = triangleLoopGrowthRecordCount++;
+            triangleLoopGrowthRecords[index, 0] = triangleLoopSplitAttempts;
+            triangleLoopGrowthRecords[index, 1] = builderId;
+            triangleLoopGrowthRecords[index, 2] = kind;
+            triangleLoopGrowthRecords[index, 3] = before;
+            triangleLoopGrowthRecords[index, 4] = after;
+        }
+        else
+        {
+            triangleLoopOmittedGrowthRecords++;
+        }
+    }
+
+    private static int GetTriangleLoopElementSize(int kind)
+    {
+        switch (kind)
+        {
+            case LOOP_POSITION:
+            case LOOP_NORMAL: return 12; // Vector3
+            case LOOP_UV: return 8;       // Vector2
+            case LOOP_TANGENT: return 16; // Vector4
+            case LOOP_CONNECTIVITY:
+            case LOOP_INDEX:
+            case LOOP_CUT_POINT_INDEX:
+            case LOOP_AREA: return 4;
+            case LOOP_CUT_POINT: return 12;
+            // CutSegment/VertexDataはレイアウトに依存するため概算に算入しない。
+            default: return 0;
+        }
+    }
+
+    private static string GetTriangleLoopBufferName(int kind)
+    {
+        switch (kind)
+        {
+            case LOOP_POSITION: return "Positions";
+            case LOOP_NORMAL: return "Normals";
+            case LOOP_UV: return "UV";
+            case LOOP_TANGENT: return "Tangents";
+            case LOOP_CONNECTIVITY: return "Connectivity";
+            case LOOP_INDEX: return "TriangleIndices";
+            case LOOP_AREA: return "TriangleAreas";
+            case LOOP_SEGMENT: return "CutSegments";
+            case LOOP_CLIPPED_POLYGON: return "ClippedPolygon";
+            case LOOP_CUT_POINT: return "CutPoints";
+            case LOOP_CUT_POINT_INDEX: return "CutPointIndices";
+            default: return "Unknown";
+        }
+    }
+
+    internal void FlushTriangleLoopDiagnostics()
+    {
+        if (!triangleLoopDiagnosticsActive)
+        {
+            return;
+        }
+        triangleLoopDiagnosticsInsideLoop = false;
+        triangleLoopDiagnosticsActive = false;
+
+        // このメソッドはTargetCount.Totalを抜けてからだけ呼ぶ。
+        // ここでの文字列割り当てはTriangleLoopのGC Allocへ混入しない。
+        var message = new StringBuilder(4096);
+        message.Append("[EnemyMeshCutTriangleLoopDiagnostic] ")
+            .Append("Frame=").Append(triangleLoopDiagnosticFrame)
+            .Append(" Run=").Append(triangleLoopDiagnosticRunNumber)
+            .Append(" Attempts=").Append(triangleLoopSplitAttempts)
+            .Append(" (Run=1は同一Splitterの初回。事前Pool Warmupとは別)\n")
+            .Append("Source V/I=").Append(triangleLoopInputSourceVertices).Append('/')
+            .Append(triangleLoopInputSourceIndices)
+            .Append(" | Attempts input V/I=").Append(triangleLoopAttemptInputVertices).Append('/')
+            .Append(triangleLoopAttemptInputIndices)
+            .Append(" | Loop output V/I(sum of attempts)=").Append(triangleLoopAttemptOutputVertices).Append('/')
+            .Append(triangleLoopAttemptOutputIndices)
+            .Append(" | Final output pieces/V/I=").Append(triangleLoopFinalOutputPieces).Append('/')
+            .Append(triangleLoopFinalOutputVertices).Append('/').Append(triangleLoopFinalOutputIndices)
+            .Append('\n')
+            .Append("Builder acquired New/Reuse/Released=")
+            .Append(triangleLoopAcquiredNewBuilders).Append('/')
+            .Append(triangleLoopAcquiredReusedBuilders).Append('/')
+            .Append(triangleLoopReleasedBuilders)
+            .Append(" | Peak Builder V Count/Capacity(independent)=")
+            .Append(triangleLoopPeakBuilderVertices).Append('/')
+            .Append(triangleLoopPeakBuilderVertexCapacity)
+            .Append(" | Peak Builder Index Count/Capacity(independent)=")
+            .Append(triangleLoopPeakBuilderIndices).Append('/')
+            .Append(triangleLoopPeakBuilderIndexCapacity).Append('\n');
+
+        long estimatedBytes = 0;
+        for (int kind = 0; kind < LOOP_BUFFER_KIND_COUNT; kind++)
+        {
+            estimatedBytes += triangleLoopEstimatedGrowthBytes[kind];
+            message.Append(GetTriangleLoopBufferName(kind))
+                .Append(" Growths=").Append(triangleLoopGrowthCounts[kind])
+                .Append(" PeakCount/Capacity(independent)=").Append(triangleLoopPeakCounts[kind]).Append('/')
+                .Append(triangleLoopPeakCapacities[kind])
+                .Append(" MaxObservedUnusedCapacity=").Append(triangleLoopPeakUnusedCapacities[kind])
+                .Append(" EstimatedNewArrayPayloadBytes=")
+                .Append(triangleLoopEstimatedGrowthBytes[kind]).Append('\n');
+        }
+        message.Append("Temporary Lists new (pre-loop)=").Append(triangleLoopTemporaryNewLists)
+            .Append(" | Source VertexData dedicated uses=").Append(triangleLoopDedicatedSourceBufferUses)
+            .Append(" | Source VertexData ArrayPool rents=").Append(triangleLoopTemporarySourceArrayPoolRents)
+            .Append(" | float distance ArrayPool rents=").Append(triangleLoopTemporaryDistanceArrayPoolRents)
+            .Append(" (Rentが新規割当か既存再利用かはこのカウンタでは判定不可)\n")
+            .Append("Loop array payload estimate bytes=").Append(estimatedBytes)
+            .Append(" (Managed GC Alloc実測値ではない。配列ヘッダ/CutSegments等は除外)\n")
+            .Append("Growth detail [Attempt BuilderId Buffer Before->After; BuilderId=0 is shared temporary buffer] Recorded=")
+            .Append(triangleLoopGrowthRecordCount)
+            .Append(" Omitted=").Append(triangleLoopOmittedGrowthRecords).Append('\n');
+        for (int index = 0; index < triangleLoopGrowthRecordCount; index++)
+        {
+            message.Append('#').Append(index + 1).Append(" A")
+                .Append(triangleLoopGrowthRecords[index, 0]).Append(" B")
+                .Append(triangleLoopGrowthRecords[index, 1]).Append(':')
+                .Append(GetTriangleLoopBufferName(triangleLoopGrowthRecords[index, 2]))
+                .Append(' ').Append(triangleLoopGrowthRecords[index, 3])
+                .Append("->").Append(triangleLoopGrowthRecords[index, 4]).Append('\n');
+        }
+        Debug.Log(message.ToString());
+    }
+#endif
+
     private static readonly ProfilerMarker emitCapTrianglesProfilerMarker =
         new ProfilerMarker("EnemyMeshCut.SplitPlane.Cap.EmitTriangles");
     private static readonly ProfilerMarker overlapCapBoundaryProfilerMarker =
@@ -545,6 +908,19 @@ public sealed class MeshPlaneSplitter
     // Connectivity IDは通常攻撃2分割でSource Vertex index範囲を基準に生成されるため、
     // Boundary Node lookupも同規模まで事前確保して死亡時の初回Allocationを避ける。
     private const int BOUNDARY_CONNECTIVITY_LOOKUP_BUFFER_LENGTH = 32768;
+
+    // 初回8分割で観測した入力I=124482を基準とするフォールバック。
+    // BeforeSceneLoadではScene中のMeshを参照できないため、実Meshの情報は
+    // EnemyDiggingMeshDeathEffect.Awakeで共有Poolへ追加反映する。
+    private const int TARGET_COUNT_WARMUP_SOURCE_INDEX_COUNT = 124482;
+    private const int TARGET_COUNT_WARMUP_PIECE_COUNT = 8;
+    private const int TARGET_COUNT_WARMUP_BUILDER_COUNT = 9;
+    private const int TARGET_COUNT_WARMUP_LARGE_OUTPUT_BUILDERS = 2;
+    private const int TARGET_COUNT_WARMUP_LARGE_VERTEX_CAPACITY = 20000;
+    // 最初の2出力は偏ったPlaneでも拡張しにくいよう入力Indexの100%、
+    // 残りのBuilderは35%だけ予約する。過大Meshでは通常拡張を維持する。
+    private const int TARGET_COUNT_WARMUP_LARGE_INDEX_PERCENT = 100;
+    private const int TARGET_COUNT_WARMUP_REGULAR_INDEX_PERCENT = 35;
 
     private static VertexData[] sourceVertexDataBuffer;
     private static int sourceVertexDataBufferLeaseState;
@@ -637,7 +1013,9 @@ public sealed class MeshPlaneSplitter
             sourceTriangleIndexListPool,
             SOURCE_MESH_ATTRIBUTE_LIST_WARMUP_CAPACITY * 3);
 
-        EnsurePooledListAvailable(cutSegmentListPool, 128);
+        // 交差Triangleから生成するCutSegmentも1つの作業Listを繰り返し使用する。
+        EnsurePooledListAvailable(cutSegmentListPool,
+            CalculateWarmupCutSegmentCapacity(TARGET_COUNT_WARMUP_SOURCE_INDEX_COUNT));
         EnsurePooledListAvailable(clippedPolygonListPool, 4);
         EnsurePooledListAvailable(cutPointListPool, 3);
         // 端点ごとの元Edge index 2種類＋接続IDの合計3本を同時に使用する。
@@ -693,7 +1071,10 @@ public sealed class MeshPlaneSplitter
             sourceMesh.HasVertexAttribute(VertexAttribute.Tangent),
             sourceMesh.vertexCount,
             sourceMesh.vertexCount,
-            false);
+            false,
+            this,
+            null,
+            sourceMesh);
 
         try
         {
@@ -737,6 +1118,9 @@ public sealed class MeshPlaneSplitter
 
             // 元MeshのBounds設定値を維持する。生成Pieceは従来どおり頂点から計算する。
             builder.SetSourceBounds(sourceMesh.bounds);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            RecordTriangleLoopSource(builder);
+#endif
             sourcePiece = builder;
             builder = null;
             failureReason = null;
@@ -1393,6 +1777,15 @@ public sealed class MeshPlaneSplitter
                 ? new Dictionary<long, int>()
                 : null;
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        if (isTargetCountSplit && triangleLoopDiagnosticsActive)
+        {
+            triangleLoopTemporaryNewLists += cutSegmentListPool.Count == 0 ? 1 : 0;
+            triangleLoopTemporaryNewLists += clippedPolygonListPool.Count == 0 ? 1 : 0;
+            triangleLoopTemporaryNewLists += cutPointListPool.Count == 0 ? 1 : 0;
+            triangleLoopTemporaryNewLists += Mathf.Max(0, 3 - cutPointIndexListPool.Count);
+        }
+#endif
         cutSegments = AcquireReusableList(cutSegmentListPool, 0);
 
         // Triangle単位で一時Collectionを生成しないため、分割処理中だけ使う作業領域を再利用する。
@@ -1426,10 +1819,25 @@ public sealed class MeshPlaneSplitter
                     AcquireSourceVertexDataBuffer(
                         sourceVertices.Count,
                         out returnSourceVertexDataBufferToPool);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (isTargetCountSplit && triangleLoopDiagnosticsActive)
+                {
+                    if (returnSourceVertexDataBufferToPool)
+                        triangleLoopTemporarySourceArrayPoolRents++;
+                    else
+                        triangleLoopDedicatedSourceBufferUses++;
+                }
+#endif
 
                 if (isTargetCountSplit && !useCachedTriangleValidation)
                 {
                     sourcePlaneDistances = ArrayPool<float>.Shared.Rent(sourceVertices.Count);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    if (triangleLoopDiagnosticsActive)
+                    {
+                        triangleLoopTemporaryDistanceArrayPoolRents++;
+                    }
+#endif
                 }
 
                 // Source Mesh由来の頂点属性はTriangle間で共有されるため、
@@ -1520,13 +1928,17 @@ public sealed class MeshPlaneSplitter
                         hasTangents,
                         sourceVertices.Count,
                         firstEstimatedVertexCapacity,
-                        splitConnectedComponents);
+                        splitConnectedComponents,
+                        isTargetCountSplit ? this : null,
+                        useWorkingPiece ? sourceWorkingPiece.TrianglesBySubMesh : null);
                     secondBuilder = AcquirePieceMeshBuilder(
                         originalSubMeshCount + 1,
                         hasTangents,
                         sourceVertices.Count,
                         secondEstimatedVertexCapacity,
-                        splitConnectedComponents);
+                        splitConnectedComponents,
+                        isTargetCountSplit ? this : null,
+                        useWorkingPiece ? sourceWorkingPiece.TrianglesBySubMesh : null);
                 }
                 else
                 {
@@ -1535,13 +1947,17 @@ public sealed class MeshPlaneSplitter
                         hasTangents,
                         sourceVertices.Count,
                         secondEstimatedVertexCapacity,
-                        splitConnectedComponents);
+                        splitConnectedComponents,
+                        isTargetCountSplit ? this : null,
+                        useWorkingPiece ? sourceWorkingPiece.TrianglesBySubMesh : null);
                     firstBuilder = AcquirePieceMeshBuilder(
                         originalSubMeshCount + 1,
                         hasTangents,
                         sourceVertices.Count,
                         firstEstimatedVertexCapacity,
-                        splitConnectedComponents);
+                        splitConnectedComponents,
+                        isTargetCountSplit ? this : null,
+                        useWorkingPiece ? sourceWorkingPiece.TrianglesBySubMesh : null);
                 }
 
                 if (collectTargetPieceSurfaceAreas)
@@ -1563,6 +1979,15 @@ public sealed class MeshPlaneSplitter
 
             using (processTriangleLoopProfilerMarker.Auto())
             {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            bool recordThisTriangleLoop = isTargetCountSplit && triangleLoopDiagnosticsActive;
+            if (recordThisTriangleLoop)
+            {
+                RecordTriangleLoopBegin(sourceWorkingPiece);
+            }
+            try
+            {
+#endif
             for (int subMeshIndex = 0;
                  subMeshIndex < originalSubMeshCount;
                  subMeshIndex++)
@@ -1763,6 +2188,10 @@ public sealed class MeshPlaneSplitter
                                     cutConnectivityVertexIdsBySourceEdge,
                                     ref nextConnectivityVertexId);
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                            int clippedPolygonCapacityBefore = recordThisTriangleLoop
+                                ? clippedPolygon.Capacity : 0;
+#endif
                             ClipTriangle(
                                 vertexA,
                                 vertexB,
@@ -1774,12 +2203,25 @@ public sealed class MeshPlaneSplitter
                                 geometryEpsilon,
                                 clippedPolygon,
                                 in triangleIntersections);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                            if (recordThisTriangleLoop)
+                            {
+                                RecordTriangleLoopBufferGrowth(LOOP_CLIPPED_POLYGON,
+                                    clippedPolygonCapacityBefore, clippedPolygon.Capacity);
+                                RecordTriangleLoopBufferUsage(LOOP_CLIPPED_POLYGON,
+                                    clippedPolygon.Count, clippedPolygon.Capacity);
+                            }
+#endif
 
                             firstBuilder.AddConvexPolygon(
                                 clippedPolygon,
                                 subMeshIndex,
                                 false);
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                            int clippedPolygonCapacityBeforeSecond = recordThisTriangleLoop
+                                ? clippedPolygon.Capacity : 0;
+#endif
                             ClipTriangle(
                                 vertexA,
                                 vertexB,
@@ -1791,13 +2233,31 @@ public sealed class MeshPlaneSplitter
                                 geometryEpsilon,
                                 clippedPolygon,
                                 in triangleIntersections);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                            if (recordThisTriangleLoop)
+                            {
+                                RecordTriangleLoopBufferGrowth(LOOP_CLIPPED_POLYGON,
+                                    clippedPolygonCapacityBeforeSecond, clippedPolygon.Capacity);
+                                RecordTriangleLoopBufferUsage(LOOP_CLIPPED_POLYGON,
+                                    clippedPolygon.Count, clippedPolygon.Capacity);
+                            }
+#endif
 
                             secondBuilder.AddConvexPolygon(
                                 clippedPolygon,
                                 subMeshIndex,
                                 false);
 
-                            if (!TryGetCutSegment(
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                            int cutPointCapacityBefore = recordThisTriangleLoop ? cutPoints.Capacity : 0;
+                            int cutPointIndexACapacityBefore = recordThisTriangleLoop
+                                ? cutPointSourceEdgeVertexIndexA.Capacity : 0;
+                            int cutPointIndexBCapacityBefore = recordThisTriangleLoop
+                                ? cutPointSourceEdgeVertexIndexB.Capacity : 0;
+                            int cutPointIdCapacityBefore = recordThisTriangleLoop
+                                ? cutPointConnectivityVertexIds.Capacity : 0;
+#endif
+                            bool foundCutSegment = TryGetCutSegment(
                                     vertexA,
                                     vertexB,
                                     vertexC,
@@ -1814,7 +2274,29 @@ public sealed class MeshPlaneSplitter
                                     cutPointSourceEdgeVertexIndexB,
                                     cutPointConnectivityVertexIds,
                                     out CutSegment cutSegment,
-                                    out bool isDegenerateSegment))
+                                    out bool isDegenerateSegment);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                            if (recordThisTriangleLoop)
+                            {
+                                RecordTriangleLoopBufferGrowth(LOOP_CUT_POINT,
+                                    cutPointCapacityBefore, cutPoints.Capacity);
+                                RecordTriangleLoopBufferGrowth(LOOP_CUT_POINT_INDEX,
+                                    cutPointIndexACapacityBefore, cutPointSourceEdgeVertexIndexA.Capacity);
+                                RecordTriangleLoopBufferGrowth(LOOP_CUT_POINT_INDEX,
+                                    cutPointIndexBCapacityBefore, cutPointSourceEdgeVertexIndexB.Capacity);
+                                RecordTriangleLoopBufferGrowth(LOOP_CUT_POINT_INDEX,
+                                    cutPointIdCapacityBefore, cutPointConnectivityVertexIds.Capacity);
+                                RecordTriangleLoopBufferUsage(LOOP_CUT_POINT,
+                                    cutPoints.Count, cutPoints.Capacity);
+                                RecordTriangleLoopBufferUsage(LOOP_CUT_POINT_INDEX,
+                                    cutPointSourceEdgeVertexIndexA.Count, cutPointSourceEdgeVertexIndexA.Capacity);
+                                RecordTriangleLoopBufferUsage(LOOP_CUT_POINT_INDEX,
+                                    cutPointSourceEdgeVertexIndexB.Count, cutPointSourceEdgeVertexIndexB.Capacity);
+                                RecordTriangleLoopBufferUsage(LOOP_CUT_POINT_INDEX,
+                                    cutPointConnectivityVertexIds.Count, cutPointConnectivityVertexIds.Capacity);
+                            }
+#endif
+                            if (!foundCutSegment)
                             {
                                 // 交点が1点しか得られないTriangleは、Planeが頂点へ接触しただけ等で
                                 // 境界Edgeを構成しない局所的な縮退として扱う。
@@ -1876,9 +2358,25 @@ public sealed class MeshPlaneSplitter
                                     indexB,
                                     indexC);
 
-                            AddWithGrowthMarker(cutSegments, cutSegment, cutSegmentGrowthProfilerMarker);
+                            AddWithGrowthMarker(cutSegments, cutSegment, cutSegmentGrowthProfilerMarker
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                                , recordThisTriangleLoop ? this : null, LOOP_SEGMENT
+#endif
+                                );
                 }
             }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            }
+            finally
+            {
+                if (recordThisTriangleLoop)
+                {
+                    RecordTriangleLoopEnd(firstBuilder, secondBuilder, cutSegments,
+                        clippedPolygon, cutPoints, cutPointSourceEdgeVertexIndexA,
+                        cutPointSourceEdgeVertexIndexB, cutPointConnectivityVertexIds);
+                }
+            }
+#endif
             }
         }
         finally
@@ -2377,14 +2875,30 @@ public sealed class MeshPlaneSplitter
     }
 
     // サンプルは容量拡張時だけ作る。List.Add自体の挙動と容量拡張方式は変えない。
-    private static bool AddWithGrowthMarker<T>(List<T> list, T value, ProfilerMarker marker)
+    private static bool AddWithGrowthMarker<T>(
+        List<T> list, T value, ProfilerMarker marker
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        , MeshPlaneSplitter diagnosticOwner = null, int bufferKind = 0,
+        int diagnosticBuilderId = 0
+#endif
+        )
     {
         if (list.Count == list.Capacity)
         {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            int capacityBefore = list.Capacity;
+#endif
             using (marker.Auto())
             {
                 list.Add(value);
             }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (diagnosticOwner != null)
+            {
+                diagnosticOwner.RecordTriangleLoopBufferGrowth(
+                    bufferKind, capacityBefore, list.Capacity, diagnosticBuilderId);
+            }
+#endif
             return true;
         }
 
@@ -2405,62 +2919,160 @@ public sealed class MeshPlaneSplitter
         pool.Push(list);
     }
 
+    private static int CalculateWarmupCutSegmentCapacity(int sourceIndexCount)
+    {
+        return Mathf.Clamp(sourceIndexCount / 48, 128, 2048);
+    }
+
+    private static int CalculateWarmupIndexCapacity(int sourceIndexCount, int percentage)
+    {
+        return (int)Math.Min(int.MaxValue,
+            ((long)sourceIndexCount * percentage + 99L) / 100L);
+    }
+
     private static void WarmupPieceMeshBuilderPool()
     {
-        // 初回8分割の実測値に基づく実験用容量。初期値を大きくしすぎないよう、
-        // Source用1個・大きい分割片用2個・通常容量6個に分ける。
-        // 8分割では分割元を保持したまま2個の出力を取得するため、最大9個を同時使用する。
-        const int warmupBuilderCount = 9;
-        const int largeOutputBuilderCount = 2;
-        const int largeOutputVertexCapacity = 20000;
-        const int warmupSubMeshCount = 2;
+        // Sceneを読み込む前に、前回の実測Mesh規模に対する共有Poolを確保する。
+        // 実Meshが異なる場合はAwakeから同じPoolを拡張する。新しいPoolは作らない。
+        WarmupPieceMeshBuilderPool(null, SOURCE_VERTEX_DATA_BUFFER_LENGTH,
+            TARGET_COUNT_WARMUP_SOURCE_INDEX_COUNT, 1,
+            TARGET_COUNT_WARMUP_PIECE_COUNT);
+    }
 
-        int regularVertexCapacity =
-            CalculateInitialPieceVertexCapacity(SOURCE_VERTEX_DATA_BUFFER_LENGTH);
+    /// <summary>
+    /// 対象Meshのトポロジーを基に、全Enemy共通の8分割用Builderを先行拡張する。
+    /// Mesh自体は取得・複製・変更しない。
+    /// </summary>
+    internal static void WarmupTargetCountBuffers(Mesh sourceMesh, int targetPieceCount)
+    {
+        if (sourceMesh == null || sourceMesh.vertexCount == 0 ||
+            sourceMesh.subMeshCount == 0 || targetPieceCount < 2)
+        {
+            return;
+        }
 
-        int warmedBuilderCount = 0;
+        long sourceIndexCount = 0;
+        for (int subMeshIndex = 0; subMeshIndex < sourceMesh.subMeshCount; subMeshIndex++)
+        {
+            sourceIndexCount += sourceMesh.GetIndexCount(subMeshIndex);
+        }
+
+        WarmupPieceMeshBuilderPool(sourceMesh, sourceMesh.vertexCount,
+            (int)Math.Min(int.MaxValue, sourceIndexCount),
+            sourceMesh.subMeshCount, targetPieceCount);
+    }
+
+    private static void WarmupPieceMeshBuilderPool(
+        Mesh sourceMesh, int sourceVertexCount, int totalSourceIndexCount,
+        int sourceSubMeshCount, int targetPieceCount)
+    {
+        using var warmupSample = warmupTriangleBuffersProfilerMarker.Auto();
+        // 大きすぎる目標Piece数のInspector設定で、初期化時に大量の
+        // Builder・SubMesh Listを一括確保しない。8超は従来の動的拡張へ任せる。
+        int preparedPieceCount = Mathf.Min(targetPieceCount,
+            TARGET_COUNT_WARMUP_PIECE_COUNT);
+        int warmupBuilderCount = Mathf.Max(TARGET_COUNT_WARMUP_BUILDER_COUNT,
+            preparedPieceCount + 1);
+        // 反復Plane分割のたびに切断面用SubMeshが1つ増える。
+        // 途中Pieceを保持するBuilderでは将来のSubMesh Listも再利用する。
+        int warmupSubMeshCount = (int)Math.Min(int.MaxValue,
+            (long)sourceSubMeshCount + preparedPieceCount - 1L);
+        int regularVertexCapacity = Mathf.Max(
+            CalculateInitialPieceVertexCapacity(SOURCE_VERTEX_DATA_BUFFER_LENGTH),
+            CalculateInitialPieceVertexCapacity(sourceVertexCount));
+        int largeVertexCapacity = Mathf.Max(
+            TARGET_COUNT_WARMUP_LARGE_VERTEX_CAPACITY,
+            CalculateWarmupIndexCapacity(sourceVertexCount, 65));
+        int sourceBuilderVertexCapacity = Mathf.Max(
+            SOURCE_VERTEX_DATA_BUFFER_LENGTH, sourceVertexCount);
+
+        int changedBuffers = 0;
+        int index = 0;
+        // Poolは貸出/返却で順番が変わる。初回の役割をBuilder自体に保持し、
+        // 後のAwakeで通常容量の全Builderが大容量へ格上げされないようにする。
+        bool alreadyAssignedWarmupTiers = false;
+        foreach (PieceMeshBuilder existing in pieceMeshBuilderPool)
+        {
+            if (existing.HasWarmupCapacityTier)
+            {
+                alreadyAssignedWarmupTiers = true;
+                break;
+            }
+        }
+        // Listの容量が不足しているBuilderだけBacking Arrayを拡張する。
+        // Pool済みのBuilderはClearでCountだけが0になっており、容量は維持される。
         foreach (PieceMeshBuilder builder in pieceMeshBuilderPool)
         {
-            if (warmedBuilderCount < warmupBuilderCount)
-            {
-                int requiredVertexCapacity = warmedBuilderCount == 0
-                    ? SOURCE_VERTEX_DATA_BUFFER_LENGTH
-                    : warmedBuilderCount <= largeOutputBuilderCount
-                        ? largeOutputVertexCapacity
-                        : regularVertexCapacity;
-
-                builder.PrepareForUse(
-                    warmupSubMeshCount,
-                    true,
-                    SOURCE_VERTEX_DATA_BUFFER_LENGTH,
-                    requiredVertexCapacity,
-                    true);
-            }
-            else
-            {
-                builder.ClearForPool();
-            }
-            warmedBuilderCount++;
+            // 初回は0=Source, 1/2=大型, 残り=通常。2回目以降に
+            // 新規追加されていたBuilderは通常扱いとし、常駐メモリの増殖を防ぐ。
+            int tier = builder.GetOrAssignWarmupCapacityTier(
+                alreadyAssignedWarmupTiers ? 2 : index == 0 ? 0 :
+                index <= TARGET_COUNT_WARMUP_LARGE_OUTPUT_BUILDERS ? 1 : 2);
+            int vertexCapacity = tier == 0
+                ? sourceBuilderVertexCapacity
+                : tier == 1 ? largeVertexCapacity : regularVertexCapacity;
+            changedBuffers += builder.WarmupTargetCountBuffers(
+                warmupSubMeshCount, sourceSubMeshCount, sourceMesh,
+                sourceVertexCount, vertexCapacity, totalSourceIndexCount,
+                tier == 0, tier <= 1);
+            index++;
         }
 
         while (pieceMeshBuilderPool.Count < warmupBuilderCount)
         {
             int builderIndex = pieceMeshBuilderPool.Count;
-            int requiredVertexCapacity = builderIndex == 0
-                ? SOURCE_VERTEX_DATA_BUFFER_LENGTH
-                : builderIndex <= largeOutputBuilderCount
-                    ? largeOutputVertexCapacity
-                    : regularVertexCapacity;
-
-            pieceMeshBuilderPool.Add(
-                new PieceMeshBuilder(
-                    warmupSubMeshCount,
-                    true,
-                    SOURCE_VERTEX_DATA_BUFFER_LENGTH,
-                    requiredVertexCapacity,
-                    true,
-                    true));
+            int tier = builderIndex == 0 ? 0 :
+                builderIndex <= TARGET_COUNT_WARMUP_LARGE_OUTPUT_BUILDERS ? 1 : 2;
+            int vertexCapacity = tier == 0
+                ? sourceBuilderVertexCapacity
+                : tier == 1 ? largeVertexCapacity : regularVertexCapacity;
+            var builder = new PieceMeshBuilder(
+                warmupSubMeshCount, true, sourceVertexCount,
+                vertexCapacity, true, true);
+            builder.GetOrAssignWarmupCapacityTier(tier);
+            pieceMeshBuilderPool.Add(builder);
+            changedBuffers += builder.WarmupTargetCountBuffers(
+                warmupSubMeshCount, sourceSubMeshCount, sourceMesh,
+                sourceVertexCount, vertexCapacity, totalSourceIndexCount,
+                tier == 0, tier <= 1);
         }
+
+        // TrySplitMesh内では一度に1つだけ貸し出す共有作業領域。
+        // 大きいMeshに備えて予約し、不足時は既存のAddによる拡張を許す。
+        int requiredSegmentCapacity = CalculateWarmupCutSegmentCapacity(totalSourceIndexCount);
+        if (cutSegmentListPool.Count > 0)
+        {
+            List<CutSegment> reusableSegments = cutSegmentListPool.Peek();
+            if (reusableSegments.Capacity < requiredSegmentCapacity)
+            {
+                reusableSegments.Capacity = requiredSegmentCapacity;
+                changedBuffers++;
+            }
+        }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        if (changedBuffers > 0)
+        {
+            long reservedIndices = 0;
+            long reservedAreas = 0;
+            foreach (PieceMeshBuilder builder in pieceMeshBuilderPool)
+            {
+                builder.GetTriangleBufferCapacities(out long indices, out long areas);
+                reservedIndices += indices;
+                reservedAreas += areas;
+            }
+            Debug.Log($"[EnemyMeshCutBufferWarmup] " +
+                $"SourceV/I={sourceVertexCount}/{totalSourceIndexCount}, " +
+                $"SourceSubMeshes={sourceSubMeshCount}, TargetPieces={targetPieceCount}, " +
+                $"PooledBuilders={pieceMeshBuilderPool.Count}, " +
+                $"BuffersCreatedOrGrown={changedBuffers}, " +
+                $"ReservedIndexElements={reservedIndices}, " +
+                $"ReservedAreaElements={reservedAreas}, " +
+                $"ReservedIndexAndAreaPayloadMiB={(reservedIndices + reservedAreas) * 4.0 / 1048576.0:F2}, " +
+                $"CutSegmentCapacity={(cutSegmentListPool.Count > 0 ? cutSegmentListPool.Peek().Capacity : 0)} " +
+                "(全Poolの容量合計、配列ヘッダ・頂点属性は除外)");
+        }
+#endif
     }
 
     private static PieceMeshBuilder AcquirePieceMeshBuilder(
@@ -2468,7 +3080,10 @@ public sealed class MeshPlaneSplitter
         bool hasTangents,
         int sourceVertexCount,
         int estimatedVertexCapacity,
-        bool storeConnectivityVertexIds)
+        bool storeConnectivityVertexIds,
+        MeshPlaneSplitter diagnosticOwner = null,
+        IReadOnlyList<List<int>> sourceTrianglesBySubMesh = null,
+        Mesh sourceMeshForIndexSelection = null)
     {
         if (pieceMeshBuilderPool.Count == 0)
         {
@@ -2493,28 +3108,71 @@ public sealed class MeshPlaneSplitter
                         0, 0, 0, 0, 0);
                 }
 #endif
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (diagnosticOwner != null && diagnosticOwner.triangleLoopDiagnosticsActive)
+                {
+                    newBuilder.DiagnosticOwner = diagnosticOwner;
+                    diagnosticOwner.RecordTriangleLoopAcquisition(true);
+                }
+#endif
                 return newBuilder;
             }
         }
 
-        // 予約容量を満たす中では最小のBuilderを選び、大きいBuilderを次のPieceへ残す。
-        // どれも不足する場合は最も大きいBuilderを選び、再確保とコピーを減らす。
+        // 通常2分割では従来の頂点属性Capacityによる選択を維持する。
+        // 8分割では頂点数だけで選ぶとIndex用Backing Arrayが小さいBuilderを
+        // 取得してしまうため、実際の入力SubMeshに対するIndex不足も考慮する。
         int selectedIndex = 0;
-        int selectedCapacity = -1;
-        for (int index = 0; index < pieceMeshBuilderPool.Count; index++)
+        if (sourceTrianglesBySubMesh == null && sourceMeshForIndexSelection == null)
         {
-            PieceMeshBuilder candidate = pieceMeshBuilderPool[index];
-            int candidateCapacity = candidate.GetReusableVertexCapacity(
-                hasTangents, storeConnectivityVertexIds);
-            bool candidateFits = candidateCapacity >= estimatedVertexCapacity;
-            bool selectedFits = selectedCapacity >= estimatedVertexCapacity;
-
-            if ((candidateFits && !selectedFits) ||
-                (candidateFits && candidateCapacity < selectedCapacity) ||
-                (!candidateFits && !selectedFits && candidateCapacity > selectedCapacity))
+            int selectedCapacity = -1;
+            for (int index = 0; index < pieceMeshBuilderPool.Count; index++)
             {
-                selectedIndex = index;
-                selectedCapacity = candidateCapacity;
+                PieceMeshBuilder candidate = pieceMeshBuilderPool[index];
+                int candidateCapacity = candidate.GetReusableVertexCapacity(
+                    hasTangents, storeConnectivityVertexIds);
+                bool candidateFits = candidateCapacity >= estimatedVertexCapacity;
+                bool selectedFits = selectedCapacity >= estimatedVertexCapacity;
+                if ((candidateFits && !selectedFits) ||
+                    (candidateFits && candidateCapacity < selectedCapacity) ||
+                    (!candidateFits && !selectedFits && candidateCapacity > selectedCapacity))
+                {
+                    selectedIndex = index;
+                    selectedCapacity = candidateCapacity;
+                }
+            }
+        }
+        else
+        {
+            long leastEstimatedGrowthBytes = long.MaxValue;
+            long leastReservedCapacityBytes = long.MaxValue;
+            for (int index = 0; index < pieceMeshBuilderPool.Count; index++)
+            {
+                PieceMeshBuilder candidate = pieceMeshBuilderPool[index];
+                int availableVertexCapacity = candidate.GetReusableVertexCapacity(
+                    hasTangents, storeConnectivityVertexIds);
+                int missingVertices = Mathf.Max(0,
+                    estimatedVertexCapacity - availableVertexCapacity);
+                long availableIndexCapacity;
+                long missingIndices = sourceMeshForIndexSelection != null
+                    ? candidate.GetSourceMeshIndexCapacityShortfall(
+                        sourceMeshForIndexSelection, out availableIndexCapacity)
+                    : candidate.GetTriangleIndexCapacityShortfall(
+                        sourceTrianglesBySubMesh, out availableIndexCapacity);
+                // 頂点属性とIndex/Areaの概算ペイロード。成長量ゼロの候補を優先し、
+                // 同点なら小さめのBuilderを先に使用して大容量を残す。
+                long estimatedGrowthBytes = (long)missingVertices * 48L +
+                    missingIndices * 6L;
+                long reservedBytes = (long)availableVertexCapacity * 48L +
+                    availableIndexCapacity * 4L;
+                if (estimatedGrowthBytes < leastEstimatedGrowthBytes ||
+                    (estimatedGrowthBytes == leastEstimatedGrowthBytes &&
+                     reservedBytes < leastReservedCapacityBytes))
+                {
+                    selectedIndex = index;
+                    leastEstimatedGrowthBytes = estimatedGrowthBytes;
+                    leastReservedCapacityBytes = reservedBytes;
+                }
             }
         }
 
@@ -2551,6 +3209,13 @@ public sealed class MeshPlaneSplitter
                     uvCapacityBefore, tangentCapacityBefore, indexMapLengthBefore);
             }
 #endif
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (diagnosticOwner != null && diagnosticOwner.triangleLoopDiagnosticsActive)
+            {
+                builder.DiagnosticOwner = diagnosticOwner;
+                diagnosticOwner.RecordTriangleLoopAcquisition(false);
+            }
+#endif
             return builder;
         }
         catch
@@ -2571,6 +3236,11 @@ public sealed class MeshPlaneSplitter
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         RecordBuilderReleaseDiagnostics(builder);
+        if (builder.DiagnosticOwner != null)
+        {
+            builder.DiagnosticOwner.RecordTriangleLoopRelease(builder);
+            builder.DiagnosticOwner = null;
+        }
 #endif
         builder.ClearForPool();
         pieceMeshBuilderPool.Add(builder);
@@ -8714,8 +9384,24 @@ public sealed class MeshPlaneSplitter
         private bool hasTangents;
         private bool storeConnectivityVertexIds;
 
+        // Poolの並び順は変わるため、Warmup対象の容量階層をBuilderごとに固定する。
+        // 0=Source相当、1=大型出力相当、2=通常出力相当。-1=未割当。
+        private int warmupCapacityTier = -1;
+
+        public bool HasWarmupCapacityTier => warmupCapacityTier >= 0;
+
+        public int GetOrAssignWarmupCapacityTier(int proposedTier)
+        {
+            if (warmupCapacityTier < 0)
+            {
+                warmupCapacityTier = proposedTier;
+            }
+            return warmupCapacityTier;
+        }
+
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         // Builderごとの最終Count/CapacityはPoolへ返す直前に一度だけ集計する。
+        internal MeshPlaneSplitter DiagnosticOwner { get; set; }
         internal bool TrackCreateBuilderDiagnostics { get; set; }
         internal int SourceIndexMapLength => outputVertexIndexBySourceVertexIndex.Length;
         internal int DiagnosticBuilderId { get; private set; }
@@ -8773,6 +9459,212 @@ public sealed class MeshPlaneSplitter
             }
             return reusableCapacity;
         }
+
+        // 8分割で現在の入力SubMeshから想定される両側の初期Index予約量を比較する。
+        // SubMesh別のCapacityを評価し、合計Capacityが足りても一部が不足する場合を検知する。
+        public long GetTriangleIndexCapacityShortfall(
+            IReadOnlyList<List<int>> sourceTrianglesBySubMesh,
+            out long availableCapacity)
+        {
+            long shortfall = 0;
+            availableCapacity = 0;
+            int subMeshIndex = 0;
+            // PrepareForUseで一時的に外されたSubMesh用ListもStackに残っている。
+            // 新しい分割に再割り当てされる順で確認し、実際に使用可能な容量を評価する。
+            for (; subMeshIndex < trianglesBySubMesh.Count &&
+                   subMeshIndex < sourceTrianglesBySubMesh.Count; subMeshIndex++)
+            {
+                int capacity = trianglesBySubMesh[subMeshIndex].Capacity;
+                int required = CalculateInitialPieceTriangleIndexCapacity(
+                    sourceTrianglesBySubMesh[subMeshIndex].Count);
+                availableCapacity += capacity;
+                if (capacity < required)
+                {
+                    shortfall += (long)required - capacity;
+                }
+            }
+            if (spareTrianglesBySubMesh != null)
+            {
+                foreach (List<int> spareIndices in spareTrianglesBySubMesh)
+                {
+                    if (subMeshIndex >= sourceTrianglesBySubMesh.Count)
+                    {
+                        break;
+                    }
+                    int capacity = spareIndices.Capacity;
+                    int required = CalculateInitialPieceTriangleIndexCapacity(
+                        sourceTrianglesBySubMesh[subMeshIndex].Count);
+                    availableCapacity += capacity;
+                    if (capacity < required)
+                    {
+                        shortfall += (long)required - capacity;
+                    }
+                    subMeshIndex++;
+                }
+            }
+            // 未生成のSubMesh Listは取得時に新規作成されるため容量ゼロとして扱う。
+            for (; subMeshIndex < sourceTrianglesBySubMesh.Count; subMeshIndex++)
+            {
+                shortfall += CalculateInitialPieceTriangleIndexCapacity(
+                    sourceTrianglesBySubMesh[subMeshIndex].Count);
+            }
+            return shortfall;
+        }
+
+        /// <summary>
+        /// Pool内にある間だけ呼び、分割に必要なListのBacking Arrayを初期化時に準備する。
+        /// 既存のCount/Capacity再利用と三角形・面積の演算内容は変更しない。
+        /// </summary>
+        public int WarmupTargetCountBuffers(
+            int requiredSubMeshCount, int sourceSubMeshCount, Mesh sourceMesh,
+            int sourceVertexCount, int vertexCapacity, int totalSourceIndexCount,
+            bool isSourceBuilder, bool isLargeOutputBuilder)
+        {
+            int changedBuffers = 0;
+            ClearForPool();
+
+            if (vertices.Capacity < vertexCapacity)
+            {
+                vertices.Capacity = vertexCapacity;
+                changedBuffers++;
+            }
+            if (normals.Capacity < vertexCapacity)
+            {
+                normals.Capacity = vertexCapacity;
+                changedBuffers++;
+            }
+            if (uv.Capacity < vertexCapacity)
+            {
+                uv.Capacity = vertexCapacity;
+                changedBuffers++;
+            }
+            if (tangents.Capacity < vertexCapacity)
+            {
+                tangents.Capacity = vertexCapacity;
+                changedBuffers++;
+            }
+            // 元のPoolは通常2分割でも使うためConnectivityの予約を維持する。
+            if (connectivityVertexIds.Capacity < vertexCapacity)
+            {
+                connectivityVertexIds.Capacity = vertexCapacity;
+                changedBuffers++;
+            }
+            if (outputVertexIndexBySourceVertexIndex.Length < sourceVertexCount)
+            {
+                outputVertexIndexBySourceVertexIndex = new int[sourceVertexCount];
+                changedBuffers++;
+            }
+
+            ResetSubMeshTriangleLists(requiredSubMeshCount);
+            while (triangleDoubleAreasBySubMesh.Count < requiredSubMeshCount)
+            {
+                triangleDoubleAreasBySubMesh.Add(new List<float>());
+                changedBuffers++;
+            }
+
+            int firstCutIndexCapacity = Mathf.Clamp(
+                totalSourceIndexCount / 16, 256, 8192);
+            int furtherCutIndexCapacity = Mathf.Clamp(
+                totalSourceIndexCount / 64, 128, 2048);
+            for (int subMeshIndex = 0; subMeshIndex < requiredSubMeshCount; subMeshIndex++)
+            {
+                int requiredIndexCapacity;
+                if (subMeshIndex < sourceSubMeshCount)
+                {
+                    // 共有Meshの場合はSubMesh別Index実数を使い、すべてのListへ
+                    // 入力全Indexを割り当てる無駄を避ける。
+                    int sourceIndices = sourceMesh != null
+                        ? (int)Math.Min(int.MaxValue, (long)sourceMesh.GetIndexCount(subMeshIndex))
+                        : subMeshIndex == 0 ? totalSourceIndexCount : 0;
+                    requiredIndexCapacity = isSourceBuilder
+                        ? sourceIndices
+                        : CalculateWarmupIndexCapacity(sourceIndices,
+                            isLargeOutputBuilder
+                                ? TARGET_COUNT_WARMUP_LARGE_INDEX_PERCENT
+                                : TARGET_COUNT_WARMUP_REGULAR_INDEX_PERCENT);
+                }
+                else
+                {
+                    // 複数回の切断で新たに増えるCap用SubMeshは小さな領域から開始する。
+                    requiredIndexCapacity = subMeshIndex == sourceSubMeshCount
+                        ? firstCutIndexCapacity : furtherCutIndexCapacity;
+                }
+
+                List<int> indices = trianglesBySubMesh[subMeshIndex];
+                if (indices.Capacity < requiredIndexCapacity)
+                {
+                    indices.Capacity = requiredIndexCapacity;
+                    changedBuffers++;
+                }
+                List<float> areas = triangleDoubleAreasBySubMesh[subMeshIndex];
+                int requiredAreaCapacity = requiredIndexCapacity / 3 +
+                    (requiredIndexCapacity % 3 != 0 ? 1 : 0);
+                if (areas.Capacity < requiredAreaCapacity)
+                {
+                    areas.Capacity = requiredAreaCapacity;
+                    changedBuffers++;
+                }
+            }
+            return changedBuffers;
+        }
+
+        public long GetSourceMeshIndexCapacityShortfall(
+            Mesh sourceMesh, out long availableCapacity)
+        {
+            long shortfall = 0;
+            availableCapacity = 0;
+            for (int subMeshIndex = 0;
+                 subMeshIndex < sourceMesh.subMeshCount; subMeshIndex++)
+            {
+                int capacity = GetReusableSubMeshIndexCapacity(subMeshIndex);
+                int required = (int)Math.Min(int.MaxValue,
+                    (long)sourceMesh.GetIndexCount(subMeshIndex));
+                availableCapacity += capacity;
+                if (capacity < required)
+                {
+                    shortfall += (long)required - capacity;
+                }
+            }
+            return shortfall;
+        }
+
+        // 縮小中にStackへ退避したSubMeshのBacking ArrayもCapacity評価に含める。
+        private int GetReusableSubMeshIndexCapacity(int subMeshIndex)
+        {
+            if (subMeshIndex < trianglesBySubMesh.Count)
+            {
+                return trianglesBySubMesh[subMeshIndex].Capacity;
+            }
+            if (spareTrianglesBySubMesh == null)
+            {
+                return 0;
+            }
+            int spareIndex = trianglesBySubMesh.Count;
+            foreach (List<int> indices in spareTrianglesBySubMesh)
+            {
+                if (spareIndex == subMeshIndex)
+                {
+                    return indices.Capacity;
+                }
+                spareIndex++;
+            }
+            return 0;
+        }
+
+        public void GetTriangleBufferCapacities(out long indexCapacity, out long areaCapacity)
+        {
+            indexCapacity = 0;
+            areaCapacity = 0;
+            foreach (List<int> indices in trianglesBySubMesh)
+            {
+                indexCapacity += indices.Capacity;
+            }
+            foreach (List<float> areas in triangleDoubleAreasBySubMesh)
+            {
+                areaCapacity += areas.Capacity;
+            }
+        }
+
         public string WorkingMeshName { get; set; }
         public Bounds BuilderBounds =>
             hasBounds
@@ -9109,8 +10001,18 @@ public sealed class MeshPlaneSplitter
             if (triangles.Count == 0 &&
                 triangles.Capacity < estimatedIndexCapacity)
             {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                int capacityBefore = triangles.Capacity;
+#endif
                 triangles.Capacity =
                     estimatedIndexCapacity;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (DiagnosticOwner != null)
+                {
+                    DiagnosticOwner.RecordTriangleLoopBufferGrowth(
+                        LOOP_INDEX, capacityBefore, triangles.Capacity, DiagnosticBuilderId);
+                }
+#endif
             }
         }
 
@@ -9158,9 +10060,21 @@ public sealed class MeshPlaneSplitter
                 thirdIndex =
                     AddVertex(third);
 
-                bool firstIndexGrew = AddWithGrowthMarker(trianglesBySubMesh[subMeshIndex], firstIndex, outputIndexGrowthProfilerMarker);
-                bool secondIndexGrew = AddWithGrowthMarker(trianglesBySubMesh[subMeshIndex], secondIndex, outputIndexGrowthProfilerMarker);
-                bool thirdIndexGrew = AddWithGrowthMarker(trianglesBySubMesh[subMeshIndex], thirdIndex, outputIndexGrowthProfilerMarker);
+                bool firstIndexGrew = AddWithGrowthMarker(trianglesBySubMesh[subMeshIndex], firstIndex, outputIndexGrowthProfilerMarker
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    , DiagnosticOwner, LOOP_INDEX, DiagnosticBuilderId
+#endif
+                    );
+                bool secondIndexGrew = AddWithGrowthMarker(trianglesBySubMesh[subMeshIndex], secondIndex, outputIndexGrowthProfilerMarker
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    , DiagnosticOwner, LOOP_INDEX, DiagnosticBuilderId
+#endif
+                    );
+                bool thirdIndexGrew = AddWithGrowthMarker(trianglesBySubMesh[subMeshIndex], thirdIndex, outputIndexGrowthProfilerMarker
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    , DiagnosticOwner, LOOP_INDEX, DiagnosticBuilderId
+#endif
+                    );
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 if (TrackCreateBuilderDiagnostics)
                 {
@@ -9178,7 +10092,11 @@ public sealed class MeshPlaneSplitter
                 bool areaGrew = AddWithGrowthMarker(triangleDoubleAreasBySubMesh[subMeshIndex],
                     Vector3.Cross(
                         second.Position - first.Position,
-                        third.Position - first.Position).magnitude, triangleAreaGrowthProfilerMarker);
+                        third.Position - first.Position).magnitude, triangleAreaGrowthProfilerMarker
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    , DiagnosticOwner, LOOP_AREA, DiagnosticBuilderId
+#endif
+                    );
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 if (TrackCreateBuilderDiagnostics && areaGrew)
                 {
@@ -9315,13 +10233,29 @@ public sealed class MeshPlaneSplitter
             int index =
                 vertices.Count;
 
-            bool positionGrew = AddWithGrowthMarker(vertices, vertex.Position, outputVertexGrowthProfilerMarker);
-            bool normalGrew = AddWithGrowthMarker(normals, vertex.Normal, outputVertexGrowthProfilerMarker);
-            bool uvGrew = AddWithGrowthMarker(uv, vertex.Uv, outputVertexGrowthProfilerMarker);
+            bool positionGrew = AddWithGrowthMarker(vertices, vertex.Position, outputVertexGrowthProfilerMarker
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                , DiagnosticOwner, LOOP_POSITION, DiagnosticBuilderId
+#endif
+                );
+            bool normalGrew = AddWithGrowthMarker(normals, vertex.Normal, outputVertexGrowthProfilerMarker
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                , DiagnosticOwner, LOOP_NORMAL, DiagnosticBuilderId
+#endif
+                );
+            bool uvGrew = AddWithGrowthMarker(uv, vertex.Uv, outputVertexGrowthProfilerMarker
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                , DiagnosticOwner, LOOP_UV, DiagnosticBuilderId
+#endif
+                );
             bool tangentGrew = false;
             if (hasTangents)
             {
-                tangentGrew = AddWithGrowthMarker(tangents, vertex.Tangent, outputVertexGrowthProfilerMarker);
+                tangentGrew = AddWithGrowthMarker(tangents, vertex.Tangent, outputVertexGrowthProfilerMarker
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    , DiagnosticOwner, LOOP_TANGENT, DiagnosticBuilderId
+#endif
+                    );
             }
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (TrackCreateBuilderDiagnostics)
@@ -9335,7 +10269,11 @@ public sealed class MeshPlaneSplitter
 
             if (storeConnectivityVertexIds)
             {
-                AddWithGrowthMarker(connectivityVertexIds, vertex.ConnectivityVertexId, outputVertexGrowthProfilerMarker);
+                AddWithGrowthMarker(connectivityVertexIds, vertex.ConnectivityVertexId, outputVertexGrowthProfilerMarker
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    , DiagnosticOwner, LOOP_CONNECTIVITY, DiagnosticBuilderId
+#endif
+                    );
             }
 
             UpdateBounds(vertex.Position);

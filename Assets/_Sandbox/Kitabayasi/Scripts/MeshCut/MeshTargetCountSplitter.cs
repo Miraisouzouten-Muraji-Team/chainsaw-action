@@ -68,6 +68,7 @@ public sealed class MeshTargetCountSplitter
     {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         MeshPlaneSplitter.BeginTargetCountBuilderDiagnostics();
+        meshPlaneSplitter.BeginTriangleLoopDiagnostics();
 #endif
         try
         {
@@ -187,6 +188,10 @@ public sealed class MeshTargetCountSplitter
                     }
                 }
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                // Mesh化まで成功した最終Pieceだけを一度集計する。
+                meshPlaneSplitter.RecordFinalTargetCountOutput(workingPieces);
+#endif
                 completed = true;
                 failureReason = null;
                 return true;
@@ -214,6 +219,7 @@ public sealed class MeshTargetCountSplitter
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             // ログ生成時の割り当てをTargetCount.Totalへ含めない。
+            meshPlaneSplitter.FlushTriangleLoopDiagnostics();
             MeshPlaneSplitter.FlushTargetCountBuilderDiagnostics();
 #endif
         }

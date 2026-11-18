@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::StageDatabase
   areas:
   - displayName: STAGE1-1
-    screenshot: {fileID: 6000318604131738775, guid: 6241d1a0777ebe449a8b297e24c2fd18, type: 3}
+    screenshot: {fileID: -4368656298907312973, guid: d513ce13d84a72146aaf912e9f57de37, type: 3}
     sceneName: Stage1Area1
   - displayName: STAGE1-2
     screenshot: {fileID: 7034877445000775692, guid: 499d4a846061bdb44a21d16b09fb74cb, type: 3}

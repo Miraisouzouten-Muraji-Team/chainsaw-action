@@ -3007,7 +3007,7 @@ MonoBehaviour:
   cardSpacing: 1000
   cardScale: 1
   sideCardScale: 0.6
-  slideDuration: 0.3
+  slideDuration: 0.25
   centerPeakScaleMultiplier: 1.07
   centerScaleDownDuration: 0.6
   arrowScaleMultiplier: 1.4
@@ -3756,8 +3756,8 @@ RectTransform:
   - {fileID: 973603141}
   - {fileID: 2123577503}
   - {fileID: 2023482137}
-  - {fileID: 1804489728}
   - {fileID: 1065998531}
+  - {fileID: 1804489728}
   - {fileID: 1706977370}
   m_Father: {fileID: 359026820}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}

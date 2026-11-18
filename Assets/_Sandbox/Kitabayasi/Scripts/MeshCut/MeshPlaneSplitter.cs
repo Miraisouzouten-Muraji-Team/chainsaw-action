@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading;
 using Unity.Profiling;
 using UnityEngine;
@@ -33,6 +34,43 @@ public sealed class MeshPlaneSplitter
 
         private static readonly ProfilerMarker createPieceMeshBuildersProfilerMarker =
             new ProfilerMarker("EnemyMeshCut.SplitPlane.CreatePieceMeshBuilders");
+
+    // CreatePieceMeshBuildersの内訳。Acquisitionの子にCtor/Prepareの区間を配置する。
+    private static readonly ProfilerMarker acquireNewBuilderProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Acquire.New");
+    private static readonly ProfilerMarker acquireReuseBuilderProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Acquire.Reuse");
+    private static readonly ProfilerMarker createPositionsProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Create.Positions");
+    private static readonly ProfilerMarker createNormalsProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Create.Normals");
+    private static readonly ProfilerMarker createUvProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Create.UV");
+    private static readonly ProfilerMarker createTangentsProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Create.Tangents");
+    private static readonly ProfilerMarker createConnectivityProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Create.Connectivity");
+    private static readonly ProfilerMarker createSourceIndexMapProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Create.SourceIndexMap");
+    private static readonly ProfilerMarker createSubMeshBuffersProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Create.SubMeshBuffers");
+    private static readonly ProfilerMarker growPositionsProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Prepare.GrowPositions");
+    private static readonly ProfilerMarker growNormalsProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Prepare.GrowNormals");
+    private static readonly ProfilerMarker growUvProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Prepare.GrowUV");
+    private static readonly ProfilerMarker growTangentsProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Prepare.GrowTangents");
+    private static readonly ProfilerMarker growConnectivityProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Prepare.GrowConnectivity");
+    private static readonly ProfilerMarker growSourceIndexMapProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Prepare.GrowSourceIndexMap");
+    private static readonly ProfilerMarker resetSubMeshesProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.Prepare.ResetSubMeshes");
+    private static readonly ProfilerMarker createTriangleAreaListsProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.SplitPlane.Builder.CacheTriangleAreas.CreateLists");
+
 
 
 
@@ -103,6 +141,362 @@ public sealed class MeshPlaneSplitter
     private static int earClippingInputVerticesCounter;
     private static int earClippingRemovedVerticesCounter;
 #endif
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+    // 8分割1回のCreatePieceMeshBuildersだけを対象にする。途中で文字列/配列を生成しない。
+    private static bool targetCountBuilderDiagnosticsEnabled;
+    private static bool captureCreatePieceBuilders;
+    private static int newBuilderCount;
+    private static int reusedBuilderCount;
+    private static int newSourceIndexMapCount;
+    private static int grownSourceIndexMapCount;
+    private static int grownPositionCount;
+    private static int grownNormalCount;
+    private static int grownUvCount;
+    private static int grownTangentCount;
+    private static int grownConnectivityCount;
+    private static int newSubMeshIndexListCount;
+    private static int newTriangleAreaListCount;
+    private static int releasedTrackedBuilderCount;
+    private static int maximumUnusedVertexCapacity;
+    private static int maximumPositionCapacity;
+    private static int maximumVertexCount;
+    private static long requestedVertexCapacitySum;
+    private static long releasedVertexCountSum;
+    private static long releasedVertexCapacitySum;
+    private static long releasedNormalCapacitySum;
+    private static long releasedUvCapacitySum;
+    private static long releasedTangentCapacitySum;
+    private static long releasedConnectivityCapacitySum;
+    private static long releasedSourceIndexMapLengthSum;
+
+    // 1回のTargetCount分割内での「Builder取得」ごとに保存する固定長テーブル。
+    // 分割の計測区間内ではこの配列への整数書き込みだけを行う。
+    // リトライが多い場合は記録を打ち切り、欠落件数を明示する。
+    private const int MAX_BUILDER_CAPACITY_RECORDS = 96;
+    private const int BUILDER_CAPACITY_RECORD_FIELD_COUNT = 29;
+    private const int DIAGNOSTIC_BUILDER_ID = 0;
+    private const int DIAGNOSTIC_WAS_NEW = 1;
+    private const int DIAGNOSTIC_SOURCE_VERTEX_COUNT = 2;
+    private const int DIAGNOSTIC_REQUESTED_CAPACITY = 3;
+    private const int DIAGNOSTIC_POSITION_BEFORE = 4;
+    private const int DIAGNOSTIC_NORMAL_BEFORE = 5;
+    private const int DIAGNOSTIC_UV_BEFORE = 6;
+    private const int DIAGNOSTIC_TANGENT_BEFORE = 7;
+    private const int DIAGNOSTIC_POSITION_PREPARED = 8;
+    private const int DIAGNOSTIC_NORMAL_PREPARED = 9;
+    private const int DIAGNOSTIC_UV_PREPARED = 10;
+    private const int DIAGNOSTIC_TANGENT_PREPARED = 11;
+    private const int DIAGNOSTIC_INDEX_MAP_BEFORE = 12;
+    private const int DIAGNOSTIC_INDEX_MAP_PREPARED = 13;
+    private const int DIAGNOSTIC_FINAL_VERTEX_COUNT = 14;
+    private const int DIAGNOSTIC_FINAL_POSITION_CAPACITY = 15;
+    private const int DIAGNOSTIC_FINAL_NORMAL_CAPACITY = 16;
+    private const int DIAGNOSTIC_FINAL_UV_CAPACITY = 17;
+    private const int DIAGNOSTIC_FINAL_TANGENT_CAPACITY = 18;
+    private const int DIAGNOSTIC_FINAL_INDEX_MAP_LENGTH = 19;
+    private const int DIAGNOSTIC_POSITION_GROWTHS_DURING_BUILD = 20;
+    private const int DIAGNOSTIC_NORMAL_GROWTHS_DURING_BUILD = 21;
+    private const int DIAGNOSTIC_UV_GROWTHS_DURING_BUILD = 22;
+    private const int DIAGNOSTIC_TANGENT_GROWTHS_DURING_BUILD = 23;
+    private const int DIAGNOSTIC_TRIANGLE_INDEX_GROWTHS = 24;
+    private const int DIAGNOSTIC_TRIANGLE_AREA_GROWTHS = 25;
+    private const int DIAGNOSTIC_FINAL_TRIANGLE_INDEX_COUNT = 26;
+    private const int DIAGNOSTIC_FINAL_TRIANGLE_INDEX_CAPACITY = 27;
+    private const int DIAGNOSTIC_RELEASED = 28;
+
+    private static readonly int[,] builderCapacityRecords =
+        new int[MAX_BUILDER_CAPACITY_RECORDS, BUILDER_CAPACITY_RECORD_FIELD_COUNT];
+    private static int builderCapacityRecordCount;
+    private static int omittedBuilderCapacityRecordCount;
+    private static int nextDiagnosticBuilderId;
+
+    private static void RecordBuilderAcquisitionDetails(
+        PieceMeshBuilder builder,
+        bool isNew,
+        int sourceVertexCount,
+        int requestedCapacity,
+        int positionCapacityBefore,
+        int normalCapacityBefore,
+        int uvCapacityBefore,
+        int tangentCapacityBefore,
+        int indexMapLengthBefore)
+    {
+        // この関数はCreatePieceMeshBuilders内の取得だけに呼ばれる。
+        // Source Builder取得、通常2分割、プールのWarmupは対象にしない。
+        if (builderCapacityRecordCount == MAX_BUILDER_CAPACITY_RECORDS)
+        {
+            omittedBuilderCapacityRecordCount++;
+            builder.DiagnosticRecordIndex = -1;
+            return;
+        }
+
+        int index = builderCapacityRecordCount++;
+        builder.DiagnosticRecordIndex = index;
+        builder.DiagnosticPositionGrowthCount = 0;
+        builder.DiagnosticNormalGrowthCount = 0;
+        builder.DiagnosticUvGrowthCount = 0;
+        builder.DiagnosticTangentGrowthCount = 0;
+        builder.DiagnosticTriangleIndexGrowthCount = 0;
+        builder.DiagnosticTriangleAreaGrowthCount = 0;
+
+        builderCapacityRecords[index, DIAGNOSTIC_BUILDER_ID] = builder.DiagnosticBuilderId;
+        builderCapacityRecords[index, DIAGNOSTIC_WAS_NEW] = isNew ? 1 : 0;
+        builderCapacityRecords[index, DIAGNOSTIC_SOURCE_VERTEX_COUNT] = sourceVertexCount;
+        builderCapacityRecords[index, DIAGNOSTIC_REQUESTED_CAPACITY] = requestedCapacity;
+        builderCapacityRecords[index, DIAGNOSTIC_POSITION_BEFORE] = positionCapacityBefore;
+        builderCapacityRecords[index, DIAGNOSTIC_NORMAL_BEFORE] = normalCapacityBefore;
+        builderCapacityRecords[index, DIAGNOSTIC_UV_BEFORE] = uvCapacityBefore;
+        builderCapacityRecords[index, DIAGNOSTIC_TANGENT_BEFORE] = tangentCapacityBefore;
+        builderCapacityRecords[index, DIAGNOSTIC_POSITION_PREPARED] = builder.Vertices.Capacity;
+        builderCapacityRecords[index, DIAGNOSTIC_NORMAL_PREPARED] = builder.Normals.Capacity;
+        builderCapacityRecords[index, DIAGNOSTIC_UV_PREPARED] = builder.Uv.Capacity;
+        builderCapacityRecords[index, DIAGNOSTIC_TANGENT_PREPARED] = builder.Tangents.Capacity;
+        builderCapacityRecords[index, DIAGNOSTIC_INDEX_MAP_BEFORE] = indexMapLengthBefore;
+        builderCapacityRecords[index, DIAGNOSTIC_INDEX_MAP_PREPARED] = builder.SourceIndexMapLength;
+        builderCapacityRecords[index, DIAGNOSTIC_RELEASED] = 0;
+    }
+
+    private static void LogIndividualBuilderCapacities()
+    {
+        if (builderCapacityRecordCount == 0)
+        {
+            return;
+        }
+
+        // StringBuilder・補間文字列・Debug.LogはTargetCount.Totalのスコープ終了後にのみ実行する。
+        var message = new StringBuilder(4096);
+        long estimatedNewBufferPayloadBytes = 0;
+        for (int index = 0; index < builderCapacityRecordCount; index++)
+        {
+            if (index % 6 == 0)
+            {
+                if (message.Length != 0)
+                {
+                    Debug.Log(message.ToString());
+                    message.Clear();
+                }
+                message.Append("[EnemyMeshCutBuilderCapacity] 取得順 / Builder別の詳細（CountとCapacityは要素数）\n");
+            }
+
+            int sourceCount = builderCapacityRecords[index, DIAGNOSTIC_SOURCE_VERTEX_COUNT];
+            int requested = builderCapacityRecords[index, DIAGNOSTIC_REQUESTED_CAPACITY];
+            int finalCount = builderCapacityRecords[index, DIAGNOSTIC_FINAL_VERTEX_COUNT];
+            int finalCapacity = builderCapacityRecords[index, DIAGNOSTIC_FINAL_POSITION_CAPACITY];
+            int unused = finalCapacity - finalCount;
+            bool released = builderCapacityRecords[index, DIAGNOSTIC_RELEASED] != 0;
+            bool newBuilder = builderCapacityRecords[index, DIAGNOSTIC_WAS_NEW] != 0;
+
+            // Prepare時の新規配列だけを推定する。拡張時は差分でなく配列全体を計上。
+            long estimatedBufferPayloadBytes = 0;
+            if (builderCapacityRecords[index, DIAGNOSTIC_POSITION_PREPARED] >
+                builderCapacityRecords[index, DIAGNOSTIC_POSITION_BEFORE])
+            {
+                estimatedBufferPayloadBytes +=
+                    (long)builderCapacityRecords[index, DIAGNOSTIC_POSITION_PREPARED] * 12;
+            }
+            if (builderCapacityRecords[index, DIAGNOSTIC_NORMAL_PREPARED] >
+                builderCapacityRecords[index, DIAGNOSTIC_NORMAL_BEFORE])
+            {
+                estimatedBufferPayloadBytes +=
+                    (long)builderCapacityRecords[index, DIAGNOSTIC_NORMAL_PREPARED] * 12;
+            }
+            if (builderCapacityRecords[index, DIAGNOSTIC_UV_PREPARED] >
+                builderCapacityRecords[index, DIAGNOSTIC_UV_BEFORE])
+            {
+                estimatedBufferPayloadBytes +=
+                    (long)builderCapacityRecords[index, DIAGNOSTIC_UV_PREPARED] * 8;
+            }
+            if (builderCapacityRecords[index, DIAGNOSTIC_TANGENT_PREPARED] >
+                builderCapacityRecords[index, DIAGNOSTIC_TANGENT_BEFORE])
+            {
+                estimatedBufferPayloadBytes +=
+                    (long)builderCapacityRecords[index, DIAGNOSTIC_TANGENT_PREPARED] * 16;
+            }
+            if (builderCapacityRecords[index, DIAGNOSTIC_INDEX_MAP_PREPARED] >
+                builderCapacityRecords[index, DIAGNOSTIC_INDEX_MAP_BEFORE])
+            {
+                estimatedBufferPayloadBytes +=
+                    (long)builderCapacityRecords[index, DIAGNOSTIC_INDEX_MAP_PREPARED] * 4;
+            }
+            estimatedNewBufferPayloadBytes += estimatedBufferPayloadBytes;
+
+            message.Append($"#{index + 1} BuilderId={builderCapacityRecords[index, DIAGNOSTIC_BUILDER_ID]} " +
+                $"Mode={(newBuilder ? "New" : "Reuse")} SourceVertices={sourceCount} " +
+                $"Requested={requested} FinalCount={(released ? finalCount.ToString() : "Unreleased")} " +
+                $"Unused={(released ? unused.ToString() : "N/A")} " +
+                $"Usage={(released && finalCapacity > 0 ? (double)finalCount * 100.0 / finalCapacity : 0.0):F1}% " +
+                $"EstimatedPreparedBufferPayload={estimatedBufferPayloadBytes / 1024.0:F1}KiB\n");
+            message.Append($"  Position={builderCapacityRecords[index, DIAGNOSTIC_POSITION_BEFORE]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_POSITION_PREPARED]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_FINAL_POSITION_CAPACITY]}, " +
+                $"Normal={builderCapacityRecords[index, DIAGNOSTIC_NORMAL_BEFORE]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_NORMAL_PREPARED]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_FINAL_NORMAL_CAPACITY]}, " +
+                $"UV={builderCapacityRecords[index, DIAGNOSTIC_UV_BEFORE]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_UV_PREPARED]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_FINAL_UV_CAPACITY]}, " +
+                $"Tangent={builderCapacityRecords[index, DIAGNOSTIC_TANGENT_BEFORE]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_TANGENT_PREPARED]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_FINAL_TANGENT_CAPACITY]}\n");
+            message.Append($"  SourceIndexMap={builderCapacityRecords[index, DIAGNOSTIC_INDEX_MAP_BEFORE]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_INDEX_MAP_PREPARED]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_FINAL_INDEX_MAP_LENGTH]}, " +
+                $"BuildGrowths[P/N/U/T]={builderCapacityRecords[index, DIAGNOSTIC_POSITION_GROWTHS_DURING_BUILD]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_NORMAL_GROWTHS_DURING_BUILD]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_UV_GROWTHS_DURING_BUILD]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_TANGENT_GROWTHS_DURING_BUILD]}, " +
+                $"IndexGrowths={builderCapacityRecords[index, DIAGNOSTIC_TRIANGLE_INDEX_GROWTHS]}, " +
+                $"AreaGrowths={builderCapacityRecords[index, DIAGNOSTIC_TRIANGLE_AREA_GROWTHS]}, " +
+                $"IndexCount/Capacity={builderCapacityRecords[index, DIAGNOSTIC_FINAL_TRIANGLE_INDEX_COUNT]}/" +
+                $"{builderCapacityRecords[index, DIAGNOSTIC_FINAL_TRIANGLE_INDEX_CAPACITY]}\n");
+        }
+
+        if (message.Length != 0)
+        {
+            Debug.Log(message.ToString());
+        }
+
+        Debug.Log("[EnemyMeshCutBuilderCapacity][Summary] " +
+            $"Recorded={builderCapacityRecordCount}, Omitted={omittedBuilderCapacityRecordCount}, " +
+            $"EstimatedPreparedBufferPayload={estimatedNewBufferPayloadBytes / 1048576.0:F3}MiB. " +
+            "頂点属性4種類とSourceIndexMapの新規Backing配列の要素データのみの推定値。" +
+            "オブジェクト管理領域、SubMesh/面積List、TriangleLoop以降の配列拡張は含まない。" +
+            "同じBuilderの複数回取得は別レコードとして扱う。");
+    }
+
+    internal static void BeginTargetCountBuilderDiagnostics()
+    {
+        newBuilderCount = 0;
+        reusedBuilderCount = 0;
+        newSourceIndexMapCount = 0;
+        grownSourceIndexMapCount = 0;
+        grownPositionCount = 0;
+        grownNormalCount = 0;
+        grownUvCount = 0;
+        grownTangentCount = 0;
+        grownConnectivityCount = 0;
+        newSubMeshIndexListCount = 0;
+        newTriangleAreaListCount = 0;
+        releasedTrackedBuilderCount = 0;
+        maximumUnusedVertexCapacity = 0;
+        maximumPositionCapacity = 0;
+        maximumVertexCount = 0;
+        requestedVertexCapacitySum = 0;
+        releasedVertexCountSum = 0;
+        releasedVertexCapacitySum = 0;
+        releasedNormalCapacitySum = 0;
+        releasedUvCapacitySum = 0;
+        releasedTangentCapacitySum = 0;
+        releasedConnectivityCapacitySum = 0;
+        releasedSourceIndexMapLengthSum = 0;
+        captureCreatePieceBuilders = false;
+        builderCapacityRecordCount = 0;
+        omittedBuilderCapacityRecordCount = 0;
+        targetCountBuilderDiagnosticsEnabled = true;
+    }
+
+    internal static void FlushTargetCountBuilderDiagnostics()
+    {
+        // 8分割全体のProfilerMarkerを抜けてからログを構築する。
+        // Count/Capacityの合計はBuilder取得1回ごとの値。同じBuilderの再取得は別件として数える。
+        targetCountBuilderDiagnosticsEnabled = false;
+        captureCreatePieceBuilders = false;
+        if (newBuilderCount == 0 && reusedBuilderCount == 0)
+        {
+            return;
+        }
+
+        long unusedPositionCapacitySum =
+            releasedVertexCapacitySum - releasedVertexCountSum;
+        double positionUsageRate = releasedVertexCapacitySum > 0
+            ? (double)releasedVertexCountSum * 100.0 / releasedVertexCapacitySum
+            : 0.0;
+
+        Debug.Log(
+            "[EnemyMeshCutBuilderDiagnostic]\n" +
+            $"Frame={Time.frameCount}, " +
+            $"Acquire.New={newBuilderCount}, Acquire.Reused={reusedBuilderCount}, " +
+            $"Released={releasedTrackedBuilderCount}\n" +
+            "[Capacity / 取得1回ごとの累計] " +
+            $"RequestedVertexCapacitySum={requestedVertexCapacitySum}, " +
+            $"ReleasedVertexCountSum={releasedVertexCountSum}, " +
+            $"ReleasedPositionCapacitySum={releasedVertexCapacitySum}\n" +
+            "[未使用Capacity / 取得1回ごとの累計] " +
+            $"UnusedPositionCapacitySum={unusedPositionCapacitySum}, " +
+            $"PositionUsageRate={positionUsageRate:F1}%, " +
+            $"MaximumPositionCapacity={maximumPositionCapacity}, " +
+            $"MaximumVertexCount={maximumVertexCount}, " +
+            $"MaximumUnusedPositionCapacity={maximumUnusedVertexCapacity}\n" +
+            "[属性別Capacity / 取得1回ごとの累計] " +
+            $"Normal={releasedNormalCapacitySum}, UV={releasedUvCapacitySum}, " +
+            $"Tangent={releasedTangentCapacitySum}, " +
+            $"Connectivity={releasedConnectivityCapacitySum}, " +
+            $"SourceIndexMapLength={releasedSourceIndexMapLengthSum}\n" +
+            "[配列生成・拡張回数] " +
+            $"SourceIndexMap.New={newSourceIndexMapCount}, " +
+            $"SourceIndexMap.Grown={grownSourceIndexMapCount}, " +
+            $"Position.Grown={grownPositionCount}, " +
+            $"Normal.Grown={grownNormalCount}, " +
+            $"UV.Grown={grownUvCount}, " +
+            $"Tangent.Grown={grownTangentCount}, " +
+            $"Connectivity.Grown={grownConnectivityCount}, " +
+            $"SubMesh.NewIndexLists={newSubMeshIndexListCount}, " +
+            $"TriangleArea.NewLists={newTriangleAreaListCount}");
+        LogIndividualBuilderCapacities();
+    }
+
+    private static void RecordBuilderReleaseDiagnostics(PieceMeshBuilder builder)
+    {
+        if (!targetCountBuilderDiagnosticsEnabled || !builder.TrackCreateBuilderDiagnostics)
+        {
+            return;
+        }
+
+        // 各Builder取得1回分の最終値。再取得された同一Builderも別の試行として集計する。
+        builder.TrackCreateBuilderDiagnostics = false;
+        int recordIndex = builder.DiagnosticRecordIndex;
+        builder.DiagnosticRecordIndex = -1;
+        if (recordIndex >= 0 && recordIndex < builderCapacityRecordCount)
+        {
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_FINAL_VERTEX_COUNT] = builder.Vertices.Count;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_FINAL_POSITION_CAPACITY] = builder.Vertices.Capacity;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_FINAL_NORMAL_CAPACITY] = builder.Normals.Capacity;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_FINAL_UV_CAPACITY] = builder.Uv.Capacity;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_FINAL_TANGENT_CAPACITY] = builder.Tangents.Capacity;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_FINAL_INDEX_MAP_LENGTH] = builder.SourceIndexMapLength;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_POSITION_GROWTHS_DURING_BUILD] = builder.DiagnosticPositionGrowthCount;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_NORMAL_GROWTHS_DURING_BUILD] = builder.DiagnosticNormalGrowthCount;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_UV_GROWTHS_DURING_BUILD] = builder.DiagnosticUvGrowthCount;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_TANGENT_GROWTHS_DURING_BUILD] = builder.DiagnosticTangentGrowthCount;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_TRIANGLE_INDEX_GROWTHS] = builder.DiagnosticTriangleIndexGrowthCount;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_TRIANGLE_AREA_GROWTHS] = builder.DiagnosticTriangleAreaGrowthCount;
+            int finalTriangleIndexCount = 0;
+            int finalTriangleIndexCapacity = 0;
+            foreach (List<int> indices in builder.TrianglesBySubMesh)
+            {
+                finalTriangleIndexCount += indices.Count;
+                finalTriangleIndexCapacity += indices.Capacity;
+            }
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_FINAL_TRIANGLE_INDEX_COUNT] = finalTriangleIndexCount;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_FINAL_TRIANGLE_INDEX_CAPACITY] = finalTriangleIndexCapacity;
+            builderCapacityRecords[recordIndex, DIAGNOSTIC_RELEASED] = 1;
+        }
+        releasedTrackedBuilderCount++;
+        releasedVertexCountSum += builder.Vertices.Count;
+        releasedVertexCapacitySum += builder.Vertices.Capacity;
+        releasedNormalCapacitySum += builder.Normals.Capacity;
+        releasedUvCapacitySum += builder.Uv.Capacity;
+        releasedTangentCapacitySum += builder.Tangents.Capacity;
+        releasedConnectivityCapacitySum += builder.ConnectivityVertexIds.Capacity;
+        releasedSourceIndexMapLengthSum += builder.SourceIndexMapLength;
+        maximumPositionCapacity = Mathf.Max(maximumPositionCapacity, builder.Vertices.Capacity);
+        maximumVertexCount = Mathf.Max(maximumVertexCount, builder.Vertices.Count);
+        maximumUnusedVertexCapacity = Mathf.Max(
+            maximumUnusedVertexCapacity,
+            builder.Vertices.Capacity - builder.Vertices.Count);
+    }
+#endif
+
     private static readonly ProfilerMarker emitCapTrianglesProfilerMarker =
         new ProfilerMarker("EnemyMeshCut.SplitPlane.Cap.EmitTriangles");
     private static readonly ProfilerMarker overlapCapBoundaryProfilerMarker =
@@ -1106,6 +1500,17 @@ public sealed class MeshPlaneSplitter
 
             using (createPieceMeshBuildersProfilerMarker.Auto())
             {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                // 通常分割やTargetCountのSource取得を集計から除外する。
+                bool recordBuilderAcquisitions =
+                    targetCountBuilderDiagnosticsEnabled && isTargetCountSplit;
+                if (recordBuilderAcquisitions)
+                {
+                    captureCreatePieceBuilders = true;
+                }
+                try
+                {
+#endif
                 // 大きい出力側を先に取得し、容量の大きいPool Builderを小さい側へ
                 // 誤って割り当てないようにする。返却後のCapacityは維持される。
                 if (firstEstimatedVertexCapacity >= secondEstimatedVertexCapacity)
@@ -1144,6 +1549,16 @@ public sealed class MeshPlaneSplitter
                     firstBuilder.EnableTriangleAreaCache();
                     secondBuilder.EnableTriangleAreaCache();
                 }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                }
+                finally
+                {
+                    if (recordBuilderAcquisitions)
+                    {
+                        captureCreatePieceBuilders = false;
+                    }
+                }
+#endif
             }
 
             using (processTriangleLoopProfilerMarker.Auto())
@@ -1962,7 +2377,7 @@ public sealed class MeshPlaneSplitter
     }
 
     // サンプルは容量拡張時だけ作る。List.Add自体の挙動と容量拡張方式は変えない。
-    private static void AddWithGrowthMarker<T>(List<T> list, T value, ProfilerMarker marker)
+    private static bool AddWithGrowthMarker<T>(List<T> list, T value, ProfilerMarker marker)
     {
         if (list.Count == list.Capacity)
         {
@@ -1970,11 +2385,11 @@ public sealed class MeshPlaneSplitter
             {
                 list.Add(value);
             }
+            return true;
         }
-        else
-        {
-            list.Add(value);
-        }
+
+        list.Add(value);
+        return false;
     }
 
     private static void ReleaseReusableList<T>(
@@ -1992,26 +2407,33 @@ public sealed class MeshPlaneSplitter
 
     private static void WarmupPieceMeshBuilderPool()
     {
-        int estimatedVertexCapacity =
-            CalculateInitialPieceVertexCapacity(
-                SOURCE_VERTEX_DATA_BUFFER_LENGTH);
-
-        // 有効なSource Meshは最低1 SubMeshを持ち、Cut Surface分を加えるため、
-        // 2個のSubMesh Listを最小Warmup単位として用意する。
+        // 初回8分割の実測値に基づく実験用容量。初期値を大きくしすぎないよう、
+        // Source用1個・大きい分割片用2個・通常容量6個に分ける。
+        // 8分割では分割元を保持したまま2個の出力を取得するため、最大9個を同時使用する。
+        const int warmupBuilderCount = 9;
+        const int largeOutputBuilderCount = 2;
+        const int largeOutputVertexCapacity = 20000;
         const int warmupSubMeshCount = 2;
 
-        // 食い込み分割で増えたPool Builder全件を最大サイズへ膨らませない。
-        // 従来どおり通常攻撃が使用する2個分だけを事前Warmupする。
+        int regularVertexCapacity =
+            CalculateInitialPieceVertexCapacity(SOURCE_VERTEX_DATA_BUFFER_LENGTH);
+
         int warmedBuilderCount = 0;
         foreach (PieceMeshBuilder builder in pieceMeshBuilderPool)
         {
-            if (warmedBuilderCount < 2)
+            if (warmedBuilderCount < warmupBuilderCount)
             {
+                int requiredVertexCapacity = warmedBuilderCount == 0
+                    ? SOURCE_VERTEX_DATA_BUFFER_LENGTH
+                    : warmedBuilderCount <= largeOutputBuilderCount
+                        ? largeOutputVertexCapacity
+                        : regularVertexCapacity;
+
                 builder.PrepareForUse(
                     warmupSubMeshCount,
                     true,
                     SOURCE_VERTEX_DATA_BUFFER_LENGTH,
-                    estimatedVertexCapacity,
+                    requiredVertexCapacity,
                     true);
             }
             else
@@ -2021,14 +2443,21 @@ public sealed class MeshPlaneSplitter
             warmedBuilderCount++;
         }
 
-        while (pieceMeshBuilderPool.Count < 2)
+        while (pieceMeshBuilderPool.Count < warmupBuilderCount)
         {
+            int builderIndex = pieceMeshBuilderPool.Count;
+            int requiredVertexCapacity = builderIndex == 0
+                ? SOURCE_VERTEX_DATA_BUFFER_LENGTH
+                : builderIndex <= largeOutputBuilderCount
+                    ? largeOutputVertexCapacity
+                    : regularVertexCapacity;
+
             pieceMeshBuilderPool.Add(
                 new PieceMeshBuilder(
                     warmupSubMeshCount,
                     true,
                     SOURCE_VERTEX_DATA_BUFFER_LENGTH,
-                    estimatedVertexCapacity,
+                    requiredVertexCapacity,
                     true,
                     true));
         }
@@ -2044,13 +2473,28 @@ public sealed class MeshPlaneSplitter
         if (pieceMeshBuilderPool.Count == 0)
         {
             // 同時使用中のBuilderは再利用しない。Poolを使い切った場合だけ追加生成する。
-            return new PieceMeshBuilder(
-                subMeshCount,
-                hasTangents,
-                sourceVertexCount,
-                estimatedVertexCapacity,
-                true,
-                storeConnectivityVertexIds);
+            using (acquireNewBuilderProfilerMarker.Auto())
+            {
+                PieceMeshBuilder newBuilder = new PieceMeshBuilder(
+                    subMeshCount,
+                    hasTangents,
+                    sourceVertexCount,
+                    estimatedVertexCapacity,
+                    true,
+                    storeConnectivityVertexIds);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (captureCreatePieceBuilders)
+                {
+                    newBuilderCount++;
+                    requestedVertexCapacitySum += estimatedVertexCapacity;
+                    newBuilder.TrackCreateBuilderDiagnostics = true;
+                    RecordBuilderAcquisitionDetails(
+                        newBuilder, true, sourceVertexCount, estimatedVertexCapacity,
+                        0, 0, 0, 0, 0);
+                }
+#endif
+                return newBuilder;
+            }
         }
 
         // 予約容量を満たす中では最小のBuilderを選び、大きいBuilderを次のPieceへ残す。
@@ -2079,13 +2523,34 @@ public sealed class MeshPlaneSplitter
 
         try
         {
-            builder.PrepareForUse(
-                subMeshCount,
-                hasTangents,
-                sourceVertexCount,
-                estimatedVertexCapacity,
-                storeConnectivityVertexIds);
-
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            int positionCapacityBefore = builder.Vertices.Capacity;
+            int normalCapacityBefore = builder.Normals.Capacity;
+            int uvCapacityBefore = builder.Uv.Capacity;
+            int tangentCapacityBefore = builder.Tangents.Capacity;
+            int indexMapLengthBefore = builder.SourceIndexMapLength;
+#endif
+            using (acquireReuseBuilderProfilerMarker.Auto())
+            {
+                builder.PrepareForUse(
+                    subMeshCount,
+                    hasTangents,
+                    sourceVertexCount,
+                    estimatedVertexCapacity,
+                    storeConnectivityVertexIds);
+            }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (captureCreatePieceBuilders)
+            {
+                reusedBuilderCount++;
+                requestedVertexCapacitySum += estimatedVertexCapacity;
+                builder.TrackCreateBuilderDiagnostics = true;
+                RecordBuilderAcquisitionDetails(
+                    builder, false, sourceVertexCount, estimatedVertexCapacity,
+                    positionCapacityBefore, normalCapacityBefore,
+                    uvCapacityBefore, tangentCapacityBefore, indexMapLengthBefore);
+            }
+#endif
             return builder;
         }
         catch
@@ -2104,6 +2569,9 @@ public sealed class MeshPlaneSplitter
             return;
         }
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        RecordBuilderReleaseDiagnostics(builder);
+#endif
         builder.ClearForPool();
         pieceMeshBuilderPool.Add(builder);
     }
@@ -8246,6 +8714,20 @@ public sealed class MeshPlaneSplitter
         private bool hasTangents;
         private bool storeConnectivityVertexIds;
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        // Builderごとの最終Count/CapacityはPoolへ返す直前に一度だけ集計する。
+        internal bool TrackCreateBuilderDiagnostics { get; set; }
+        internal int SourceIndexMapLength => outputVertexIndexBySourceVertexIndex.Length;
+        internal int DiagnosticBuilderId { get; private set; }
+        internal int DiagnosticRecordIndex { get; set; } = -1;
+        internal int DiagnosticPositionGrowthCount { get; set; }
+        internal int DiagnosticNormalGrowthCount { get; set; }
+        internal int DiagnosticUvGrowthCount { get; set; }
+        internal int DiagnosticTangentGrowthCount { get; set; }
+        internal int DiagnosticTriangleIndexGrowthCount { get; set; }
+        internal int DiagnosticTriangleAreaGrowthCount { get; set; }
+#endif
+
         private bool hasBounds;
         private Vector3 minimumPosition;
         private Vector3 maximumPosition;
@@ -8307,52 +8789,58 @@ public sealed class MeshPlaneSplitter
             bool supportsReuse,
             bool storeConnectivityVertexIds)
         {
-            this.hasTangents =
-                hasTangents;
+            this.hasTangents = hasTangents;
             this.storeConnectivityVertexIds = storeConnectivityVertexIds;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            DiagnosticBuilderId = ++nextDiagnosticBuilderId;
+#endif
 
-            vertices =
-                new List<Vector3>(
-                    estimatedVertexCapacity);
-
-            normals =
-                new List<Vector3>(
-                    estimatedVertexCapacity);
-
-            uv =
-                new List<Vector2>(
-                    estimatedVertexCapacity);
-
-            tangents =
-                new List<Vector4>(
-                    hasTangents
-                        ? estimatedVertexCapacity
-                        : 0);
-
-            connectivityVertexIds =
-                new List<int>(
-                    storeConnectivityVertexIds
-                        ? estimatedVertexCapacity
-                        : 0);
-
-            outputVertexIndexBySourceVertexIndex =
-                new int[sourceVertexCount];
-
-            trianglesBySubMesh =
-                new List<List<int>>(
-                    subMeshCount);
-
-            spareTrianglesBySubMesh =
-                supportsReuse
-                    ? new Stack<List<int>>()
-                    : null;
-
-            for (int i = 0;
-                 i < subMeshCount;
-                 i++)
+            using (createPositionsProfilerMarker.Auto())
             {
-                trianglesBySubMesh.Add(
-                    new List<int>());
+                vertices = new List<Vector3>(estimatedVertexCapacity);
+            }
+            using (createNormalsProfilerMarker.Auto())
+            {
+                normals = new List<Vector3>(estimatedVertexCapacity);
+            }
+            using (createUvProfilerMarker.Auto())
+            {
+                uv = new List<Vector2>(estimatedVertexCapacity);
+            }
+            using (createTangentsProfilerMarker.Auto())
+            {
+                tangents = new List<Vector4>(hasTangents ? estimatedVertexCapacity : 0);
+            }
+            using (createConnectivityProfilerMarker.Auto())
+            {
+                connectivityVertexIds = new List<int>(
+                    storeConnectivityVertexIds ? estimatedVertexCapacity : 0);
+            }
+            using (createSourceIndexMapProfilerMarker.Auto())
+            {
+                outputVertexIndexBySourceVertexIndex = new int[sourceVertexCount];
+            }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (captureCreatePieceBuilders)
+            {
+                newSourceIndexMapCount++;
+            }
+#endif
+            using (createSubMeshBuffersProfilerMarker.Auto())
+            {
+                trianglesBySubMesh = new List<List<int>>(subMeshCount);
+                spareTrianglesBySubMesh =
+                    supportsReuse ? new Stack<List<int>>() : null;
+                for (int i = 0; i < subMeshCount; i++)
+                {
+                    trianglesBySubMesh.Add(new List<int>());
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    if (captureCreatePieceBuilders)
+                    {
+                        newSubMeshIndexListCount++;
+                    }
+#endif
+                }
             }
         }
 
@@ -8379,36 +8867,90 @@ public sealed class MeshPlaneSplitter
 
             if (vertices.Capacity < estimatedVertexCapacity)
             {
-                vertices.Capacity = estimatedVertexCapacity;
+                using (growPositionsProfilerMarker.Auto())
+                {
+                    vertices.Capacity = estimatedVertexCapacity;
+                }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (captureCreatePieceBuilders)
+                {
+                    grownPositionCount++;
+                }
+#endif
             }
 
             if (normals.Capacity < estimatedVertexCapacity)
             {
-                normals.Capacity = estimatedVertexCapacity;
+                using (growNormalsProfilerMarker.Auto())
+                {
+                    normals.Capacity = estimatedVertexCapacity;
+                }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (captureCreatePieceBuilders)
+                {
+                    grownNormalCount++;
+                }
+#endif
             }
 
             if (uv.Capacity < estimatedVertexCapacity)
             {
-                uv.Capacity = estimatedVertexCapacity;
+                using (growUvProfilerMarker.Auto())
+                {
+                    uv.Capacity = estimatedVertexCapacity;
+                }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (captureCreatePieceBuilders)
+                {
+                    grownUvCount++;
+                }
+#endif
             }
 
             if (useTangents &&
                 tangents.Capacity < estimatedVertexCapacity)
             {
-                tangents.Capacity = estimatedVertexCapacity;
+                using (growTangentsProfilerMarker.Auto())
+                {
+                    tangents.Capacity = estimatedVertexCapacity;
+                }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (captureCreatePieceBuilders)
+                {
+                    grownTangentCount++;
+                }
+#endif
             }
 
             if (storeConnectivityVertexIds &&
                 connectivityVertexIds.Capacity < estimatedVertexCapacity)
             {
-                connectivityVertexIds.Capacity = estimatedVertexCapacity;
+                using (growConnectivityProfilerMarker.Auto())
+                {
+                    connectivityVertexIds.Capacity = estimatedVertexCapacity;
+                }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (captureCreatePieceBuilders)
+                {
+                    grownConnectivityCount++;
+                }
+#endif
             }
 
             if (outputVertexIndexBySourceVertexIndex.Length < sourceVertexCount)
             {
                 // 旧内容は引き継ぐ必要がないため、Array.Resizeによるコピーは行わない。
-                outputVertexIndexBySourceVertexIndex =
-                    new int[sourceVertexCount];
+                using (growSourceIndexMapProfilerMarker.Auto())
+                {
+                    outputVertexIndexBySourceVertexIndex =
+                        new int[sourceVertexCount];
+                }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (captureCreatePieceBuilders)
+                {
+                    grownSourceIndexMapCount++;
+                }
+#endif
             }
             else
             {
@@ -8419,7 +8961,10 @@ public sealed class MeshPlaneSplitter
                     sourceVertexCount);
             }
 
-            ResetSubMeshTriangleLists(subMeshCount);
+            using (resetSubMeshesProfilerMarker.Auto())
+            {
+                ResetSubMeshTriangleLists(subMeshCount);
+            }
 
             hasTangents = useTangents;
             WorkingMeshName = null;
@@ -8444,7 +8989,16 @@ public sealed class MeshPlaneSplitter
             using var cacheTriangleAreasSample = MeshPlaneSplitter.cacheTriangleAreasProfilerMarker.Auto();
                 if (triangleDoubleAreasBySubMesh.Count <= subMeshIndex)
                 {
-                    triangleDoubleAreasBySubMesh.Add(new List<float>());
+                    using (createTriangleAreaListsProfilerMarker.Auto())
+                    {
+                        triangleDoubleAreasBySubMesh.Add(new List<float>());
+                    }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    if (captureCreatePieceBuilders)
+                    {
+                        newTriangleAreaListCount++;
+                    }
+#endif
                 }
 
                 List<float> triangleAreas = triangleDoubleAreasBySubMesh[subMeshIndex];
@@ -8527,11 +9081,17 @@ public sealed class MeshPlaneSplitter
 
             while (trianglesBySubMesh.Count < requiredSubMeshCount)
             {
+                bool createNewList = spareTrianglesBySubMesh.Count == 0;
                 List<int> triangles =
-                    spareTrianglesBySubMesh.Count > 0
-                        ? spareTrianglesBySubMesh.Pop()
-                        : new List<int>();
-
+                    createNewList
+                        ? new List<int>()
+                        : spareTrianglesBySubMesh.Pop();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (createNewList && captureCreatePieceBuilders)
+                {
+                    newSubMeshIndexListCount++;
+                }
+#endif
                 triangles.Clear();
                 trianglesBySubMesh.Add(triangles);
             }
@@ -8598,11 +9158,16 @@ public sealed class MeshPlaneSplitter
                 thirdIndex =
                     AddVertex(third);
 
-                AddWithGrowthMarker(trianglesBySubMesh[subMeshIndex], firstIndex, outputIndexGrowthProfilerMarker);
-
-                AddWithGrowthMarker(trianglesBySubMesh[subMeshIndex], secondIndex, outputIndexGrowthProfilerMarker);
-
-                AddWithGrowthMarker(trianglesBySubMesh[subMeshIndex], thirdIndex, outputIndexGrowthProfilerMarker);
+                bool firstIndexGrew = AddWithGrowthMarker(trianglesBySubMesh[subMeshIndex], firstIndex, outputIndexGrowthProfilerMarker);
+                bool secondIndexGrew = AddWithGrowthMarker(trianglesBySubMesh[subMeshIndex], secondIndex, outputIndexGrowthProfilerMarker);
+                bool thirdIndexGrew = AddWithGrowthMarker(trianglesBySubMesh[subMeshIndex], thirdIndex, outputIndexGrowthProfilerMarker);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (TrackCreateBuilderDiagnostics)
+                {
+                    DiagnosticTriangleIndexGrowthCount += (firstIndexGrew ? 1 : 0) +
+                        (secondIndexGrew ? 1 : 0) + (thirdIndexGrew ? 1 : 0);
+                }
+#endif
 
             // Connected Component入口でSubMesh全Indexを再走査してTriangle数を数え直さないため、
             // BuilderがTriangle追加時点で総数を保持する。Capも連結判定対象なので総数へ含める。
@@ -8610,10 +9175,16 @@ public sealed class MeshPlaneSplitter
 
             if (cacheTriangleAreas)
             {
-                AddWithGrowthMarker(triangleDoubleAreasBySubMesh[subMeshIndex],
+                bool areaGrew = AddWithGrowthMarker(triangleDoubleAreasBySubMesh[subMeshIndex],
                     Vector3.Cross(
                         second.Position - first.Position,
                         third.Position - first.Position).magnitude, triangleAreaGrowthProfilerMarker);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (TrackCreateBuilderDiagnostics && areaGrew)
+                {
+                    DiagnosticTriangleAreaGrowthCount++;
+                }
+#endif
             }
 
             if (!isCap)
@@ -8744,16 +9315,23 @@ public sealed class MeshPlaneSplitter
             int index =
                 vertices.Count;
 
-            AddWithGrowthMarker(vertices, vertex.Position, outputVertexGrowthProfilerMarker);
-
-            AddWithGrowthMarker(normals, vertex.Normal, outputVertexGrowthProfilerMarker);
-
-            AddWithGrowthMarker(uv, vertex.Uv, outputVertexGrowthProfilerMarker);
-
+            bool positionGrew = AddWithGrowthMarker(vertices, vertex.Position, outputVertexGrowthProfilerMarker);
+            bool normalGrew = AddWithGrowthMarker(normals, vertex.Normal, outputVertexGrowthProfilerMarker);
+            bool uvGrew = AddWithGrowthMarker(uv, vertex.Uv, outputVertexGrowthProfilerMarker);
+            bool tangentGrew = false;
             if (hasTangents)
             {
-                AddWithGrowthMarker(tangents, vertex.Tangent, outputVertexGrowthProfilerMarker);
+                tangentGrew = AddWithGrowthMarker(tangents, vertex.Tangent, outputVertexGrowthProfilerMarker);
             }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (TrackCreateBuilderDiagnostics)
+            {
+                DiagnosticPositionGrowthCount += positionGrew ? 1 : 0;
+                DiagnosticNormalGrowthCount += normalGrew ? 1 : 0;
+                DiagnosticUvGrowthCount += uvGrew ? 1 : 0;
+                DiagnosticTangentGrowthCount += tangentGrew ? 1 : 0;
+            }
+#endif
 
             if (storeConnectivityVertexIds)
             {

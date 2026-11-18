@@ -66,6 +66,11 @@ public sealed class MeshTargetCountSplitter
         out List<Mesh> pieceMeshes,
         out string failureReason)
     {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        MeshPlaneSplitter.BeginTargetCountBuilderDiagnostics();
+#endif
+        try
+        {
         using (targetCountTotalProfilerMarker.Auto())
         {
             pieceMeshes = new List<Mesh>();
@@ -203,6 +208,14 @@ public sealed class MeshTargetCountSplitter
                     pieceMeshes.Clear();
                 }
             }
+        }
+        }
+        finally
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            // ログ生成時の割り当てをTargetCount.Totalへ含めない。
+            MeshPlaneSplitter.FlushTargetCountBuilderDiagnostics();
+#endif
         }
     }
 

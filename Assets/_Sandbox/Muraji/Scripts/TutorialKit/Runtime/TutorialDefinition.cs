@@ -3,21 +3,57 @@ using UnityEngine;
 
 namespace Project.Tutorial
 {
-    public enum TutorialMode { Sign, InteractiveSlides }
+    public enum TutorialMode
+    {
+        Sign = 0,
+        InteractiveSlides = 1,
+        ImageAndClip = 2
+    }
     // 既存SOのenum値を維持するため、追加は末尾。
     public enum TutorialDemo { Move, Jump, DoubleJump, Custom, FloorDig, WallDig, WallKick, CeilingDig, Accelerator, FloorBonus, WeakCombo, EnemyDig, AirEnemyDig }
 
     [CreateAssetMenu(menuName = "Tutorial/Definition", fileName = "TutorialDefinition")]
     public sealed class TutorialDefinition : ScriptableObject
     {
+        [Tooltip("看板、操作で開く説明スライド、画像・アニメーション専用表示から選びます。")]
         public TutorialMode mode;
+
+        [Tooltip("画像・アニメーション専用モードで、操作ボタンを押したときに詳細を開きます。オフなら範囲に入ると自動で表示します。")]
+        public bool openImageAndClipWithButton;
+
+        // 詳細ポップアップを入力で開く表示方式か判定する。
+        internal bool OpensWithButton => mode == TutorialMode.InteractiveSlides ||
+            (mode == TutorialMode.ImageAndClip && openImageAndClipWithButton);
         [Min(0.01f)] public float fadeSeconds = 0.5f;
         public TutorialPage[] pages = { new TutorialPage() };
+
+        [Header("画像・アニメーション専用の操作画像（任意）")]
+        [Tooltip("範囲に入ったときに表示する「説明を見る」の画像です。")]
+        public Sprite openPromptSprite;
+        [Tooltip("マウスで前のページへ戻るボタンに表示する画像です。")]
+        public Sprite previousPageSprite;
+        [Tooltip("マウスで次のページへ進むボタンに表示する画像です。")]
+        public Sprite nextPageSprite;
+        [Tooltip("マウスで詳細ポップアップを閉じるボタンに表示する画像です。")]
+        public Sprite closeSprite;
     }
 
     [Serializable]
     public sealed class TutorialPage
     {
+        [Tooltip("静止画として表示する画像です。画像・アニメーション専用モードではクリップの初期画像にも使います。")]
+        public Sprite illustration;
+
+        [Tooltip("画像・アニメーション専用モードでページの画像を動かすクリップです。有効なクリップを優先します。ルートのImageまたはSpriteRendererを対象にしてください。")]
+        public AnimationClip animationClip;
+
+        [Tooltip("登録順にループ再生するスプライトです。画像・アニメーション専用モードではクリップが未設定または空の場合に使います。")]
+        public Sprite[] animationFrames = new Sprite[0];
+
+        [Tooltip("連番スプライトが1周するまでの秒数です。")]
+        [Min(0.2f)] public float cycleSeconds = 2.4f;
+
+        [Header("看板・説明スライド専用")]
         public string title = "ジャンプ";
         [TextArea(2, 6)] public string description = "Aボタンでジャンプ";
         public TutorialDemo demo = TutorialDemo.Jump;
@@ -31,14 +67,10 @@ namespace Project.Tutorial
         [Range(0.01f, 0.2f)] public float demoBonusTravelDuration = 0.04f;
         [Tooltip("敵デモのノックバック方向・量。図内の正規化座標。")]
         public Vector2 demoKnockback = new Vector2(0.18f, 0.1f);
-        [Tooltip("説明用の図。未指定なら簡易デモ。連番がある場合は連番を優先。")]
-        public Sprite illustration;
-        public Sprite[] animationFrames = new Sprite[0];
         [Tooltip("WallDigの2周目（ジャンプから食い込み）用連番。通常連番と交互に再生。")]
         public Sprite[] alternateAnimationFrames = new Sprite[0];
         [Tooltip("トグル操作の押下表示時間。1周期に対する割合。離した後もデモは継続。")]
         [Range(0.01f, 0.3f)] public float triggerPressDuration = 0.08f;
-        [Min(0.2f)] public float cycleSeconds = 2.4f;
         [Tooltip("同じ周期内の入力を0～1で指定。連番の該当フレームと同期する。")]
         [Range(0f, 1f)] public float firstPress = 0.15f;
         [Range(0f, 1f)] public float secondPress = 0.38f;

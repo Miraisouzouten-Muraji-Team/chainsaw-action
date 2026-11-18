@@ -10,8 +10,9 @@ namespace Project.Tutorial
     [DefaultExecutionOrder(-10000), DisallowMultipleComponent]
     public sealed class TutorialPresenter : MonoBehaviour
     {
-        [Tooltip("日本語対応のDynamic Font推奨。未指定時はUnity標準フォント。")]
+        [Tooltip("従来の看板と説明スライドに使うフォントです。未指定ならUnity標準フォントを使います。")]
         public Font uiFont;
+
         private InputAction openAction, closeAction, navigateAction, releaseGuardAction;
 
         private static TutorialPresenter instance;
@@ -20,7 +21,8 @@ namespace Project.Tutorial
         private RectTransform canvasRect;
         private TutorialView sign, modal;
         private TutorialSignOcclusion signOcclusion;
-        private Text prompt;
+        private Image prompt;
+        private Text legacyPrompt;
         private GameObject shade;
         private TutorialZone selected, shownSign, modalZone;
         private TutorialPlayer selectedPlayer, modalPlayer;
@@ -68,9 +70,12 @@ namespace Project.Tutorial
         private void ClearSelection()
         {
             selected = shownSign = null; selectedPlayer = null;
+            sign?.ReleaseClip();
             if (sign != null) sign.root.gameObject.SetActive(false);
             if (prompt != null) prompt.gameObject.SetActive(false);
+            if (legacyPrompt != null) legacyPrompt.gameObject.SetActive(false);
         }
+        // 両方のページ表示で同じCanvasと開閉処理を使う。
         private void BuildUI()
         {
             Font font = uiFont != null ? uiFont : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -83,17 +88,20 @@ namespace Project.Tutorial
             canvasRect.gameObject.AddComponent<GraphicRaycaster>();
             sign = new TutorialView(canvasRect, font, false); sign.group.alpha = 0f;
             signOcclusion = sign.root.gameObject.AddComponent<TutorialSignOcclusion>();
-            prompt = TutorialView.Label(canvasRect, font, "Interact Prompt", 28, Color.cyan);
-            prompt.rectTransform.sizeDelta = new Vector2(520, 56);
+            prompt = TutorialView.Rect("Interact Prompt", canvasRect, new Vector2(520, 56))
+                .gameObject.AddComponent<Image>();
+            prompt.preserveAspect = true;
+            prompt.raycastTarget = false;
             prompt.gameObject.SetActive(false);
+            legacyPrompt = TutorialView.Label(canvasRect, font, "Legacy Interact Prompt", 28, Color.cyan);
+            legacyPrompt.rectTransform.sizeDelta = new Vector2(520, 56);
+            legacyPrompt.gameObject.SetActive(false);
             var shadeRect = TutorialView.Rect("Modal Backdrop", canvasRect, Vector2.zero);
             TutorialView.Place(shadeRect, Vector2.zero, Vector2.one);
             var backdrop = shadeRect.gameObject.AddComponent<Image>(); backdrop.color = new Color(0, 0, 0, .72f);
             shade = shadeRect.gameObject; shade.SetActive(false);
             modal = new TutorialView(canvasRect, font, true);
-            modal.previous.onClick.AddListener(() => ChangePage(-1));
-            modal.next.onClick.AddListener(() => ChangePage(1));
-            modal.close.onClick.AddListener(RequestClose);
+            modal.BindButtons(() => ChangePage(-1), () => ChangePage(1), RequestClose);
             EnsureEventSystem();
         }
         private void EnsureEventSystem()
@@ -157,29 +165,54 @@ namespace Project.Tutorial
                 return;
             }
             SelectZone();
-            bool showSign = selected != null && selected.definition.mode == TutorialMode.Sign;
+            bool showSign = selected != null && !selected.definition.OpensWithButton;
             if (showSign) signOcclusion.Configure(selectedPlayer, selected);
             if (showSign && shownSign != selected)
             {
                 shownSign = selected; signClock = 0f; sign.group.alpha = 0f;
-                sign.SetPage(selected.definition.pages[0]); sign.footer.text = "TUTORIAL";
+                sign.SetPage(selected.definition.pages[0],
+                    selected.definition.mode == TutorialMode.ImageAndClip);
+                sign.SetFooter("TUTORIAL");
             }
             float fade = shownSign != null ? Mathf.Max(.01f, shownSign.definition.fadeSeconds) : .5f;
             sign.group.alpha = Mathf.MoveTowards(sign.group.alpha, showSign ? 1f : 0f, Time.unscaledDeltaTime / fade);
             sign.root.gameObject.SetActive(sign.group.alpha > 0f && shownSign != null);
-            if (shownSign != null && sign.root.gameObject.activeSelf)
-            { signClock += Time.unscaledDeltaTime; sign.Tick(signClock); Position(sign.root, shownSign); }
-            bool interactive = selected != null && selected.definition.mode == TutorialMode.InteractiveSlides;
+            if (sign.root.gameObject.activeSelf)
+            {
+                signClock += Time.unscaledDeltaTime;
+                sign.Tick(signClock);
+                Position(sign.root, shownSign);
+            }
+            else if (!showSign && shownSign != null)
+            {
+                // フェードアウトが完了したら、次に近づいたとき先頭から再生できるようにする。
+                shownSign = null;
+                sign.ReleaseClip();
+            }
+            bool interactive = selected != null && selected.definition.OpensWithButton;
             BindTutorialInput(interactive ? selectedPlayer : null);
             interactive = interactive && openAction != null && openAction.enabled && closeAction != null && navigateAction != null;
-            prompt.gameObject.SetActive(interactive);
+            UpdatePrompt(interactive);
             if (interactive)
             {
-                prompt.text = "[ F / X ] 説明を見る";
-                Position(prompt.rectTransform, selected);
                 if (openAction.WasPressedThisFrame() && Time.timeScale > 0f) Open();
             }
         }
+        // 開く操作の案内を、スライドでは文字、画像・Clipでは指定した画像で表示する。
+        private void UpdatePrompt(bool interactive)
+        {
+            bool showLegacyPrompt = interactive && selected.definition.mode == TutorialMode.InteractiveSlides;
+            if (showLegacyPrompt && !legacyPrompt.gameObject.activeSelf)
+                legacyPrompt.text = $"[ {openAction.GetBindingDisplayString()} ] 説明を見る";
+
+            legacyPrompt.gameObject.SetActive(showLegacyPrompt);
+            if (showLegacyPrompt) Position(legacyPrompt.rectTransform, selected);
+
+            prompt.sprite = interactive && !showLegacyPrompt ? selected.definition.openPromptSprite : null;
+            prompt.gameObject.SetActive(prompt.sprite != null);
+            if (prompt.sprite != null) Position(prompt.rectTransform, selected);
+        }
+
         private void SelectZone()
         {
             selected = null; selectedPlayer = null;
@@ -220,6 +253,7 @@ namespace Project.Tutorial
             modalPlayer.SuspendInput(); Time.timeScale = 0f;
             Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
             sign.root.gameObject.SetActive(false); prompt.gameObject.SetActive(false);
+            legacyPrompt.gameObject.SetActive(false);
             shade.SetActive(true); modal.root.gameObject.SetActive(true);
             pageIndex = 0; navigationHeld = true; RefreshPage();
         }
@@ -230,20 +264,22 @@ namespace Project.Tutorial
             if (next == pageIndex) return;
             pageIndex = next; RefreshPage();
         }
+        // 表示方式に合ったページと案内を更新する。
         private void RefreshPage()
         {
             modalClock = 0f;
-            modal.SetPage(modalDefinition.pages[pageIndex] ?? new TutorialPage { title = "未設定", description = "このページの内容を設定してください。" });
+            var page = modalDefinition.pages[pageIndex] ?? new TutorialPage
+            { title = "未設定", description = "このページの内容を設定してください。" };
+            modal.SetPage(page, modalDefinition.mode == TutorialMode.ImageAndClip);
             modal.Tick(0f);
-            modal.footer.text = $"{pageIndex + 1} / {modalDefinition.pages.Length}　 ← → / 左スティック・十字キー：切替　 Esc / Xbox B / PS ○：閉じる";
-            modal.previous.interactable = pageIndex > 0;
-            modal.next.interactable = pageIndex < modalDefinition.pages.Length - 1;
+            modal.SetFooter($"{pageIndex + 1} / {modalDefinition.pages.Length}　 ← → / 左スティック・十字キー：切替　 Esc / Xbox B / PS ○：閉じる");
+            modal.SetButtons(modalDefinition, pageIndex);
         }
         private void RequestClose()
         {
             if (!paused || closing) return;
             closing = true; closingFrame = Time.frameCount;
-            modal.footer.text = "ボタンを離し、スティックを中央に戻すと再開します";
+            modal.SetFooter("ボタンを離し、スティックを中央に戻すと再開します");
         }
         private void CloseImmediately()
         {
@@ -254,6 +290,7 @@ namespace Project.Tutorial
             Cursor.lockState = savedLock; Cursor.visible = savedCursor;
             paused = closing = false; modalPlayer = null; modalZone = null; modalDefinition = null;
             if (modal != null) modal.root.gameObject.SetActive(false);
+            modal?.ReleaseClip();
             if (shade != null) shade.SetActive(false);
         }
         // シーン通知を解除し、説明表示中ならゲームを再開する。
@@ -268,6 +305,8 @@ namespace Project.Tutorial
         private void OnDestroy()
         {
             CloseImmediately(); if (instance == this) instance = null;
+            sign?.ReleaseClip();
+            modal?.ReleaseClip();
         }
     }
 }

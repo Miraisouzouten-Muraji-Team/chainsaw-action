@@ -2017,7 +2017,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7154227568031423939, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: enemyData
@@ -2093,6 +2093,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       insertIndex: -1
       addedObject: {fileID: 895239187}
+    - targetCorrespondingSourceObject: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 895239188}
     - targetCorrespondingSourceObject: {fileID: 5062219843819273119, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1354054295}
@@ -3230,6 +3233,32 @@ MonoBehaviour:
   useLocalWallNormal: 0
   playerEntryTarget: {fileID: 0}
   alignEntryHeight: 0
+--- !u!114 &895239188
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 895239171}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 99cdbd694e2f0f24eb50b69fb8de7b59, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyDeathEffect
+  enemyHealth: {fileID: 895239201}
+  deathEffectPrefab: {fileID: 8542020770122436281, guid: c9648be6114d7b04bbea7d7eabc338c0, type: 3}
+  effectLifetime: 5
+--- !u!114 &895239201 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 7311387851396604318, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
+  m_PrefabInstance: {fileID: 415796881}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 895239171}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 969076da905973542bc06576710bfcb5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyHealth
 --- !u!1 &1129475127
 GameObject:
   m_ObjectHideFlags: 0

@@ -1,46 +1,64 @@
+
 using System;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using UnityEngine.EventSystems;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 namespace RiftPrototypeA
 {
     /// <summary>
-    /// 方式A専用。2Dステージカードからリアルタイム3Dの亀裂へ移動し、本編へ切り替える。
-    /// カード画像やRenderTextureのUVを拡大せず、3Dカメラそのものを移動させる。
+    /// ガラス状の亀裂を発生させ、中心に開いた穴から
+    /// 読み込み済みの3Dステージへカメラを進入させる。
     /// </summary>
     public sealed class RiftATransitionController : MonoBehaviour
     {
-        private static readonly int PROGRESS_ID = Shader.PropertyToID("_Progress");
+        private static readonly int CRACK_PROGRESS_ID = Shader.PropertyToID("_CrackProgress");
+        private static readonly int HOLE_PROGRESS_ID = Shader.PropertyToID("_HoleProgress");
+        private static readonly int OPEN_PROGRESS_ID = Shader.PropertyToID("_OpenProgress");
+        private static readonly int TRAVEL_PROGRESS_ID = Shader.PropertyToID("_TravelProgress");
         private static readonly int CENTER_ID = Shader.PropertyToID("_Center");
         private static readonly int ASPECT_ID = Shader.PropertyToID("_Aspect");
         private static readonly int READY_ID = Shader.PropertyToID("_Ready");
+        private static readonly int CRACK_TEXTURE_ID = Shader.PropertyToID("_CrackTex");
 
         [Header("亀裂描画")]
         [SerializeField] private Shader riftShader;
+        [SerializeField] private Texture2D glassCrackMask;
         [SerializeField] private RawImage riftImage;
         [SerializeField] private Image flashImage;
-        [SerializeField] private RiftAStageLoader stageLoader;
         [SerializeField] private RiftAPreviewCamera previewCamera;
 
-        [Header("ステージ選択側（遷移時に無効化）")]
-        [Tooltip("亀裂Canvasは含めない。")]
-        [SerializeField] private Canvas[] menuCanvases = new Canvas[0];
-        [SerializeField] private Camera[] menuCameras = new Camera[0];
-        [Tooltip("選択画面のDirectional Light等。プレビュー3Dとの照明の重複を防ぐ。")]
-        [SerializeField] private Light[] menuLights = new Light[0];
-        [SerializeField] private AudioListener[] menuListeners = new AudioListener[0];
-        [SerializeField] private EventSystem[] menuEventSystems = new EventSystem[0];
+        [Header("既存データとの互換")]
+        [SerializeField] private RiftAStageLoader stageLoader;
 
-        [Header("時間（秒）")]
-        [SerializeField, Min(0.05f)] private float crackDuration = 0.25f;
-        [SerializeField, Min(0.1f)] private float enterDuration = 1.6f;
-        [SerializeField, Min(0.01f)] private float flashInDuration = 0.12f;
-        [SerializeField, Min(0.01f)] private float flashOutDuration = 0.24f;
+        [Header("ステージ選択画面の停止対象")]
+        [Tooltip("亀裂表示用Canvasは含めない。")]
+        [SerializeField] private Canvas[] menuCanvases = Array.Empty<Canvas>();
+        [SerializeField] private Camera[] menuCameras = Array.Empty<Camera>();
+        [SerializeField] private Light[] menuLights = Array.Empty<Light>();
+        [SerializeField] private AudioListener[] menuListeners = Array.Empty<AudioListener>();
+        [SerializeField] private EventSystem[] menuEventSystems = Array.Empty<EventSystem>();
+
+        [Header("演出時間")]
+        [SerializeField, Min(0.05f)] private float crackDuration = 0.28f;
+        [SerializeField, Min(0.05f)] private float holeDuration = 0.22f;
+        [SerializeField, Min(0.2f)] private float enterDuration = 1.1f;
+        [SerializeField, Min(0.01f)] private float flashInDuration = 0.08f;
+        [SerializeField, Min(0.01f)] private float flashOutDuration = 0.16f;
+
+        [Header("演出開始タイミング")]
+        [Tooltip("亀裂が入ってから中心穴が開き始めるまでの秒数。")]
+        [SerializeField, Min(0f)] private float holeStartDelay = 0.035f;
+
+        [Tooltip("中心穴が見え始めてからカメラを前進させる。")]
+        [SerializeField, Min(0f)] private float cameraStartDelay = 0.10f;
+
+        [Tooltip("小さな穴から大きな開口へ変わるタイミング。")]
+        [SerializeField, Min(0f)] private float openStartDelay = 0.24f;
 
         private Material materialInstance;
         private Tween activeTween;
@@ -51,199 +69,409 @@ namespace RiftPrototypeA
 
         private void Awake()
         {
-            if (riftShader == null || riftImage == null || flashImage == null ||
-                stageLoader == null || previewCamera == null)
+            if (riftShader == null ||
+                glassCrackMask == null ||
+                riftImage == null ||
+                flashImage == null ||
+                previewCamera == null)
             {
-                Debug.LogError("RiftATransitionControllerの参照が不足しています。", this);
+                Debug.LogError(
+                    $"RiftAの参照不足: " +
+                    $"Shader={riftShader != null}, " +
+                    $"GlassMask={glassCrackMask != null}, " +
+                    $"RiftImage={riftImage != null}, " +
+                    $"FlashImage={flashImage != null}, " +
+                    $"PreviewCamera={previewCamera != null}",
+                    this);
+
                 enabled = false;
                 return;
             }
 
-            materialInstance = new Material(riftShader) { name = "RiftA_Material_Runtime" };
+            // UI専用のマテリアルを生成する。
+            materialInstance = new Material(riftShader)
+            {
+                name = "RiftA_CenterHole_Runtime"
+            };
+
+            materialInstance.SetTexture(CRACK_TEXTURE_ID, glassCrackMask);
+
             riftImage.material = materialInstance;
             riftImage.texture = Texture2D.blackTexture;
             riftImage.color = Color.white;
             riftImage.raycastTarget = false;
             riftImage.gameObject.SetActive(false);
+
             flashImage.color = new Color(1f, 1f, 1f, 0f);
             flashImage.raycastTarget = false;
             flashImage.gameObject.SetActive(false);
+
+            ResetShaderProgress();
         }
 
-        /// <summary>失敗時のみonFailedを呼び出す。成功時には元のシーンを解放する。</summary>
-        public void PlayTransition(string sceneName, RectTransform selectedImage, Action onFailed = null)
+        /// <summary>
+        /// 選択されたステージへの亀裂遷移を開始する。
+        /// </summary>
+        public void PlayTransition(
+            string sceneName,
+            RectTransform selectedImage,
+            Action onFailed = null)
         {
-            if (!enabled || isPlaying || selectedImage == null || string.IsNullOrWhiteSpace(sceneName))
+            if (!enabled ||
+                isPlaying ||
+                selectedImage == null ||
+                string.IsNullOrWhiteSpace(sceneName))
             {
-                Debug.LogError("方式Aの遷移を開始できません。参照とシーン名を確認してください。", this);
+                Debug.LogError(
+                    "RiftAの遷移を開始できません。参照とシーン名を確認してください。",
+                    this);
+
                 onFailed?.Invoke();
                 return;
             }
+
             PlayTransitionAsync(sceneName, selectedImage, onFailed).Forget();
         }
 
+        /// <summary>
+        /// 先行読み込み済みのステージを表示し、
+        /// 中心穴の拡大と3Dカメラの前進を並行して実行する。
+        /// </summary>
         private async UniTaskVoid PlayTransitionAsync(
-            string sceneName, RectTransform selectedImage, Action onFailed)
+            string sceneName,
+            RectTransform selectedImage,
+            Action onFailed)
         {
             isPlaying = true;
+
+            bool committed = false;
             Scene sourceScene = gameObject.scene;
             CancellationToken token = this.GetCancellationTokenOnDestroy();
-            bool committed = false;
+
+            RiftAStagePreloadService preloadService =
+                RiftAStagePreloadService.GetOrCreate();
+
             try
             {
-                Vector2 center = GetScreenUV(selectedImage);
-                materialInstance.SetVector(CENTER_ID, new Vector4(center.x, center.y, 0f, 0f));
-                materialInstance.SetFloat(ASPECT_ID, (float)Screen.width / Mathf.Max(1, Screen.height));
-                materialInstance.SetFloat(PROGRESS_ID, 0f);
-                materialInstance.SetFloat(READY_ID, 0f);
-                riftImage.texture = Texture2D.blackTexture;
-                riftImage.gameObject.SetActive(true);
+                // ステージを取得する。未読み込みの場合は演出開始前に待つ。
+                RiftAStageEntry entry =
+                    await preloadService.AcquireForTransitionAsync(sceneName, token);
 
-                // 先に亀裂だけ発生させ、その裏でステージをAdditiveで読み込む。
-                float crackProgress = 0f;
-                activeTween = DOTween.To(
-                        () => crackProgress,
-                        value =>
-                        {
-                            crackProgress = value;
-                            SetProgress(value);
-                        },
-                        0.035f,
-                        crackDuration)
-                    .SetEase(Ease.OutCubic)
-                    .SetUpdate(true);
+                if (entry == null || entry.GameplayCamera == null)
+                {
+                    throw new InvalidOperationException(
+                        "遷移先のRiftAStageEntryまたはGameplayCameraが未設定です。");
+                }
 
-                RiftAStageEntry entry = await stageLoader.LoadAsync(sceneName);
-                token.ThrowIfCancellationRequested();
-                if (entry.GameplayCamera == null)
-                    throw new InvalidOperationException("RiftAStageEntryのGameplayCameraが未設定です。");
+                // ステージ側の描画設定を有効にする。
+                if (!SceneManager.SetActiveScene(preloadService.LoadedScene))
+                {
+                    throw new InvalidOperationException(
+                        "遷移先ステージをアクティブにできません。");
+                }
 
-                // アクティブシーンのRenderSettings等を選択ステージ側へ合わせる。
-                if (!SceneManager.SetActiveScene(stageLoader.LoadedScene))
-                    throw new InvalidOperationException("遷移先をアクティブシーンに設定できません。");
-
+                // メニュー側のライトが3D映像へ干渉しないようにする。
                 SetMenuLights(false);
-                activeTween?.Kill();
+
+                // RenderTextureとカメラを準備する。
                 previewCamera.Prepare(entry);
-                // 最低1回はカメラのRenderTextureへの描画が行われるまで待つ。
+                previewCamera.MoveTo(0f);
+
+                // 最初の3D映像が描画されるフレームを確保する。
                 await UniTask.NextFrame(cancellationToken: token);
+
+                // 亀裂の発生位置を選択中カードの画像中央に合わせる。
+                Vector2 center = GetScreenUV(selectedImage);
+
+                materialInstance.SetVector(
+                    CENTER_ID,
+                    new Vector4(center.x, center.y, 0f, 0f));
+
+                materialInstance.SetFloat(
+                    ASPECT_ID,
+                    (float)Screen.width / Mathf.Max(1, Screen.height));
+
+                ResetShaderProgress();
+
                 riftImage.texture = previewCamera.RenderTexture;
                 materialInstance.SetFloat(READY_ID, 1f);
 
-                float openProgress = materialInstance.GetFloat(PROGRESS_ID);
-                float cameraProgress = 0f;
-                Sequence sequence = DOTween.Sequence();
-                sequence.Join(DOTween.To(
-                    () => openProgress,
-                    value =>
-                    {
-                        openProgress = value;
-                        SetProgress(value);
-                    }, 1f, enterDuration));
-                sequence.Join(DOTween.To(
-                    () => cameraProgress,
-                    value =>
-                    {
-                        cameraProgress = value;
-                        previewCamera.MoveTo(value);
-                    }, 1f, enterDuration));
-                sequence.SetEase(Ease.InCubic).SetUpdate(true);
+                // 亀裂を描画するUIを有効化する。
+                riftImage.gameObject.SetActive(true);
+
+                float crackProgress = 0f;
+                float holeProgress = 0f;
+                float openProgress = 0f;
+                float travelProgress = 0f;
+
+                // 4つの演出を時間差で重ねる。
+                Sequence sequence = DOTween.Sequence().SetUpdate(true);
+
+                // ① ガラスに亀裂が走る。
+                sequence.Insert(
+                    0f,
+                    DOTween.To(
+                            () => crackProgress,
+                            value =>
+                            {
+                                crackProgress = value;
+                                materialInstance.SetFloat(
+                                    CRACK_PROGRESS_ID, value);
+                            },
+                            1f,
+                            crackDuration)
+                        .SetEase(Ease.OutCubic));
+
+                // ② 亀裂の中心に小さな穴を開ける。
+                // この時点から向こう側のステージが見える。
+                sequence.Insert(
+                    holeStartDelay,
+                    DOTween.To(
+                            () => holeProgress,
+                            value =>
+                            {
+                                holeProgress = value;
+                                materialInstance.SetFloat(
+                                    HOLE_PROGRESS_ID, value);
+                            },
+                            1f,
+                            holeDuration)
+                        .SetEase(Ease.OutCubic));
+
+                // ③ 小さな穴が見えている間にカメラを前進させる。
+                // RenderTextureの拡大は行わない。
+                sequence.Insert(
+                    cameraStartDelay,
+                    DOTween.To(
+                            () => travelProgress,
+                            value =>
+                            {
+                                travelProgress = value;
+
+                                materialInstance.SetFloat(
+                                    TRAVEL_PROGRESS_ID, value);
+
+                                previewCamera.MoveTo(value);
+                            },
+                            1f,
+                            enterDuration)
+                        .SetEase(Ease.InOutCubic));
+
+                // ④ 中心穴をガラスの破片状の輪郭で拡大する。
+                sequence.Insert(
+                    openStartDelay,
+                    DOTween.To(
+                            () => openProgress,
+                            value =>
+                            {
+                                openProgress = value;
+                                materialInstance.SetFloat(
+                                    OPEN_PROGRESS_ID, value);
+                            },
+                            1f,
+                            enterDuration)
+                        .SetEase(Ease.InOutCubic));
+
                 activeTween = sequence;
                 await sequence.ToUniTask(cancellationToken: token);
 
-                // 通常のOrthographic表示との投影差はフラッシュ中に切り替える。
+                // 穴が画面全体を覆った後に短いフラッシュを入れる。
                 flashImage.gameObject.SetActive(true);
                 flashImage.color = new Color(1f, 1f, 1f, 0f);
-                activeTween = flashImage.DOFade(1f, flashInDuration).SetUpdate(true);
+
+                activeTween = flashImage
+                    .DOFade(1f, flashInDuration)
+                    .SetUpdate(true);
+
                 await activeTween.ToUniTask(cancellationToken: token);
 
+                // 3Dプレビューの描画を終了する。
                 previewCamera.StopRendering();
                 riftImage.gameObject.SetActive(false);
+
+                // ステージ選択側の描画と入力を停止する。
                 foreach (Canvas canvas in menuCanvases)
-                    if (canvas != null) canvas.enabled = false;
+                {
+                    if (canvas != null)
+                    {
+                        canvas.enabled = false;
+                    }
+                }
+
                 foreach (Camera camera in menuCameras)
-                    if (camera != null) camera.enabled = false;
+                {
+                    if (camera != null)
+                    {
+                        camera.enabled = false;
+                    }
+                }
+
                 foreach (AudioListener listener in menuListeners)
-                    if (listener != null) listener.enabled = false;
+                {
+                    if (listener != null)
+                    {
+                        listener.enabled = false;
+                    }
+                }
+
                 foreach (EventSystem eventSystem in menuEventSystems)
-                    if (eventSystem != null) eventSystem.enabled = false;
+                {
+                    if (eventSystem != null)
+                    {
+                        eventSystem.enabled = false;
+                    }
+                }
 
+                // 平行投影の本編カメラを有効化する。
                 entry.ActivateGameplay();
-                committed = true;
 
-                activeTween = flashImage.DOFade(0f, flashOutDuration).SetUpdate(true);
+                committed = true;
+                preloadService.CommitLoadedScene();
+
+                // 本編が描画されてからフラッシュを消す。
+                activeTween = flashImage
+                    .DOFade(0f, flashOutDuration)
+                    .SetUpdate(true);
+
                 await activeTween.ToUniTask(cancellationToken: token);
 
-                // 遷移完了後に元のステージ選択シーンを破棄する。自分も破棄される。
-                AsyncOperation unload = SceneManager.UnloadSceneAsync(sourceScene);
-                if (unload == null)
-                    Debug.LogWarning("方式Aのステージ選択シーンの解放に失敗しました。", this);
+                // 元のステージ選択シーンを解放する。
+                if (sourceScene.IsValid() && sourceScene.isLoaded)
+                {
+                    SceneManager.UnloadSceneAsync(sourceScene);
+                }
             }
             catch (OperationCanceledException)
             {
-                // 元のシーンが破棄された場合。Unityのロードそのものはキャンセルしていない。
+                // オブジェクト破棄による中断。
             }
             catch (Exception exception)
             {
                 Debug.LogException(exception, this);
+
                 if (committed)
                 {
-                    // 切替後の後処理に失敗しても、画面を覆ったままにしない。
-                    if (flashImage != null) flashImage.gameObject.SetActive(false);
-                    SceneManager.UnloadSceneAsync(sourceScene);
+                    // 本編への切り替え後ならメニューを解放する。
+                    if (flashImage != null)
+                    {
+                        flashImage.gameObject.SetActive(false);
+                    }
+
+                    if (sourceScene.IsValid() && sourceScene.isLoaded)
+                    {
+                        SceneManager.UnloadSceneAsync(sourceScene);
+                    }
                 }
                 else
                 {
+                    // 遷移開始前の状態へ戻す。
                     activeTween?.Kill();
+
                     previewCamera.StopRendering();
                     previewCamera.Release();
+
                     if (sourceScene.IsValid() && sourceScene.isLoaded)
+                    {
                         SceneManager.SetActiveScene(sourceScene);
+                    }
+
                     SetMenuLights(true);
-                    try { await stageLoader.UnloadAsync(); }
-                    catch (Exception unloadError) { Debug.LogException(unloadError, this); }
-                    if (riftImage != null) riftImage.gameObject.SetActive(false);
-                    if (flashImage != null) flashImage.gameObject.SetActive(false);
+
+                    if (riftImage != null)
+                    {
+                        riftImage.gameObject.SetActive(false);
+                    }
+
+                    if (flashImage != null)
+                    {
+                        flashImage.gameObject.SetActive(false);
+                    }
+
                     onFailed?.Invoke();
                 }
             }
             finally
             {
-                if (!committed) isPlaying = false;
+                if (!committed)
+                {
+                    preloadService.ReleaseTransitionLock();
+                    isPlaying = false;
+                }
             }
         }
 
-        private void SetProgress(float value)
+        /// <summary>
+        /// 亀裂と穴の進行度を初期状態へ戻す。
+        /// </summary>
+        private void ResetShaderProgress()
         {
-            if (materialInstance != null) materialInstance.SetFloat(PROGRESS_ID, Mathf.Clamp01(value));
+            if (materialInstance == null)
+            {
+                return;
+            }
+
+            materialInstance.SetFloat(CRACK_PROGRESS_ID, 0f);
+            materialInstance.SetFloat(HOLE_PROGRESS_ID, 0f);
+            materialInstance.SetFloat(OPEN_PROGRESS_ID, 0f);
+            materialInstance.SetFloat(TRAVEL_PROGRESS_ID, 0f);
+            materialInstance.SetFloat(READY_ID, 0f);
         }
 
+        /// <summary>
+        /// メニュー側のライトを停止・復元する。
+        /// </summary>
         private void SetMenuLights(bool restore)
         {
             if (!restore)
             {
                 menuLightStates = new bool[menuLights.Length];
+
                 for (int i = 0; i < menuLights.Length; i++)
                 {
-                    if (menuLights[i] == null) continue;
+                    if (menuLights[i] == null)
+                    {
+                        continue;
+                    }
+
                     menuLightStates[i] = menuLights[i].enabled;
                     menuLights[i].enabled = false;
                 }
+
                 return;
             }
-            if (menuLightStates == null) return;
+
+            if (menuLightStates == null)
+            {
+                return;
+            }
+
             for (int i = 0; i < menuLights.Length; i++)
-                if (menuLights[i] != null) menuLights[i].enabled = menuLightStates[i];
+            {
+                if (menuLights[i] != null)
+                {
+                    menuLights[i].enabled = menuLightStates[i];
+                }
+            }
         }
 
+        /// <summary>
+        /// 選択中のステージ画像の中心を画面UV座標で取得する。
+        /// </summary>
         private static Vector2 GetScreenUV(RectTransform target)
         {
             Canvas canvas = target.GetComponentInParent<Canvas>();
-            Camera eventCamera = canvas != null &&
-                                 canvas.rootCanvas.renderMode != RenderMode.ScreenSpaceOverlay
-                ? canvas.rootCanvas.worldCamera : null;
+
+            Camera eventCamera =
+                canvas != null &&
+                canvas.rootCanvas.renderMode != RenderMode.ScreenSpaceOverlay
+                    ? canvas.rootCanvas.worldCamera
+                    : null;
+
             Vector3 center = target.TransformPoint(target.rect.center);
-            Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(eventCamera, center);
+
+            Vector2 screenPoint =
+                RectTransformUtility.WorldToScreenPoint(eventCamera, center);
+
             return new Vector2(
                 Mathf.Clamp01(screenPoint.x / Mathf.Max(1, Screen.width)),
                 Mathf.Clamp01(screenPoint.y / Mathf.Max(1, Screen.height)));
@@ -252,7 +480,11 @@ namespace RiftPrototypeA
         private void OnDestroy()
         {
             activeTween?.Kill();
-            if (materialInstance != null) Destroy(materialInstance);
+
+            if (materialInstance != null)
+            {
+                Destroy(materialInstance);
+            }
         }
     }
 }

@@ -63,6 +63,13 @@ namespace RiftPrototypeA
             throw new InvalidOperationException($"{sceneName}にRiftAStageEntryがありません。");
         }
 
+        /// <summary>本編への引き渡し後、サービスによる所有だけを解除する。</summary>
+        public void DetachLoadedScene()
+        {
+            if (isLoading) throw new InvalidOperationException("読み込み中には引き渡せません。");
+            loadedScene = default;
+        }
+
         public async UniTask UnloadAsync()
         {
             if (!loadedScene.IsValid() || !loadedScene.isLoaded) return;

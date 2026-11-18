@@ -1834,10 +1834,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RiftPrototypeA.RiftATransitionController
   riftShader: {fileID: 4800000, guid: 643986dbeaea3694fb0dc0e08b13877f, type: 3}
+  glassCrackMask: {fileID: 2800000, guid: 07619e8a8a7fd6845a06a16d456b4fb4, type: 3}
   riftImage: {fileID: 810659792}
   flashImage: {fileID: 915695336}
-  stageLoader: {fileID: 805225534}
   previewCamera: {fileID: 805225533}
+  stageLoader: {fileID: 805225534}
   menuCanvases:
   - {fileID: 359026819}
   - {fileID: 1112817898}

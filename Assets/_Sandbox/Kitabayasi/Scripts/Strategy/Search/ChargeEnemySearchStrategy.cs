@@ -571,6 +571,12 @@ public sealed class ChargeEnemySearchStrategy :
         if (playerReference.IsPlayerCollider(
                 collidedCollider))
         {
+            // 0%は接触攻撃なし。0ダメージ通知もPlayer側の被弾演出を起動し得る。
+            if (enemyData.PatrolContactDamagePercent <= 0f)
+            {
+                return;
+            }
+
             if (!playerReference.TryGetAttackHitReceiver(
                     requireActiveAndEnabled: false,
                     out IAttackHitReceiver playerAttackHitReceiver,

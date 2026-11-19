@@ -560,19 +560,20 @@ public sealed class ChargeEnemyAttackStrategy :
     private void HandlePlayerCollision(
         EnemyContactInfo collision)
     {
-        if (!hasDamagedPlayerThisAttack)
+        if (hasDamagedPlayerThisAttack)
         {
-            hasDamagedPlayerThisAttack = true;
+            return;
+        }
 
+        hasDamagedPlayerThisAttack = true;
+        float damage = enemyData.AttackPower * (enemyData.AttackContactDamagePercent / 100f);
+        if (damage > 0f)
+        {
             if (playerReference.TryGetAttackHitReceiver(
                     requireActiveAndEnabled: true,
                     out IAttackHitReceiver playerAttackHitReceiver,
                     out _))
             {
-                float damage =
-                    enemyData.AttackPower *
-                    (enemyData.AttackContactDamagePercent / 100f);
-
                 playerAttackHitReceiver.ReceiveAttackHit(
                     new EnemyAttackHitData(
                         enemyData,
@@ -587,11 +588,11 @@ public sealed class ChargeEnemyAttackStrategy :
 
                 hasWarnedMissingPlayerReceiver = true;
             }
-
-            // 貫通中の接触継続でEffectが毎物理更新生成されないよう、最初の命中時だけ出す。
-            SpawnCollisionEffect(
-                GetCollisionEffectPosition(collision));
         }
+
+        // 貫通中の接触継続でEffectが毎物理更新生成されないよう、最初の命中時だけ出す。
+        SpawnCollisionEffect(
+            GetCollisionEffectPosition(collision));
     }
 
     private void CompleteAttack(

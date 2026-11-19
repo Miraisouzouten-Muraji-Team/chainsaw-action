@@ -14,7 +14,6 @@ using UnityEngine;
 public sealed class EnemyTriggerMovementMotor
 {
     private const float MOVEMENT_SKIN = 0.003f;
-    private const float ATTACK_START_CONTACT_MARGIN = 0.005f;
     private const float GROUND_PROBE_DISTANCE = 0.025f;
     private const float MIN_MOVEMENT_DISTANCE = 0.00001f;
     private const float MIN_PLANAR_NORMAL = 0.0001f;
@@ -28,7 +27,7 @@ public sealed class EnemyTriggerMovementMotor
     private readonly Collider bodyCollider;
     private readonly int stageLayer;
     private readonly int playerLayer;
-    private readonly int blockingLayerMask;
+    private readonly EnemyPlayerReference playerReference = new EnemyPlayerReference();
     private readonly RaycastHit[] castBuffer = new RaycastHit[QUERY_BUFFER_CAPACITY];
     private readonly RaycastHit[] groundRayBuffer = new RaycastHit[GROUND_RAY_BUFFER_CAPACITY];
     private readonly Collider[] overlapBuffer = new Collider[QUERY_BUFFER_CAPACITY];
@@ -36,6 +35,9 @@ public sealed class EnemyTriggerMovementMotor
         new Dictionary<Collider, EnemyContactInfo>();
     private readonly Dictionary<Collider, EnemyContactInfo> currentContacts =
         new Dictionary<Collider, EnemyContactInfo>();
+    private Transform previousContactPlayer;
+    private EnemyContactInfo previousPlayerContact;
+    private int contactHistoryVersion;
 
     public EnemyTriggerMovementMotor(Rigidbody enemyRigidbody)
     {
@@ -50,8 +52,6 @@ public sealed class EnemyTriggerMovementMotor
             throw new InvalidOperationException(
                 "EnemyTriggerMovementMotorにはStageColliderとPlayerBodyのLayerが必要です。");
         }
-
-        blockingLayerMask = (1 << stageLayer) | (1 << playerLayer);
 
         Collider[] colliders = enemyRigidbody.GetComponentsInChildren<Collider>(true);
         foreach (Collider candidate in colliders)
@@ -83,18 +83,8 @@ public sealed class EnemyTriggerMovementMotor
         bodyCollider.isTrigger = true;
     }
 
-    public bool IsContactTracked(Collider otherCollider)
+    private EnemyContactInfo CreatePlayerContact(Collider otherCollider)
     {
-        return otherCollider != null && previousContacts.ContainsKey(otherCollider);
-    }
-
-    public EnemyContactInfo CreateTriggerContact(Collider otherCollider)
-    {
-        if (otherCollider == null)
-        {
-            return default;
-        }
-
         Vector3 bodyPosition = enemyRigidbody.position;
         Vector3 point = otherCollider.ClosestPoint(bodyCollider.bounds.center);
         Vector3 normal = bodyCollider.bounds.center - point;
@@ -118,39 +108,97 @@ public sealed class EnemyTriggerMovementMotor
 
     /// <summary>
     /// State更新で確定した速度を、次の物理シミュレーション前に安全な速度へ制限する。
-    /// 接触通知は移動制限の副産物としてだけ生成し、通知先のStateをMotorは知らない。
+    /// Player本体の現在の接触と、突進の移動経路上の命中を個別に通知する。
     /// </summary>
-    /// <param name="stageMovementHandledExternally">
-    /// trueの場合はStageのSweep・重なり補正・接地補助を行わない。
-    /// DroneのSearch/Attackは専用PlanarMotorがStage移動を解決済み。
-    /// </param>
-    /// <param name="allowPlayerPassThrough">
-    /// trueの場合でもPlayerとの接触通知は送るが、Playerに対して速度を制限しない。
-    /// 対象攻撃の間だけStateMachineから指定する。
-    /// </param>
     public void Step(
         Action<EnemyContactInfo, bool> notifyContact,
         Action<EnemyContactInfo> notifyExit,
-        bool stageMovementHandledExternally = false,
-        bool allowPlayerPassThrough = false)
+        Action<EnemyContactInfo> notifyAttackHit,
+        bool stageMovementHandledExternally,
+        bool allowPlayerPassThrough,
+        bool isStationary)
     {
-        // 外部MotorがStageを処理したフレームにはPlayerのみをQueryする。
-        // 通常のDamage/Alert中はStageも含むため、接地・ノックバックを維持する。
-        int movementMask = stageMovementHandledExternally
-            ? 1 << playerLayer
-            : blockingLayerMask;
-
+        int historyVersion = contactHistoryVersion;
         currentContacts.Clear();
-        // プレイヤーとの重なりでは敵本体を押し戻さない。
-        // 敵が静止中でもプレイヤーの接近だけで移動してしまうため、位置補正はStageに限定する。
-        if (!stageMovementHandledExternally)
+        if (!isStationary)
         {
-            RecoverStagePenetrations();
+            if (!stageMovementHandledExternally)
+            {
+                RecoverStagePenetrations();
+            }
+
+            ConstrainMovement(stageMovementHandledExternally, allowPlayerPassThrough);
         }
 
-        // 位置補正しなくても接触ダメージ等の通知は必要なので、Player接触を別途記録する。
-        RecordOverlappingPlayerContacts();
+        // 通常移動は表面の手前で止まるため、移動停止用のSkinの分だけ照会形状を広げる。
+        float contactMargin = isStationary || allowPlayerPassThrough
+            ? 0f
+            : MOVEMENT_SKIN + MIN_MOVEMENT_DISTANCE;
+        bool hasPlayerContact =
+            TryGetPlayerContact(contactMargin, out EnemyContactInfo playerContact, out Transform player);
+        bool isNewPlayerContact = hasPlayerContact && player != previousContactPlayer;
+        EnemyContactInfo endedPlayerContact = previousPlayerContact;
+        previousContactPlayer = hasPlayerContact ? player : null;
+        previousPlayerContact = playerContact;
+        if (hasPlayerContact)
+        {
+            notifyContact?.Invoke(playerContact, isNewPlayerContact);
+            if (historyVersion != contactHistoryVersion)
+            {
+                return;
+            }
+        }
 
+        // Colliderが入れ替わった場合も、以前の接地候補をKnockbackMotorから取り除く。
+        if (endedPlayerContact.IsValid && endedPlayerContact.OtherCollider != playerContact.OtherCollider)
+        {
+            notifyExit?.Invoke(endedPlayerContact);
+            if (historyVersion != contactHistoryVersion)
+            {
+                return;
+            }
+        }
+
+        foreach (KeyValuePair<Collider, EnemyContactInfo> contact in currentContacts)
+        {
+            notifyContact?.Invoke(contact.Value, !previousContacts.ContainsKey(contact.Key));
+            if (historyVersion != contactHistoryVersion)
+            {
+                return;
+            }
+        }
+
+        foreach (KeyValuePair<Collider, EnemyContactInfo> contact in previousContacts)
+        {
+            if (!currentContacts.ContainsKey(contact.Key))
+            {
+                notifyExit?.Invoke(contact.Value);
+                if (historyVersion != contactHistoryVersion)
+                {
+                    return;
+                }
+            }
+        }
+
+        previousContacts.Clear();
+        foreach (KeyValuePair<Collider, EnemyContactInfo> contact in currentContacts)
+        {
+            previousContacts.Add(contact.Key, contact.Value);
+        }
+
+        // Stageの接触処理で攻撃が停止した場合も考慮し、最終速度で届く範囲だけ照会する。
+        // Sweepの命中を現在の接触履歴に入れると、次のStateで実接触のEnterを失う。
+        if (allowPlayerPassThrough && !hasPlayerContact && bodyCollider != null &&
+            bodyCollider.enabled && bodyCollider.gameObject.activeInHierarchy)
+        {
+            NotifySweptPlayerHit(notifyAttackHit);
+        }
+    }
+
+    private void ConstrainMovement(bool stageMovementHandledExternally, bool allowPlayerPassThrough)
+    {
+        int stageMask = stageMovementHandledExternally ? 0 : 1 << stageLayer;
+        int movementMask = allowPlayerPassThrough ? stageMask : stageMask | (1 << playerLayer);
         Vector3 velocity = enemyRigidbody.linearVelocity;
         // RigidbodyのGravityはこのFixedUpdateの後に反映されるため、移動予定量に含める。
         Vector3 gravityVelocityChange = enemyRigidbody.useGravity
@@ -163,7 +211,7 @@ public sealed class EnemyTriggerMovementMotor
         float groundAllowedFraction = 1f;
         float playerAllowedFraction = 1f;
 
-        if (distance > MIN_MOVEMENT_DISTANCE)
+        if (movementMask != 0 && distance > MIN_MOVEMENT_DISTANCE)
         {
             Vector3 direction = predictedVelocity.normalized;
             RaycastHit[] hits = CastBody(direction, distance + MOVEMENT_SKIN,
@@ -200,22 +248,20 @@ public sealed class EnemyTriggerMovementMotor
                     continue;
                 }
 
-                RecordContact(new EnemyContactInfo(
-                    hit.collider, hit.point, normal, predictedVelocity));
-
                 float fraction = Mathf.Clamp01(
                     (hit.distance - MOVEMENT_SKIN) / distance);
                 if (hit.collider.gameObject.layer == stageLayer)
                 {
+                    RecordContact(new EnemyContactInfo(
+                        hit.collider, hit.point, normal, predictedVelocity));
                     stageAllowedFraction = Mathf.Min(stageAllowedFraction, fraction);
                     if (normal.y > 0.35f)
                     {
                         groundAllowedFraction = Mathf.Min(groundAllowedFraction, fraction);
                     }
                 }
-                else if (!allowPlayerPassThrough)
+                else
                 {
-                    // 接触通知は貫通中も継続する。速度制限だけを攻撃中は無効化する。
                     playerAllowedFraction = Mathf.Min(playerAllowedFraction, fraction);
                 }
             }
@@ -256,105 +302,80 @@ public sealed class EnemyTriggerMovementMotor
         {
             enemyRigidbody.linearVelocity = velocity;
         }
-
-        foreach (KeyValuePair<Collider, EnemyContactInfo> contact in currentContacts)
-        {
-            notifyContact?.Invoke(contact.Value, !previousContacts.ContainsKey(contact.Key));
-        }
-
-        foreach (KeyValuePair<Collider, EnemyContactInfo> contact in previousContacts)
-        {
-            if (!currentContacts.ContainsKey(contact.Key))
-            {
-                notifyExit?.Invoke(contact.Value);
-            }
-        }
-
-        previousContacts.Clear();
-        foreach (KeyValuePair<Collider, EnemyContactInfo> contact in currentContacts)
-        {
-            previousContacts.Add(contact.Key, contact.Value);
-        }
     }
 
-    /// <summary>
-    /// 攻撃開始時点で本体と接触しているPlayer Colliderを再照会する。
-    /// </summary>
-    /// <remarks>
-    /// 予備動作からPlayerに接触し続けている場合、攻撃開始時には
-    /// 新しいOnTriggerEnterが届かないことがある。
-    /// 実際の本体形状にごく小さな許容幅を加えて照会し、移動停止用のQueryとは独立して
-    /// 攻撃開始時の接触だけを再通知する。距離が離れたPlayerへ攻撃を当てないため、
-    /// 索敵距離や攻撃範囲による代用はしない。
-    /// </remarks>
-    public void NotifyPlayerContactsAtAttackStart(Action<EnemyContactInfo> notifyContact)
+    private bool TryGetPlayerContact(
+        float margin, out EnemyContactInfo contact, out Transform player)
     {
-        if (notifyContact == null || !bodyCollider.enabled)
+        contact = default;
+        player = null;
+        if (bodyCollider == null || !bodyCollider.enabled ||
+            !bodyCollider.gameObject.activeInHierarchy ||
+            !playerReference.TryGetPlayerTransform(out player))
         {
-            return;
+            return false;
         }
 
-        GetGeometry(enemyRigidbody.position,
-            out Vector3 center, out Vector3 halfExtents, out Quaternion rotation,
-            out Vector3 capsuleA, out Vector3 capsuleB, out float capsuleRadius);
-
-        int playerMask = 1 << playerLayer;
-        int count = bodyCollider is BoxCollider
-            ? Physics.OverlapBoxNonAlloc(center,
-                halfExtents + Vector3.one * ATTACK_START_CONTACT_MARGIN,
-                overlapBuffer, rotation, playerMask, QueryTriggerInteraction.Collide)
-            : Physics.OverlapCapsuleNonAlloc(capsuleA, capsuleB,
-                capsuleRadius + ATTACK_START_CONTACT_MARGIN, overlapBuffer,
-                playerMask, QueryTriggerInteraction.Collide);
-
-        Collider[] colliders = overlapBuffer;
-        if (count == overlapBuffer.Length)
-        {
-            // 他のQuery同様、バッファ満杯時のPlayer接触見落としを防ぐ。
-            colliders = bodyCollider is BoxCollider
-                ? Physics.OverlapBox(center,
-                    halfExtents + Vector3.one * ATTACK_START_CONTACT_MARGIN,
-                    rotation, playerMask, QueryTriggerInteraction.Collide)
-                : Physics.OverlapCapsule(capsuleA, capsuleB,
-                    capsuleRadius + ATTACK_START_CONTACT_MARGIN,
-                    playerMask, QueryTriggerInteraction.Collide);
-            count = colliders.Length;
-        }
-
-        for (int i = 0; i < count; i++)
+        Collider[] colliders = OverlapBody(enemyRigidbody.position, 1 << playerLayer,
+            out int overlapCount, margin);
+        for (int i = 0; i < overlapCount; i++)
         {
             Collider playerCollider = colliders[i];
-            if (playerCollider == null || !playerCollider.enabled ||
-                playerCollider.gameObject.layer != playerLayer ||
-                playerCollider.attachedRigidbody == enemyRigidbody)
+            if (IsBlocking(playerCollider) && playerReference.IsPlayerCollider(playerCollider))
             {
-                continue;
+                // 同じPlayerの複数の本体Colliderが重なっても、通知はPlayerごとに一つ。
+                contact = CreatePlayerContact(playerCollider);
+                return true;
             }
-
-            notifyContact(CreateTriggerContact(playerCollider));
         }
+
+        return false;
     }
 
     public void ClearContacts()
     {
+        contactHistoryVersion++;
         previousContacts.Clear();
         currentContacts.Clear();
+        previousContactPlayer = null;
+        previousPlayerContact = default;
+        playerReference.Clear();
     }
 
-    private void RecordOverlappingPlayerContacts()
+    private void NotifySweptPlayerHit(Action<EnemyContactInfo> notifyAttackHit)
     {
-        Collider[] colliders = OverlapBody(enemyRigidbody.position,
-            1 << playerLayer, out int overlapCount);
-        for (int i = 0; i < overlapCount; i++)
+        Vector3 velocity = enemyRigidbody.linearVelocity;
+        if (enemyRigidbody.useGravity)
         {
-            Collider playerCollider = colliders[i];
-            if (playerCollider == null || playerCollider.gameObject.layer != playerLayer ||
-                !IsBlocking(playerCollider))
-            {
-                continue;
-            }
+            velocity += Physics.gravity * Time.fixedDeltaTime;
+        }
 
-            RecordContact(CreateTriggerContact(playerCollider));
+        velocity.z = 0f;
+        float distance = velocity.magnitude * Time.fixedDeltaTime;
+        if (distance <= MIN_MOVEMENT_DISTANCE)
+        {
+            return;
+        }
+
+        RaycastHit[] hits = CastBody(velocity.normalized, distance, 1 << playerLayer, out int hitCount);
+        RaycastHit closestHit = default;
+        float closestDistance = float.PositiveInfinity;
+        for (int i = 0; i < hitCount; i++)
+        {
+            RaycastHit hit = hits[i];
+            // 初期重なりは現在位置のOverlapで処理済み。距離0の仮のCastヒットは使わない。
+            if (hit.distance > 0f && hit.distance < closestDistance &&
+                IsBlocking(hit.collider) && playerReference.IsPlayerCollider(hit.collider))
+            {
+                closestHit = hit;
+                closestDistance = hit.distance;
+            }
+        }
+
+        if (closestHit.collider != null)
+        {
+            notifyAttackHit?.Invoke(new EnemyContactInfo(
+                closestHit.collider, closestHit.point, closestHit.normal, velocity));
         }
     }
 
@@ -674,7 +695,9 @@ public sealed class EnemyTriggerMovementMotor
 
     private bool IsBlocking(Collider candidate)
     {
-        if (candidate == null || !candidate.enabled ||
+        // PlayerBodyレイヤーにはプレイヤーのチェーンソー等のTriggerも入る。
+        if (candidate == null || !candidate.enabled || !candidate.gameObject.activeInHierarchy ||
+            candidate.isTrigger ||
             candidate.attachedRigidbody == enemyRigidbody ||
             candidate.transform.IsChildOf(enemyRigidbody.transform))
         {
@@ -682,7 +705,7 @@ public sealed class EnemyTriggerMovementMotor
         }
 
         int layer = candidate.gameObject.layer;
-        return (layer == stageLayer && !candidate.isTrigger) || layer == playerLayer;
+        return layer == stageLayer || layer == playerLayer;
     }
 
     private Vector3 GetColliderWorldPosition(Vector3 bodyPosition)
@@ -690,17 +713,20 @@ public sealed class EnemyTriggerMovementMotor
         return bodyPosition;
     }
 
-    private Collider[] OverlapBody(Vector3 bodyPosition, int movementMask, out int count)
+    private Collider[] OverlapBody(Vector3 bodyPosition, int movementMask, out int count,
+        float margin = 0f)
     {
         GetGeometry(bodyPosition, out Vector3 center, out Vector3 halfExtents,
             out Quaternion rotation, out Vector3 capsuleA, out Vector3 capsuleB,
             out float capsuleRadius);
 
+        halfExtents += Vector3.one * margin;
+        capsuleRadius += margin;
         count = bodyCollider is BoxCollider
             ? Physics.OverlapBoxNonAlloc(center, halfExtents, overlapBuffer, rotation,
-                movementMask, QueryTriggerInteraction.Collide)
+                movementMask, QueryTriggerInteraction.Ignore)
             : Physics.OverlapCapsuleNonAlloc(capsuleA, capsuleB, capsuleRadius,
-                overlapBuffer, movementMask, QueryTriggerInteraction.Collide);
+                overlapBuffer, movementMask, QueryTriggerInteraction.Ignore);
 
         if (count < overlapBuffer.Length)
         {
@@ -710,9 +736,9 @@ public sealed class EnemyTriggerMovementMotor
         // 検出上限によって最寄り障害物を見逃さないよう、満杯のときだけ全件取得する。
         Collider[] all = bodyCollider is BoxCollider
             ? Physics.OverlapBox(center, halfExtents, rotation, movementMask,
-                QueryTriggerInteraction.Collide)
+                QueryTriggerInteraction.Ignore)
             : Physics.OverlapCapsule(capsuleA, capsuleB, capsuleRadius,
-                movementMask, QueryTriggerInteraction.Collide);
+                movementMask, QueryTriggerInteraction.Ignore);
         count = all.Length;
         return all;
     }
@@ -726,9 +752,9 @@ public sealed class EnemyTriggerMovementMotor
 
         count = bodyCollider is BoxCollider
             ? Physics.BoxCastNonAlloc(center, halfExtents, direction, castBuffer, rotation,
-                distance, movementMask, QueryTriggerInteraction.Collide)
+                distance, movementMask, QueryTriggerInteraction.Ignore)
             : Physics.CapsuleCastNonAlloc(capsuleA, capsuleB, capsuleRadius, direction,
-                castBuffer, distance, movementMask, QueryTriggerInteraction.Collide);
+                castBuffer, distance, movementMask, QueryTriggerInteraction.Ignore);
 
         if (count < castBuffer.Length)
         {
@@ -737,9 +763,9 @@ public sealed class EnemyTriggerMovementMotor
 
         RaycastHit[] all = bodyCollider is BoxCollider
             ? Physics.BoxCastAll(center, halfExtents, direction, rotation, distance,
-                movementMask, QueryTriggerInteraction.Collide)
+                movementMask, QueryTriggerInteraction.Ignore)
             : Physics.CapsuleCastAll(capsuleA, capsuleB, capsuleRadius, direction,
-                distance, movementMask, QueryTriggerInteraction.Collide);
+                distance, movementMask, QueryTriggerInteraction.Ignore);
         count = all.Length;
         return all;
     }

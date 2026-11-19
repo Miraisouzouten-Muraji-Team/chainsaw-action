@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
 
@@ -33,7 +34,8 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
     private DroneEnemyPathNavigator pathNavigator;
 
     private EnemyPlayerReference playerReference;
-    private BoxCollider playerTargetCollider;
+    private Collider playerTargetCollider;
+    private List<Collider> playerTargetColliderCandidates;
 
     // 内部フェーズ用の新しいenumを増やさず、現在フェーズの更新処理を保持する。
     private Action updateCurrentPhase;
@@ -70,9 +72,9 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
     private bool navigationCompletesWithPreparationDelay;
 
     /// <summary>
-    /// 共通MotorがPlayerへの移動制限を解除してよい、攻撃本体の実行中かを返す。
+    /// プレイヤーとの接触判定は維持し、移動制限だけ解除するホーミング突進中かどうか。
     /// </summary>
-    public bool IsAttackMovementActive => isAttackActive && !isAttackCycleComplete;
+    public bool IsAttackMovementActive => isAttackActive && isHomingActive;
 
     public void Initialize(
         EnemyData enemyData,
@@ -976,8 +978,7 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
         if (playerReference.IsPlayerCollider(
                 collision.OtherCollider))
         {
-            // 命中したPlayerを貫通し、ロック地点の判定ラインまで追尾を継続する。
-            // ダメージはこの突進の間に1回だけ与える。
+            // ダメージは1回の突進につき一度だけ与え、命中後も終点まで突進を継続する。
             SendPlayerDamageOncePerPass();
             return;
         }
@@ -1073,16 +1074,17 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
 
         hasDamagedPlayerThisPass = true;
 
+        float damage = enemyData.AttackPower * (enemyData.AttackContactDamagePercent / 100f);
+        if (damage <= 0f)
+        {
+            return;
+        }
+
         if (playerReference.TryGetAttackHitReceiver(
                 requireActiveAndEnabled: true,
                 out IAttackHitReceiver playerAttackHitReceiver,
                 out _))
         {
-            float damage =
-                enemyData.AttackPower *
-                (enemyData.AttackContactDamagePercent /
-                 100f);
-
             playerAttackHitReceiver.ReceiveAttackHit(
                 new EnemyAttackHitData(
                     enemyData,
@@ -1244,22 +1246,46 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
 
         hasWarnedMissingPlayer = false;
 
-        if (playerTargetCollider == null)
+        if (playerTargetCollider == null ||
+            !playerTargetCollider.enabled ||
+            !playerTargetCollider.gameObject.activeInHierarchy ||
+            playerTargetCollider.transform.parent != playerTransform ||
+            playerTargetCollider.transform.name != PLAYER_TARGET_COLLIDER_NAME)
         {
+            playerTargetCollider = null;
+
             Transform targetTransform =
                 playerTransform.Find(
                     PLAYER_TARGET_COLLIDER_NAME);
 
-            if (targetTransform != null)
+            if (targetTransform != null &&
+                targetTransform.gameObject.activeInHierarchy)
             {
-                playerTargetCollider =
-                    targetTransform.GetComponent<BoxCollider>();
+                if (playerTargetColliderCandidates == null)
+                {
+                    playerTargetColliderCandidates =
+                        new List<Collider>(2);
+                }
+
+                // Colliderが複数ある場合も、無効なものを飛ばして有効なものを採用する。
+                targetTransform.GetComponents(playerTargetColliderCandidates);
+
+                for (int i = 0; i < playerTargetColliderCandidates.Count; i++)
+                {
+                    Collider candidate = playerTargetColliderCandidates[i];
+
+                    if (candidate == null || !candidate.enabled)
+                    {
+                        continue;
+                    }
+
+                    playerTargetCollider = candidate;
+                    break;
+                }
             }
         }
 
-        if (playerTargetCollider == null ||
-            !playerTargetCollider.enabled ||
-            !playerTargetCollider.gameObject.activeInHierarchy)
+        if (playerTargetCollider == null)
         {
             targetWorldPosition = default;
 
@@ -1268,7 +1294,7 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
                 Debug.LogWarning(
                     $"{nameof(OldDroneEnemyAttackStrategy)}: " +
                     $"Player Root直下の{PLAYER_TARGET_COLLIDER_NAME}に" +
-                    $"有効な{nameof(BoxCollider)}がないため、攻撃位置へ移動できません。",
+                    $"有効な{nameof(Collider)}がないため、攻撃位置へ移動できません。",
                     enemyObject);
 
                 hasWarnedMissingPlayerTargetCollider = true;

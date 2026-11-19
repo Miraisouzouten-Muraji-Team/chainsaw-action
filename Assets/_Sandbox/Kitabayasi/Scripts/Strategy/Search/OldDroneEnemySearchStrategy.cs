@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Scripting.APIUpdating;
@@ -44,7 +44,8 @@ public sealed class OldDroneEnemySearchStrategy :
 
     private EnemyPlayerReference playerReference;
     private EnemyPlayerDetectionSensor playerDetectionSensor;
-    private BoxCollider playerTargetCollider;
+    private Collider playerTargetCollider;
+    private List<Collider> playerTargetColliderCandidates;
 
     private Vector3 patrolOriginPosition;
     private Quaternion initialVisualRootRotation;
@@ -321,8 +322,10 @@ public sealed class OldDroneEnemySearchStrategy :
         }
 
         if (!playerReference.IsPlayerCollider(
-                collision.OtherCollider))
+                collision.OtherCollider) ||
+            enemyData.PatrolContactDamagePercent <= 0f)
         {
+            // 0%は接触攻撃自体を無効にする。Playerへの通知もしない。
             return;
         }
 
@@ -548,22 +551,46 @@ public sealed class OldDroneEnemySearchStrategy :
             return false;
         }
 
-        if (playerTargetCollider == null)
+        if (playerTargetCollider == null ||
+            !playerTargetCollider.enabled ||
+            !playerTargetCollider.gameObject.activeInHierarchy ||
+            playerTargetCollider.transform.parent != playerTransform ||
+            playerTargetCollider.transform.name != PLAYER_TARGET_COLLIDER_NAME)
         {
+            playerTargetCollider = null;
+
             Transform targetTransform =
                 playerTransform.Find(
                     PLAYER_TARGET_COLLIDER_NAME);
 
-            if (targetTransform != null)
+            if (targetTransform != null &&
+                targetTransform.gameObject.activeInHierarchy)
             {
-                playerTargetCollider =
-                    targetTransform.GetComponent<BoxCollider>();
+                if (playerTargetColliderCandidates == null)
+                {
+                    playerTargetColliderCandidates =
+                        new List<Collider>(2);
+                }
+
+                // Colliderが複数ある場合も、無効なものを飛ばして有効なものを採用する。
+                targetTransform.GetComponents(playerTargetColliderCandidates);
+
+                for (int i = 0; i < playerTargetColliderCandidates.Count; i++)
+                {
+                    Collider candidate = playerTargetColliderCandidates[i];
+
+                    if (candidate == null || !candidate.enabled)
+                    {
+                        continue;
+                    }
+
+                    playerTargetCollider = candidate;
+                    break;
+                }
             }
         }
 
-        if (playerTargetCollider == null ||
-            !playerTargetCollider.enabled ||
-            !playerTargetCollider.gameObject.activeInHierarchy)
+        if (playerTargetCollider == null)
         {
             targetWorldPosition = default;
             return false;

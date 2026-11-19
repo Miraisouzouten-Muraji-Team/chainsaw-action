@@ -69,6 +69,11 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
     private bool hasWarnedMissingPlayerTargetCollider;
     private bool navigationCompletesWithPreparationDelay;
 
+    /// <summary>
+    /// 共通MotorがPlayerへの移動制限を解除してよい、攻撃本体の実行中かを返す。
+    /// </summary>
+    public bool IsAttackMovementActive => isAttackActive && !isAttackCycleComplete;
+
     public void Initialize(
         EnemyData enemyData,
         GameObject enemyObject,
@@ -971,11 +976,9 @@ public sealed class OldDroneEnemyAttackStrategy : IEnemyAttackStrategy
         if (playerReference.IsPlayerCollider(
                 collision.OtherCollider))
         {
+            // 命中したPlayerを貫通し、ロック地点の判定ラインまで追尾を継続する。
+            // ダメージはこの突進の間に1回だけ与える。
             SendPlayerDamageOncePerPass();
-
-            // Playerへ命中した場合もロック地点まで進み続けず、
-            // 今回のホーミング区間を終えてブレーキへ移る。
-            BeginBraking();
             return;
         }
 

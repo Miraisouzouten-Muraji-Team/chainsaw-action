@@ -3,11 +3,12 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 本体Trigger Colliderを使ってXY平面上のステージ・プレイヤーへの侵入を抑止する。
+/// 本体Trigger Colliderを使ってXY平面上のステージとプレイヤーへの侵入を制限する。
 /// </summary>
 /// <remarks>
 /// AIによる速度指示やState遷移は行わない。Rigidbodyが持つ要求速度を物理更新ごとに制限する。
 /// 通常Colliderの接触ソルバーに頼れないため、開始時の重なり補正・移動経路Sweep・接地確認を行う。
+/// 特定の突進中はPlayerへの侵入制限だけを解除し、接触通知は維持する。
 /// 死亡後の分割片Colliderには適用しない。
 /// </remarks>
 public sealed class EnemyTriggerMovementMotor
@@ -121,13 +122,17 @@ public sealed class EnemyTriggerMovementMotor
     /// </summary>
     /// <param name="stageMovementHandledExternally">
     /// trueの場合はStageのSweep・重なり補正・接地補助を行わない。
-    /// DroneのSearch/Attackは専用PlanarMotorがStage移動を解決済みだが、
-    /// Playerとの侵入防止はこのMotorが引き続き担当する。
+    /// DroneのSearch/Attackは専用PlanarMotorがStage移動を解決済み。
+    /// </param>
+    /// <param name="allowPlayerPassThrough">
+    /// trueの場合でもPlayerとの接触通知は送るが、Playerに対して速度を制限しない。
+    /// 対象攻撃の間だけStateMachineから指定する。
     /// </param>
     public void Step(
         Action<EnemyContactInfo, bool> notifyContact,
         Action<EnemyContactInfo> notifyExit,
-        bool stageMovementHandledExternally = false)
+        bool stageMovementHandledExternally = false,
+        bool allowPlayerPassThrough = false)
     {
         // 外部MotorがStageを処理したフレームにはPlayerのみをQueryする。
         // 通常のDamage/Alert中はStageも含むため、接地・ノックバックを維持する。
@@ -208,8 +213,9 @@ public sealed class EnemyTriggerMovementMotor
                         groundAllowedFraction = Mathf.Min(groundAllowedFraction, fraction);
                     }
                 }
-                else
+                else if (!allowPlayerPassThrough)
                 {
+                    // 接触通知は貫通中も継続する。速度制限だけを攻撃中は無効化する。
                     playerAllowedFraction = Mathf.Min(playerAllowedFraction, fraction);
                 }
             }
@@ -275,8 +281,8 @@ public sealed class EnemyTriggerMovementMotor
     /// 攻撃開始時点で本体と接触しているPlayer Colliderを再照会する。
     /// </summary>
     /// <remarks>
-    /// 予備動作中にMotorがPlayerとの重なりを解消すると、攻撃開始時には
-    /// 新しいOnTriggerEnterが届かない場合がある。
+    /// 予備動作からPlayerに接触し続けている場合、攻撃開始時には
+    /// 新しいOnTriggerEnterが届かないことがある。
     /// 実際の本体形状にごく小さな許容幅を加えて照会し、移動停止用のQueryとは独立して
     /// 攻撃開始時の接触だけを再通知する。距離が離れたPlayerへ攻撃を当てないため、
     /// 索敵距離や攻撃範囲による代用はしない。

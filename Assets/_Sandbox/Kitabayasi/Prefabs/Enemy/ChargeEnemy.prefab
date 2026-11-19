@@ -274,8 +274,8 @@ MonoBehaviour:
   keepCutSidesAsSinglePieces: 0
   cutDirectionSampleCount: 4
   cutRangeAxis: 1
-  cutRangeMinimumNormalized: 0.21
-  cutRangeMaximumNormalized: 0.8
+  cutRangeMinimumNormalized: 0.4
+  cutRangeMaximumNormalized: 0.7
   cutSurfaceUvScale: 1
   showCutRangeGizmo: 1
   enableDiagnosticLogs: 0
@@ -373,8 +373,17 @@ MonoBehaviour:
   targetSkinnedMeshRenderer: {fileID: 8649740849393938690}
   targetMeshFilter: {fileID: 0}
   cutSurfaceMaterial: {fileID: 2100000, guid: efba80df10aeb624e82f4d1d32902613, type: 2}
-  targetPieceCount: 8
   cutSurfaceUvScale: 1
+  bakedPieceMeshes:
+  - {fileID: 4300000, guid: 96af10c339db0bd4a835277a35006340, type: 2}
+  - {fileID: 4300000, guid: 6f9385279703409429a8d5e808cd3127, type: 2}
+  - {fileID: 4300000, guid: 4ecc9536956413740ad53d3c11f42ae2, type: 2}
+  - {fileID: 4300000, guid: 1b7871178c260cf4b86d61c39c76aab7, type: 2}
+  - {fileID: 4300000, guid: 6b08171cfa127be458b74b485ae6c43d, type: 2}
+  - {fileID: 4300000, guid: 5b4c1fdef3647da438779e18b1578c50, type: 2}
+  - {fileID: 4300000, guid: d14f808d7a545154ab7c0aeb535b425e, type: 2}
+  - {fileID: 4300000, guid: 410141805ffb4d64999763f6877b6657, type: 2}
+  bakedSkinnedSourceScale: {x: 100, y: 100, z: 100}
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
@@ -390,12 +399,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ecfa225638ba7754481e634c345171a6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyDiggingDeathBurst
-  burstOrigin: {fileID: 5142552796670060070}
-  upperBurstForce: 8
-  upperTorqueStrength: 0.3
-  lowerBurstForce: 10
-  lowerDownwardBias: 1
-  directionSpread: 10
+  burstSpeed: 8
 --- !u!136 &2400979624633459438
 CapsuleCollider:
   m_ObjectHideFlags: 0

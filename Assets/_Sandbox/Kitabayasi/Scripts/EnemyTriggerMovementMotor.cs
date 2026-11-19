@@ -19,6 +19,9 @@ public sealed class EnemyTriggerMovementMotor
     private const float MIN_PLANAR_NORMAL = 0.0001f;
     private const int MAX_RECOVERY_ITERATIONS = 6;
     private const int QUERY_BUFFER_CAPACITY = 32;
+    private const int GROUND_RAY_BUFFER_CAPACITY = 16;
+    private const float GROUND_SURFACE_MIN_NORMAL_Y = 0.35f;
+    private const float GROUND_SAMPLE_HORIZONTAL_RATIO = 0.6f;
 
     private readonly Rigidbody enemyRigidbody;
     private readonly Collider bodyCollider;
@@ -26,6 +29,7 @@ public sealed class EnemyTriggerMovementMotor
     private readonly int playerLayer;
     private readonly int blockingLayerMask;
     private readonly RaycastHit[] castBuffer = new RaycastHit[QUERY_BUFFER_CAPACITY];
+    private readonly RaycastHit[] groundRayBuffer = new RaycastHit[GROUND_RAY_BUFFER_CAPACITY];
     private readonly Collider[] overlapBuffer = new Collider[QUERY_BUFFER_CAPACITY];
     private readonly Dictionary<Collider, EnemyContactInfo> previousContacts =
         new Dictionary<Collider, EnemyContactInfo>();
@@ -144,11 +148,15 @@ public sealed class EnemyTriggerMovementMotor
 
         Vector3 velocity = enemyRigidbody.linearVelocity;
         // RigidbodyのGravityはこのFixedUpdateの後に反映されるため、移動予定量に含める。
-        Vector3 predictedVelocity = velocity +
-            (enemyRigidbody.useGravity ? Physics.gravity * Time.fixedDeltaTime : Vector3.zero);
+        Vector3 gravityVelocityChange = enemyRigidbody.useGravity
+            ? Physics.gravity * Time.fixedDeltaTime
+            : Vector3.zero;
+        Vector3 predictedVelocity = velocity + gravityVelocityChange;
         predictedVelocity.z = 0f;
         float distance = predictedVelocity.magnitude * Time.fixedDeltaTime;
-        float allowedFraction = 1f;
+        float stageAllowedFraction = 1f;
+        float groundAllowedFraction = 1f;
+        float playerAllowedFraction = 1f;
 
         if (distance > MIN_MOVEMENT_DISTANCE)
         {
@@ -163,10 +171,12 @@ public sealed class EnemyTriggerMovementMotor
                     continue;
                 }
 
-                // Box/CapsuleCastは開始時の重なりに対して仮の逆方向法線を返す。
-                // 床を横移動するだけの接触を壁と誤判定しないよう侵入を再検査する。
+                // 開始位置の重なりを表すCastのゼロ距離ヒットは、仮の法線を返す。
+                // 微小移動だけでなく今回の移動予定全体で侵入するか確認し、
+                // 床に沿って離れていく移動まで停止しない。
                 if (hit.distance <= MIN_MOVEMENT_DISTANCE &&
-                    !WouldPenetrateAfterMove(hit.collider, direction * 0.002f))
+                    !WouldPenetrateAfterMove(hit.collider,
+                        predictedVelocity * Time.fixedDeltaTime))
                 {
                     continue;
                 }
@@ -190,15 +200,32 @@ public sealed class EnemyTriggerMovementMotor
 
                 float fraction = Mathf.Clamp01(
                     (hit.distance - MOVEMENT_SKIN) / distance);
-                allowedFraction = Mathf.Min(allowedFraction, fraction);
+                if (hit.collider.gameObject.layer == stageLayer)
+                {
+                    stageAllowedFraction = Mathf.Min(stageAllowedFraction, fraction);
+                    if (normal.y > 0.35f)
+                    {
+                        groundAllowedFraction = Mathf.Min(groundAllowedFraction, fraction);
+                    }
+                }
+                else
+                {
+                    playerAllowedFraction = Mathf.Min(playerAllowedFraction, fraction);
+                }
             }
         }
 
+        float allowedFraction = Mathf.Min(stageAllowedFraction, playerAllowedFraction);
         if (allowedFraction < 1f)
         {
-            // 法線方向の物理反発は存在しないので、接触地点を越えない速度へ縮める。
-            velocity.x *= allowedFraction;
-            velocity.y *= allowedFraction;
+            // StageはTriggerなので接触ソルバーが重力による落下を止めない。
+            // 床に進路を制限された分の重力は次の物理シミュレーション前に相殺する。
+            // 壁・天井・Playerだけの接触では落下を妨げない。
+            float stageGravityCancellation = 1f - groundAllowedFraction;
+            velocity.x = velocity.x * allowedFraction -
+                gravityVelocityChange.x * stageGravityCancellation;
+            velocity.y = velocity.y * allowedFraction -
+                gravityVelocityChange.y * stageGravityCancellation;
         }
 
         if (!stageMovementHandledExternally &&
@@ -212,6 +239,11 @@ public sealed class EnemyTriggerMovementMotor
             {
                 velocity.y = -Physics.gravity.y * Time.fixedDeltaTime;
             }
+        }
+
+        if (!stageMovementHandledExternally)
+        {
+            PreventPredictedStagePenetration(ref velocity, gravityVelocityChange);
         }
 
         if (!enemyRigidbody.isKinematic)
@@ -363,11 +395,222 @@ public sealed class EnemyTriggerMovementMotor
             }
         }
 
+        // MeshColliderでは深く侵入した場合にComputePenetrationが床面を検出できないことがある。
+        // 下向きRayで実際の床面を調べ、すでに下端が越えていた場合だけ持ち上げる。
+        if (enemyRigidbody.linearVelocity.y <= 0f &&
+            TryGetStageGroundSurface(bodyPosition, bodyPosition,
+                out RaycastHit groundHit, out float bottomHeight) &&
+            groundHit.point.y - bottomHeight > MOVEMENT_SKIN * 0.5f)
+        {
+            bodyPosition.y += groundHit.point.y - bottomHeight + MOVEMENT_SKIN;
+            RecordContact(new EnemyContactInfo(
+                groundHit.collider, groundHit.point, groundHit.normal,
+                enemyRigidbody.linearVelocity));
+            changed = true;
+        }
+
         if (changed)
         {
             bodyPosition.z = enemyRigidbody.position.z;
             enemyRigidbody.position = bodyPosition;
         }
+    }
+
+    /// <summary>
+    /// Sweepを抜けた移動を重力込みで再検査し、床面を通り抜ける速度を制限する。
+    /// Triggerは接触ソルバーで止まらないため、重なり判定を通過した場合も床面Rayで補完する。
+    /// </summary>
+    private void PreventPredictedStagePenetration(
+        ref Vector3 velocity, Vector3 gravityVelocityChange)
+    {
+        Vector3 predictedVelocity = velocity + gravityVelocityChange;
+        predictedVelocity.z = 0f;
+        Vector3 movement = predictedVelocity * Time.fixedDeltaTime;
+        if (movement.sqrMagnitude > MIN_MOVEMENT_DISTANCE * MIN_MOVEMENT_DISTANCE &&
+            HasStagePenetrationAtPosition(enemyRigidbody.position + movement))
+        {
+            // 重なりを検出できた場合は、最初の侵入位置まで移動割合を縮める。
+            float safeFraction = 0f;
+            float blockedFraction = 1f;
+            for (int iteration = 0; iteration < 10; iteration++)
+            {
+                float fraction = (safeFraction + blockedFraction) * 0.5f;
+                if (HasStagePenetrationAtPosition(
+                        enemyRigidbody.position + movement * fraction))
+                {
+                    blockedFraction = fraction;
+                }
+                else
+                {
+                    safeFraction = fraction;
+                }
+            }
+
+            velocity.x = predictedVelocity.x * safeFraction - gravityVelocityChange.x;
+            velocity.y = predictedVelocity.y * safeFraction - gravityVelocityChange.y;
+        }
+
+        // ComputePenetrationはMeshColliderの裏面三角形を無視する。
+        // すでに床面を通り抜けていると重なりが返らない場合もあるため、
+        // 接地可能な面を上からRayで調べ、落下中に床の下へ進む速度だけを制限する。
+        predictedVelocity = velocity + gravityVelocityChange;
+        if (predictedVelocity.y > 0f ||
+            predictedVelocity.sqrMagnitude * Time.fixedDeltaTime * Time.fixedDeltaTime <=
+            MIN_MOVEMENT_DISTANCE * MIN_MOVEMENT_DISTANCE)
+        {
+            return;
+        }
+
+        Vector3 predictedPosition = enemyRigidbody.position +
+            new Vector3(predictedVelocity.x, predictedVelocity.y, 0f) * Time.fixedDeltaTime;
+        if (!TryGetStageGroundSurface(enemyRigidbody.position, predictedPosition,
+                out RaycastHit groundHit, out float predictedBottomHeight))
+        {
+            return;
+        }
+
+        float penetrationDepth = groundHit.point.y + MOVEMENT_SKIN - predictedBottomHeight;
+        if (penetrationDepth <= 0f)
+        {
+            return;
+        }
+
+        // X方向や上昇速度は変更しない。物理更新で加算される重力を含む
+        // 予測位置の下端だけが床上にとどまるよう、Y速度を引き上げる。
+        velocity.y += penetrationDepth / Time.fixedDeltaTime;
+        RecordContact(new EnemyContactInfo(
+            groundHit.collider, groundHit.point, groundHit.normal,
+            predictedVelocity));
+    }
+
+    /// <summary>
+    /// 本体の予定位置から、足元を横切るStageの上面を検出する。
+    /// Overlap/ComputePenetrationが検出できない深い侵入を補うための床専用判定。
+    /// </summary>
+    private bool TryGetStageGroundSurface(
+        Vector3 startBodyPosition, Vector3 targetBodyPosition,
+        out RaycastHit groundHit, out float targetBottomHeight)
+    {
+        groundHit = default;
+        targetBottomHeight = float.NegativeInfinity;
+        GetBodyBoundsForGroundRay(startBodyPosition,
+            out Vector3 startCenter, out float startTopHeight,
+            out Vector2 startExtents);
+        GetBodyBoundsForGroundRay(targetBodyPosition,
+            out Vector3 targetCenter, out float targetTopHeight,
+            out Vector2 horizontalAndVerticalExtents);
+
+        targetBottomHeight = targetCenter.y - horizontalAndVerticalExtents.y;
+        float rayStartHeight = Mathf.Max(startTopHeight, targetTopHeight) + MOVEMENT_SKIN;
+        float rayDistance = rayStartHeight -
+            Mathf.Min(targetBottomHeight, startCenter.y - startExtents.y) +
+            GROUND_PROBE_DISTANCE;
+        if (rayDistance <= 0f)
+        {
+            return false;
+        }
+
+        float sampleOffset = horizontalAndVerticalExtents.x *
+            GROUND_SAMPLE_HORIZONTAL_RATIO;
+        bool foundGround = false;
+        for (int sample = -1; sample <= 1; sample++)
+        {
+            Vector3 rayOrigin = new Vector3(
+                targetCenter.x + sampleOffset * sample,
+                rayStartHeight, targetCenter.z);
+            int count = Physics.RaycastNonAlloc(
+                rayOrigin, Vector3.down, groundRayBuffer, rayDistance,
+                1 << stageLayer, QueryTriggerInteraction.Ignore);
+            RaycastHit[] hits = groundRayBuffer;
+            if (count == groundRayBuffer.Length)
+            {
+                // バッファ満杯でも実際の地面を見落とさない。
+                hits = Physics.RaycastAll(
+                    rayOrigin, Vector3.down, rayDistance,
+                    1 << stageLayer, QueryTriggerInteraction.Ignore);
+                count = hits.Length;
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                RaycastHit hit = hits[i];
+                if (!IsBlocking(hit.collider) ||
+                    hit.collider.gameObject.layer != stageLayer ||
+                    hit.normal.y <= GROUND_SURFACE_MIN_NORMAL_Y)
+                {
+                    continue;
+                }
+
+                if (!foundGround || hit.point.y > groundHit.point.y)
+                {
+                    groundHit = hit;
+                    foundGround = true;
+                }
+            }
+        }
+
+        return foundGround;
+    }
+
+    private void GetBodyBoundsForGroundRay(
+        Vector3 bodyPosition, out Vector3 center,
+        out float topHeight, out Vector2 horizontalAndVerticalExtents)
+    {
+        GetGeometry(bodyPosition, out center, out Vector3 halfExtents,
+            out Quaternion rotation, out Vector3 capsuleA,
+            out Vector3 capsuleB, out float capsuleRadius);
+
+        if (bodyCollider is BoxCollider)
+        {
+            Vector3 axisX = rotation * Vector3.right;
+            Vector3 axisY = rotation * Vector3.up;
+            Vector3 axisZ = rotation * Vector3.forward;
+            horizontalAndVerticalExtents = new Vector2(
+                Mathf.Abs(axisX.x) * halfExtents.x +
+                Mathf.Abs(axisY.x) * halfExtents.y +
+                Mathf.Abs(axisZ.x) * halfExtents.z,
+                Mathf.Abs(axisX.y) * halfExtents.x +
+                Mathf.Abs(axisY.y) * halfExtents.y +
+                Mathf.Abs(axisZ.y) * halfExtents.z);
+        }
+        else
+        {
+            horizontalAndVerticalExtents = new Vector2(
+                Mathf.Max(Mathf.Abs(capsuleA.x - center.x),
+                    Mathf.Abs(capsuleB.x - center.x)) + capsuleRadius,
+                Mathf.Max(Mathf.Abs(capsuleA.y - center.y),
+                    Mathf.Abs(capsuleB.y - center.y)) + capsuleRadius);
+        }
+
+        topHeight = center.y + horizontalAndVerticalExtents.y;
+    }
+
+    private bool HasStagePenetrationAtPosition(Vector3 bodyPosition)
+    {
+        Collider[] colliders = OverlapBody(bodyPosition, 1 << stageLayer,
+            out int overlapCount);
+        for (int i = 0; i < overlapCount; i++)
+        {
+            Collider obstacle = colliders[i];
+            if (!IsBlocking(obstacle) ||
+                !Physics.ComputePenetration(
+                    bodyCollider, GetColliderWorldPosition(bodyPosition),
+                    bodyCollider.transform.rotation,
+                    obstacle, obstacle.transform.position, obstacle.transform.rotation,
+                    out Vector3 direction, out float distance))
+            {
+                continue;
+            }
+
+            direction.z = 0f;
+            if (direction.sqrMagnitude > MIN_PLANAR_NORMAL * MIN_PLANAR_NORMAL &&
+                distance > MOVEMENT_SKIN * 0.5f)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private bool WouldPenetrateAfterMove(Collider obstacle, Vector3 movement)

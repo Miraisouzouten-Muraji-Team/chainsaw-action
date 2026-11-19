@@ -507,6 +507,36 @@ public sealed class StandardEnemyDeathStrategy :
     }
 
     /// <summary>
+    /// 設定された食い込み攻撃データと、Playerが命中ごとに生成した実行時コピーを識別する。
+    /// </summary>
+    /// <remarks>
+    /// Player側のChainsawAttack.GetScaledDiggingDataは、複製したAttackDataの名前を
+    /// 「元アセット名_RuntimeDamage_適用ダメージ」に設定する。
+    /// コピーには元アセットへの参照が残らないため、既存の命名規則と適用ダメージを併用して判別する。
+    /// 同名の異なるAttackDataアセットを食い込み用と通常攻撃用に設定しないこと。
+    /// </remarks>
+    public bool IsDiggingAttackData(AttackData attackData)
+    {
+        if (diggingAttackData == null || attackData == null)
+        {
+            return false;
+        }
+
+        if (attackData == diggingAttackData)
+        {
+            return true;
+        }
+
+        string expectedRuntimeName =
+            diggingAttackData.name + "_RuntimeDamage_" + attackData.damage;
+
+        return string.Equals(
+            attackData.name,
+            expectedRuntimeName,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// 死亡原因AttackDataから、通常攻撃死亡とくい込み攻撃死亡のどちらを開始するか選択する。
     /// </summary>
     private void TryBeginDeathMeshEffect()
@@ -519,9 +549,8 @@ public sealed class StandardEnemyDeathStrategy :
                 enemyAttackHitReceiver
                     .LastPlayerAttackHitData;
 
-            if (lastPlayerAttackHitData != null &&
-                diggingAttackData != null &&
-                lastPlayerAttackHitData.AttackData == diggingAttackData)
+            if (lastPlayerAttackHitData?.AttackData is AttackData attackData &&
+                IsDiggingAttackData(attackData))
             {
                 TryBeginDiggingDeathMesh();
                 return;
@@ -534,7 +563,7 @@ public sealed class StandardEnemyDeathStrategy :
     }
 
     /// <summary>
-    /// くい込み攻撃死亡用の目標Piece数分割を開始する。
+    /// くい込み攻撃で死亡したEnemyをベイク済みの破片へ切り替える。
     /// チェンソー軌跡、通常攻撃用Cut Range、AttackVector、チェンソー回転数は使用しない。
     /// </summary>
     private void TryBeginDiggingDeathMesh()
@@ -546,7 +575,7 @@ public sealed class StandardEnemyDeathStrategy :
             Debug.LogWarning(
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
                 $"{nameof(EnemyDiggingMeshDeathEffect)}がないため、" +
-                "くい込み攻撃死亡のMesh分割を開始できません。");
+                "くい込み攻撃死亡の破片表示を開始できません。");
 
             return;
         }
@@ -569,8 +598,7 @@ public sealed class StandardEnemyDeathStrategy :
         {
             Debug.LogWarning(
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
-                "くい込み死亡Mesh分割には成功しましたが、" +
-                "生成されたPieceを取得できませんでした。");
+                "くい込み死亡用に表示したPieceを取得できませんでした。");
 
             return;
         }

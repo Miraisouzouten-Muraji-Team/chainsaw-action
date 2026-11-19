@@ -180,8 +180,14 @@ public sealed class EnemyAttackHitReceiver :
             ResolvePlayerTransform();
         }
 
+        // 現行Prefabでは子ColliderにもPlayer Tagがある。軌跡の復元には本体を使う。
+        SensorPlayerController playerController =
+            playerTransform != null
+                ? playerTransform.GetComponentInParent<SensorPlayerController>()
+                : null;
+
         resolvedPlayerTransform =
-            playerTransform;
+            playerController != null ? playerController.transform : playerTransform;
 
         return resolvedPlayerTransform != null;
     }

@@ -13,9 +13,9 @@ using UnityEngine.UI;
 public class EnemyHealthBar : MonoBehaviour
 {
     [Header("参照")]
-    [Tooltip("現在HPを表示する緑色のImage。")]
+    [Tooltip("現在HPの緑ゲージを表示するSlider。Fill RectにはCurrentGreenを設定する。")]
     [SerializeField]
-    private Image currentHealthImage;
+    private Slider currentHealthSlider;
 
     [Tooltip("直前のダメージ量を表示する赤色のImage。")]
     [SerializeField]
@@ -33,10 +33,20 @@ public class EnemyHealthBar : MonoBehaviour
 
     private void Awake()
     {
-        if (currentHealthImage == null || damageHealthImage == null)
+        if (currentHealthSlider == null || damageHealthImage == null)
         {
             Debug.LogError(
-                $"{nameof(EnemyHealthBar)}: HPバー用のImageが設定されていません。",
+                $"{nameof(EnemyHealthBar)}: HPバー用のSliderまたはImageが設定されていません。",
+                this);
+
+            enabled = false;
+            return;
+        }
+
+        if (currentHealthSlider.fillRect == null)
+        {
+            Debug.LogError(
+                $"{nameof(EnemyHealthBar)}: SliderのFill Rectが設定されていません。",
                 this);
 
             enabled = false;
@@ -138,7 +148,7 @@ public class EnemyHealthBar : MonoBehaviour
         float currentHealthRatio =
             CalculateHealthRatio(currentHealth);
 
-        currentHealthImage.fillAmount = currentHealthRatio;
+        currentHealthSlider.normalizedValue = currentHealthRatio;
 
         // 赤ゲージをダメージ前のHPまで残し、
         // 緑ゲージとの差分を今回失ったHPとして表示する。
@@ -169,7 +179,7 @@ public class EnemyHealthBar : MonoBehaviour
         float currentHealthRatio =
             CalculateHealthRatio(enemyHealth.CurrentHealth);
 
-        currentHealthImage.fillAmount = currentHealthRatio;
+        currentHealthSlider.normalizedValue = currentHealthRatio;
         damageHealthImage.fillAmount = currentHealthRatio;
     }
 

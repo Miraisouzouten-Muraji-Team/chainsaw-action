@@ -35,7 +35,7 @@ public sealed class StandardEnemyDeathStrategy :
     [Header("通常攻撃Mesh分割")]
     [Tooltip(
         "Slash1 / Slash2 / Slash3など、通常攻撃ごとのBake済み軌跡Profile。" +
-        "死亡原因のAttackDataとProfile内のAttackDataを参照一致で照合する。")]
+        "死亡原因のAttackDataを元アセットの参照、または振り抜き時の実行時コピー名で照合する。")]
     [SerializeField]
     private ChainsawAttackTrajectoryProfile[]
         chainsawAttackTrajectoryProfiles;
@@ -49,27 +49,23 @@ public sealed class StandardEnemyDeathStrategy :
     private Transform[] additionalDeathPieces;
 
     [Header("くい込み攻撃Mesh分割")]
-    [Tooltip(
-        "このAttackDataで死亡した場合にEnemyDiggingMeshDeathEffectを使用する。" +
-        "未設定の場合、くい込み死亡ルートは無効。")]
+    [Tooltip("通常の敵食い込みと食い込み移動中の接触に使用する元AttackData。")]
     [SerializeField]
     private AttackData diggingAttackData;
 
+    [Tooltip("弱攻撃の地上・空中食い込みなど、追加で食い込みとして判定する元AttackData。")]
+    [SerializeField]
+    private AttackData[] additionalDiggingAttackData;
+
     /// <summary>
-    /// 食い込み攻撃の識別に使用する既存のAttackData設定。
-    /// 被弾時と死亡時で別々の設定を持たないために読み取り専用で公開する。
+    /// 通常の敵食い込み・移動接触に使用する既存のAttackData設定。
     /// </summary>
     public AttackData DiggingAttackData =>
         diggingAttackData;
 
-    [Header("診断ログ")]
+    [Header("軌跡診断（追加設定）")]
     [Tooltip(
-        "Bake済み軌跡の選択・World復元・EnemyMeshCutter・Shrink開始までを段階的にConsoleへ出力する。" +
-        "原因特定後は無効化してよい。")]
-    [SerializeField]
-    private bool enableMeshCutDiagnosticLogs = false;
-
-    [Tooltip(
+        "EnemyMeshCutterのEnable Diagnostic LogsがONの場合に限り、" +
         "Bake済みLocal座標→Runtime World座標→Local座標の往復誤差と、" +
         "Bake時/Runtime時の基準Transform、現在のChainsaw Tip / Rootとの距離を出力する。")]
     [SerializeField]
@@ -116,11 +112,8 @@ public sealed class StandardEnemyDeathStrategy :
     {
         get
         {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            return enableMeshCutDiagnosticLogs;
-#else
-            return false;
-#endif
+            return enemyMeshCutter != null &&
+                enemyMeshCutter.IsDiagnosticLoggingEnabled;
         }
     }
 
@@ -128,11 +121,8 @@ public sealed class StandardEnemyDeathStrategy :
     {
         get
         {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            return enableTrajectoryCoordinateValidation;
-#else
-            return false;
-#endif
+            return enableTrajectoryCoordinateValidation &&
+                ShouldRunMeshCutDiagnostics;
         }
     }
 
@@ -216,7 +206,11 @@ public sealed class StandardEnemyDeathStrategy :
                 enemyObject);
         }
 
-        if (diggingAttackData != null &&
+        bool hasDiggingAttackSettings = diggingAttackData != null ||
+            (additionalDiggingAttackData != null &&
+             Array.Exists(additionalDiggingAttackData, data => data != null));
+
+        if (hasDiggingAttackSettings &&
             enemyDiggingMeshDeathEffect == null)
         {
             Debug.LogWarning(
@@ -226,7 +220,7 @@ public sealed class StandardEnemyDeathStrategy :
                 enemyObject);
         }
 
-        if (diggingAttackData != null &&
+        if (hasDiggingAttackSettings &&
             enemyDiggingDeathBurst == null)
         {
             Debug.LogWarning(
@@ -517,22 +511,40 @@ public sealed class StandardEnemyDeathStrategy :
     /// </remarks>
     public bool IsDiggingAttackData(AttackData attackData)
     {
-        if (diggingAttackData == null || attackData == null)
+        if (attackData == null)
         {
             return false;
         }
 
-        if (attackData == diggingAttackData)
+        if (MatchesDiggingAttackData(diggingAttackData, attackData))
         {
             return true;
         }
 
-        string expectedRuntimeName =
-            diggingAttackData.name + "_RuntimeDamage_" + attackData.damage;
+        if (additionalDiggingAttackData != null)
+        {
+            foreach (AttackData source in additionalDiggingAttackData)
+            {
+                if (MatchesDiggingAttackData(source, attackData))
+                {
+                    return true;
+                }
+            }
+        }
 
+        return false;
+    }
+
+    private static bool MatchesDiggingAttackData(AttackData source, AttackData hit)
+    {
+        return source != null && (source == hit || MatchesRuntimeAttackData(source, hit));
+    }
+
+    private static bool MatchesRuntimeAttackData(AttackData source, AttackData hit)
+    {
         return string.Equals(
-            attackData.name,
-            expectedRuntimeName,
+            hit.name,
+            source.name + "_RuntimeDamage_" + hit.damage,
             StringComparison.Ordinal);
     }
 
@@ -640,7 +652,7 @@ public sealed class StandardEnemyDeathStrategy :
         {
             LogMeshCutDiagnostic(
                 "Death-01 Start",
-                "通常攻撃Mesh分割死亡演出の開始判定に入りました。");
+                "死亡原因に対応する通常攻撃用Profileの確認を開始しました。");
         }
 
         if (enemyAttackHitReceiver == null ||
@@ -845,12 +857,17 @@ public sealed class StandardEnemyDeathStrategy :
     private ChainsawAttackTrajectoryProfile FindTrajectoryProfile(
         ScriptableObject attackData)
     {
-        if (attackData == null ||
+        if (attackData is not AttackData hitAttackData ||
+            hitAttackData == null ||
             chainsawAttackTrajectoryProfiles == null)
         {
             return null;
         }
 
+        // 元アセットが渡された場合は参照一致を優先する。
+        bool hasExactMatch = Array.Exists(
+            chainsawAttackTrajectoryProfiles,
+            profile => profile != null && profile.AttackData == hitAttackData);
         ChainsawAttackTrajectoryProfile matchedProfile =
             null;
 
@@ -861,8 +878,16 @@ public sealed class StandardEnemyDeathStrategy :
             ChainsawAttackTrajectoryProfile profile =
                 chainsawAttackTrajectoryProfiles[i];
 
-            if (profile == null ||
-                profile.AttackData != attackData)
+            if (profile == null || profile.AttackData == null)
+            {
+                continue;
+            }
+
+            // ChainsawAttackは振り抜き時にダメージ反映済みのコピーを送る。
+            bool matches = hasExactMatch
+                ? profile.AttackData == hitAttackData
+                : MatchesRuntimeAttackData(profile.AttackData, hitAttackData);
+            if (!matches)
             {
                 continue;
             }

@@ -9,7 +9,8 @@ using UnityEngine;
 /// 責務:
 /// ・Preparation中は停止し、設定時間経過か予備動作モーション終了の早い方で突進を開始可能にする。
 /// ・突進開始地点からChargeDistanceまでを1回の攻撃として扱う。
-/// ・Player命中、Stage壁による進行阻害、崖・段差等の進行不能で現在の攻撃を終了する。
+/// ・Playerに命中しても突進は継続し、指定距離の終端に向けて減速する。
+/// ・Stage壁による進行阻害、崖・段差等の進行不能で現在の攻撃を終了する。
 /// ・Player命中時に攻撃情報を1回だけ送信する。
 ///
 /// 担当しない責務:
@@ -24,7 +25,7 @@ public sealed class ChargeEnemyAttackStrategy :
     IEnemyDebugRayProvider
 {
     private const float DIRECTION_EPSILON = 0.001f;
-    private const float CHARGE_ARRIVAL_TOLERANCE = 0.2f;
+    private const float CHARGE_ARRIVAL_TOLERANCE = 0.01f;
     private const float BLOCKING_NORMAL_THRESHOLD = 0.5f;
     private const float GROUND_NORMAL_TRANSITION_ANGLE = 2f;
     private const int ANIMATION_BASE_LAYER_INDEX = 0;
@@ -45,6 +46,13 @@ public sealed class ChargeEnemyAttackStrategy :
     [SerializeField]
     [Min(0f)]
     private float chargeDistance;
+
+    [Tooltip(
+        "突進終端の何m手前から減速するか。0の場合は減速せず従来どおりの速度で進む。" +
+        "突進距離より大きい場合は開始時から減速する。")]
+    [SerializeField]
+    [Min(0f)]
+    private float chargeDecelerationDistance = 3f;
 
     [SerializeField]
     [HideInInspector]
@@ -84,6 +92,11 @@ public sealed class ChargeEnemyAttackStrategy :
     private bool isAttackComplete;
     private bool hasDamagedPlayerThisAttack;
     private bool hasWarnedMissingPlayerReceiver;
+
+    /// <summary>
+    /// 共通MotorがPlayerへの移動制限を解除してよい、突進中の状態かを返す。
+    /// </summary>
+    public bool IsAttackMovementActive => isAttackActive && !isAttackComplete;
 
     public void Initialize(
         EnemyData enemyData,
@@ -447,8 +460,11 @@ public sealed class ChargeEnemyAttackStrategy :
             return;
         }
 
+        float targetChargeSpeed =
+            CalculateChargeSpeed(remainingDistance);
+
         float maximumStepDistance =
-            enemyData.AttackMoveSpeed *
+            targetChargeSpeed *
             Time.fixedDeltaTime;
 
         float expectedMovementDistance =
@@ -473,7 +489,7 @@ public sealed class ChargeEnemyAttackStrategy :
         if (!isGrounded)
         {
             // 斜面の継ぎ目等で一時的に非接地ならY速度は重力に任せる。
-            float horizontalSpeed = enemyData.AttackMoveSpeed;
+            float horizontalSpeed = targetChargeSpeed;
             if (Time.fixedDeltaTime > DIRECTION_EPSILON)
             {
                 horizontalSpeed = Mathf.Min(
@@ -508,7 +524,7 @@ public sealed class ChargeEnemyAttackStrategy :
             return;
         }
 
-        float targetSpeed = enemyData.AttackMoveSpeed;
+        float targetSpeed = targetChargeSpeed;
         if (Time.fixedDeltaTime > DIRECTION_EPSILON)
         {
             // ChargeDistanceは従来どおりX変位で測るため、X成分で終端速度を制限する。
@@ -521,6 +537,26 @@ public sealed class ChargeEnemyAttackStrategy :
         SetChargeVelocity(movementDirection, supportNormal, targetSpeed);
     }
 
+    /// <summary>
+    /// 設定された残距離から突進速度を決定する。
+    /// 終端付近の速度を残距離の平方根に比例させ、急停止せず減速させる。
+    /// </summary>
+    private float CalculateChargeSpeed(float remainingDistance)
+    {
+        float maximumSpeed = enemyData.AttackMoveSpeed;
+        if (chargeDecelerationDistance <= DIRECTION_EPSILON ||
+            remainingDistance >= chargeDecelerationDistance)
+        {
+            return maximumSpeed;
+        }
+
+        return maximumSpeed * Mathf.Sqrt(
+            Mathf.Clamp01(remainingDistance / chargeDecelerationDistance));
+    }
+
+    /// <summary>
+    /// Playerへの初回命中だけダメージとEffectを適用する。命中後も突進は続ける。
+    /// </summary>
     private void HandlePlayerCollision(
         EnemyContactInfo collision)
     {
@@ -551,15 +587,11 @@ public sealed class ChargeEnemyAttackStrategy :
 
                 hasWarnedMissingPlayerReceiver = true;
             }
+
+            // 貫通中の接触継続でEffectが毎物理更新生成されないよう、最初の命中時だけ出す。
+            SpawnCollisionEffect(
+                GetCollisionEffectPosition(collision));
         }
-
-        SpawnCollisionEffect(
-            GetCollisionEffectPosition(
-                collision));
-
-        // Player命中は現在の1回分の突進完了条件。
-        // 次の突進はStateMachineの再索敵と新しいPreparationを必ず経由する。
-        CompleteAttack("Player衝突");
     }
 
     private void CompleteAttack(

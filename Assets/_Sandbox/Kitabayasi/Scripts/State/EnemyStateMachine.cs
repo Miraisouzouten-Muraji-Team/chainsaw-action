@@ -187,7 +187,8 @@ public class EnemyStateMachine : MonoBehaviour
             turretAttackStrategy == null)
         {
             // DroneのSearch/AttackではPlanarMotorがStage移動を既に制限する。
-            // 共通MotorはPlayerへの侵入だけを止め、Stageの二重補正を避ける。
+            // 共通Motorは通常Playerへの侵入を止め、Stageの二重補正を避ける。
+            // Charge/OldDroneの攻撃中に限りPlayerへの移動制限も解除する。
             // Alert/Damage中はPlanarMotorによる移動制限がないのでStageも保護する。
             bool stageMovementHandledByDrone = droneStageCollisionMaskIsValid && (
                 (ReferenceEquals(CurrentState, searchState) &&
@@ -197,10 +198,20 @@ public class EnemyStateMachine : MonoBehaviour
                  (attackStrategy is OldDroneEnemyAttackStrategy ||
                   attackStrategy is NewDroneEnemyAttackStrategy)));
 
+            // 対象2種の攻撃中はPlayerを移動障害物にせず、命中判定だけを残す。
+            // Preparation中や他のEnemyは従来どおりPlayerへの侵入を防ぐ。
+            bool allowPlayerPassThrough =
+                ReferenceEquals(CurrentState, attackState) &&
+                ((attackStrategy is ChargeEnemyAttackStrategy chargeAttack &&
+                  chargeAttack.IsAttackMovementActive) ||
+                 (attackStrategy is OldDroneEnemyAttackStrategy oldDroneAttack &&
+                  oldDroneAttack.IsAttackMovementActive));
+
             enemyTriggerMovementMotor?.Step(
                 HandleMotorContact,
                 HandleContactExit,
-                stageMovementHandledByDrone);
+                stageMovementHandledByDrone,
+                allowPlayerPassThrough);
         }
     }
 

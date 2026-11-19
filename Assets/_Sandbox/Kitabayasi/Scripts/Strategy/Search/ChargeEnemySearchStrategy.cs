@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -1708,6 +1708,9 @@ public sealed class ChargeEnemySearchStrategy :
         isPhysicalMovementStalled = false;
         PauseWalkAnimationWhenStopped();
 
+        // 発見時とSearch終了時に同一物理ステップで呼ばれる場合がある。
+        // AddForceによる停止力は次の物理演算まで蓄積されるため、
+        // 速度を直接更新して複数回の停止要求でも逆方向に加速させない。
         Vector3 currentVelocity = enemyRigidbody.linearVelocity;
         if (groundChecker != null &&
             groundChecker.TryGetCurrentGroundNormal(out Vector3 supportingGroundNormal))
@@ -1718,18 +1721,16 @@ public sealed class ChargeEnemySearchStrategy :
             float tangentSpeed = Vector3.Dot(currentVelocity, groundTangent);
             if (Mathf.Abs(tangentSpeed) > DIRECTION_EPSILON)
             {
-                enemyRigidbody.AddForce(
-                    -groundTangent * tangentSpeed,
-                    ForceMode.VelocityChange);
+                enemyRigidbody.linearVelocity =
+                    currentVelocity - groundTangent * tangentSpeed;
             }
             return;
         }
 
         if (Mathf.Abs(currentVelocity.x) > DIRECTION_EPSILON)
         {
-            enemyRigidbody.AddForce(
-                new Vector3(-currentVelocity.x, 0f, 0f),
-                ForceMode.VelocityChange);
+            currentVelocity.x = 0f;
+            enemyRigidbody.linearVelocity = currentVelocity;
         }
     }
 

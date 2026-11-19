@@ -1,8 +1,8 @@
-Shader "Custom/CubemapInside"
+Shader "Hidden/CubemapDepthCapture"
 {
     Properties
     {
-        _Cube ("Stage Cubemap", Cube) = "" {}
+        _DepthFar("Depth Far", Float) = 1000
     }
 
     SubShader
@@ -16,7 +16,7 @@ Shader "Custom/CubemapInside"
 
         Pass
         {
-            Cull Front
+            Cull Back
             ZWrite On
             ZTest LEqual
 
@@ -27,8 +27,9 @@ Shader "Custom/CubemapInside"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
-            TEXTURECUBE(_Cube);
-            SAMPLER(sampler_Cube);
+            CBUFFER_START(UnityPerMaterial)
+                float _DepthFar;
+            CBUFFER_END
 
             struct Attributes
             {
@@ -38,36 +39,38 @@ Shader "Custom/CubemapInside"
             struct Varyings
             {
                 float4 positionHCS : SV_POSITION;
-                float3 direction : TEXCOORD0;
+                float3 positionWS : TEXCOORD0;
             };
 
             Varyings vert(Attributes input)
             {
                 Varyings output;
 
-                output.positionHCS =
-                    TransformObjectToHClip(input.positionOS.xyz);
+                output.positionWS =
+                    TransformObjectToWorld(input.positionOS.xyz);
 
-                // 球体の中心から頂点へ向かう方向
-                output.direction = input.positionOS.xyz;
+                output.positionHCS =
+                    TransformWorldToHClip(output.positionWS);
 
                 return output;
             }
 
             half4 frag(Varyings input) : SV_Target
             {
-                float3 direction = normalize(input.direction);
-
-                half4 color = SAMPLE_TEXTURECUBE(
-                    _Cube,
-                    sampler_Cube,
-                    direction
+                // 撮影地点から物体までの距離
+                float depth = distance(
+                    input.positionWS,
+                    _WorldSpaceCameraPos
                 );
 
-                return color;
-            }
+            // 0～1の範囲に正規化
+            depth = saturate(depth / _DepthFar);
 
-            ENDHLSL
+            // Rチャンネルに距離を保存
+            return half4(depth, 0, 0, 1);
         }
+
+        ENDHLSL
+    }
     }
 }

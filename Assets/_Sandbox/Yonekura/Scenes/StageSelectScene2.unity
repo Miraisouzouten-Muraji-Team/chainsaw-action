@@ -367,6 +367,7 @@ GameObject:
   - component: {fileID: 1446181638}
   - component: {fileID: 1446181641}
   - component: {fileID: 1446181642}
+  - component: {fileID: 1446181643}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -441,13 +442,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1446181637}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalRotation: {x: 0.27301303, y: -0.2642865, z: 0.07828521, w: 0.9216767}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 33, y: -32, z: 0}
 --- !u!114 &1446181641
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -518,6 +519,25 @@ MonoBehaviour:
   _captureRendererIndex: 1
   _pixelRendererIndex: 2
   _pixelRenderingEnabled: 1
+--- !u!114 &1446181643
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1446181637}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e55862eedb820ad468f8436920822dbe, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CubemapForwardTest
+  moveSpeed: 10
+  maxTravelDistance: 20
+  sphereRenderer: {fileID: 486603165}
+  depthCubemap: {fileID: 8900000, guid: 0b6f60d1cc0f8924691164ff254b1a1c, type: 2}
+  capturePosition: {x: 0, y: 0, z: 0}
+  depthFar: 1000
+  parallaxStrength: 0.301
 --- !u!20 &1448984248 stripped
 Camera:
   m_CorrespondingSourceObject: {fileID: 1655574542831061501, guid: d56321204e5fdb848bc0ea50d611b92e, type: 3}

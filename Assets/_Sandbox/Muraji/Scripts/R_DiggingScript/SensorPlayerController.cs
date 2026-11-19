@@ -166,6 +166,24 @@ public class SensorPlayerController : MonoBehaviour
     [Tooltip("回転速度をこの値で割って、壁登りの基本速度に加えます。小さいほど回転速度による加速が大きくなります。床から壁への速度引き継ぎには使用しません。")]
     [SerializeField, Min(0.01f)] private float directWallSpeedDivisor = 100f;
 
+    [Header("壁上端の乗り越え")]
+    [Tooltip("足元から何メートル上まで壁上端の床を探すかを指定します。0にすると乗り越え補助を無効にします。")]
+    [SerializeField, Min(0f)] private float wallTopMaxRise = 0.85f;
+
+    [Tooltip("壁の上端を越える横移動と、上昇が足りないときの補助に使う速度です。登ってきた上向きの勢いが強い場合はその速度を優先します。")]
+    [SerializeField, Min(0.1f)] private float wallTopMoveSpeed = 8f;
+
+    private const float WALL_TOP_CLEARANCE = 0.06f;
+    private const float WALL_TOP_POSITION_TOLERANCE = 0.012f;
+    private const float WALL_TOP_STEP_MARGIN = 0.005f;
+    private const int WALL_TOP_PROBE_COUNT = 4;
+    private const float WALL_TOP_PROBE_SPACING = 0.12f;
+    private Collider[] wallTopBodyColliders;
+    private Collider wallTopLandingSurface;
+    private Vector3 wallTopDestination;
+    private float wallTopTimeRemaining;
+    private float wallTopUpwardMomentum;
+
     public bool CanTakeDamage =>
         chainsawDigging == null || !chainsawDigging.IsEvading;
 
@@ -531,6 +549,7 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        wallTopBodyColliders = GetComponentsInChildren<Collider>(true);
         groundProbe = new PlayerGroundProbe(
             playerRigidbody, groundCheckTransform, playerParameter);
 
@@ -636,7 +655,7 @@ public class SensorPlayerController : MonoBehaviour
 
         // 攻撃中は向きを固定し、左右入力による見た目と食い込み判定の反転を防ぐ。
         // 壁登りを含む食い込み中の向き固定も維持する。
-        if (!IsAttacking &&
+        if (!IsAttacking && wallTopTimeRemaining <= 0f &&
             chainsawDigging.Surface != ChainsawSurface.Floor &&
             chainsawDigging.Surface != ChainsawSurface.Wall &&
             chainsawDigging.Surface != ChainsawSurface.Ceiling &&
@@ -651,14 +670,17 @@ public class SensorPlayerController : MonoBehaviour
         chainsawDigging.SetFacingDirection(facingDirection);
         // 入力で壁食い込みが解除される前に、離脱後の空中ジャンプを1回分確保する。
         RestoreAirJumpFromWallDigging();
-        chainsawDigging.HandleInput(
-    input.WedgieInput || diggingBuffered,
-    input.WedgieHeld || diggingBuffered,
-    IsAttacking || ceilingJumpLaunchPending || ceilingJumpReleaseRemaining > 0f,
-    facingDirection,
-    IsGrounded(),
-    diggingBuffered
-);
+        if (wallTopTimeRemaining <= 0f)
+        {
+            chainsawDigging.HandleInput(
+                input.WedgieInput || diggingBuffered,
+                input.WedgieHeld || diggingBuffered,
+                IsAttacking || ceilingJumpLaunchPending || ceilingJumpReleaseRemaining > 0f,
+                facingDirection,
+                IsGrounded(),
+                diggingBuffered
+            );
+        }
         // 予約した食い込みを開始できた場合は、硬直明けの反発予約による即離脱を防ぐ。
         if (diggingBuffered && chainsawDigging.IsRequested)
         {
@@ -690,6 +712,7 @@ public class SensorPlayerController : MonoBehaviour
 
         if (playerRigidbody == null || playerRigidbody.isKinematic)
         {
+            ClearWallTopClimb();
             ResetCeilingFallGrace(true);
             ascentStartSpeed = 0f;
             fallElapsedTime = 0f;
@@ -767,6 +790,11 @@ public class SensorPlayerController : MonoBehaviour
         // 前の物理ステップで検出した頭部の角接触を先に補正する。
         ApplyPendingCornerCorrection(deltaTime);
 
+        if (TickWallTopClimb(deltaTime))
+        {
+            return;
+        }
+
         // 食い込み状態の更新前に、前回の移動で天井に触れたか確認する。
         if (TryBeginUpperSensorImpact())
         {
@@ -777,6 +805,8 @@ public class SensorPlayerController : MonoBehaviour
         RecordCeilingTravelImpact(lastDiggingPhysicsSurface == ChainsawSurface.Ceiling
             ? lastDiggingPhysicsVelocity : playerRigidbody.linearVelocity);
         ChainsawSurface previousSurface = chainsawDigging.Surface;
+        Vector3 climbedWallNormal = chainsawDigging.SurfaceNormal;
+        bool wasClimbingWall = previousSurface == ChainsawSurface.Wall && wallAscentImpactArmed;
 
         chainsawDigging.Tick(
             deltaTime,
@@ -795,6 +825,17 @@ public class SensorPlayerController : MonoBehaviour
         {
             knockbackVelocity = bounceDirection * playerParameter.wallKnockbackSpeed;
             knockbackHopPending = true;
+        }
+
+        // 敵などへの乗り移りを優先し、壁を失った物理更新も上端の検出に使う。
+        if (wasClimbingWall &&
+            (chainsawDigging.Surface == ChainsawSurface.Wall ||
+             chainsawDigging.Surface == ChainsawSurface.None) &&
+            TryBeginWallTopClimb(chainsawDigging.Surface == ChainsawSurface.Wall
+                ? chainsawDigging.SurfaceNormal : climbedWallNormal) &&
+            TickWallTopClimb(deltaTime))
+        {
+            return;
         }
 
         // Update内で既に壁食い込みが成立していても、開始番号で取りこぼさず初期化する。
@@ -1165,6 +1206,7 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        ClearWallTopClimb();
         ResetCeilingFallGrace(false);
         RestoreImpactConstraints();
         impactStunRemaining = 0f;
@@ -1240,6 +1282,229 @@ public class SensorPlayerController : MonoBehaviour
     {
         damageStunRemaining = 0f;
         if (playerAnimator != null) playerAnimator.EndHurt(returnToIdle);
+    }
+
+    // 壁に連続した歩行面と、その奥にプレイヤーが乗れる位置を見つける。
+    private bool TryBeginWallTopClimb(Vector3 wallNormal)
+    {
+        if (wallTopMaxRise <= 0f || Mathf.Abs(wallNormal.x) < 0.5f || IsAttacking || jumpPending ||
+            wallJumpLaunchPending || wallJumpDirectionHoldRemaining > 0f ||
+            knockbackHopPending || knockbackVelocity != 0f ||
+            ceilingCornerJumpPending || ceilingJumpLaunchPending || ceilingJumpReleaseRemaining > 0f ||
+            !TryGetWallTopBodyBounds(out Bounds body))
+        {
+            return false;
+        }
+
+        float direction = -Mathf.Sign(wallNormal.x);
+        float feetY = body.min.y;
+        float probeY = feetY + wallTopMaxRise + WALL_TOP_CLEARANCE;
+        int layers = chainsawDigging.TerrainLayerMask;
+        if (!TryFindWallTopEdge(body, wallNormal, direction, probeY, layers, out RaycastHit lip,
+                out float edgeX))
+        {
+            return false;
+        }
+
+        float landingX = edgeX + direction * (body.extents.x + WALL_TOP_CLEARANCE);
+        if (!TryFindWallTopFloor(landingX, probeY, body.center.z, layers, out RaycastHit landing))
+            return false;
+
+        // 本体の最下部を上面より高くしてから、壁の奥へ移動する。
+        float rise = Mathf.Max(0f, Mathf.Max(lip.point.y, landing.point.y) +
+            WALL_TOP_CLEARANCE - feetY);
+        if (rise > 0f && !CanMoveOverWallTop(Vector3.up, rise))
+            return false;
+
+        // 上昇後の横移動区間に天井や別の壁がある場合は、食い込み解除前に見送る。
+        float shiftX = landingX - body.center.x;
+        Vector3 upperCenter = body.center + new Vector3(shiftX * 0.5f, rise, 0f);
+        Vector3 upperExtents = body.extents + Vector3.right * (Mathf.Abs(shiftX) * 0.5f);
+        if (Physics.CheckBox(upperCenter, upperExtents, Quaternion.identity, layers,
+                QueryTriggerInteraction.Ignore))
+            return false;
+
+        wallTopDestination = playerRigidbody.position + new Vector3(shiftX, rise, 0f);
+        wallTopLandingSurface = landing.collider;
+        // 補助で作る速度と区別するため、食い込みを解除する前の実際の上向き速度を保存する。
+        wallTopUpwardMomentum = Mathf.Max(0f, playerRigidbody.linearVelocity.y);
+        ascentStartSpeed = wallTopUpwardMomentum;
+        fallElapsedTime = 0f;
+        float travelDistance = Mathf.Abs(shiftX) + rise;
+        // 物理更新とDamping分の余裕を確保し、妨げられた場合でも状態を残さない。
+        wallTopTimeRemaining = travelDistance / Mathf.Max(0.1f, wallTopMoveSpeed) + 0.5f;
+
+        if (chainsawDigging.IsDigging) chainsawDigging.Cancel(false);
+        // 通常の食い込み離脱慣性が、乗り越え後に再適用されないようにする。
+        ClearDiggingReleaseMomentum();
+        ResetCeilingFallGrace(false);
+        wallAscentImpactArmed = false;
+        lastDiggingPhysicsSurface = ChainsawSurface.None;
+        lastDiggingPhysicsVelocity = Vector3.zero;
+        playerMidCollider.ClearContacts();
+        return true;
+    }
+
+    // 本体Rigidbodyが動かす物理Colliderから足元と横幅を求める。
+    private bool TryGetWallTopBodyBounds(out Bounds bounds)
+    {
+        bounds = default;
+        bool found = false;
+        foreach (Collider bodyCollider in wallTopBodyColliders)
+        {
+            if (bodyCollider == null || !bodyCollider.enabled || bodyCollider.isTrigger ||
+                !bodyCollider.gameObject.activeInHierarchy ||
+                bodyCollider.attachedRigidbody != playerRigidbody)
+            {
+                continue;
+            }
+
+            if (!found) bounds = bodyCollider.bounds;
+            else bounds.Encapsulate(bodyCollider.bounds);
+            found = true;
+        }
+        return found;
+    }
+
+    // 上面のすぐ下に、食い込んでいた方向と同じ向きの壁面が続いていることを確認する。
+    private bool TryFindWallTopEdge(Bounds body, Vector3 wallNormal, float direction, float probeY,
+        int layers, out RaycastHit lip, out float edgeX)
+    {
+        edgeX = 0f;
+        lip = default;
+        Vector3 approach = Vector3.right * direction;
+        for (int index = 0; index < WALL_TOP_PROBE_COUNT; index++)
+        {
+            float nearbyDistance = body.extents.x + WALL_TOP_CLEARANCE + index * WALL_TOP_PROBE_SPACING;
+            float x = body.center.x + direction * nearbyDistance;
+            if (!TryFindWallTopFloor(x, probeY, body.center.z, layers, out RaycastHit top))
+                continue;
+
+            // 上面だけに反応せず、その高さのすぐ下に実際の壁があることを調べる。
+            Vector3 sideOrigin = new Vector3(body.center.x, top.point.y - WALL_TOP_CLEARANCE, body.center.z);
+            if (!Physics.Raycast(sideOrigin, approach, out RaycastHit side, nearbyDistance, layers,
+                    QueryTriggerInteraction.Ignore) ||
+                side.normal.x * direction >= -0.5f || Vector3.Dot(side.normal, wallNormal) < 0.8f)
+            {
+                continue;
+            }
+
+            // 確定した壁面の直後に床があることを確認し、離れた別の足場を除外する。
+            float lipX = side.point.x + direction * WALL_TOP_CLEARANCE;
+            if (!TryFindWallTopFloor(lipX, probeY, body.center.z, layers, out lip) ||
+                Mathf.Abs(lip.point.y - top.point.y) > WALL_TOP_PROBE_SPACING)
+            {
+                continue;
+            }
+
+            edgeX = side.point.x;
+            return true;
+        }
+        return false;
+    }
+
+    // 足元より少し下まで照会し、既存の傾斜閾値を満たす地形だけを採用する。
+    private bool TryFindWallTopFloor(float x, float y, float z, int layers, out RaycastHit floor)
+    {
+        return Physics.Raycast(new Vector3(x, y, z), Vector3.down, out floor,
+                wallTopMaxRise + WALL_TOP_CLEARANCE * 2f, layers, QueryTriggerInteraction.Ignore) &&
+            floor.normal.y >= GroundNormalThreshold &&
+            floor.collider.attachedRigidbody != playerRigidbody;
+    }
+
+    // 実際の本体形状で移動経路を調べ、移動方向を塞ぐ接触があれば停止する。
+    private bool CanMoveOverWallTop(Vector3 direction, float distance)
+    {
+        foreach (RaycastHit hit in playerRigidbody.SweepTestAll(
+            direction, distance + WALL_TOP_STEP_MARGIN, QueryTriggerInteraction.Ignore))
+        {
+            if (Vector3.Dot(direction, hit.normal) < -0.1f)
+                return false;
+        }
+        return true;
+    }
+
+    // 上向きの勢いを保ちながら壁の上を越え、床の上で通常の重力と接地判定に戻す。
+    private bool TickWallTopClimb(float deltaTime)
+    {
+        if (wallTopTimeRemaining <= 0f) return false;
+
+        wallTopTimeRemaining -= deltaTime;
+        bool interrupted = IsAttacking || jumpPending || wallJumpLaunchPending ||
+            knockbackHopPending || knockbackVelocity != 0f;
+        if (interrupted || wallTopTimeRemaining <= 0f || wallTopLandingSurface == null ||
+            !wallTopLandingSurface.enabled || !wallTopLandingSurface.gameObject.activeInHierarchy)
+        {
+            ClearWallTopClimb();
+            return false;
+        }
+
+        Vector3 remaining = wallTopDestination - playerRigidbody.position;
+        Vector3 physicsVelocity = playerRigidbody.linearVelocity;
+        // 衝突や減衰で失った勢いを復元せず、補助で加えた分も持ち越さない。
+        wallTopUpwardMomentum = Mathf.Min(wallTopUpwardMomentum, Mathf.Max(0f, physicsVelocity.y));
+
+        if (remaining.y <= WALL_TOP_POSITION_TOLERANCE &&
+            Mathf.Abs(remaining.x) <= WALL_TOP_POSITION_TOLERANCE)
+        {
+            // 床の上へ出たら実際の上昇分を残す。持ち上げ補助の速度だけを除く。
+            if (physicsVelocity.y > wallTopUpwardMomentum)
+            {
+                physicsVelocity.y = wallTopUpwardMomentum;
+                playerRigidbody.linearVelocity = physicsVelocity;
+            }
+
+            ClearWallTopClimb();
+            return false;
+        }
+
+        float assistSpeed = Mathf.Max(0.1f, wallTopMoveSpeed);
+        Vector3 velocity;
+        if (remaining.y > WALL_TOP_POSITION_TOLERANCE)
+        {
+            float liftSpeed = Mathf.Min(remaining.y / deltaTime, assistSpeed);
+            velocity = Vector3.up * Mathf.Max(liftSpeed, wallTopUpwardMomentum);
+
+            // 屋根などに当たる場合は、床を越えるのに必要な高さにだけ進める。
+            if (!CanMoveOverWallTop(velocity.normalized, velocity.magnitude * deltaTime))
+                velocity.y = Mathf.Min(velocity.y, remaining.y / deltaTime);
+        }
+        else
+        {
+            float moveSpeed = Mathf.Min(Mathf.Abs(remaining.x) / deltaTime, assistSpeed);
+            velocity = new Vector3(Mathf.Sign(remaining.x) * moveSpeed, wallTopUpwardMomentum, 0f);
+
+            if (velocity.y > 0f)
+            {
+                ApplyJumpGravity(ref velocity, deltaTime);
+                velocity.y = Mathf.Max(0f, velocity.y);
+            }
+
+            // 上昇が塞がれていても、横に通れるなら床の上まで進む。
+            if (velocity.y > 0f && !CanMoveOverWallTop(velocity.normalized, velocity.magnitude * deltaTime))
+                velocity.y = 0f;
+
+            wallTopUpwardMomentum = velocity.y;
+        }
+
+        if (!CanMoveOverWallTop(velocity.normalized, velocity.magnitude * deltaTime))
+        {
+            ClearWallTopClimb();
+            return false;
+        }
+
+        currentSpeed = 0f;
+        playerRigidbody.linearVelocity = velocity;
+        playerAnimator.SetSpeed(0f);
+        return true;
+    }
+
+    // 乗り越え用の状態を解除する。Rigidbodyの速度は通常移動へ引き継ぐ。
+    private void ClearWallTopClimb()
+    {
+        wallTopTimeRemaining = 0f;
+        wallTopLandingSurface = null;
+        wallTopUpwardMomentum = 0f;
     }
 
     // 壁への直接食い込み速度を、基本速度と現在の回転速度から計算する。
@@ -1383,12 +1648,19 @@ public class SensorPlayerController : MonoBehaviour
         bool wasDiggingFloor =
             surfaceBeforeJump == ChainsawSurface.Floor;
 
-        bool wallJump =
-            chainsawDigging.TryGetWallJump(out _);
+        bool wallJump = chainsawDigging.TryGetWallJump(out _);
+        bool refreshedGround = false;
+        if (!wallJump && chainsawDigging.HasBufferedWallJump)
+        {
+            // 離脱後は着地が優先。空中なら直前の壁で壁ジャンプを成立させる。
+            RefreshGroundRayState();
+            refreshedGround = true;
+            if (!HasJumpGroundSupport())
+                wallJump = chainsawDigging.TryTakeBufferedWallJump(out wallNormal);
+        }
 
-        // 壁食い込み中は独立した壁ジャンプ速度と角度から初速を計算する。
-        if (wallJump && surfaceBeforeJump == ChainsawSurface.Wall &&
-            Mathf.Abs(wallNormal.x) > 0.01f)
+        // 食い込み中とホールド解除直後で、同じ壁ジャンプ速度と角度を使う。
+        if (wallJump && Mathf.Abs(wallNormal.x) > 0.01f)
         {
             ResetCeilingFallGrace(false);
             float horizontalDirection = Mathf.Sign(wallNormal.x);
@@ -1419,7 +1691,7 @@ public class SensorPlayerController : MonoBehaviour
         chainsawDigging.Cancel(true);
 
         // ジャンプ入力の瞬間にも更新し、直前の物理フレームの判定ズレを防ぐ。
-        RefreshGroundRayState();
+        if (!refreshedGround) RefreshGroundRayState();
         // 先読みの接地ではなく、本体の支持を確認できた場合だけ初段を許可する。
         bool isGrounded = wasDiggingFloor || HasJumpGroundSupport();
 
@@ -1520,7 +1792,11 @@ public class SensorPlayerController : MonoBehaviour
         debugGroundCollider = hasSupport ? support.Collider : null;
 
         // 下り追従や前方の先読みだけでは回数を戻さず、本体の支持確認を必要とする。
-        if (HasJumpGroundSupport()) jumpsUsed = 0;
+        if (HasJumpGroundSupport())
+        {
+            jumpsUsed = 0;
+            chainsawDigging.ClearWallJumpReleaseBuffer();
+        }
         ObserveLandingEffect();
     }
 
@@ -1925,7 +2201,7 @@ public class SensorPlayerController : MonoBehaviour
     // Raycastは角で失敗しやすいため、BoxColliderでは使わない。
     private bool TryQueueCeilingCornerCorrection(Collision collision)
     {
-        if (!enableCornerCorrection || headCollider == null ||
+        if (wallTopTimeRemaining > 0f || !enableCornerCorrection || headCollider == null ||
             !headCollider.enabled || headCollider.isTrigger ||
             playerRigidbody == null || IsImpactStunned ||
             (chainsawDigging != null && chainsawDigging.Surface == ChainsawSurface.Ceiling) ||
@@ -2067,6 +2343,7 @@ public class SensorPlayerController : MonoBehaviour
 
         // 硬直・壁登り・敵への食い込みは既存の専用処理を優先する。
         if (playerMidCollider == null ||
+            wallTopTimeRemaining > 0f ||
             IsImpactStunned ||
             chainsawDigging.Surface == ChainsawSurface.Wall ||
             chainsawDigging.Surface == ChainsawSurface.Enemy)
@@ -2926,6 +3203,7 @@ public class SensorPlayerController : MonoBehaviour
         foreach (var trail in attackTrails)
             if (trail.effect != null) Destroy(trail.effect.gameObject);
         attackTrails.Clear();
+        ClearWallTopClimb();
         ClearCeilingJumpRelease();
         ResetCeilingTravelImpact();
         ClearDiggingReleaseMomentum();

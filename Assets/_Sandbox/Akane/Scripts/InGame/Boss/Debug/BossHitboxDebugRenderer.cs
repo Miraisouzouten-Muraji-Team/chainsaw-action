@@ -231,46 +231,66 @@ namespace Project.InGame.Boss
             }
         }
 
+
         private void OnGUI()
         {
             if (!Application.isPlaying ||
-                settings == null || !settings.ShowInGameView ||
+                settings == null ||
+                !settings.ShowInGameView ||
                 settings.Scope == BossHitboxDebugScope.None ||
                 Event.current.type != EventType.Repaint)
+            {
                 return;
+            }
 
             Camera camera = gameCamera != null ? gameCamera : Camera.main;
+
             if (camera == null)
+            {
                 return;
+            }
 
             int previousDepth = GUI.depth;
             GUI.depth = -1000;
 
-            foreach (BossAttackHitbox hitbox in hitboxes)
+            try
             {
-                if (!IsVisible(hitbox) ||
-                    !hitbox.TryGetComponent(out BoxCollider collider))
-                    continue;
-
-                Color color = hitbox.IsWindowOpen
-                    ? settings.ActiveColor : settings.InactiveColor;
-
-                Vector3[] corners = GetBoxCorners(collider);
-
-                for (int i = 0; i < BOX_EDGES.GetLength(0); i++)
+                // 実際の攻撃Colliderを描画する。
+                if (settings.Content != BossHitboxDebugContent.PreviewOnly)
                 {
-                    DrawScreenLine(
-                        camera,
-                        corners[BOX_EDGES[i, 0]],
-                        corners[BOX_EDGES[i, 1]],
-                        color);
+                    foreach (BossAttackHitbox hitbox in hitboxes)
+                    {
+                        if (!IsVisible(hitbox) ||
+                            !hitbox.TryGetComponent(out BoxCollider collider))
+                        {
+                            continue;
+                        }
+
+                        Color color = hitbox.IsWindowOpen ? settings.ActiveColor : settings.InactiveColor;
+
+                        Vector3[] corners = GetBoxCorners(collider);
+
+                        for (int i = 0; i < BOX_EDGES.GetLength(0); i++)
+                        {
+                            DrawScreenLine(
+                                camera,
+                                corners[BOX_EDGES[i, 0]],
+                                corners[BOX_EDGES[i, 1]],
+                                color);
+                        }
+                    }
+                }
+
+                // 予定範囲はIsPreviewVisible内でもContentを判定する。
+                if (IsPreviewVisible())
+                {
+                    DrawPreviewGUI(camera);
                 }
             }
-
-            if (IsPreviewVisible())
-                DrawPreviewGUI(camera);
-
-            GUI.depth = previousDepth;
+            finally
+            {
+                GUI.depth = previousDepth;
+            }
         }
 
         private void DrawPreviewGUI(Camera camera)

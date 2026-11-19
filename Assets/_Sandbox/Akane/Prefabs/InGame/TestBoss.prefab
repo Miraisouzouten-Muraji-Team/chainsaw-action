@@ -1,5 +1,36 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!1 &125239886028147958
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1182340462581905251}
+  m_Layer: 0
+  m_Name: VerticalSlashDropEndAnchor
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1182340462581905251
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 125239886028147958}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 4832142492528601839}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &886198957814914837
 GameObject:
   m_ObjectHideFlags: 0
@@ -211,6 +242,37 @@ Transform:
   m_Children: []
   m_Father: {fileID: 3833384375502994289}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1463056410706361189
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1251564027779287729}
+  m_Layer: 0
+  m_Name: VerticalSlashPivotAnchor
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1251564027779287729
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1463056410706361189}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 4832142492528601839}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1544575572256922516
 GameObject:
   m_ObjectHideFlags: 0
@@ -222,8 +284,9 @@ GameObject:
   - component: {fileID: 8364455256547444873}
   - component: {fileID: 6652894785231922858}
   - component: {fileID: 5878679952375521918}
+  - component: {fileID: 2007052400293228349}
   m_Layer: 17
-  m_Name: ThrustHitbox
+  m_Name: WeaponHitbox
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -277,6 +340,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a4c89f33f89d259488d9498e8b393782, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackHitbox
+--- !u!114 &2007052400293228349
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1544575572256922516}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ce08327ffbe638549a6e6baf7dcecd9b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossWeaponSweepProbe
+  playerLayers:
+    serializedVersion: 2
+    m_Bits: 4096
+  sampleCount: 6
 --- !u!1 &1715303346374780275
 GameObject:
   m_ObjectHideFlags: 0
@@ -1101,10 +1180,9 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 8966003896417478315}
-  - component: {fileID: 1498760026248423749}
-  - component: {fileID: 667388956884773637}
+  - component: {fileID: 3273847257400944133}
   m_Layer: 17
-  m_Name: SlashHitbox
+  m_Name: VerticalSlashHitbox
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -1125,28 +1203,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 3833384375502994289}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!65 &1498760026248423749
-BoxCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7474002773942562503}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 1
-  m_ProvidesContacts: 0
-  m_Enabled: 0
-  serializedVersion: 3
-  m_Size: {x: 8, y: 7.2200003, z: 1.2}
-  m_Center: {x: 0, y: 0.39, z: 0}
---- !u!114 &667388956884773637
+--- !u!114 &3273847257400944133
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -1155,9 +1212,13 @@ MonoBehaviour:
   m_GameObject: {fileID: 7474002773942562503}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a4c89f33f89d259488d9498e8b393782, type: 3}
+  m_Script: {fileID: 11500000, guid: e569fbbce4af0c844bb62ba45faffdee, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackHitbox
+  m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossVerticalSlashRange
+  radius: 4
+  localForward: {x: -1, y: 0, z: 0}
+  dropDistance: 2
+  rectangleWidthPadding: 0.5
 --- !u!1 &7895523827098944092
 GameObject:
   m_ObjectHideFlags: 0
@@ -1375,6 +1436,8 @@ GameObject:
   - component: {fileID: 1549865825055903683}
   - component: {fileID: 5746588551824421067}
   - component: {fileID: 5837329782636173046}
+  - component: {fileID: 5459176963322406557}
+  - component: {fileID: 6521883134616495681}
   m_Layer: 16
   m_Name: TestBoss
   m_TagString: Untagged
@@ -1398,6 +1461,8 @@ Transform:
   - {fileID: 3833384375502994289}
   - {fileID: 4641969244029024786}
   - {fileID: 2840381776378242255}
+  - {fileID: 1251564027779287729}
+  - {fileID: 1182340462581905251}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &8663925041302661109
@@ -1637,6 +1702,45 @@ MonoBehaviour:
   stageMask:
     serializedVersion: 2
     m_Bits: 128
+--- !u!114 &5459176963322406557
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8411000464735059551}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c7b6d2d4a4334ad458fae0678aa02d61, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossHitboxDebugRenderer
+  settings: {fileID: 6521883134616495681}
+  slashPreview: {fileID: 0}
+  boss: {fileID: 7681428011657913341}
+  gameCamera: {fileID: 0}
+--- !u!114 &6521883134616495681
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8411000464735059551}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 42764cda841ff6e468c412966c94e695, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossHitboxDebugSettings
+  scope: 2
+  timing: 1
+  showVerticalSlashPreview: 1
+  showInSceneView: 1
+  showInGameView: 1
+  momentDuration: 0.2
+  lineWidth: 2
+  activeColor: {r: 1, g: 0, b: 0, a: 1}
+  inactiveColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  previewColor: {r: 0, g: 1, b: 1, a: 1}
+  content: 2
 --- !u!1 &8586960198825688788
 GameObject:
   m_ObjectHideFlags: 0

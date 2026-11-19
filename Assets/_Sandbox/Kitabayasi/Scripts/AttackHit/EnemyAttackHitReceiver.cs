@@ -29,8 +29,7 @@ public sealed class EnemyAttackHitReceiver :
     private Transform playerTransform;
 
     /// <summary>
-    /// このEnemyが最後に受け取ったPlayerからの攻撃命中情報。
-    /// 一度も受信していない場合はnull。
+    /// このEnemyが最後に受けた有効なPlayer攻撃の命中情報。
     /// </summary>
     public PlayerAttackHitData LastPlayerAttackHitData { get; private set; }
 
@@ -71,7 +70,7 @@ public sealed class EnemyAttackHitReceiver :
     public void ReceiveAttackHit(
         AttackHitData attackHitData)
     {
-        if (!isActiveAndEnabled)
+        if (!isActiveAndEnabled || enemyHealth.IsDead)
         {
             return;
         }
@@ -104,14 +103,8 @@ public sealed class EnemyAttackHitReceiver :
             $"Enemy: {gameObject.name}",
             this);
 
-        // State遷移より先に保存する。
-        // Damage Stateやその他の処理から
-        // 今回の命中情報を参照できるようにする。
-        LastPlayerAttackHitData =
-            playerAttackHitData;
-
         if (playerAttackHitData.AttackData
-            is not AttackData playerAttackData)
+            is not AttackData playerAttackData || playerAttackData == null)
         {
             Debug.LogWarning(
                 $"{nameof(EnemyAttackHitReceiver)}: " +
@@ -137,6 +130,9 @@ public sealed class EnemyAttackHitReceiver :
         float hitSourceDirectionSign =
             ResolveHitSourceDirectionSign();
 
+        LastPlayerAttackHitData =
+            playerAttackHitData;
+
         LastHitSourceDirectionSign =
             hitSourceDirectionSign;
 
@@ -149,7 +145,8 @@ public sealed class EnemyAttackHitReceiver :
         // TakeDamage内でDiedが同期通知されるため、
         // 死亡攻撃の方向をDeath Strategyから参照できる状態にしてからHPへ反映する。
         enemyHealth.TakeDamage(
-            hitDamage);
+            hitDamage,
+            playerAttackHitData);
 
         // TakeDamageによって死亡した場合は、
         // EnemyHealth.Died経由で死亡処理が行われるため

@@ -35,5 +35,5 @@ MonoBehaviour:
           activeTime: 1
           damageMultiplier: 0.85
           animationSpeed: 0.95
-        raiseAngle: -90
-        finishAngle: 90
+        raiseAngle: -180
+        finishAngle: 0

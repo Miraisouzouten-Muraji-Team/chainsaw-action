@@ -850,8 +850,16 @@ MonoBehaviour:
   targetSkinnedMeshRenderer: {fileID: 0}
   targetMeshFilter: {fileID: 4329531830655673810}
   cutSurfaceMaterial: {fileID: 2100000, guid: efba80df10aeb624e82f4d1d32902613, type: 2}
-  targetPieceCount: 8
   cutSurfaceUvScale: 1
+  bakedPieceMeshes:
+  - {fileID: 4300000, guid: 3acb538f54093a2498558a4b449ee17d, type: 2}
+  - {fileID: 4300000, guid: 0a04c6c6e3508da47a63bd709395812a, type: 2}
+  - {fileID: 4300000, guid: 3f17fb844174f8c4c8af0d7f5b5e6e20, type: 2}
+  - {fileID: 4300000, guid: 5de2c8d877a4a8a46a20dce199f4a410, type: 2}
+  - {fileID: 4300000, guid: ac5afa349ca97a94fa130c901ecc7aa1, type: 2}
+  - {fileID: 4300000, guid: 5388e65e66046b94a83b7b1ce34e2e96, type: 2}
+  - {fileID: 4300000, guid: e87dc788c00b8f246abc5b0e2974b9cc, type: 2}
+  - {fileID: 4300000, guid: 1b3db1818f961744aa7433cc429f7daa, type: 2}
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10

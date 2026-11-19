@@ -563,7 +563,7 @@ public sealed class StandardEnemyDeathStrategy :
     }
 
     /// <summary>
-    /// くい込み攻撃死亡用の目標Piece数分割を開始する。
+    /// くい込み攻撃で死亡したEnemyをベイク済みの破片へ切り替える。
     /// チェンソー軌跡、通常攻撃用Cut Range、AttackVector、チェンソー回転数は使用しない。
     /// </summary>
     private void TryBeginDiggingDeathMesh()
@@ -575,7 +575,7 @@ public sealed class StandardEnemyDeathStrategy :
             Debug.LogWarning(
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
                 $"{nameof(EnemyDiggingMeshDeathEffect)}がないため、" +
-                "くい込み攻撃死亡のMesh分割を開始できません。");
+                "くい込み攻撃死亡の破片表示を開始できません。");
 
             return;
         }
@@ -598,8 +598,7 @@ public sealed class StandardEnemyDeathStrategy :
         {
             Debug.LogWarning(
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
-                "くい込み死亡Mesh分割には成功しましたが、" +
-                "生成されたPieceを取得できませんでした。");
+                "くい込み死亡用に表示したPieceを取得できませんでした。");
 
             return;
         }

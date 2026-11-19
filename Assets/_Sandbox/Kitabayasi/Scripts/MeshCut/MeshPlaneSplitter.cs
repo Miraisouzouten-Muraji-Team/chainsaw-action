@@ -909,18 +909,9 @@ public sealed class MeshPlaneSplitter
     // Boundary Node lookupも同規模まで事前確保して死亡時の初回Allocationを避ける。
     private const int BOUNDARY_CONNECTIVITY_LOOKUP_BUFFER_LENGTH = 32768;
 
-    // 初回8分割で観測した入力I=124482を基準とするフォールバック。
-    // BeforeSceneLoadではScene中のMeshを参照できないため、実Meshの情報は
-    // EnemyDiggingMeshDeathEffect.Awakeで共有Poolへ追加反映する。
-    private const int TARGET_COUNT_WARMUP_SOURCE_INDEX_COUNT = 124482;
-    private const int TARGET_COUNT_WARMUP_PIECE_COUNT = 8;
-    private const int TARGET_COUNT_WARMUP_BUILDER_COUNT = 9;
-    private const int TARGET_COUNT_WARMUP_LARGE_OUTPUT_BUILDERS = 2;
-    private const int TARGET_COUNT_WARMUP_LARGE_VERTEX_CAPACITY = 20000;
-    // 最初の2出力は偏ったPlaneでも拡張しにくいよう入力Indexの100%、
-    // 残りのBuilderは35%だけ予約する。過大Meshでは通常拡張を維持する。
-    private const int TARGET_COUNT_WARMUP_LARGE_INDEX_PERCENT = 100;
-    private const int TARGET_COUNT_WARMUP_REGULAR_INDEX_PERCENT = 35;
+    private const int NORMAL_SPLIT_OUTPUT_COUNT = 2;
+    private const int NORMAL_SPLIT_INPUT_INDEX_WARMUP_CAPACITY = 124482;
+    private const int CUT_SEGMENT_WARMUP_CAPACITY = 2048;
 
     private static VertexData[] sourceVertexDataBuffer;
     private static int sourceVertexDataBufferLeaseState;
@@ -959,11 +950,11 @@ public sealed class MeshPlaneSplitter
     private static readonly Stack<List<Vector4>> sourceTangentListPool =
         new Stack<List<Vector4>>();
 
-    // 通常攻撃は各分割内で返却し、食い込みは最終Piece確定まで貸し出す。
+    // 通常攻撃は各分割内で返却し、Editorでは最終Piece確定まで貸し出す。
     // 必要Capacityに合うBuilderを選ぶため、Pool内の空き要素を走査できるListで保持する。
     // 貸し出し中のBuilderはこのListへ含めず、同時分割でも共有しない。
     private static readonly List<PieceMeshBuilder> pieceMeshBuilderPool =
-        new List<PieceMeshBuilder>(9);
+        new List<PieceMeshBuilder>(NORMAL_SPLIT_OUTPUT_COUNT);
 
     // Boundary診断がSource Triangleを再取得する場合だけ使用する。
     // 通常分割本体のTriangleはChainsawMeshCutProcessorから受け取るため、再取得しない。
@@ -1015,7 +1006,7 @@ public sealed class MeshPlaneSplitter
 
         // 交差Triangleから生成するCutSegmentも1つの作業Listを繰り返し使用する。
         EnsurePooledListAvailable(cutSegmentListPool,
-            CalculateWarmupCutSegmentCapacity(TARGET_COUNT_WARMUP_SOURCE_INDEX_COUNT));
+            CUT_SEGMENT_WARMUP_CAPACITY);
         EnsurePooledListAvailable(clippedPolygonListPool, 4);
         EnsurePooledListAvailable(cutPointListPool, 3);
         // 端点ごとの元Edge index 2種類＋接続IDの合計3本を同時に使用する。
@@ -2919,160 +2910,21 @@ public sealed class MeshPlaneSplitter
         pool.Push(list);
     }
 
-    private static int CalculateWarmupCutSegmentCapacity(int sourceIndexCount)
-    {
-        return Mathf.Clamp(sourceIndexCount / 48, 128, 2048);
-    }
-
-    private static int CalculateWarmupIndexCapacity(int sourceIndexCount, int percentage)
-    {
-        return (int)Math.Min(int.MaxValue,
-            ((long)sourceIndexCount * percentage + 99L) / 100L);
-    }
-
     private static void WarmupPieceMeshBuilderPool()
     {
-        // Sceneを読み込む前に、前回の実測Mesh規模に対する共有Poolを確保する。
-        // 実Meshが異なる場合はAwakeから同じPoolを拡張する。新しいPoolは作らない。
-        WarmupPieceMeshBuilderPool(null, SOURCE_VERTEX_DATA_BUFFER_LENGTH,
-            TARGET_COUNT_WARMUP_SOURCE_INDEX_COUNT, 1,
-            TARGET_COUNT_WARMUP_PIECE_COUNT);
-    }
-
-    /// <summary>
-    /// 対象Meshのトポロジーを基に、全Enemy共通の8分割用Builderを先行拡張する。
-    /// Mesh自体は取得・複製・変更しない。
-    /// </summary>
-    internal static void WarmupTargetCountBuffers(Mesh sourceMesh, int targetPieceCount)
-    {
-        if (sourceMesh == null || sourceMesh.vertexCount == 0 ||
-            sourceMesh.subMeshCount == 0 || targetPieceCount < 2)
-        {
-            return;
-        }
-
-        long sourceIndexCount = 0;
-        for (int subMeshIndex = 0; subMeshIndex < sourceMesh.subMeshCount; subMeshIndex++)
-        {
-            sourceIndexCount += sourceMesh.GetIndexCount(subMeshIndex);
-        }
-
-        WarmupPieceMeshBuilderPool(sourceMesh, sourceMesh.vertexCount,
-            (int)Math.Min(int.MaxValue, sourceIndexCount),
-            sourceMesh.subMeshCount, targetPieceCount);
-    }
-
-    private static void WarmupPieceMeshBuilderPool(
-        Mesh sourceMesh, int sourceVertexCount, int totalSourceIndexCount,
-        int sourceSubMeshCount, int targetPieceCount)
-    {
         using var warmupSample = warmupTriangleBuffersProfilerMarker.Auto();
-        // 大きすぎる目標Piece数のInspector設定で、初期化時に大量の
-        // Builder・SubMesh Listを一括確保しない。8超は従来の動的拡張へ任せる。
-        int preparedPieceCount = Mathf.Min(targetPieceCount,
-            TARGET_COUNT_WARMUP_PIECE_COUNT);
-        int warmupBuilderCount = Mathf.Max(TARGET_COUNT_WARMUP_BUILDER_COUNT,
-            preparedPieceCount + 1);
-        // 反復Plane分割のたびに切断面用SubMeshが1つ増える。
-        // 途中Pieceを保持するBuilderでは将来のSubMesh Listも再利用する。
-        int warmupSubMeshCount = (int)Math.Min(int.MaxValue,
-            (long)sourceSubMeshCount + preparedPieceCount - 1L);
-        int regularVertexCapacity = Mathf.Max(
-            CalculateInitialPieceVertexCapacity(SOURCE_VERTEX_DATA_BUFFER_LENGTH),
-            CalculateInitialPieceVertexCapacity(sourceVertexCount));
-        int largeVertexCapacity = Mathf.Max(
-            TARGET_COUNT_WARMUP_LARGE_VERTEX_CAPACITY,
-            CalculateWarmupIndexCapacity(sourceVertexCount, 65));
-        int sourceBuilderVertexCapacity = Mathf.Max(
-            SOURCE_VERTEX_DATA_BUFFER_LENGTH, sourceVertexCount);
+        // 通常のPlane分割に必要な正側・負側のBuilderと三角形Index領域を用意する。
+        // Editorの反復分割では同じPoolから借り、不足する分を必要時に追加する。
+        const int warmupSubMeshCount = 2;
+        int vertexCapacity = CalculateInitialPieceVertexCapacity(SOURCE_VERTEX_DATA_BUFFER_LENGTH);
 
-        int changedBuffers = 0;
-        int index = 0;
-        // Poolは貸出/返却で順番が変わる。初回の役割をBuilder自体に保持し、
-        // 後のAwakeで通常容量の全Builderが大容量へ格上げされないようにする。
-        bool alreadyAssignedWarmupTiers = false;
-        foreach (PieceMeshBuilder existing in pieceMeshBuilderPool)
+        while (pieceMeshBuilderPool.Count < NORMAL_SPLIT_OUTPUT_COUNT)
         {
-            if (existing.HasWarmupCapacityTier)
-            {
-                alreadyAssignedWarmupTiers = true;
-                break;
-            }
-        }
-        // Listの容量が不足しているBuilderだけBacking Arrayを拡張する。
-        // Pool済みのBuilderはClearでCountだけが0になっており、容量は維持される。
-        foreach (PieceMeshBuilder builder in pieceMeshBuilderPool)
-        {
-            // 初回は0=Source, 1/2=大型, 残り=通常。2回目以降に
-            // 新規追加されていたBuilderは通常扱いとし、常駐メモリの増殖を防ぐ。
-            int tier = builder.GetOrAssignWarmupCapacityTier(
-                alreadyAssignedWarmupTiers ? 2 : index == 0 ? 0 :
-                index <= TARGET_COUNT_WARMUP_LARGE_OUTPUT_BUILDERS ? 1 : 2);
-            int vertexCapacity = tier == 0
-                ? sourceBuilderVertexCapacity
-                : tier == 1 ? largeVertexCapacity : regularVertexCapacity;
-            changedBuffers += builder.WarmupTargetCountBuffers(
-                warmupSubMeshCount, sourceSubMeshCount, sourceMesh,
-                sourceVertexCount, vertexCapacity, totalSourceIndexCount,
-                tier == 0, tier <= 1);
-            index++;
-        }
-
-        while (pieceMeshBuilderPool.Count < warmupBuilderCount)
-        {
-            int builderIndex = pieceMeshBuilderPool.Count;
-            int tier = builderIndex == 0 ? 0 :
-                builderIndex <= TARGET_COUNT_WARMUP_LARGE_OUTPUT_BUILDERS ? 1 : 2;
-            int vertexCapacity = tier == 0
-                ? sourceBuilderVertexCapacity
-                : tier == 1 ? largeVertexCapacity : regularVertexCapacity;
-            var builder = new PieceMeshBuilder(
-                warmupSubMeshCount, true, sourceVertexCount,
-                vertexCapacity, true, true);
-            builder.GetOrAssignWarmupCapacityTier(tier);
+            var builder = new PieceMeshBuilder(warmupSubMeshCount, true,
+                SOURCE_VERTEX_DATA_BUFFER_LENGTH, vertexCapacity, true, true);
+            builder.WarmupNormalSplitIndexBuffers();
             pieceMeshBuilderPool.Add(builder);
-            changedBuffers += builder.WarmupTargetCountBuffers(
-                warmupSubMeshCount, sourceSubMeshCount, sourceMesh,
-                sourceVertexCount, vertexCapacity, totalSourceIndexCount,
-                tier == 0, tier <= 1);
         }
-
-        // TrySplitMesh内では一度に1つだけ貸し出す共有作業領域。
-        // 大きいMeshに備えて予約し、不足時は既存のAddによる拡張を許す。
-        int requiredSegmentCapacity = CalculateWarmupCutSegmentCapacity(totalSourceIndexCount);
-        if (cutSegmentListPool.Count > 0)
-        {
-            List<CutSegment> reusableSegments = cutSegmentListPool.Peek();
-            if (reusableSegments.Capacity < requiredSegmentCapacity)
-            {
-                reusableSegments.Capacity = requiredSegmentCapacity;
-                changedBuffers++;
-            }
-        }
-
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-        if (changedBuffers > 0)
-        {
-            long reservedIndices = 0;
-            long reservedAreas = 0;
-            foreach (PieceMeshBuilder builder in pieceMeshBuilderPool)
-            {
-                builder.GetTriangleBufferCapacities(out long indices, out long areas);
-                reservedIndices += indices;
-                reservedAreas += areas;
-            }
-            Debug.Log($"[EnemyMeshCutBufferWarmup] " +
-                $"SourceV/I={sourceVertexCount}/{totalSourceIndexCount}, " +
-                $"SourceSubMeshes={sourceSubMeshCount}, TargetPieces={targetPieceCount}, " +
-                $"PooledBuilders={pieceMeshBuilderPool.Count}, " +
-                $"BuffersCreatedOrGrown={changedBuffers}, " +
-                $"ReservedIndexElements={reservedIndices}, " +
-                $"ReservedAreaElements={reservedAreas}, " +
-                $"ReservedIndexAndAreaPayloadMiB={(reservedIndices + reservedAreas) * 4.0 / 1048576.0:F2}, " +
-                $"CutSegmentCapacity={(cutSegmentListPool.Count > 0 ? cutSegmentListPool.Peek().Capacity : 0)} " +
-                "(全Poolの容量合計、配列ヘッダ・頂点属性は除外)");
-        }
-#endif
     }
 
     private static PieceMeshBuilder AcquirePieceMeshBuilder(
@@ -9384,21 +9236,6 @@ public sealed class MeshPlaneSplitter
         private bool hasTangents;
         private bool storeConnectivityVertexIds;
 
-        // Poolの並び順は変わるため、Warmup対象の容量階層をBuilderごとに固定する。
-        // 0=Source相当、1=大型出力相当、2=通常出力相当。-1=未割当。
-        private int warmupCapacityTier = -1;
-
-        public bool HasWarmupCapacityTier => warmupCapacityTier >= 0;
-
-        public int GetOrAssignWarmupCapacityTier(int proposedTier)
-        {
-            if (warmupCapacityTier < 0)
-            {
-                warmupCapacityTier = proposedTier;
-            }
-            return warmupCapacityTier;
-        }
-
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         // Builderごとの最終Count/CapacityはPoolへ返す直前に一度だけ集計する。
         internal MeshPlaneSplitter DiagnosticOwner { get; set; }
@@ -9511,101 +9348,11 @@ public sealed class MeshPlaneSplitter
             return shortfall;
         }
 
-        /// <summary>
-        /// Pool内にある間だけ呼び、分割に必要なListのBacking Arrayを初期化時に準備する。
-        /// 既存のCount/Capacity再利用と三角形・面積の演算内容は変更しない。
-        /// </summary>
-        public int WarmupTargetCountBuffers(
-            int requiredSubMeshCount, int sourceSubMeshCount, Mesh sourceMesh,
-            int sourceVertexCount, int vertexCapacity, int totalSourceIndexCount,
-            bool isSourceBuilder, bool isLargeOutputBuilder)
+        public void WarmupNormalSplitIndexBuffers()
         {
-            int changedBuffers = 0;
-            ClearForPool();
-
-            if (vertices.Capacity < vertexCapacity)
-            {
-                vertices.Capacity = vertexCapacity;
-                changedBuffers++;
-            }
-            if (normals.Capacity < vertexCapacity)
-            {
-                normals.Capacity = vertexCapacity;
-                changedBuffers++;
-            }
-            if (uv.Capacity < vertexCapacity)
-            {
-                uv.Capacity = vertexCapacity;
-                changedBuffers++;
-            }
-            if (tangents.Capacity < vertexCapacity)
-            {
-                tangents.Capacity = vertexCapacity;
-                changedBuffers++;
-            }
-            // 元のPoolは通常2分割でも使うためConnectivityの予約を維持する。
-            if (connectivityVertexIds.Capacity < vertexCapacity)
-            {
-                connectivityVertexIds.Capacity = vertexCapacity;
-                changedBuffers++;
-            }
-            if (outputVertexIndexBySourceVertexIndex.Length < sourceVertexCount)
-            {
-                outputVertexIndexBySourceVertexIndex = new int[sourceVertexCount];
-                changedBuffers++;
-            }
-
-            ResetSubMeshTriangleLists(requiredSubMeshCount);
-            while (triangleDoubleAreasBySubMesh.Count < requiredSubMeshCount)
-            {
-                triangleDoubleAreasBySubMesh.Add(new List<float>());
-                changedBuffers++;
-            }
-
-            int firstCutIndexCapacity = Mathf.Clamp(
-                totalSourceIndexCount / 16, 256, 8192);
-            int furtherCutIndexCapacity = Mathf.Clamp(
-                totalSourceIndexCount / 64, 128, 2048);
-            for (int subMeshIndex = 0; subMeshIndex < requiredSubMeshCount; subMeshIndex++)
-            {
-                int requiredIndexCapacity;
-                if (subMeshIndex < sourceSubMeshCount)
-                {
-                    // 共有Meshの場合はSubMesh別Index実数を使い、すべてのListへ
-                    // 入力全Indexを割り当てる無駄を避ける。
-                    int sourceIndices = sourceMesh != null
-                        ? (int)Math.Min(int.MaxValue, (long)sourceMesh.GetIndexCount(subMeshIndex))
-                        : subMeshIndex == 0 ? totalSourceIndexCount : 0;
-                    requiredIndexCapacity = isSourceBuilder
-                        ? sourceIndices
-                        : CalculateWarmupIndexCapacity(sourceIndices,
-                            isLargeOutputBuilder
-                                ? TARGET_COUNT_WARMUP_LARGE_INDEX_PERCENT
-                                : TARGET_COUNT_WARMUP_REGULAR_INDEX_PERCENT);
-                }
-                else
-                {
-                    // 複数回の切断で新たに増えるCap用SubMeshは小さな領域から開始する。
-                    requiredIndexCapacity = subMeshIndex == sourceSubMeshCount
-                        ? firstCutIndexCapacity : furtherCutIndexCapacity;
-                }
-
-                List<int> indices = trianglesBySubMesh[subMeshIndex];
-                if (indices.Capacity < requiredIndexCapacity)
-                {
-                    indices.Capacity = requiredIndexCapacity;
-                    changedBuffers++;
-                }
-                List<float> areas = triangleDoubleAreasBySubMesh[subMeshIndex];
-                int requiredAreaCapacity = requiredIndexCapacity / 3 +
-                    (requiredIndexCapacity % 3 != 0 ? 1 : 0);
-                if (areas.Capacity < requiredAreaCapacity)
-                {
-                    areas.Capacity = requiredAreaCapacity;
-                    changedBuffers++;
-                }
-            }
-            return changedBuffers;
+            trianglesBySubMesh[0].Capacity =
+                CalculateInitialPieceTriangleIndexCapacity(NORMAL_SPLIT_INPUT_INDEX_WARMUP_CAPACITY);
+            trianglesBySubMesh[1].Capacity = NORMAL_SPLIT_INPUT_INDEX_WARMUP_CAPACITY / 16;
         }
 
         public long GetSourceMeshIndexCapacityShortfall(
@@ -9649,20 +9396,6 @@ public sealed class MeshPlaneSplitter
                 spareIndex++;
             }
             return 0;
-        }
-
-        public void GetTriangleBufferCapacities(out long indexCapacity, out long areaCapacity)
-        {
-            indexCapacity = 0;
-            areaCapacity = 0;
-            foreach (List<int> indices in trianglesBySubMesh)
-            {
-                indexCapacity += indices.Capacity;
-            }
-            foreach (List<float> areas in triangleDoubleAreasBySubMesh)
-            {
-                areaCapacity += areas.Capacity;
-            }
         }
 
         public string WorkingMeshName { get; set; }

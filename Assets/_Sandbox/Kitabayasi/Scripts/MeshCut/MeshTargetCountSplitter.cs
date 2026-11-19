@@ -1,10 +1,11 @@
 ﻿using System.Collections.Generic;
+#if UNITY_EDITOR
 using Unity.Profiling;
 using UnityEngine;
 using WorkingPiece = MeshPlaneSplitter.PieceMeshBuilder;
 
 /// <summary>
-/// 食い込み死亡用Meshを、非連結部分を追加分離せず指定されたPiece数へ分割する。
+/// 食い込み死亡用Meshを、非連結部分を保持しながらEditorで事前生成する。
 /// </summary>
 /// <remarks>
 /// Triangle分割と切断面生成はMeshPlaneSplitterへ委譲する。
@@ -612,3 +613,4 @@ public sealed class MeshTargetCountSplitter
         }
     }
 }
+#endif

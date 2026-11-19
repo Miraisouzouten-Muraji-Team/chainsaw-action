@@ -1,27 +1,23 @@
 ﻿using System.Collections.Generic;
 using Unity.Profiling;
 using UnityEngine;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 /// <summary>
-/// くい込み攻撃で死亡したEnemyのMeshを、指定した目標Piece数へ分割して物理破片を生成する。
+/// くい込み攻撃で死亡したEnemyを、保存済みのMeshを使った物理破片へ切り替える。
 /// </summary>
-/// <remarks>
-/// 分割回数と分割対象Pieceの選択はMeshTargetCountSplitterへ、
-/// Triangle分割と切断面生成はMeshPlaneSplitterへ委譲する。
-/// 死亡原因の判定、通常攻撃用Cut Range、チェンソー軌跡、飛散方向・強度の決定は担当しない。
-/// </remarks>
 public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
 {
-    private static readonly ProfilerMarker createPiecesProfilerMarker =
-            new ProfilerMarker("EnemyMeshCut.Digging.Effect.Total");
+    public const int BakedPieceCount = 8;
 
-
-
-
-
-
-
-    private const int MIN_TARGET_PIECE_COUNT = 2;
+    private static readonly ProfilerMarker useBakedPiecesProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.Digging.Effect.UseBakedPieces");
+    private static readonly ProfilerMarker createPieceObjectsProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.Digging.Effect.CreatePieceObjects");
+    private static readonly ProfilerMarker configurePieceProfilerMarker =
+        new ProfilerMarker("EnemyMeshCut.Digging.Effect.ConfigurePiece");
 
     [Header("分割対象")]
 
@@ -42,19 +38,20 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     [SerializeField]
     private Material cutSurfaceMaterial;
 
-    [Header("目標Piece数")]
-
-    [Tooltip(
-        "MeshTargetCountSplitterへ渡す目標Piece数。" +
-        "連結成分分離によって、この値を超える場合がある。")]
-    [SerializeField]
-    [Min(MIN_TARGET_PIECE_COUNT)]
-    private int targetPieceCount = 8;
-
-    [Tooltip("各切断面へ生成するUVのスケール。")]
+#if UNITY_EDITOR
+    [Tooltip("Editorで各切断面へ生成するUVのスケール。")]
     [SerializeField]
     [Min(0.0001f)]
     private float cutSurfaceUvScale = 1f;
+#endif
+
+    [Header("事前生成Mesh")]
+    [Tooltip("Editorで生成した食い込み死亡用MeshをPiece番号順に参照する。")]
+    [SerializeField]
+    private Mesh[] bakedPieceMeshes;
+
+    [SerializeField, HideInInspector]
+    private Vector3 bakedSkinnedSourceScale;
 
     [Header("分割片物理")]
 
@@ -75,19 +72,11 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     [Min(0.0001f)]
     private float maximumPieceMass = 10f;
 
-    private readonly MeshTargetCountSplitter targetCountSplitter =
-        new MeshTargetCountSplitter();
-
-    private readonly List<Mesh> runtimePieceMeshes =
-        new List<Mesh>();
-
     private readonly List<GameObject> pieceObjects =
-        new List<GameObject>();
+        new List<GameObject>(BakedPieceCount);
 
-    // targetPieceCountを基準に死亡前へ生成コストを移すための事前生成殻。
-    // 連結成分分離で不足した分だけ死亡時に追加生成する。
     private readonly List<GameObject> preGeneratedPieceObjects =
-        new List<GameObject>();
+        new List<GameObject>(BakedPieceCount);
 
     private readonly EnemyPlayerReference playerReference =
         new EnemyPlayerReference();
@@ -95,10 +84,174 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     private readonly List<Collider> playerColliders =
         new List<Collider>();
 
+    // 同じSubMesh数のPiece間ではMaterial配列を共有し、Pieceごとの配列生成を避ける。
+    // 対象Rendererは死亡時の1種類だけなので、分割開始時にキャッシュを破棄する。
+    private readonly Dictionary<int, Material[]> pieceMaterialsBySubMeshCount =
+        new Dictionary<int, Material[]>();
+
     private void Awake()
     {
         PreGeneratePieceObjects();
     }
+
+#if UNITY_EDITOR
+    public float EditorCutSurfaceUvScale => cutSurfaceUvScale;
+    public Material EditorCutSurfaceMaterial => cutSurfaceMaterial;
+    public Vector3 EditorGetBakedSkinnedPieceScale(Vector3 liveScale) => GetBakedSkinnedPieceScale(liveScale);
+
+    public bool TryValidateEditorBakedPieces(out string reason) =>
+        TryValidateBakedPieces(out _, out _, out reason);
+
+    // Prefabに保存された姿勢を取得する。ownsMeshがtrueなら呼び出し側が破棄する。
+    public bool TryGetEditorBakeSource(
+        out Mesh mesh,
+        out Renderer renderer,
+        out Material[] materials,
+        out bool ownsMesh,
+        out string failureReason)
+    {
+        ownsMesh = false;
+        if (!TryGetSourceLayout(out mesh, out renderer, out materials, out failureReason))
+        {
+            return false;
+        }
+
+        if (cutSurfaceUvScale <= 0f || !float.IsFinite(cutSurfaceUvScale))
+        {
+            failureReason = "Cut Surface UV Scaleには0より大きい有限値が必要です。";
+            return false;
+        }
+
+        if (renderer is SkinnedMeshRenderer skinnedRenderer)
+        {
+            if (!IsValidBakeScale(renderer.transform.lossyScale))
+            {
+                failureReason = "Skinned Mesh Rendererのスケールを確認してください。";
+                return false;
+            }
+
+            mesh = new Mesh { name = $"{renderer.name}_DiggingDeathBake" };
+            ownsMesh = true;
+            // BakeMesh(false)でPrefabのスケールを頂点へ反映する。
+            skinnedRenderer.BakeMesh(mesh, false);
+            mesh.RecalculateBounds();
+        }
+        else if (!mesh.isReadable)
+        {
+            failureReason = "分割対象MeshのModel Import SettingsでRead/Writeを有効にしてください。";
+            return false;
+        }
+
+        return true;
+    }
+
+    // Playモード中だけの物理検証用。通常の死亡フローやプレイヤー攻撃には介入しない。
+    private void Update()
+    {
+#if ENABLE_INPUT_SYSTEM
+        bool isDebugSplitPressed =
+            Keyboard.current != null &&
+            Keyboard.current.yKey.wasPressedThisFrame;
+#elif ENABLE_LEGACY_INPUT_MANAGER
+        bool isDebugSplitPressed =
+            Input.GetKeyDown(KeyCode.Y);
+#else
+        bool isDebugSplitPressed = false;
+#endif
+
+        if (!isDebugSplitPressed || HasCompletedSplit)
+        {
+            return;
+        }
+
+        RunDebugDiggingSplit();
+    }
+
+    /// <summary>
+    /// くい込み死亡のMesh分割と専用飛散のみを手動実行する。
+    /// 生成Pieceのステージ衝突を観察できるよう縮小・Enemy破棄は実行しない。
+    /// </summary>
+    private void RunDebugDiggingSplit()
+    {
+        if (!TryCreatePieces())
+        {
+            return;
+        }
+
+        var pieceTransforms = new List<Transform>();
+        if (!TryGetPieceTransforms(pieceTransforms))
+        {
+            Debug.LogWarning(
+                $"{nameof(EnemyDiggingMeshDeathEffect)}: " +
+                "デバッグ分割後のPieceを取得できませんでした。",
+                this);
+            return;
+        }
+
+        // 生存中のAIや本体ColliderがPieceの物理挙動に介入しないよう、
+        // 分割したPieceのColliderだけを残して本体を停止する。
+        EnemyStateMachine stateMachine = GetComponent<EnemyStateMachine>();
+        if (stateMachine != null)
+        {
+            stateMachine.enabled = false;
+        }
+
+        Animator[] animators = GetComponentsInChildren<Animator>(true);
+        foreach (Animator animator in animators)
+        {
+            if (animator != null)
+            {
+                animator.enabled = false;
+            }
+        }
+
+        Collider[] allColliders = GetComponentsInChildren<Collider>(true);
+        foreach (Collider enemyCollider in allColliders)
+        {
+            if (enemyCollider == null)
+            {
+                continue;
+            }
+
+            bool isPieceCollider = false;
+            for (int pieceIndex = 0; pieceIndex < pieceTransforms.Count; pieceIndex++)
+            {
+                Transform pieceTransform = pieceTransforms[pieceIndex];
+                if (pieceTransform != null &&
+                    enemyCollider.transform.IsChildOf(pieceTransform))
+                {
+                    isPieceCollider = true;
+                    break;
+                }
+            }
+
+            if (!isPieceCollider)
+            {
+                enemyCollider.enabled = false;
+            }
+        }
+
+        Rigidbody enemyRigidbody = GetComponent<Rigidbody>();
+        if (enemyRigidbody != null)
+        {
+            enemyRigidbody.isKinematic = true;
+        }
+
+        EnemyDiggingDeathBurst deathBurst = GetComponent<EnemyDiggingDeathBurst>();
+        if (deathBurst != null)
+        {
+            deathBurst.BeginBurst(pieceTransforms);
+        }
+        else
+        {
+            Debug.LogWarning(
+                $"{nameof(EnemyDiggingMeshDeathEffect)}: " +
+                $"{nameof(EnemyDiggingDeathBurst)}が見つからないため、" +
+                "分割のみ実行しました。",
+                this);
+        }
+    }
+#endif
 
     /// <summary>
     /// このEnemyについて、分割Piece生成と元Rendererの非表示まで完了しているかを示す。
@@ -106,93 +259,35 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     public bool HasCompletedSplit { get; private set; }
 
     /// <summary>
-    /// 死亡時姿勢のMeshを取得し、指定した目標数へ分割して物理Pieceを生成する。
+    /// 保存済みMeshを破片に設定し、元Rendererから表示を切り替える。
     /// </summary>
-    /// <returns>
-    /// 1つ以上のPiece生成と元Rendererの非表示まで完了した場合はtrue。
-    /// </returns>
     public bool TryCreatePieces()
     {
-        using (createPiecesProfilerMarker.Auto())
-        {
+        using var sample = useBakedPiecesProfilerMarker.Auto();
         if (HasCompletedSplit)
         {
-            Debug.LogWarning(
-                $"{nameof(EnemyDiggingMeshDeathEffect)}: " +
-                "このEnemyは既にくい込み死亡用Mesh分割を完了しています。",
-                this);
-
             return false;
         }
 
-        if (!ValidateRequest(
-                out string failureReason))
+        if (!TryValidateBakedPieces(out Renderer sourceRenderer, out Material[] sourceMaterials, out string reason))
         {
-            LogFailure(failureReason);
+            LogFailure(reason);
             return false;
         }
 
-        if (!TryGetSplitSource(
-                out Mesh sourceMesh,
-                out Renderer sourceRenderer,
-                out bool destroySourceMeshAfterSplit,
-                out failureReason))
+        ResolvePlayerCollidersForPieceCollision();
+        if (!TryCreatePieceObjects(sourceRenderer, sourceMaterials, out reason))
         {
-            LogFailure(failureReason);
+            LogFailure(reason);
             return false;
         }
 
-        try
-        {
-            if (!ValidateSourceMeshMaterialLayout(
-                    sourceMesh,
-                    sourceRenderer,
-                    out failureReason))
-            {
-                LogFailure(failureReason);
-                return false;
-            }
-
-            bool splitSucceeded =
-                targetCountSplitter.TrySplit(
-                    sourceMesh,
-                    targetPieceCount,
-                    cutSurfaceUvScale,
-                    out List<Mesh> splitPieceMeshes,
-                    out failureReason);
-
-            if (!splitSucceeded)
-            {
-                LogFailure(failureReason);
-                return false;
-            }
-
-            ResolvePlayerCollidersForPieceCollision();
-
-            if (!TryCreatePieceObjects(
-                    splitPieceMeshes,
-                    sourceRenderer,
-                    out failureReason))
-            {
-                LogFailure(failureReason);
-                return false;
-            }
-
-            // 破片の生成が完了する前に元Rendererを消すと、
-            // 分割失敗時にEnemyの見た目だけが消えるため最後に切り替える。
-            sourceRenderer.enabled = false;
-            HasCompletedSplit = true;
-
-            return true;
-        }
-        finally
-        {
-            if (destroySourceMeshAfterSplit)
-            {
-                DestroyRuntimeMesh(sourceMesh);
-            }
-        }
-        }
+        sourceRenderer.enabled = false;
+        HasCompletedSplit = true;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        Debug.Log($"[EnemyDiggingBakedPieces] '{name}' (InstanceID {GetInstanceID()}) が保存済みMeshを{bakedPieceMeshes.Length}個使用しました。", this);
+#endif
+        return true;
     }
 
     /// <summary>
@@ -238,301 +333,161 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         return destination.Count > 0;
     }
 
-    private bool ValidateRequest(
-        out string failureReason)
+    private bool TryGetSourceLayout(
+        out Mesh sourceMesh, out Renderer sourceRenderer, out Material[] sourceMaterials, out string reason)
     {
-        bool hasSkinnedMeshTarget =
-            targetSkinnedMeshRenderer != null;
-
-        bool hasMeshFilterTarget =
-            targetMeshFilter != null;
-
-        if (!hasSkinnedMeshTarget &&
-            !hasMeshFilterTarget)
+        sourceMesh = null;
+        sourceRenderer = null;
+        sourceMaterials = null;
+        bool skinned = targetSkinnedMeshRenderer != null;
+        if (skinned == (targetMeshFilter != null))
         {
-            failureReason =
-                "分割対象が設定されていません。" +
-                "Target Skinned Mesh Rendererまたは" +
-                "Target Mesh Filterのどちらかを設定してください。";
-
+            reason = "Target Skinned Mesh RendererまたはTarget Mesh Filterのどちらか一方を設定してください。";
             return false;
         }
 
-        if (hasSkinnedMeshTarget &&
-            hasMeshFilterTarget)
+        if (skinned)
         {
-            failureReason =
-                "Target Skinned Mesh Rendererと" +
-                "Target Mesh Filterの両方が設定されています。" +
-                "分割対象はどちらか一方だけ設定してください。";
-
-            return false;
-        }
-
-        if (hasSkinnedMeshTarget)
-        {
-            if (targetSkinnedMeshRenderer.sharedMesh == null)
-            {
-                failureReason =
-                    "Target Skinned Mesh RendererにsharedMeshがありません。";
-
-                return false;
-            }
+            sourceRenderer = targetSkinnedMeshRenderer;
+            sourceMesh = targetSkinnedMeshRenderer.sharedMesh;
         }
         else
         {
-            if (targetMeshFilter.sharedMesh == null)
-            {
-                failureReason =
-                    "Target Mesh FilterにsharedMeshがありません。";
-
-                return false;
-            }
-
-            if (targetMeshFilter.GetComponent<MeshRenderer>() == null)
-            {
-                failureReason =
-                    "Target Mesh Filterと同じGameObjectにMeshRendererがありません。";
-
-                return false;
-            }
-
-            if (!targetMeshFilter.sharedMesh.isReadable)
-            {
-                failureReason =
-                    "Target Mesh FilterのMeshが読み取り不可です。" +
-                    "Mesh分割では頂点・Triangle情報を読み取るため、" +
-                    "Model Import SettingsのRead/Write Enabledを有効にしてください。";
-
-                return false;
-            }
+            sourceMesh = targetMeshFilter.sharedMesh;
+            sourceRenderer = targetMeshFilter.GetComponent<MeshRenderer>();
         }
 
-        if (targetPieceCount < MIN_TARGET_PIECE_COUNT)
+        if (sourceMesh == null || sourceRenderer == null)
         {
-            failureReason =
-                $"Target Piece Countは{MIN_TARGET_PIECE_COUNT}以上にしてください。";
-
+            reason = "分割対象に元MeshとRendererの両方が必要です。";
             return false;
         }
 
-        if (cutSurfaceUvScale <= 0f)
+        sourceMaterials = sourceRenderer.sharedMaterials;
+        if (sourceMaterials.Length == 0 || sourceMaterials.Length != sourceMesh.subMeshCount)
         {
-            failureReason =
-                "Cut Surface Uv Scaleは0より大きい値にしてください。";
-
+            reason = "元RendererのMaterial数を元MeshのSubMesh数と一致させてください。";
             return false;
         }
 
         if (cutSurfaceMaterial == null)
         {
-            failureReason =
-                "Cut Surface Materialが設定されていません。";
-
+            reason = "Cut Surface Materialを設定してください。";
             return false;
         }
 
-        failureReason = null;
+        reason = null;
         return true;
     }
 
-    /// <summary>
-    /// 現在の分割対象からMeshと表示元Rendererを取得する。
-    /// SkinnedMeshRendererは死亡時姿勢をRuntime MeshへBakeする。
-    /// </summary>
-    private bool TryGetSplitSource(
-        out Mesh sourceMesh,
-        out Renderer sourceRenderer,
-        out bool destroySourceMeshAfterSplit,
-        out string failureReason)
+    private bool TryValidateBakedPieces(out Renderer sourceRenderer, out Material[] sourceMaterials, out string reason)
     {
-        sourceMesh = null;
-        sourceRenderer = null;
-        destroySourceMeshAfterSplit = false;
-
-        if (targetSkinnedMeshRenderer != null)
+        if (!TryGetSourceLayout(out _, out sourceRenderer, out sourceMaterials, out reason))
         {
-            var bakedMesh = new Mesh
-            {
-                name =
-                    $"{targetSkinnedMeshRenderer.name}_DiggingDeathBake"
-            };
-
-            // EnemyMeshCutterと同様に、Transform Scaleを頂点へ一度だけ反映する。
-            // PieceはScale 1のWorld Transformで表示し、親Scaleの二重適用を避ける。
-            targetSkinnedMeshRenderer.BakeMesh(
-                bakedMesh,
-                false);
-
-            bakedMesh.RecalculateBounds();
-
-            sourceMesh = bakedMesh;
-            sourceRenderer = targetSkinnedMeshRenderer;
-            destroySourceMeshAfterSplit = true;
-            failureReason = null;
-
-            return true;
+            return false;
         }
 
-        if (targetMeshFilter != null)
+        int pieceCount = bakedPieceMeshes?.Length ?? 0;
+        if (pieceCount != BakedPieceCount)
         {
-            MeshRenderer meshRenderer =
-                targetMeshFilter.GetComponent<MeshRenderer>();
+            reason = $"Baked Piece Meshesには{BakedPieceCount}個の参照が必要です。現在は{pieceCount}個です。";
+            return false;
+        }
 
-            if (meshRenderer == null)
+        if (sourceRenderer is SkinnedMeshRenderer && !IsValidBakeScale(bakedSkinnedSourceScale))
+        {
+            reason = "ベイク時のスケールが設定されていません。Digging Piece Mesh Bakerで再生成してください。";
+            return false;
+        }
+
+        if (sourceRenderer is SkinnedMeshRenderer && !IsValidBakeScale(sourceRenderer.transform.lossyScale))
+        {
+            reason = "Skinned Mesh Rendererのスケールを確認してください。";
+            return false;
+        }
+
+        for (int index = 0; index < pieceCount; index++)
+        {
+            Mesh mesh = bakedPieceMeshes[index];
+            if (mesh == null || mesh.vertexCount < 3 || mesh.subMeshCount <= sourceMaterials.Length ||
+                System.Array.IndexOf(bakedPieceMeshes, mesh, 0, index) >= 0)
             {
-                failureReason =
-                    "Target Mesh Filterと同じGameObjectにMeshRendererがありません。";
-
+                reason = $"Baked Piece MeshesのPiece {index + 1:D2}に有効で重複のないMeshを設定してください。";
                 return false;
             }
 
-            sourceMesh =
-                targetMeshFilter.sharedMesh;
-
-            sourceRenderer =
-                meshRenderer;
-
-            // sharedMeshはProject AssetまたはUnity管理Meshなので、
-            // このComponentから破棄しない。
-            destroySourceMeshAfterSplit = false;
-            failureReason = null;
-
-            return true;
-        }
-
-        failureReason =
-            "分割対象からMeshを取得できませんでした。";
-
-        return false;
-    }
-
-    private bool ValidateSourceMeshMaterialLayout(
-        Mesh sourceMesh,
-        Renderer sourceRenderer,
-        out string failureReason)
-    {
-        if (sourceMesh == null)
-        {
-            failureReason =
-                "分割対象Meshがnullです。";
-
-            return false;
-        }
-
-        if (sourceRenderer == null)
-        {
-            failureReason =
-                "分割対象Rendererがnullです。";
-
-            return false;
-        }
-
-        Material[] sourceMaterials =
-            sourceRenderer.sharedMaterials;
-
-        if (sourceMaterials == null ||
-            sourceMaterials.Length == 0)
-        {
-            failureReason =
-                "分割対象RendererにMaterialがありません。";
-
-            return false;
-        }
-
-        if (sourceMaterials.Length !=
-            sourceMesh.subMeshCount)
-        {
-            failureReason =
-                "元Material数とMeshのSubMesh数が一致していません。" +
-                "分割後のMaterial対応を安全に維持できないため処理を中止します。";
-
-            return false;
-        }
-
-        failureReason = null;
-        return true;
-    }
-
-    private bool TryCreatePieceObjects(
-        IReadOnlyList<Mesh> splitPieceMeshes,
-        Renderer sourceRenderer,
-        out string failureReason)
-    {
-        if (splitPieceMeshes == null ||
-            splitPieceMeshes.Count == 0)
-        {
-            failureReason =
-                "MeshTargetCountSplitterから有効なPieceが返されませんでした。";
-
-            return false;
-        }
-
-        Material[] sourceMaterials =
-            sourceRenderer.sharedMaterials;
-
-        try
-        {
-            for (int pieceIndex = 0;
-                 pieceIndex < splitPieceMeshes.Count;
-                 pieceIndex++)
+            bool hasCutSurface = false;
+            for (int subMesh = 0; subMesh < mesh.subMeshCount; subMesh++)
             {
-                Mesh pieceMesh =
-                    splitPieceMeshes[pieceIndex];
-
-                if (pieceMesh == null)
+                uint indexCount = mesh.GetIndexCount(subMesh);
+                if (indexCount == 0)
                 {
-                    failureReason =
-                        $"分割結果のPiece {pieceIndex} がnullです。";
-
-                    CleanupFailedPieceCreation(
-                        splitPieceMeshes);
-
+                    continue;
+                }
+                if (indexCount % 3 != 0 || mesh.GetTopology(subMesh) != MeshTopology.Triangles)
+                {
+                    reason = $"Piece {index + 1:D2}のSubMesh {subMesh}に三角形以外が含まれています。";
                     return false;
                 }
 
-                // MeshPlaneSplitterでもBoundsは構築されるが、
-                // 物理設定がBoundsを直接使用するためPiece生成直前に明示的に更新する。
-                pieceMesh.RecalculateBounds();
+                hasCutSurface |= subMesh >= sourceMaterials.Length;
+            }
 
-                Material[] pieceMaterials =
-                    BuildPieceMaterials(
-                        sourceMaterials,
-                        pieceMesh.subMeshCount);
+            if (!hasCutSurface)
+            {
+                reason = $"Piece {index + 1:D2}に切断面がありません。";
+                return false;
+            }
 
-                GameObject pieceObject =
-                    GetOrCreatePieceObject(
-                        pieceIndex);
+            Bounds bounds = mesh.bounds;
+            if (!IsFiniteVector(bounds.center) || !IsFiniteVector(bounds.size) || bounds.size == Vector3.zero)
+            {
+                reason = $"Piece {index + 1:D2}のMesh Boundsが無効です。";
+                return false;
+            }
+        }
 
-                ConfigurePieceObject(
-                    pieceObject,
-                    pieceIndex,
-                    pieceMesh,
-                    pieceMaterials,
-                    sourceRenderer);
+        reason = null;
+        return true;
+    }
 
-                runtimePieceMeshes.Add(
-                    pieceMesh);
+    private Vector3 GetBakedSkinnedPieceScale(Vector3 liveScale) => new Vector3(
+        liveScale.x / bakedSkinnedSourceScale.x,
+        liveScale.y / bakedSkinnedSourceScale.y,
+        liveScale.z / bakedSkinnedSourceScale.z);
 
-                pieceObjects.Add(
-                    pieceObject);
+    private static bool IsValidBakeScale(Vector3 scale) =>
+        IsFiniteVector(scale) && scale.x != 0f && scale.y != 0f && scale.z != 0f;
+
+    private static bool IsFiniteVector(Vector3 value) =>
+        float.IsFinite(value.x) && float.IsFinite(value.y) && float.IsFinite(value.z);
+
+    private bool TryCreatePieceObjects(Renderer sourceRenderer, Material[] sourceMaterials, out string reason)
+    {
+        using var sample = createPieceObjectsProfilerMarker.Auto();
+        pieceMaterialsBySubMeshCount.Clear();
+        playerReference.TryGetPlayerTransform(out Transform playerRoot);
+
+        try
+        {
+            for (int index = 0; index < BakedPieceCount; index++)
+            {
+                Mesh mesh = bakedPieceMeshes[index];
+                Material[] materials = BuildPieceMaterials(sourceMaterials, mesh.subMeshCount);
+                GameObject piece = GetOrCreatePieceObject(index);
+                pieceObjects.Add(piece);
+                ConfigurePieceObject(piece, index, mesh, materials, sourceRenderer, playerRoot);
             }
         }
         catch (System.Exception exception)
         {
-            CleanupFailedPieceCreation(
-                splitPieceMeshes);
-
-            failureReason =
-                "分割PieceのGameObject生成中に例外が発生しました。" +
-                $" {exception.GetType().Name}: {exception.Message}";
-
+            CleanupFailedPieceCreation();
+            reason = $"破片の設定中に例外が発生しました。{exception.GetType().Name}: {exception.Message}";
             return false;
         }
 
-        failureReason = null;
-        return pieceObjects.Count > 0;
-
+        reason = null;
+        return true;
     }
 
     /// <summary>
@@ -543,8 +498,13 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         IReadOnlyList<Material> sourceMaterials,
         int pieceSubMeshCount)
     {
-        var pieceMaterials =
-            new Material[pieceSubMeshCount];
+        if (pieceMaterialsBySubMeshCount.TryGetValue(
+                pieceSubMeshCount, out Material[] cachedMaterials))
+        {
+            return cachedMaterials;
+        }
+
+        var pieceMaterials = new Material[pieceSubMeshCount];
 
         for (int materialIndex = 0;
              materialIndex < pieceMaterials.Length;
@@ -556,21 +516,17 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
                     : cutSurfaceMaterial;
         }
 
+        pieceMaterialsBySubMeshCount.Add(pieceSubMeshCount, pieceMaterials);
         return pieceMaterials;
     }
 
     /// <summary>
-    /// targetPieceCountを基準に、くい込み死亡Piece用GameObjectと必要Componentだけを死亡前に生成する。
+    /// くい込み死亡Piece用GameObjectと必要Componentを死亡前に生成する。
     /// </summary>
     private void PreGeneratePieceObjects()
     {
-        int resolvedCount =
-            Mathf.Max(
-                0,
-                targetPieceCount);
-
         for (int pieceIndex = 0;
-             pieceIndex < resolvedCount;
+             pieceIndex < BakedPieceCount;
              pieceIndex++)
         {
             GameObject pieceObject =
@@ -583,7 +539,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     }
 
     /// <summary>
-    /// 事前生成範囲内なら既存の殻を返し、不足時だけ死亡フレームで追加生成する。
+    /// 事前生成範囲内なら既存の殻を返し、殻が失われていた場合のみ死亡時に追加生成する。
     /// </summary>
     private GameObject GetOrCreatePieceObject(
         int pieceIndex)
@@ -648,8 +604,10 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         int pieceIndex,
         Mesh mesh,
         Material[] materials,
-        Renderer sourceRenderer)
+        Renderer sourceRenderer,
+        Transform playerRoot)
     {
+        using var configurePieceObjectProfileScope = configurePieceProfilerMarker.Auto();
         pieceObject.name =
             $"{sourceRenderer.name}_DiggingPiece_{pieceIndex:D2}";
 
@@ -667,9 +625,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             Transform sourceParent =
                 sourceTransform.parent;
 
-            // BakeMesh(false)の頂点にはRendererのTransform Scaleが既に含まれる。
-            // Scale 1のWorld Transformを確定してから元の親へ戻し、
-            // 分割前のWorldサイズと既存の親子関係を同時に維持する。
+            // 頂点にはベイク時のスケールが含まれる。配置時はインスタンスとの差分だけを反映する。
             pieceTransform.SetParent(
                 null,
                 false);
@@ -678,8 +634,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
                 sourceTransform.position,
                 sourceTransform.rotation);
 
-            pieceTransform.localScale =
-                Vector3.one;
+            pieceTransform.localScale = GetBakedSkinnedPieceScale(sourceTransform.lossyScale);
 
             pieceTransform.SetParent(
                 sourceParent,
@@ -735,6 +690,10 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         pieceCollider.isTrigger =
             false;
 
+        // 死亡処理で事前生成PieceのColliderが無効化されるため、分割後に衝突判定を復帰させる。
+        pieceCollider.enabled =
+            true;
+
         Rigidbody pieceRigidbody =
             pieceObject.GetComponent<Rigidbody>();
 
@@ -770,7 +729,6 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             RigidbodyConstraints.FreezeRotationX |
             RigidbodyConstraints.FreezeRotationY;
 
-        playerReference.TryGetPlayerTransform(out Transform playerRoot);
         pieceObject.GetComponentInChildren<EnemyCutPiecePlayerPushReaction>(true)
             .Configure(pieceRigidbody, pieceCollider, playerRoot);
 
@@ -890,8 +848,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
             source.sortingOrder;
     }
 
-    private void CleanupFailedPieceCreation(
-        IReadOnlyList<Mesh> splitPieceMeshes)
+    private void CleanupFailedPieceCreation()
     {
         for (int i = 0;
              i < pieceObjects.Count;
@@ -909,7 +866,7 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
                     pieceObject))
             {
                 // 事前生成殻はEnemy初期化時の生成コストを再利用するため破棄せず戻す。
-                // Runtime Mesh参照だけ外し、再試行時に上書き可能なInactive状態へ戻す。
+                // Mesh参照を外し、再試行できるInactive状態へ戻す。
                 pieceObject.SetActive(
                     false);
 
@@ -937,30 +894,11 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
         }
 
         pieceObjects.Clear();
-        runtimePieceMeshes.Clear();
-
-        DestroyRuntimeMeshes(
-            splitPieceMeshes);
-    }
-
-    private void OnDestroy()
-    {
-        DestroyRuntimeMeshes(
-            runtimePieceMeshes);
-
-        runtimePieceMeshes.Clear();
-        pieceObjects.Clear();
-        preGeneratedPieceObjects.Clear();
     }
 
 #if UNITY_EDITOR
     private void OnValidate()
     {
-        targetPieceCount =
-            Mathf.Max(
-                MIN_TARGET_PIECE_COUNT,
-                targetPieceCount);
-
         cutSurfaceUvScale =
             Mathf.Max(
                 0.0001f,
@@ -983,49 +921,9 @@ public sealed class EnemyDiggingMeshDeathEffect : MonoBehaviour
     }
 #endif
 
-    private void LogFailure(
-        string failureReason)
+    private void LogFailure(string reason)
     {
-        Debug.LogWarning(
-            $"{nameof(EnemyDiggingMeshDeathEffect)}: " +
-            "くい込み死亡Mesh分割に失敗しました。" +
-            $" 理由: {failureReason}",
-            this);
-    }
-
-    private static void DestroyRuntimeMeshes(
-        IReadOnlyList<Mesh> meshes)
-    {
-        if (meshes == null)
-        {
-            return;
-        }
-
-        for (int meshIndex = 0;
-             meshIndex < meshes.Count;
-             meshIndex++)
-        {
-            DestroyRuntimeMesh(
-                meshes[meshIndex]);
-        }
-    }
-
-    private static void DestroyRuntimeMesh(
-        Mesh mesh)
-    {
-        if (mesh == null)
-        {
-            return;
-        }
-
-        if (Application.isPlaying)
-        {
-            Destroy(mesh);
-        }
-        else
-        {
-            DestroyImmediate(mesh);
-        }
+        Debug.LogError($"[EnemyDiggingBakedPieces] '{name}' の死亡破片を生成できませんでした。{reason}", this);
     }
 
     private static void DestroyRuntimeObject(

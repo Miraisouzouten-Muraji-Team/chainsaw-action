@@ -393,10 +393,8 @@ public class EnemyStateMachine : MonoBehaviour
             return false;
         }
 
-        if (hitAttackData != null &&
-            deathStrategy is StandardEnemyDeathStrategy standardDeathStrategy &&
-            standardDeathStrategy.DiggingAttackData != null &&
-            hitAttackData == standardDeathStrategy.DiggingAttackData)
+        if (deathStrategy is StandardEnemyDeathStrategy standardDeathStrategy &&
+            standardDeathStrategy.IsDiggingAttackData(hitAttackData))
         {
             return false;
         }

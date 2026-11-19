@@ -122,9 +122,14 @@ public sealed class EnemyAttackHitReceiver :
             return;
         }
 
+        // 攻撃の識別には元AttackData、ダメージ・ノックバックには命中ごとの値を使用する。
+        int hitDamage = playerAttackHitData.DamageOverride ?? playerAttackData.damage;
+        Vector2 hitAttackVector =
+            playerAttackHitData.AttackVectorOverride ?? playerAttackData.attackVector;
+
         // EnemyHealthでは0以下のダメージを無効としているため、
         // 実際にダメージが成立しない場合はノックバック情報も更新しない。
-        if (playerAttackData.damage <= 0)
+        if (hitDamage <= 0)
         {
             return;
         }
@@ -138,13 +143,13 @@ public sealed class EnemyAttackHitReceiver :
         LastResolvedKnockbackVelocity =
             EnemyKnockbackMotor
                 .CalculateInitialKnockbackVelocity(
-                    playerAttackData.attackVector,
+                    hitAttackVector,
                     hitSourceDirectionSign);
 
         // TakeDamage内でDiedが同期通知されるため、
         // 死亡攻撃の方向をDeath Strategyから参照できる状態にしてからHPへ反映する。
         enemyHealth.TakeDamage(
-            playerAttackData.damage);
+            hitDamage);
 
         // TakeDamageによって死亡した場合は、
         // EnemyHealth.Died経由で死亡処理が行われるため
@@ -156,7 +161,7 @@ public sealed class EnemyAttackHitReceiver :
 
         enemyStateMachine.RequestDamageState(
             hitSourceDirectionSign,
-            playerAttackData.attackVector,
+            hitAttackVector,
             playerAttackData);
     }
 

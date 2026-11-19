@@ -38,7 +38,7 @@ ModelImporter:
       name: Under_Slash_Rework
       takeName: Under_Slash_Rework
       internalID: -454425229418427326
-      firstFrame: 63
+      firstFrame: 54
       lastFrame: 90
       wrapMode: 0
       orientationOffsetY: 90
@@ -84,14 +84,14 @@ ModelImporter:
           postInfinity: 3
           rotationOrder: 4
       events:
-      - time: 0.18191388
+      - time: 0.40036964
         functionName: EnableAttackHitBox
         data: 
         objectReferenceParameter: {instanceID: 0}
         floatParameter: 0
         intParameter: 0
         messageOptions: 0
-      - time: 0.33333325
+      - time: 0.4783427
         functionName: OnWeakAttackSwing
         data: 
         objectReferenceParameter: {instanceID: 0}
@@ -100,6 +100,13 @@ ModelImporter:
         messageOptions: 0
       - time: 0.62355405
         functionName: DisableAttackHitBox
+        data: 
+        objectReferenceParameter: {instanceID: 0}
+        floatParameter: 0
+        intParameter: 0
+        messageOptions: 0
+      - time: 0.3755158
+        functionName: OnWeakAttackEffect
         data: 
         objectReferenceParameter: {instanceID: 0}
         floatParameter: 0

@@ -494,7 +494,7 @@ GameObject:
   - component: {fileID: 4746507366798335141}
   - component: {fileID: 4834754917676779231}
   - component: {fileID: 5783662436067355301}
-  m_Layer: 0
+  m_Layer: 12
   m_Name: Mid_Collider
   m_TagString: Player
   m_Icon: {fileID: 0}

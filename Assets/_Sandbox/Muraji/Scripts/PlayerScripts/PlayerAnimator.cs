@@ -777,20 +777,33 @@ public class PlayerAnimator : MonoBehaviour
         }
     }
 
-    // 弱攻撃の振り抜きフレームで刃先の演出を再生し、4撃目の判定を開く。
-    public void OnWeakAttackSwing()
+    // 斬撃エフェクトを出したいフレームの Animation Event から呼ぶ。
+    public void OnWeakAttackEffect()
     {
-        if (!attackActive || attackHitBox == null || !TryGetAttackProgress(out _))
+        if (!attackActive || !TryGetAttackProgress(out _))
+        {
             return;
+        }
 
         if (weakAttackController == null)
+        {
             weakAttackController = GetComponent<SensorPlayerController>();
-        if (weakAttackController != null)
-            weakAttackController.PlayWeakSwingEffect();
+        }
 
-        attackHitBox.EnableWeakAttackFinisher();
+        if (weakAttackController != null)
+        {
+            weakAttackController.PlayWeakSwingEffect();
+        }
     }
 
+    // 弱攻撃の振り抜きフレームでフィニッシャーの判定を開く。
+    public void OnWeakAttackSwing()
+    {
+        if (attackActive && attackHitBox != null && TryGetAttackProgress(out _))
+        {
+            attackHitBox.EnableWeakAttackFinisher();
+        }
+    }
 
     // Animation Eventから呼ぶ。
     public void EnableAttackHitBox()

@@ -12,7 +12,6 @@ using UnityEngine;
 public sealed class TurretEnemyAttackStrategy :
     IEnemyAttackStrategy
 {
-    private const string PLAYER_TARGET_COLLIDER_NAME = "Mid_Collider";
     private const string BASE_MODEL_NAME = "turret";
     private const string SHOOTING_MODEL_NAME = "foundation";
     private const float MINIMUM_AIM_DIRECTION_SQR_MAGNITUDE = 0.000001f;
@@ -44,7 +43,6 @@ public sealed class TurretEnemyAttackStrategy :
     private GameObject enemyObject;
 
     private EnemyPlayerReference playerReference;
-    private Collider playerTargetCollider;
 
     private Vector3 lastAimTargetPosition;
     private float fallbackDirectionSign;
@@ -365,46 +363,20 @@ public sealed class TurretEnemyAttackStrategy :
     }
 
     /// <summary>
-    /// 既存Droneと同じPlayer代表Colliderが存在する場合はその中心を狙い、
-    /// 存在しない場合はPlayer Root位置へフォールバックする。
+    /// Player側で指定したAimTargetのワールド座標を取得する。
+    /// 未設定時は足元などの別位置へ照準を戻さない。
     /// </summary>
     private bool TryGetCurrentPlayerTargetPosition(
         out Vector3 targetWorldPosition)
     {
-        if (!playerReference.TryGetPlayerTransform(
-                out Transform playerTransform))
+        if (!playerReference.TryGetPlayerAimTargetTransform(
+                out Transform aimTargetTransform))
         {
-            playerTargetCollider = null;
             targetWorldPosition = default;
             return false;
         }
 
-        if (playerTargetCollider == null)
-        {
-            Transform targetTransform =
-                playerTransform.Find(
-                    PLAYER_TARGET_COLLIDER_NAME);
-
-            if (targetTransform != null)
-            {
-                playerTargetCollider =
-                    targetTransform.GetComponent<Collider>();
-            }
-        }
-
-        if (playerTargetCollider != null &&
-            playerTargetCollider.enabled &&
-            playerTargetCollider.gameObject.activeInHierarchy)
-        {
-            targetWorldPosition =
-                playerTargetCollider.bounds.center;
-
-            return true;
-        }
-
-        targetWorldPosition =
-            playerTransform.position;
-
+        targetWorldPosition = aimTargetTransform.position;
         return true;
     }
 

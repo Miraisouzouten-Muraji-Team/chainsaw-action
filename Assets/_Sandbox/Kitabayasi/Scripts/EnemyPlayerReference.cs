@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Enemy側で共通利用するPlayer参照を保持し、Player階層に属するColliderと攻撃受信先を解決する。
+/// Enemy側で共通利用するPlayer参照を保持し、射撃照準点、Collider、攻撃受信先を解決する。
 /// </summary>
 /// <remarks>
 /// Playerの索敵可否、攻撃可否、State遷移は担当しない。
@@ -11,8 +11,11 @@ using UnityEngine;
 public sealed class EnemyPlayerReference
 {
     private const string PLAYER_TAG = "Player";
+    private const string PLAYER_AIM_TARGET_NAME = "AimTarget";
 
     private Transform playerTransform;
+    private Transform playerAimTargetTransform;
+    private bool hasWarnedMissingAimTarget;
     private MonoBehaviour attackHitReceiverComponent;
     private IAttackHitReceiver attackHitReceiver;
 
@@ -49,11 +52,61 @@ public sealed class EnemyPlayerReference
     }
 
     /// <summary>
-    /// 保持しているPlayer Rootと攻撃受信先を破棄し、次回利用時に再解決させる。
+    /// Player Root直下のAimTargetを取得する。Colliderの位置は照準に使用しない。
+    /// </summary>
+    /// <remarks>
+    /// AimTargetはPlayer側で配置する空GameObject。未設定ならfalseを返し、初回だけ警告する。
+    /// </remarks>
+    public bool TryGetPlayerAimTargetTransform(
+        out Transform resolvedAimTargetTransform)
+    {
+        resolvedAimTargetTransform = null;
+
+        if (!TryGetPlayerTransform(out Transform resolvedPlayerTransform))
+        {
+            playerAimTargetTransform = null;
+            return false;
+        }
+
+        if (playerAimTargetTransform != null &&
+            playerAimTargetTransform.parent != resolvedPlayerTransform)
+        {
+            playerAimTargetTransform = null;
+        }
+
+        if (playerAimTargetTransform == null)
+        {
+            playerAimTargetTransform =
+                resolvedPlayerTransform.Find(PLAYER_AIM_TARGET_NAME);
+        }
+
+        if (playerAimTargetTransform == null)
+        {
+            if (!hasWarnedMissingAimTarget)
+            {
+                Debug.LogWarning(
+                    $"Player Root直下に{PLAYER_AIM_TARGET_NAME}がありません。" +
+                    "タレットと新型ドローンの照準用に空GameObjectを配置してください。",
+                    resolvedPlayerTransform);
+                hasWarnedMissingAimTarget = true;
+            }
+
+            return false;
+        }
+
+        hasWarnedMissingAimTarget = false;
+        resolvedAimTargetTransform = playerAimTargetTransform;
+        return true;
+    }
+
+    /// <summary>
+    /// 保持しているPlayer Rootと関連参照を破棄し、次回利用時に再解決させる。
     /// </summary>
     public void Clear()
     {
         playerTransform = null;
+        playerAimTargetTransform = null;
+        hasWarnedMissingAimTarget = false;
         ClearAttackHitReceiver();
     }
 

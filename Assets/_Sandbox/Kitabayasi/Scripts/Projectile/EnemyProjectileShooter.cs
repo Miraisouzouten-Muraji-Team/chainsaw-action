@@ -102,7 +102,7 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
     private float attackWarningStartTime;
     private Vector3 runtimeAimTargetPosition;
     private Vector3 attackWarningTargetPosition;
-    private Collider attackWarningTargetCollider;
+    private Transform attackWarningTargetTransform;
 
     public Vector3 FirePointPosition =>
         firePoint != null
@@ -287,7 +287,7 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
     /// </summary>
     public void ShowAttackWarning(
         Vector3 targetWorldPosition,
-        Collider targetCollider = null)
+        Transform targetTransform = null)
     {
         EnsureInitialized();
 
@@ -303,7 +303,7 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
         }
 
         attackWarningTargetPosition = targetWorldPosition;
-        attackWarningTargetCollider = targetCollider;
+        attackWarningTargetTransform = targetTransform;
 
         attackWarningLine.useWorldSpace = true;
         attackWarningLine.positionCount = 2;
@@ -318,7 +318,7 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
     public void HideAttackWarning()
     {
         isAttackWarningActive = false;
-        attackWarningTargetCollider = null;
+        attackWarningTargetTransform = null;
         SetLineEnabled(attackWarningLine, false);
     }
 
@@ -332,11 +332,10 @@ public sealed class EnemyProjectileShooter : MonoBehaviour
         Vector3 origin = FirePointPosition;
         Vector3 target = attackWarningTargetPosition;
 
-        if (attackWarningTargetCollider != null &&
-            attackWarningTargetCollider.enabled &&
-            attackWarningTargetCollider.gameObject.activeInHierarchy)
+        if (attackWarningTargetTransform != null)
         {
-            target = attackWarningTargetCollider.bounds.center;
+            // 物理更新の合間も指定照準点の移動に追従する。
+            target = attackWarningTargetTransform.position;
         }
 
         // 弾と同じXYゲームプレイ平面上で描画する。照準計算への反映はしない。

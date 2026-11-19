@@ -24,9 +24,9 @@ TagManager:
   - 
   - BossOuter
   - EnemyContact
+  - EnemyCutPiece
   - 
-  - 
-  - 
+  - EnemyCutPieceSensor
   - 
   - 
   - 

@@ -175,8 +175,15 @@ namespace RiftPrototypeA
             BuildMesh(centerUV);
             SetProgress(0f, 0f);
 
+            // 破片メッシュを有効にする。
             meshObject.SetActive(true);
+
+            // 破片専用カメラのRenderTextureをRawImageへ表示する。
+            fractureImage.texture = fractureTexture;
+            fractureImage.color = Color.white;
             fractureImage.gameObject.SetActive(true);
+
+            // 破片専用カメラを有効にする。
             fractureCamera.enabled = true;
         }
 

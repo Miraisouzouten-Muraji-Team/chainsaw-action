@@ -844,13 +844,21 @@ public class RiftAStageSelectController : MonoBehaviour
             return;
         }
 
-        if (riftATransitionController == null || currentCard == null ||
+        // 遷移に必要な参照を個別に確認する。
+        if (riftATransitionController == null ||
+            currentCard == null ||
             currentCard.ScreenshotImage == null)
         {
-            Debug.LogError("方式AのRiftATransitionControllerまたはカード画像が未設定です。", this);
+            Debug.LogError(
+                $"[RiftA] 遷移参照エラー\n" +
+                $"TransitionController: {riftATransitionController != null}\n" +
+                $"CurrentCard: {currentCard != null}\n" +
+                $"ScreenshotImage: {currentCard != null && currentCard.ScreenshotImage != null}\n" +
+                $"Scene: {gameObject.scene.name}",
+                this);
+
             return;
         }
-
         string sceneName = stageDatabase.Areas[currentIndex].sceneName;
         if (string.IsNullOrWhiteSpace(sceneName))
         {

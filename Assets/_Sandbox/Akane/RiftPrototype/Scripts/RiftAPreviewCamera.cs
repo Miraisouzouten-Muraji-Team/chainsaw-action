@@ -53,7 +53,21 @@ namespace RiftPrototypeA
             captureCamera.aspect = (float)width / height;
             captureCamera.nearClipPlane = nearClip;
             captureCamera.farClipPlane = farClip;
-            captureCamera.cullingMask = cullingMask;
+            // 亀裂の破片は専用カメラだけで描画する。
+            const string RIFT_FRAGMENT_LAYER = "RiftAFragments";
+
+            int fractureLayer = LayerMask.NameToLayer(RIFT_FRAGMENT_LAYER);
+
+            if (fractureLayer < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Layer '{RIFT_FRAGMENT_LAYER}' が見つかりません。");
+            }
+
+            int previewMask = cullingMask.value;
+            previewMask &= ~(1 << fractureLayer);
+
+            captureCamera.cullingMask = previewMask;
             captureCamera.clearFlags = CameraClearFlags.Skybox;
             captureCamera.targetTexture = renderTexture;
             captureCamera.allowHDR = true;

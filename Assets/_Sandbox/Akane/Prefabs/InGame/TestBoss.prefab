@@ -25,7 +25,7 @@ Transform:
   m_GameObject: {fileID: 125239886028147958}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: -1, y: -1, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -267,7 +267,7 @@ Transform:
   m_GameObject: {fileID: 1463056410706361189}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: -1, y: 2, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1454,7 +1454,7 @@ Transform:
   m_GameObject: {fileID: 8411000464735059551}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 2, z: 0}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -1639,7 +1639,7 @@ MonoBehaviour:
   shieldBashHitbox: {fileID: 5885841489436593039}
   shockwaveHitbox: {fileID: 5518280464944767886}
   weaponHitbox: {fileID: 5878679952375521918}
-  verticalSlashRange: {fileID: 0}
+  verticalSlashRange: {fileID: 3273847257400944133}
   weaponRangeSource: {fileID: 4924165274043812459}
 --- !u!114 &1549865825055903683
 MonoBehaviour:
@@ -1658,9 +1658,9 @@ MonoBehaviour:
   localAttackDirection: {x: -1, y: 0, z: 0}
   thrustDistance: 2
   thrustPullbackDistance: 0.5
-  verticalSlashPivotAnchor: {fileID: 0}
-  verticalSlashDropEndAnchor: {fileID: 0}
-  verticalSlashRange: {fileID: 0}
+  verticalSlashPivotAnchor: {fileID: 1251564027779287729}
+  verticalSlashDropEndAnchor: {fileID: 1182340462581905251}
+  verticalSlashRange: {fileID: 3273847257400944133}
 --- !u!114 &5746588551824421067
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1715,7 +1715,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossHitboxDebugRenderer
   settings: {fileID: 6521883134616495681}
-  slashPreview: {fileID: 0}
+  slashPreview: {fileID: 3273847257400944133}
   boss: {fileID: 7681428011657913341}
   gameCamera: {fileID: 0}
 --- !u!114 &6521883134616495681

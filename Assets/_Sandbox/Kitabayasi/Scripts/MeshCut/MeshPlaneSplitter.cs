@@ -6610,6 +6610,9 @@ public sealed class MeshPlaneSplitter
             if (!TryTriangulateEarClipping(
                     mergedProjectedPoints,
                     earEpsilon,
+                    outerLoopIndex,
+                    directHoles.Count,
+                    enableDiagnostics,
                     out List<int> triangleIndices))
             {
                 failureReason = "Ear Clippingによる切断面生成に失敗しました。";
@@ -8324,6 +8327,9 @@ public sealed class MeshPlaneSplitter
     private static bool TryTriangulateEarClipping(
         IReadOnlyList<Vector2> polygon,
         float areaEpsilon,
+        int outerLoopIndex,
+        int holeCount,
+        bool enableDiagnostics,
         out List<int> triangleIndices)
     {
         using var tryTriangulateEarClippingProfileScope = triangulateCapProfilerMarker.Auto();
@@ -8331,6 +8337,11 @@ public sealed class MeshPlaneSplitter
         int testedEarCandidateCount = 0;
         int pointInsideTriangleTestCount = 0;
         int removedVertexCount = 0;
+        int nonConvexRejectedCount = 0;
+        int nearCollinearRejectedCount = 0;
+        int containsVertexRejectedCount = 0;
+        int firstBlockedCandidateIndex = -1;
+        int firstBlockingVertexIndex = -1;
 #endif
         triangleIndices =
             new List<int>();
@@ -8339,6 +8350,12 @@ public sealed class MeshPlaneSplitter
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             RecordEarClippingDiagnostics(polygon.Count, 0, 0, 0);
+            if (enableDiagnostics)
+            {
+                LogEarClippingFailure(
+                    "TooFewVertices", polygon, null, areaEpsilon,
+                    outerLoopIndex, holeCount, 0, 0, 0, 0, -1, -1);
+            }
 #endif
             return false;
         }
@@ -8364,6 +8381,14 @@ public sealed class MeshPlaneSplitter
             while (remainingIndices.Count > 3)
             {
                 bool foundEar = false;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                // 失敗した最後の探索周回だけを記録し、累計値と混同しない。
+                nonConvexRejectedCount = 0;
+                nearCollinearRejectedCount = 0;
+                containsVertexRejectedCount = 0;
+                firstBlockedCandidateIndex = -1;
+                firstBlockingVertexIndex = -1;
+#endif
 
                 for (int i = 0;
                      i < remainingIndices.Count;
@@ -8408,6 +8433,16 @@ public sealed class MeshPlaneSplitter
 
                     if (cornerCross <= areaEpsilon)
                     {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                        if (cornerCross <= 0.0f)
+                        {
+                            nonConvexRejectedCount++;
+                        }
+                        else
+                        {
+                            nearCollinearRejectedCount++;
+                        }
+#endif
                         continue;
                     }
 
@@ -8497,12 +8532,22 @@ public sealed class MeshPlaneSplitter
                                 areaEpsilon))
                         {
                             containsOtherVertex = true;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                            if (firstBlockedCandidateIndex < 0)
+                            {
+                                firstBlockedCandidateIndex = currentIndex;
+                                firstBlockingVertexIndex = testIndex;
+                            }
+#endif
                             break;
                         }
                     }
 
                     if (containsOtherVertex)
                     {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                        containsVertexRejectedCount++;
+#endif
                         continue;
                     }
 
@@ -8532,6 +8577,20 @@ public sealed class MeshPlaneSplitter
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                     RecordEarClippingDiagnostics(polygon.Count, testedEarCandidateCount,
                         pointInsideTriangleTestCount, removedVertexCount);
+                    if (enableDiagnostics)
+                    {
+                        LogEarClippingFailure(
+                            "NoValidEar", polygon, remainingIndices, areaEpsilon,
+                            outerLoopIndex, holeCount, removedVertexCount,
+                            nonConvexRejectedCount, nearCollinearRejectedCount,
+                            containsVertexRejectedCount,
+                            firstBlockedCandidateIndex, firstBlockingVertexIndex);
+                        LogEarClippingFailureInput(
+                            polygon, areaEpsilon, outerLoopIndex, holeCount);
+                        LogEarClippingFailureProgress(
+                            polygon, remainingIndices, triangleIndices,
+                            areaEpsilon, outerLoopIndex, holeCount);
+                    }
 #endif
                     triangleIndices = null;
                     return false;
@@ -8544,6 +8603,20 @@ public sealed class MeshPlaneSplitter
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                     RecordEarClippingDiagnostics(polygon.Count, testedEarCandidateCount,
                         pointInsideTriangleTestCount, removedVertexCount);
+                    if (enableDiagnostics)
+                    {
+                        LogEarClippingFailure(
+                            "IterationLimit", polygon, remainingIndices, areaEpsilon,
+                            outerLoopIndex, holeCount, removedVertexCount,
+                            nonConvexRejectedCount, nearCollinearRejectedCount,
+                            containsVertexRejectedCount,
+                            firstBlockedCandidateIndex, firstBlockingVertexIndex);
+                        LogEarClippingFailureInput(
+                            polygon, areaEpsilon, outerLoopIndex, holeCount);
+                        LogEarClippingFailureProgress(
+                            polygon, remainingIndices, triangleIndices,
+                            areaEpsilon, outerLoopIndex, holeCount);
+                    }
 #endif
                     triangleIndices = null;
                     return false;
@@ -8622,6 +8695,352 @@ public sealed class MeshPlaneSplitter
         earClippingTriangleTestsCounter += pointInsideTriangleTests;
         earClippingInputVerticesCounter += polygonVertexCount;
         earClippingRemovedVerticesCounter += removedVertices;
+    }
+
+    // Ear Clippingが失敗した時だけO(N^2)の輪郭診断を行う。
+    // Hole Bridgeでは同じ座標・逆向きEdgeが意図的に現れるため、
+    // それらと厳密な辺交差は別の値として記録する（重複数だけでは異常と断定しない）。
+    private static void LogEarClippingFailure(
+        string reason,
+        IReadOnlyList<Vector2> polygon,
+        IReadOnlyList<int> remainingIndices,
+        float areaEpsilon,
+        int outerLoopIndex,
+        int holeCount,
+        int removedVertexCount,
+        int nonConvexRejectedCount,
+        int nearCollinearRejectedCount,
+        int containsVertexRejectedCount,
+        int firstBlockedCandidateIndex,
+        int firstBlockingVertexIndex,
+        string logTag = "EnemyMeshCutEarFailure")
+    {
+        int count = remainingIndices != null ? remainingIndices.Count : polygon.Count;
+        float minSqrEdgeLength = float.PositiveInfinity;
+        int shortEdgeCount = 0;
+        int duplicatePointPairCount = 0;
+        int reverseEdgePairCount = 0;
+        int nonAdjacentEndpointTouchCount = 0;
+        int properCrossingCount = 0;
+        int nonFinitePointCount = 0;
+        double signedDoubleArea = 0.0;
+        float minX = float.PositiveInfinity;
+        float minY = float.PositiveInfinity;
+        float maxX = float.NegativeInfinity;
+        float maxY = float.NegativeInfinity;
+
+        for (int i = 0; i < count; i++)
+        {
+            int aIndex = remainingIndices != null ? remainingIndices[i] : i;
+            int bIndex = remainingIndices != null ? remainingIndices[(i + 1) % count] : (i + 1) % count;
+            Vector2 a = polygon[aIndex];
+            Vector2 b = polygon[bIndex];
+            if (!IsFinite(a.x) || !IsFinite(a.y))
+            {
+                nonFinitePointCount++;
+            }
+            if (!IsFinite(a.x) || !IsFinite(a.y) || !IsFinite(b.x) || !IsFinite(b.y))
+            {
+                continue;
+            }
+
+            minX = Mathf.Min(minX, a.x);
+            minY = Mathf.Min(minY, a.y);
+            maxX = Mathf.Max(maxX, a.x);
+            maxY = Mathf.Max(maxY, a.y);
+            signedDoubleArea += (double)a.x * b.y - (double)b.x * a.y;
+
+            float sqrLength = (b - a).sqrMagnitude;
+            minSqrEdgeLength = Mathf.Min(minSqrEdgeLength, sqrLength);
+            if (sqrLength <= areaEpsilon)
+            {
+                shortEdgeCount++;
+            }
+
+            for (int j = i + 1; j < count; j++)
+            {
+                int cIndex = remainingIndices != null ? remainingIndices[j] : j;
+                Vector2 c = polygon[cIndex];
+                if (!IsFinite(c.x) || !IsFinite(c.y))
+                {
+                    continue;
+                }
+                if ((a - c).sqrMagnitude <= areaEpsilon)
+                {
+                    duplicatePointPairCount++;
+                }
+
+                // 隣接Edgeの共有端点は交差と数えない。
+                if (j == i + 1 || (i == 0 && j == count - 1))
+                {
+                    continue;
+                }
+
+                int dIndex = remainingIndices != null
+                    ? remainingIndices[(j + 1) % count]
+                    : (j + 1) % count;
+                Vector2 d = polygon[dIndex];
+                if (!IsFinite(d.x) || !IsFinite(d.y))
+                {
+                    continue;
+                }
+
+                if ((a - d).sqrMagnitude <= areaEpsilon &&
+                    (b - c).sqrMagnitude <= areaEpsilon)
+                {
+                    reverseEdgePairCount++;
+                }
+
+                if ((a - c).sqrMagnitude <= areaEpsilon ||
+                    (a - d).sqrMagnitude <= areaEpsilon ||
+                    (b - c).sqrMagnitude <= areaEpsilon ||
+                    (b - d).sqrMagnitude <= areaEpsilon)
+                {
+                    nonAdjacentEndpointTouchCount++;
+                    continue;
+                }
+
+                float abC = Cross2D(b - a, c - a);
+                float abD = Cross2D(b - a, d - a);
+                float cdA = Cross2D(d - c, a - c);
+                float cdB = Cross2D(d - c, b - c);
+                if (((abC > areaEpsilon && abD < -areaEpsilon) ||
+                     (abC < -areaEpsilon && abD > areaEpsilon)) &&
+                    ((cdA > areaEpsilon && cdB < -areaEpsilon) ||
+                     (cdA < -areaEpsilon && cdB > areaEpsilon)))
+                {
+                    properCrossingCount++;
+                }
+            }
+        }
+
+        float minimumEdgeLength = float.IsPositiveInfinity(minSqrEdgeLength)
+            ? 0.0f
+            : Mathf.Sqrt(minSqrEdgeLength);
+        string blockedCandidate = firstBlockedCandidateIndex >= 0
+            ? $"{firstBlockedCandidateIndex}:{polygon[firstBlockedCandidateIndex].ToString("F6")}"
+            : "none";
+        string blockingVertex = firstBlockingVertexIndex >= 0
+            ? $"{firstBlockingVertexIndex}:{polygon[firstBlockingVertexIndex].ToString("F6")}"
+            : "none";
+
+        Debug.LogWarning(
+            $"[{logTag}] " +
+            $"Frame={Time.frameCount}, Reason={reason}, " +
+            $"OuterLoopIndex={outerLoopIndex}, HoleCount={holeCount}, " +
+            $"PolygonVertices={polygon.Count}, RemainingVertices={count}, " +
+            $"RemovedVertices={removedVertexCount}, AreaEpsilon={areaEpsilon:E6}, " +
+            $"LastPass.NonConvexRejected={nonConvexRejectedCount}, " +
+            $"LastPass.NearCollinearRejected={nearCollinearRejectedCount}, " +
+            $"LastPass.ContainsVertexRejected={containsVertexRejectedCount}, " +
+            $"FirstBlockedCandidate={blockedCandidate}, FirstBlockingVertex={blockingVertex}, " +
+            $"RemainingSignedArea={signedDoubleArea * 0.5:E6}, " +
+            $"MinimumEdgeLength={minimumEdgeLength:E6}, ShortEdges={shortEdgeCount}, " +
+            $"StrictEdgeCrossings={properCrossingCount}, " +
+            $"NonAdjacentEndpointTouches={nonAdjacentEndpointTouchCount}, " +
+            $"ReverseEdgePairs={reverseEdgePairCount}, " +
+            $"DuplicatePointPairs={duplicatePointPairCount}, NonFinitePoints={nonFinitePointCount}, " +
+            $"Bounds=({minX:F6},{minY:F6})-({maxX:F6},{maxY:F6})");
+    }
+
+    // エラー発生時にだけ元の輪郭を検証する。失敗時の残り頂点とは別に記録し、
+    // 入力時点の自己交差・重複・符号付き面積を比較できるようにする。
+    private static void LogEarClippingFailureInput(
+        IReadOnlyList<Vector2> polygon,
+        float areaEpsilon,
+        int outerLoopIndex,
+        int holeCount)
+    {
+        LogEarClippingFailure(
+            "BeforeClipping", polygon, null, areaEpsilon,
+            outerLoopIndex, holeCount, 0, 0, 0, 0, -1, -1,
+            "EnemyMeshCutEarInitial");
+    }
+
+    // 通常のEar探索には計測を追加しない。失敗時に限り、それまでに出力された
+    // 三角形の中央Index（削除した頂点）を順に取り除き、面積の変遷を再現する。
+    // 初期輪郭が不正か、削除途中に向きが変わったかを切り分けるための診断。
+    private static void LogEarClippingFailureProgress(
+        IReadOnlyList<Vector2> polygon,
+        IReadOnlyList<int> remainingIndices,
+        IReadOnlyList<int> completedTriangles,
+        float areaEpsilon,
+        int outerLoopIndex,
+        int holeCount)
+    {
+        var replayIndices = new List<int>(polygon.Count);
+        for (int index = 0; index < polygon.Count; index++)
+        {
+            replayIndices.Add(index);
+        }
+
+        int removalCount = completedTriangles.Count / 3;
+        var signedAreaHistory = new double[removalCount + 1];
+        signedAreaHistory[0] = CalculateEarDiagnosticSignedArea(polygon, replayIndices);
+
+        int replayedRemovals = 0;
+        int firstNonPositiveStep = -1;
+        int firstReversedStep = -1;
+        int firstTriangleMismatchStep = -1;
+        int missingRemovedVertexStep = -1;
+        double initialSignedArea = signedAreaHistory[0];
+        double areaTolerance = (double)areaEpsilon * 0.5;
+
+        for (int step = 1; step <= removalCount; step++)
+        {
+            int triangleOffset = (step - 1) * 3;
+            int previousIndex = completedTriangles[triangleOffset];
+            int removedIndex = completedTriangles[triangleOffset + 1];
+            int nextIndex = completedTriangles[triangleOffset + 2];
+            int removedListIndex = replayIndices.IndexOf(removedIndex);
+            if (removedListIndex < 0)
+            {
+                missingRemovedVertexStep = step;
+                break;
+            }
+
+            int replayPreviousIndex = replayIndices[
+                (removedListIndex - 1 + replayIndices.Count) % replayIndices.Count];
+            int replayNextIndex = replayIndices[
+                (removedListIndex + 1) % replayIndices.Count];
+            if (firstTriangleMismatchStep < 0 &&
+                (previousIndex != replayPreviousIndex || nextIndex != replayNextIndex))
+            {
+                firstTriangleMismatchStep = step;
+            }
+
+            replayIndices.RemoveAt(removedListIndex);
+            replayedRemovals = step;
+            signedAreaHistory[step] =
+                CalculateEarDiagnosticSignedArea(polygon, replayIndices);
+
+            // 最初に正の面積を失った削除と、実際に向きが逆転した削除は区別する。
+            if (initialSignedArea > areaTolerance)
+            {
+                if (firstNonPositiveStep < 0 &&
+                    signedAreaHistory[step] <= areaTolerance)
+                {
+                    firstNonPositiveStep = step;
+                }
+                if (firstReversedStep < 0 &&
+                    signedAreaHistory[step] < -areaTolerance)
+                {
+                    firstReversedStep = step;
+                }
+            }
+            else if (initialSignedArea < -areaTolerance &&
+                     firstReversedStep < 0 &&
+                     signedAreaHistory[step] > areaTolerance)
+            {
+                firstReversedStep = step;
+            }
+        }
+
+        bool replayMatchesRemaining = replayIndices.Count == remainingIndices.Count;
+        if (replayMatchesRemaining)
+        {
+            for (int index = 0; index < replayIndices.Count; index++)
+            {
+                if (replayIndices[index] != remainingIndices[index])
+                {
+                    replayMatchesRemaining = false;
+                    break;
+                }
+            }
+        }
+
+        var message = new StringBuilder(1024);
+        message.Append("[EnemyMeshCutEarProgress] ")
+            .Append("Frame=").Append(Time.frameCount)
+            .Append(", OuterLoopIndex=").Append(outerLoopIndex)
+            .Append(", HoleCount=").Append(holeCount)
+            .Append(", InitialVertices=").Append(polygon.Count)
+            .Append(", RecordedRemovals=").Append(removalCount)
+            .Append(", ReplayedRemovals=").Append(replayedRemovals)
+            .Append(", InitialSignedArea=").Append(initialSignedArea.ToString("E6"))
+            .Append(", FinalReplayedSignedArea=")
+            .Append(signedAreaHistory[replayedRemovals].ToString("E6"))
+            .Append(", AreaTolerance=").Append(areaTolerance.ToString("E6"))
+            .Append(", FirstNonPositiveStep=").Append(firstNonPositiveStep)
+            .Append(", FirstReversedStep=").Append(firstReversedStep)
+            .Append(", FirstTriangleMismatchStep=").Append(firstTriangleMismatchStep)
+            .Append(", MissingRemovedVertexStep=").Append(missingRemovedVertexStep)
+            .Append(", ReplayMatchesRemaining=").Append(replayMatchesRemaining);
+
+        int crossingStep = firstNonPositiveStep >= 0
+            ? firstNonPositiveStep
+            : firstReversedStep;
+        if (crossingStep > 0)
+        {
+            int triangleOffset = (crossingStep - 1) * 3;
+            int previousIndex = completedTriangles[triangleOffset];
+            int removedIndex = completedTriangles[triangleOffset + 1];
+            int nextIndex = completedTriangles[triangleOffset + 2];
+            message.Append(", FirstCrossingEarIndices=")
+                .Append(previousIndex).Append('/')
+                .Append(removedIndex).Append('/')
+                .Append(nextIndex)
+                .Append(", FirstCrossingEarPositions=")
+                .Append(polygon[previousIndex].ToString("F6")).Append('/')
+                .Append(polygon[removedIndex].ToString("F6")).Append('/')
+                .Append(polygon[nextIndex].ToString("F6"));
+
+            message.Append(", CrossingWindow=");
+            AppendEarDiagnosticAreaHistory(
+                message, completedTriangles, signedAreaHistory,
+                Math.Max(1, crossingStep - 3),
+                Math.Min(replayedRemovals, crossingStep + 3));
+        }
+
+        message.Append(", TailWindow=");
+        AppendEarDiagnosticAreaHistory(
+            message, completedTriangles, signedAreaHistory,
+            Math.Max(1, replayedRemovals - 5), replayedRemovals);
+        Debug.LogWarning(message.ToString());
+    }
+
+    private static double CalculateEarDiagnosticSignedArea(
+        IReadOnlyList<Vector2> polygon,
+        IReadOnlyList<int> indices)
+    {
+        double doubleArea = 0.0;
+        for (int index = 0; index < indices.Count; index++)
+        {
+            Vector2 current = polygon[indices[index]];
+            Vector2 next = polygon[indices[(index + 1) % indices.Count]];
+            doubleArea += (double)current.x * next.y - (double)next.x * current.y;
+        }
+        return doubleArea * 0.5;
+    }
+
+    private static void AppendEarDiagnosticAreaHistory(
+        StringBuilder message,
+        IReadOnlyList<int> completedTriangles,
+        double[] signedAreaHistory,
+        int firstStep,
+        int lastStep)
+    {
+        if (firstStep > lastStep)
+        {
+            message.Append("none");
+            return;
+        }
+
+        for (int step = firstStep; step <= lastStep; step++)
+        {
+            if (step > firstStep)
+            {
+                message.Append(';');
+            }
+            int triangleOffset = (step - 1) * 3;
+            message.Append('#').Append(step).Append('[')
+                .Append(completedTriangles[triangleOffset]).Append('/')
+                .Append(completedTriangles[triangleOffset + 1]).Append('/')
+                .Append(completedTriangles[triangleOffset + 2]).Append("]:")
+                .Append(signedAreaHistory[step - 1].ToString("E4"))
+                .Append('>')
+                .Append(signedAreaHistory[step].ToString("E4"));
+        }
     }
 
     private static void FlushCapDiagnostics()

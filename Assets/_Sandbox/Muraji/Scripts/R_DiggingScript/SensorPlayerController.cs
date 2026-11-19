@@ -21,14 +21,15 @@ public class SensorPlayerController : MonoBehaviour
     [SerializeField] private MovementEffectSetting doubleJumpEffect = new MovementEffectSetting();
     [SerializeField] private MovementEffectSetting landingEffect = new MovementEffectSetting();
     [Header("攻撃開始エフェクト")]
-    [Tooltip("地上攻撃の開始時に生成し、武器に追従するエフェクトです。Spawn Pointには刃先に配置した武器の子オブジェクトを指定してください。Lifetime秒後に削除します。")]
+    [Tooltip("地上攻撃アニメーションイベントで生成し、武器に追従するエフェクトです。Spawn Pointには刃先に配置した武器の子オブジェクトを指定してください。Lifetime秒後に削除します。")]
     [SerializeField] private MovementEffectSetting groundAttackEffect = new MovementEffectSetting();
-    [Tooltip("空中攻撃の開始時に生成し、武器に追従するエフェクトです。Spawn Pointには刃先に配置した武器の子オブジェクトを指定してください。Lifetime秒後に削除します。")]
+    [Tooltip("空中攻撃アニメーションイベントで生成し、武器に追従するエフェクトです。Spawn Pointには刃先に配置した武器の子オブジェクトを指定してください。Lifetime秒後に削除します。")]
     [SerializeField] private MovementEffectSetting airAttackEffect = new MovementEffectSetting();
     [Tooltip("地上の弱攻撃で振り抜く瞬間に刃先から出すエフェクトです。")]
     [SerializeField] private MovementEffectSetting groundSwingEffect = new MovementEffectSetting();
     [Tooltip("空中の弱攻撃で振り抜く瞬間に刃先から出すエフェクトです。")]
     [SerializeField] private MovementEffectSetting airSwingEffect = new MovementEffectSetting();
+    private MovementEffectSetting pendingStartEffect;
     private MovementEffectSetting pendingSwingEffect;
 
 
@@ -2613,16 +2614,24 @@ public class SensorPlayerController : MonoBehaviour
 
         // モーション選択に使った攻撃開始時の空中判定で、生成するエフェクトを選ぶ。
         pendingSwingEffect = startedInAir ? airSwingEffect : groundSwingEffect;
-        SpawnMovementEffect(startedInAir ? airAttackEffect : groundAttackEffect, true);
+        pendingStartEffect = startedInAir ? airAttackEffect : groundAttackEffect;
     }
 
-    // 振り抜きのイベントで、攻撃開始時に選んだ演出を一度だけ再生する。
+    // Animation Eventで、攻撃開始時に選んだ演出を一度だけ再生する。
     public void PlayWeakSwingEffect()
     {
-        if (!IsAttacking || pendingSwingEffect == null) return;
-        MovementEffectSetting effect = pendingSwingEffect;
+        if (!IsAttacking) return;
+
+        MovementEffectSetting startEffect = pendingStartEffect;
+        MovementEffectSetting swingEffect = pendingSwingEffect;
+        pendingStartEffect = null;
         pendingSwingEffect = null;
-        SpawnMovementEffect(effect, true);
+
+        SpawnMovementEffect(startEffect, true);
+        if (swingEffect != startEffect)
+        {
+            SpawnMovementEffect(swingEffect, true);
+        }
     }
 
     private void BeginAttackMovement(AttackData data)
@@ -2713,6 +2722,7 @@ public class SensorPlayerController : MonoBehaviour
     void ClearSlashState()
     {
         ReleaseWeakStartEffect();
+        pendingStartEffect = null;
         pendingSwingEffect = null;
         EndWeakAttackHold();
         ClearAttackMovement();

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Rendering.Universal;
 
 namespace RiftPrototypeA
 {
@@ -32,6 +33,9 @@ namespace RiftPrototypeA
         [SerializeField, Min(0f)] private float spreadDistance = 14f;
         [SerializeField, Min(0f)] private float forwardDistance = 10f;
         [SerializeField, Range(0f, 180f)] private float maxRotation = 105f;
+
+        [Header("専用Renderer")]
+        [SerializeField, Min(0)] private int fractureRendererIndex = 4;
 
         private sealed class Piece
         {
@@ -152,6 +156,20 @@ namespace RiftPrototypeA
             fractureImage.raycastTarget = false;
             fractureImage.gameObject.SetActive(false);
             meshObject.SetActive(false);
+
+            // 破片専用のRendererを使用する。
+            // ステージ用のPixel CompositeやFogを実行しない。
+            UniversalAdditionalCameraData cameraData =
+                fractureCamera.GetUniversalAdditionalCameraData();
+
+            cameraData.SetRenderer(fractureRendererIndex);
+            cameraData.renderPostProcessing = false;
+
+            // 背景は透明にし、破片だけをRenderTextureに描画する。
+            fractureCamera.clearFlags = CameraClearFlags.SolidColor;
+            fractureCamera.backgroundColor = Color.clear;
+            fractureCamera.cullingMask = 1 << fragmentLayer;
+            fractureCamera.targetTexture = fractureTexture;
 
             initialized = true;
         }

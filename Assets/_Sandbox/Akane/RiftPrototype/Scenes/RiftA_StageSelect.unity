@@ -1976,6 +1976,7 @@ MonoBehaviour:
   flashImage: {fileID: 915695336}
   previewCamera: {fileID: 805225533}
   fractureController: {fileID: 805225536}
+  previewPixelBlendShader: {fileID: 4800000, guid: 0e885a797e998e044853a92a4cf1e7e3, type: 3}
   riftShader: {fileID: 4800000, guid: 643986dbeaea3694fb0dc0e08b13877f, type: 3}
   glassCrackMask: {fileID: 2800000, guid: 07619e8a8a7fd6845a06a16d456b4fb4, type: 3}
   stageLoader: {fileID: 805225534}
@@ -1993,8 +1994,9 @@ MonoBehaviour:
   crackDuration: 0.25
   breakDuration: 1.15
   enterDuration: 1.6
-  flashInDuration: 0.12
-  flashOutDuration: 0.24
+  gameplayBlendDuration: 0.3
+  pixelBlendStart: 0.25
+  pixelBlendEnd: 0.95
   breakStartDelay: 0.06
   cameraStartDelay: 0.14
 --- !u!114 &805225533
@@ -2017,6 +2019,8 @@ MonoBehaviour:
   cullingMask:
     serializedVersion: 2
     m_Bits: 4294967263
+  orthographicTransitionStart: 0.35
+  gameplayFocusDistance: 10
 --- !u!114 &805225534
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2053,7 +2057,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 805225531}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5b8a249c29667474dbf5948ab383e0bf, type: 3}
   m_Name: 
@@ -2069,6 +2073,7 @@ MonoBehaviour:
   spreadDistance: 0
   forwardDistance: 10
   maxRotation: 105
+  fractureRendererIndex: 4
 --- !u!1 &810659789
 GameObject:
   m_ObjectHideFlags: 0

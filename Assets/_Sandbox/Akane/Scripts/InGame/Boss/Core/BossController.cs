@@ -92,7 +92,7 @@ namespace Project.InGame.Boss
         public IBossAttackStrategy SelectedAttack { get; private set; }
         public float IdleDuration => Shield != null && Shield.IsActive ? idleDuration : noShieldIdleDuration;
         public float DistanceToPlayer => CalculateHorizontalSurfaceDistance();
-        
+
         /// <summary>
         /// Playerの非Trigger Colliderを統合した中心座標を返す。
         /// </summary>

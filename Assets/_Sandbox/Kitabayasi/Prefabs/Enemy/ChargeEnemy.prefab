@@ -72,7 +72,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4687296828369897747}
-  - component: {fileID: 8057573899729614334}
   - component: {fileID: 8720051152875504496}
   - component: {fileID: 7154227568031423939}
   - component: {fileID: 7311387851396604318}
@@ -86,6 +85,8 @@ GameObject:
   - component: {fileID: 5667644167212863587}
   - component: {fileID: 2506202088071218169}
   - component: {fileID: 4435205662285071390}
+  - component: {fileID: 2400979624633459438}
+  - component: {fileID: 3509794673822183511}
   m_Layer: 6
   m_Name: ChargeEnemy
   m_TagString: Untagged
@@ -110,27 +111,6 @@ Transform:
   - {fileID: 5142552796670060070}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!65 &8057573899729614334
-BoxCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6838508827869361679}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 1, y: 1.74, z: 1}
-  m_Center: {x: 0, y: 0.82, z: 0}
 --- !u!54 &8720051152875504496
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -218,6 +198,7 @@ MonoBehaviour:
   attackStrategy:
     rid: 2559746817728970823
   visualRoot: {fileID: 6351129882097626863}
+  discoveryFacingRotationSpeed: 360
   deathStrategy:
     rid: 2559746817728970819
   showPatrolDebugVisualization: 1
@@ -290,10 +271,11 @@ MonoBehaviour:
   maximumPieceMass: 10
   minimumCapsuleAspectRatio: 1.2
   preGeneratedPieceCount: 2
+  keepCutSidesAsSinglePieces: 0
   cutDirectionSampleCount: 4
   cutRangeAxis: 1
-  cutRangeMinimumNormalized: 0.21
-  cutRangeMaximumNormalized: 0.8
+  cutRangeMinimumNormalized: 0.4
+  cutRangeMaximumNormalized: 0.7
   cutSurfaceUvScale: 1
   showCutRangeGizmo: 1
   enableDiagnosticLogs: 0
@@ -391,8 +373,17 @@ MonoBehaviour:
   targetSkinnedMeshRenderer: {fileID: 8649740849393938690}
   targetMeshFilter: {fileID: 0}
   cutSurfaceMaterial: {fileID: 2100000, guid: efba80df10aeb624e82f4d1d32902613, type: 2}
-  targetPieceCount: 8
   cutSurfaceUvScale: 1
+  bakedPieceMeshes:
+  - {fileID: 4300000, guid: 96af10c339db0bd4a835277a35006340, type: 2}
+  - {fileID: 4300000, guid: 6f9385279703409429a8d5e808cd3127, type: 2}
+  - {fileID: 4300000, guid: 4ecc9536956413740ad53d3c11f42ae2, type: 2}
+  - {fileID: 4300000, guid: 1b7871178c260cf4b86d61c39c76aab7, type: 2}
+  - {fileID: 4300000, guid: 6b08171cfa127be458b74b485ae6c43d, type: 2}
+  - {fileID: 4300000, guid: 5b4c1fdef3647da438779e18b1578c50, type: 2}
+  - {fileID: 4300000, guid: d14f808d7a545154ab7c0aeb535b425e, type: 2}
+  - {fileID: 4300000, guid: 410141805ffb4d64999763f6877b6657, type: 2}
+  bakedSkinnedSourceScale: {x: 100, y: 100, z: 100}
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
@@ -408,12 +399,52 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ecfa225638ba7754481e634c345171a6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyDiggingDeathBurst
-  burstOrigin: {fileID: 5142552796670060070}
-  upperBurstForce: 8
-  upperTorqueStrength: 0.3
-  lowerBurstForce: 10
-  lowerDownwardBias: 1
-  directionSpread: 10
+  burstSpeed: 8
+--- !u!136 &2400979624633459438
+CapsuleCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6838508827869361679}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 2
+  m_Radius: 0.5
+  m_Height: 1.8
+  m_Direction: 1
+  m_Center: {x: 0, y: 0.85, z: 0.03}
+--- !u!114 &3509794673822183511
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6838508827869361679}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a08c26cefaa40049b36707ff98d7dbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ChargeEnemyShieldClearanceAdjuster
+  shieldRoot: {fileID: 633364787892918210}
+  pushDirectionInParentSpace: {x: 0, y: 0, z: 1}
+  leftForearm: {fileID: 7175655220201714146}
+  leftHand: {fileID: 4499210511205098159}
+  rightForearm: {fileID: 6172046321973677189}
+  rightHand: {fileID: 5823249515619347321}
+  detectionDistance: 0.25
+  maximumPushDistance: 0.6
+  pushSpeed: 2.5
+  returnSpeed: 1.5
 --- !u!1001 &302273918742294937
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -424,7 +455,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 935567212237219419, guid: d9c47f77591623045bad45a02a0478ac, type: 3}
       propertyPath: m_LocalScale.x
-      value: 99.99994
+      value: 99
       objectReference: {fileID: 0}
     - target: {fileID: 935567212237219419, guid: d9c47f77591623045bad45a02a0478ac, type: 3}
       propertyPath: m_LocalScale.y
@@ -436,15 +467,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 935567212237219419, guid: d9c47f77591623045bad45a02a0478ac, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0.3503046
+      value: 0.1
       objectReference: {fileID: 0}
     - target: {fileID: 935567212237219419, guid: d9c47f77591623045bad45a02a0478ac, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.7494689
+      value: 0.75
       objectReference: {fileID: 0}
     - target: {fileID: 935567212237219419, guid: d9c47f77591623045bad45a02a0478ac, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0.7204137
+      value: 0.7
       objectReference: {fileID: 0}
     - target: {fileID: 935567212237219419, guid: d9c47f77591623045bad45a02a0478ac, type: 3}
       propertyPath: m_LocalRotation.w
@@ -673,6 +704,26 @@ MonoBehaviour:
   visualRoot: {fileID: 6351129882097626863}
   cameraTransform: {fileID: 0}
   cameraFacingOffsetAngle: 25
+--- !u!4 &4499210511205098159 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -7007813540573982134, guid: 6864af5c54e55b9488e9e5b34342cf04, type: 3}
+  m_PrefabInstance: {fileID: 2364203617537175781}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &5823249515619347321 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8079176519039835036, guid: 6864af5c54e55b9488e9e5b34342cf04, type: 3}
+  m_PrefabInstance: {fileID: 2364203617537175781}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &6172046321973677189 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 8460246938636287072, guid: 6864af5c54e55b9488e9e5b34342cf04, type: 3}
+  m_PrefabInstance: {fileID: 2364203617537175781}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &7175655220201714146 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -4370080645700665081, guid: 6864af5c54e55b9488e9e5b34342cf04, type: 3}
+  m_PrefabInstance: {fileID: 2364203617537175781}
+  m_PrefabAsset: {fileID: 0}
 --- !u!137 &8649740849393938690 stripped
 SkinnedMeshRenderer:
   m_CorrespondingSourceObject: {fileID: -2826752239632088601, guid: 6864af5c54e55b9488e9e5b34342cf04, type: 3}

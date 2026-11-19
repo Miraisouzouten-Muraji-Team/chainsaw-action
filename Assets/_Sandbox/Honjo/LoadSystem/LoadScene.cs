@@ -28,7 +28,15 @@ public class LoadScene : MonoBehaviour
             Keyboard.current.rKey.wasPressedThisFrame)
         {
             isPlaying = true;
-            loadScene = "Stage1";
+            loadScene = SceneManager.GetActiveScene().name;
+        }
+
+        // Tキーが押された瞬間に現在のシーンをリロード
+        if (Keyboard.current != null &&
+            Keyboard.current.tKey.wasPressedThisFrame)
+        {
+            isPlaying = true;
+            loadScene = "TitleScene";
         }
 
         if (!isPlaying) return;

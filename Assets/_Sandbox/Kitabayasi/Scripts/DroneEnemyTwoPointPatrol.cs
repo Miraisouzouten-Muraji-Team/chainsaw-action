@@ -342,24 +342,48 @@ public sealed class DroneEnemyTwoPointPatrol
             patrolPointBWorldPosition;
     }
 
-    private void ValidatePatrolPoints()
+    /// <summary>
+    /// 2点巡回を生成できる設定かを、エネミー全体の初期化を止めずに判定する。
+    /// </summary>
+    public static bool TryValidatePatrolPoints(
+        Transform pointA,
+        Transform pointB,
+        out string failureReason)
     {
-        Vector2 pointA =
-            new Vector2(
-                patrolPointA.position.x,
-                patrolPointA.position.y);
+        if (pointA == null || pointB == null)
+        {
+            failureReason =
+                "Patrol Point A/Bは両方設定してください。";
+            return false;
+        }
 
-        Vector2 pointB =
+        Vector2 planarDifference =
             new Vector2(
-                patrolPointB.position.x,
-                patrolPointB.position.y);
+                pointB.position.x - pointA.position.x,
+                pointB.position.y - pointA.position.y);
 
-        if ((pointB - pointA).sqrMagnitude <=
+        if (planarDifference.sqrMagnitude <=
             DIRECTION_EPSILON * DIRECTION_EPSILON)
         {
+            failureReason =
+                "Patrol Point A/Bは異なるXY位置に設定してください。";
+            return false;
+        }
+
+        failureReason = string.Empty;
+        return true;
+    }
+
+    private void ValidatePatrolPoints()
+    {
+        if (!TryValidatePatrolPoints(
+                patrolPointA,
+                patrolPointB,
+                out string failureReason))
+        {
+            // 共通巡回クラス単体で生成された場合も不正設定を受け入れない。
             throw new InvalidOperationException(
-                $"{nameof(DroneEnemyTwoPointPatrol)}の" +
-                "Patrol Point AとBは異なるXY位置に設定してください。");
+                $"{nameof(DroneEnemyTwoPointPatrol)}: {failureReason}");
         }
     }
 

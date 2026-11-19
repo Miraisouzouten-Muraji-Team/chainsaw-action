@@ -1,7 +1,7 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
-/// Collision内の接触法線から、指定した移動方向を正面から塞ぐ接触点を判定する。
+/// 接触情報の法線から、指定した移動方向を正面から塞ぐ接触点を判定する。
 /// </summary>
 /// <remarks>
 /// 接触後に停止・反転・攻撃終了など何を行うかは判断せず、接触の評価だけを担当する。
@@ -9,12 +9,12 @@ using UnityEngine;
 public static class EnemyBlockingContactEvaluator
 {
     public static bool TryGetBlockingContact(
-        Collision collision,
+        EnemyContactInfo collision,
         Vector3 moveDirection,
         float blockingNormalThreshold,
-        out ContactPoint blockingContact)
+        out EnemyContactInfo blockingContact)
     {
-        if (collision == null ||
+        if (!collision.IsValid ||
             moveDirection.sqrMagnitude <= Mathf.Epsilon)
         {
             blockingContact = default;
@@ -25,18 +25,18 @@ public static class EnemyBlockingContactEvaluator
             moveDirection.normalized;
 
         int contactCount =
-            collision.contactCount;
+            collision.ContactCount;
 
         for (int i = 0;
              i < contactCount;
              i++)
         {
-            ContactPoint contact =
+            EnemyContactInfo contact =
                 collision.GetContact(i);
 
             float blockingDot =
                 Vector3.Dot(
-                    contact.normal,
+                    contact.Normal,
                     normalizedMoveDirection);
 
             if (blockingDot >

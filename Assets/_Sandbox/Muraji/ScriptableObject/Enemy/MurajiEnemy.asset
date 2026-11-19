@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 85be3c9438c110e4da5600a6244b5dd6, type: 3}
   m_Name: MurajiEnemy
   m_EditorClassIdentifier: Assembly-CSharp::ChargeEnemyData
-  maxHealth: 500
+  maxHealth: 10
   attackPower: 10
   detectionRadius: 200
   postAttackSearchFailureWaitDuration: 0.8
@@ -30,6 +30,7 @@ MonoBehaviour:
   patrolTurnDuration: 0.5
   patrolContactDamagePercent: 50
   attackPreparationDuration: 0.75
+  preparationAnimationSpeed: 1
   chargeDistance: 100
   attackMoveSpeed: 15
   attackContactDamagePercent: 100
@@ -40,3 +41,6 @@ MonoBehaviour:
   groundCheckDownDistance: 0.25
   maxGroundHeightDifference: 0.1
   maxGroundSlopeAngle: 5
+  groundConnectionHeightTolerance: 0.08
+  groundConnectionGapTolerance: 0.1
+  maxGroundPenetrationRecovery: 0.1

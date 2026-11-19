@@ -94,7 +94,7 @@ CapsuleCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 2
@@ -162,6 +162,7 @@ MonoBehaviour:
   attackStrategy:
     rid: -2
   visualRoot: {fileID: 3401371955779553497}
+  discoveryFacingRotationSpeed: 360
   deathStrategy:
     rid: 2559746691593404481
   showPatrolDebugVisualization: 0
@@ -230,6 +231,7 @@ MonoBehaviour:
   maximumPieceMass: 10
   minimumCapsuleAspectRatio: 1.2
   preGeneratedPieceCount: 2
+  keepCutSidesAsSinglePieces: 0
   cutDirectionSampleCount: 4
   cutRangeAxis: 1
   cutRangeMinimumNormalized: 0.432
@@ -358,8 +360,17 @@ MonoBehaviour:
   targetSkinnedMeshRenderer: {fileID: 7874372429969065876}
   targetMeshFilter: {fileID: 0}
   cutSurfaceMaterial: {fileID: 2100000, guid: 8fccef3da4d8bef458523fc0ccbdeb2c, type: 2}
-  targetPieceCount: 8
   cutSurfaceUvScale: 1
+  bakedPieceMeshes:
+  - {fileID: 4300000, guid: 4e19c1a4d7ae85b468526a997912329c, type: 2}
+  - {fileID: 4300000, guid: f58efc9838c2495448178b28c38d0a89, type: 2}
+  - {fileID: 4300000, guid: 552abdb2228eb4e4593bad6280c8af69, type: 2}
+  - {fileID: 4300000, guid: 612c97c391b1e04439032cf7dfa3d6e4, type: 2}
+  - {fileID: 4300000, guid: eb44fc49501fc9340b976b5512e5c2a7, type: 2}
+  - {fileID: 4300000, guid: 73f806a9f13a4004a8a50cfcca1e87a2, type: 2}
+  - {fileID: 4300000, guid: 702d56a2d10f30d41948faf54761a170, type: 2}
+  - {fileID: 4300000, guid: f7fa35a8a2ccaa942b69a2625d3e3899, type: 2}
+  bakedSkinnedSourceScale: {x: 1.5, y: 1.5, z: 1.5}
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10

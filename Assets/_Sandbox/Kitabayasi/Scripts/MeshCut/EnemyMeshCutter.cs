@@ -126,8 +126,9 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     [Header("診断ログ")]
 
     [Tooltip(
-        "Mesh分割死亡演出の入力軌跡、切断対象Mesh、Processor結果、最終Connected Piece生成までを段階的にConsoleへ出力する。" +
-        "原因特定後は無効化してよい。")]
+        "通常攻撃によるMesh分割の共通診断ログ設定。" +
+        "死亡Strategyの軌跡選択・復元から、切断Plane・Mesh分割・切断片生成までの段階ログを制御する。" +
+        "EditorとDevelopment Buildのみ有効。")]
     [SerializeField]
     private bool enableDiagnosticLogs = false;
 
@@ -152,6 +153,12 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         new List<Collider>();
 
     private bool hasCompletedCut;
+
+    /// <summary>
+    /// 通常Mesh分割の診断ログを出力するかを、死亡Strategyにも共有する。
+    /// 実際の出力はEditorまたはDevelopment Buildに限定する。
+    /// </summary>
+    public bool IsDiagnosticLoggingEnabled => ShouldRunDiagnostics;
 
     private bool ShouldRunDiagnostics
     {
@@ -922,6 +929,8 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         boxCollider.enabled = false;
 
         pieceObject.AddComponent<Rigidbody>();
+        // 事前生成殻の段階でPlayer接触Triggerも準備する。
+        EnemyCutPiecePlayerPushReaction.CreateForPiece(pieceObject);
 
         return pieceObject;
 
@@ -1069,6 +1078,10 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             true;
 
         pieceRigidbody.ResetInertiaTensor();
+
+        playerReference.TryGetPlayerTransform(out Transform playerRoot);
+        pieceObject.GetComponentInChildren<EnemyCutPiecePlayerPushReaction>(true)
+            .Configure(pieceRigidbody, pieceCollider, playerRoot);
 
         // 事前生成時にはPlayer Colliderが変化する可能性があるためIgnoreCollisionを固定せず、
         // Mesh・Collider・Rigidbody・Transform確定後の有効化時に毎回適用する。

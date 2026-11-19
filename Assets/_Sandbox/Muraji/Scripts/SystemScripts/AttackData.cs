@@ -8,9 +8,18 @@ public class AttackData : ScriptableObject
     [Tooltip("攻撃力")]
     public int damage;
 
-    [Header("食い込みダメージ")]
-    [Tooltip("オンにすると食い込みダメージへアクセル値に応じた倍率を適用します。移動中の接触攻撃には接触ダメージ倍率も適用します。オフにすると攻撃力をそのまま使用します。ボーナス時の敵食い込み追加倍率は別に適用されます。")]
-    public bool useAcceleratorDamageMultiplier = true;
+    [Header("アクセルによるダメージボーナス")]
+    [InspectorName("アクセルによるダメージボーナス")]
+    [Tooltip("オンなら、命中時のアクセル割合が発動基準以上のときだけダメージを上乗せします。オフならアクセルでダメージは変化しません。")]
+    public bool useAcceleratorDamageMultiplier;
+
+    [InspectorName("ボーナス発動アクセル割合（％）")]
+    [Tooltip("アクセル最大値に対する発動基準です。80なら最大値の80％以上で発動します。移動や無敵のボーナス条件は変更しません。")]
+    [Range(0f, 100f)] public float acceleratorDamageBonusThresholdPercent = 80f;
+
+    [InspectorName("ダメージ上乗せ割合（％）")]
+    [Tooltip("ボーナス時に追加するダメージの割合です。50なら1.5倍、100なら2倍になります。最終ダメージは整数に四捨五入します。")]
+    [Min(0f)] public float acceleratorDamageBonusPercent = 50f;
 
     [Tooltip("攻撃ベクトル")]
     public Vector2 attackVector;

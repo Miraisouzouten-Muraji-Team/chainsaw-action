@@ -3,6 +3,173 @@ using UnityEngine;
 [RequireComponent(typeof(Animator))]
 public class PlayerAnimator : MonoBehaviour
 {
+    [Header("落下アニメーション")]
+    [Tooltip("落下モーションのステートのフルパスです。空欄なら落下モーションを使用しません。")]
+    [SerializeField] private string fallState = "";
+    [Tooltip("空中で最も高かった位置から、この距離だけ落下すると落下モーションを開始します。")]
+    [SerializeField, Min(0f)] private float minimumFallDistance = 0.5f;
+
+    private SensorPlayerController fallController;
+    private Rigidbody fallBody;
+    private bool jumpLeftGround;
+    private bool combinedJumpActive;
+    private bool jumpHeld;
+    private float speedBeforeJumpHold;
+    private int combinedJumpHash;
+    private bool fallActive;
+    private bool fallHeld;
+    private bool fallLanding;
+    private bool fallAirborne;
+    private float fallPeakHeight;
+    private float speedBeforeFallHold;
+    private int fallHash;
+
+    // 操作と物理更新の結果を確認し、落下開始・着地・再生終了を処理する。
+    private void LateUpdate()
+    {
+        if (animator == null || !animator.isActiveAndEnabled) return;
+        if (fallController == null) fallController = GetComponentInParent<SensorPlayerController>();
+        if (fallBody == null && fallController != null) fallBody = fallController.GetComponent<Rigidbody>();
+        if (fallController == null || fallBody == null) return;
+
+        bool grounded = fallController.TryGetGroundSupport(out _);
+        // 入力更新後にも空中の走り条件を解除する。
+        if (!grounded)
+            animator.SetFloat("Speed", 0f);
+        float height = fallBody.position.y;
+        if (grounded || !fallAirborne) fallPeakHeight = height;
+        else fallPeakHeight = Mathf.Max(fallPeakHeight, height);
+        fallAirborne = !grounded;
+
+        UpdateDiggingAnimation();
+
+        if (attackActive || IsDiggingAnimationActive || isHurtAnimationActive ||
+            IsWeakAttackHeld)
+        {
+            CancelFallAnimation();
+            return;
+        }
+
+        // 衝突硬直で上昇が打ち切られたときは、上昇姿勢の固定だけを解除する。
+        if (fallController.IsImpactStunned) ResumeJumpPlayback();
+
+        AnimatorStateInfo state = animator.GetCurrentAnimatorStateInfo(0);
+        if (combinedJumpActive)
+        {
+            if (state.fullPathHash != combinedJumpHash)
+            {
+                // ジャンプへの遷移中は接続先のステートを待つ。
+                if (animator.IsInTransition(0) &&
+                    animator.GetNextAnimatorStateInfo(0).fullPathHash == combinedJumpHash) return;
+                CancelFallAnimation();
+                return;
+            }
+            if (!grounded)
+                jumpLeftGround = true;
+            if (grounded && jumpLeftGround)
+            {
+                ResumeJumpPlayback();
+                fallLanding = true;
+                ResumeFallPlayback();
+                if (state.normalizedTime >= 1f)
+                {
+                    CancelFallAnimation();
+                    animator.Play(idleState, 0, 0f);
+                }
+            }
+            else if (fallBody.linearVelocity.y <= 0f) ResumeJumpPlayback();
+            return;
+        }
+        if (fallActive)
+        {
+            if (state.fullPathHash != fallHash || animator.IsInTransition(0))
+            {
+                CancelFallAnimation();
+                return;
+            }
+            if (grounded)
+            {
+                fallLanding = true;
+                ResumeFallPlayback();
+            }
+            else if (fallLanding)
+            {
+                CancelFallAnimation();
+                return;
+            }
+            if (fallLanding && state.normalizedTime >= 1f)
+            {
+                CancelFallAnimation();
+                animator.Play(idleState, 0, 0f);
+            }
+            return;
+        }
+
+        // 二段ジャンプは最後まで再生してから落下モーションへ移る。
+        if (state.fullPathHash == Animator.StringToHash(doubleJumpState) && state.normalizedTime < 1f)
+            return;
+        if (grounded || fallBody.linearVelocity.y >= -0.01f ||
+            fallPeakHeight - height < minimumFallDistance || animator.IsInTransition(0)) return;
+        if (string.IsNullOrEmpty(fallState)) return;
+        fallHash = Animator.StringToHash(fallState);
+        if (!animator.HasState(0, fallHash)) return;
+        fallActive = true;
+        fallLanding = false;
+        animator.Play(fallHash, 0, 0f);
+    }
+
+    // 上昇中のイベントで姿勢を固定し、下降開始時に続きを再生する。
+    public void OnJumpHoldFrame()
+    {
+        if (!combinedJumpActive || animator == null || fallBody == null ||
+            fallLanding || jumpHeld || fallHeld ||
+            animator.GetCurrentAnimatorStateInfo(0).fullPathHash != combinedJumpHash) return;
+
+        // イベントまでに下降へ切り替わった場合は、そのまま落下側へ再生を進める。
+        if (fallBody.linearVelocity.y <= 0f) return;
+        speedBeforeJumpHold = animator.speed;
+        jumpHeld = true;
+        animator.speed = 0f;
+    }
+
+    // 上昇中の固定を解除して停止前の再生速度へ戻す。
+    private void ResumeJumpPlayback()
+    {
+        if (!jumpHeld) return;
+        jumpHeld = false;
+        if (animator != null) animator.speed = speedBeforeJumpHold;
+    }
+
+    // 落下クリップの停止したいフレームに置くAnimation Eventから呼び出す。
+    public void OnFallHoldFrame()
+    {
+        if (!fallActive || fallLanding || fallHeld || animator == null ||
+            fallController == null ||
+            (fallController.TryGetGroundSupport(out _)) ||
+            animator.GetCurrentAnimatorStateInfo(0).fullPathHash != fallHash) return;
+        speedBeforeFallHold = animator.speed;
+        fallHeld = true;
+        animator.speed = 0f;
+    }
+
+    // 落下モーションの停止前の再生速度へ戻す。
+    private void ResumeFallPlayback()
+    {
+        if (!fallHeld) return;
+        fallHeld = false;
+        if (animator != null) animator.speed = speedBeforeFallHold;
+    }
+
+    // 別の行動の開始前に落下モーションの停止を解除する。
+    private void CancelFallAnimation()
+    {
+        ResumeJumpPlayback();
+        ResumeFallPlayback();
+        combinedJumpActive = false;
+        fallActive = false;
+        fallLanding = false;
+    }
+
     Animator animator;
 
     [SerializeField] ChainsawAttack attackHitBox;
@@ -110,6 +277,7 @@ public class PlayerAnimator : MonoBehaviour
 
     public bool StartDiggingAnimation(ChainsawSurface surface)
     {
+        CancelFallAnimation();
         if (isHurtAnimationActive) return false;
         if (animator == null)
         {
@@ -239,14 +407,6 @@ public class PlayerAnimator : MonoBehaviour
     }
 
 
-    // 送ってくれたPlayerAnimatorにはLateUpdateがないため追加できる。
-    // 既に追加済みの場合は、この中身を既存のLateUpdateへまとめる。
-    private void LateUpdate()
-    {
-        UpdateDiggingAnimation();
-    }
-
-
     private void UpdateDiggingAnimation()
     {
         if (!IsDiggingAnimationActive ||
@@ -280,6 +440,7 @@ public class PlayerAnimator : MonoBehaviour
     // 攻撃・食い込みの再生状態を解除し、やられステートを先頭から再生する。
     public bool PlayHurt()
     {
+        CancelFallAnimation();
         if (animator == null) animator = GetComponent<Animator>();
         if (animator == null || !animator.isActiveAndEnabled) return false;
 
@@ -371,7 +532,15 @@ public class PlayerAnimator : MonoBehaviour
     public void SetSpeed(float speed)
     {
         // 移動速度を通知。
-        animator.SetFloat("Speed", isHurtAnimationActive ? 0f : Mathf.Abs(speed));
+        if (fallController == null)
+            fallController = GetComponentInParent<SensorPlayerController>();
+        if (fallBody == null && fallController != null)
+            fallBody = fallController.GetComponent<Rigidbody>();
+
+        // 空中と離陸直後は走り用の速度をゼロにし、着地後に通常の値を渡す。
+        bool airborne = fallController != null &&
+            !fallController.TryGetGroundSupport(out _);
+        animator.SetFloat("Speed", isHurtAnimationActive || airborne ? 0f : Mathf.Abs(speed));
 
         // 食い込みアニメーション中かを通知。
         // 終了モーション中もtrueを維持する。
@@ -380,10 +549,27 @@ public class PlayerAnimator : MonoBehaviour
 
     public void PlayJump()
     {
+        // 接地判定が切り替わる前の離陸フレームから走り条件を解除する。
+        if (animator != null) animator.SetFloat("Speed", 0f);
+        CancelFallAnimation();
         if (isHurtAnimationActive) return;
         CancelDiggingAnimation();
         int jumpHash = Animator.StringToHash(jumpState);
-        if (animator.HasState(0, jumpHash)) animator.Play(jumpHash, 0, 0f);
+        if (animator.HasState(0, jumpHash))
+        {
+            // イベントの成否に依存せず、ジャンプ開始時から落下側の停止も受け付ける。
+            if (fallController == null)
+                fallController = GetComponentInParent<SensorPlayerController>();
+            if (fallBody == null && fallController != null)
+                fallBody = fallController.GetComponent<Rigidbody>();
+            combinedJumpActive = true;
+            combinedJumpHash = jumpHash;
+            fallHash = jumpHash;
+            fallActive = true;
+            fallLanding = false;
+            jumpLeftGround = false;
+            animator.Play(jumpHash, 0, 0f);
+        }
         else animator.SetTrigger("Jump");
     }
 
@@ -391,6 +577,9 @@ public class PlayerAnimator : MonoBehaviour
     // ステートが未作成の場合は既存の通常ジャンプを使用する。
     public void PlayDoubleJump()
     {
+        // 接地判定が切り替わる前の離陸フレームから走り条件を解除する。
+        if (animator != null) animator.SetFloat("Speed", 0f);
+        CancelFallAnimation();
         PlayAdditionalJumpState(doubleJumpState);
     }
 
@@ -398,6 +587,9 @@ public class PlayerAnimator : MonoBehaviour
     // ステートが未作成の場合は既存の通常ジャンプを使用する。
     public void PlayWallJump()
     {
+        // 接地判定が切り替わる前の離陸フレームから走り条件を解除する。
+        if (animator != null) animator.SetFloat("Speed", 0f);
+        CancelFallAnimation();
         PlayAdditionalJumpState(wallJumpState);
     }
 
@@ -438,6 +630,7 @@ public class PlayerAnimator : MonoBehaviour
 
     public void PlayWedgie()
     {
+        CancelFallAnimation();
         if (isHurtAnimationActive) return;
         animator.SetTrigger("Wedgie");
     }
@@ -462,6 +655,7 @@ public class PlayerAnimator : MonoBehaviour
     // 攻撃開始時の接地状態から、地上用または空中用のステートを選んで再生する。
     public bool StartSlash(int step, AttackData data, bool isAirAttack)
     {
+        CancelFallAnimation();
         if (isHurtAnimationActive) return false;
         if (animator == null)
         {
@@ -583,20 +777,33 @@ public class PlayerAnimator : MonoBehaviour
         }
     }
 
-    // 弱攻撃の振り抜きフレームで刃先の演出を再生し、4撃目の判定を開く。
-    public void OnWeakAttackSwing()
+    // 斬撃エフェクトを出したいフレームの Animation Event から呼ぶ。
+    public void OnWeakAttackEffect()
     {
-        if (!attackActive || attackHitBox == null || !TryGetAttackProgress(out _))
+        if (!attackActive || !TryGetAttackProgress(out _))
+        {
             return;
+        }
 
         if (weakAttackController == null)
+        {
             weakAttackController = GetComponent<SensorPlayerController>();
-        if (weakAttackController != null)
-            weakAttackController.PlayWeakSwingEffect();
+        }
 
-        attackHitBox.EnableWeakAttackFinisher();
+        if (weakAttackController != null)
+        {
+            weakAttackController.PlayWeakSwingEffect();
+        }
     }
 
+    // 弱攻撃の振り抜きフレームでフィニッシャーの判定を開く。
+    public void OnWeakAttackSwing()
+    {
+        if (attackActive && attackHitBox != null && TryGetAttackProgress(out _))
+        {
+            attackHitBox.EnableWeakAttackFinisher();
+        }
+    }
 
     // Animation Eventから呼ぶ。
     public void EnableAttackHitBox()
@@ -618,6 +825,8 @@ public class PlayerAnimator : MonoBehaviour
 
     void OnDisable()
     {
+        CancelFallAnimation();
+        fallAirborne = false;
         EndHurt(false);
         CancelDiggingAnimation();
         EndSlash(false);

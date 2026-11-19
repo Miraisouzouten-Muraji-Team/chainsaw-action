@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// Enemyが外部から攻撃命中情報を受信するための窓口。
@@ -35,7 +35,8 @@ public sealed class EnemyAttackHitReceiver :
     public PlayerAttackHitData LastPlayerAttackHitData { get; private set; }
 
     /// <summary>
-    /// 最後に受けたPlayer攻撃について、左右判定まで反映した実ノックバック初速度。
+    /// 最後に受けたPlayer攻撃について、左右判定まで反映した初速度。
+    /// 被弾時に位置移動を禁止する攻撃でも、死亡時の切断片飛散に使用するため保持する。
     /// </summary>
     /// <remarks>
     /// EnemyHealth.TakeDamage内で死亡通知が同期的に発火するため、
@@ -121,9 +122,14 @@ public sealed class EnemyAttackHitReceiver :
             return;
         }
 
+        // 攻撃の識別には元AttackData、ダメージ・ノックバックには命中ごとの値を使用する。
+        int hitDamage = playerAttackHitData.DamageOverride ?? playerAttackData.damage;
+        Vector2 hitAttackVector =
+            playerAttackHitData.AttackVectorOverride ?? playerAttackData.attackVector;
+
         // EnemyHealthでは0以下のダメージを無効としているため、
         // 実際にダメージが成立しない場合はノックバック情報も更新しない。
-        if (playerAttackData.damage <= 0)
+        if (hitDamage <= 0)
         {
             return;
         }
@@ -137,13 +143,13 @@ public sealed class EnemyAttackHitReceiver :
         LastResolvedKnockbackVelocity =
             EnemyKnockbackMotor
                 .CalculateInitialKnockbackVelocity(
-                    playerAttackData.attackVector,
+                    hitAttackVector,
                     hitSourceDirectionSign);
 
         // TakeDamage内でDiedが同期通知されるため、
         // 死亡攻撃の方向をDeath Strategyから参照できる状態にしてからHPへ反映する。
         enemyHealth.TakeDamage(
-            playerAttackData.damage);
+            hitDamage);
 
         // TakeDamageによって死亡した場合は、
         // EnemyHealth.Died経由で死亡処理が行われるため
@@ -155,7 +161,8 @@ public sealed class EnemyAttackHitReceiver :
 
         enemyStateMachine.RequestDamageState(
             hitSourceDirectionSign,
-            playerAttackData.attackVector);
+            hitAttackVector,
+            playerAttackData);
     }
 
     /// <summary>
@@ -173,8 +180,14 @@ public sealed class EnemyAttackHitReceiver :
             ResolvePlayerTransform();
         }
 
+        // 現行Prefabでは子ColliderにもPlayer Tagがある。軌跡の復元には本体を使う。
+        SensorPlayerController playerController =
+            playerTransform != null
+                ? playerTransform.GetComponentInParent<SensorPlayerController>()
+                : null;
+
         resolvedPlayerTransform =
-            playerTransform;
+            playerController != null ? playerController.transform : playerTransform;
 
         return resolvedPlayerTransform != null;
     }

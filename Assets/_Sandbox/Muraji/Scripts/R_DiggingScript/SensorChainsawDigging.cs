@@ -95,11 +95,10 @@ public class SensorChainsawDigging : MonoBehaviour
         DiggingParticleFrameChanged?.Invoke();
     }
 
-    // 通常・弱攻撃の敵食い込みで、倍率計算、アクセル消費、命中演出を共用する。
+    // 通常・弱攻撃の敵食い込みで、固定ダメージ、アクセル消費、命中演出を共用する。
     private bool TrySendEnemyDiggingDamage()
     {
         AttackData data = IsWeakEnemyAttack ? activeWeakAttackDiggingData : diggingAttackData;
-        float damageMultiplier = GetAcceleratorDamageMultiplier(data);
         float consumeAmount = HasBonus ? diggingParameter.bonusEnemyConsumeAmount
             : diggingParameter.enemyConsumeAmount;
         if (!accelerator.TryConsume(consumeAmount))
@@ -108,30 +107,16 @@ public class SensorChainsawDigging : MonoBehaviour
             timer = 0f;
             return false;
         }
-        // 間隔・倍率・消費は共用し、弱攻撃中だけ専用SOへ切り替える。
+        // 攻撃間隔と消費は維持し、ダメージは選択中のSOに設定した値をそのまま使う。
         return chainsawAttack.HitDigging(IsWeakEnemyAttack ? weakTarget : contact.Enemy, data,
-            damageMultiplier * (HasBonus ? diggingParameter.bonusDamageMultiplier : 1f),
+            1f,
             contact.Point);
     }
 
-    // 攻撃データの設定に従い、アクセル値に応じた食い込みダメージ倍率を取得する。
-    private float GetAcceleratorDamageMultiplier(AttackData data)
-    {
-        if (data == null || !data.useAcceleratorDamageMultiplier)
-            return 1f;
-
-        float speedRatio = accelerator != null ? Mathf.Clamp01(accelerator.SpeedRatio) : 0f;
-        return Mathf.Lerp(diggingParameter.minDamageMultiplier,
-            diggingParameter.maxDamageMultiplier, speedRatio);
-    }
-
-    // 移動中の接触攻撃は、連動が有効な場合だけ接触倍率とアクセル倍率を適用する。
+    // 移動中の接触攻撃は、アクセル値とボーナスに関係なく設定済みの固定倍率を返す。
     private float GetMovementContactDamageMultiplier()
     {
-        if (diggingAttackData == null || !diggingAttackData.useAcceleratorDamageMultiplier)
-            return 1f;
-
-        return movementContactDamageMultiplier * GetAcceleratorDamageMultiplier(diggingAttackData);
+        return Mathf.Clamp01(movementContactDamageMultiplier);
     }
 
     // 継続中の弱攻撃は専用Receiver、通常食い込みは既存の敵HPで有効性を確認する。
@@ -165,6 +150,18 @@ public class SensorChainsawDigging : MonoBehaviour
 
     // Hold操作の予約押下を、最低1回の物理更新で処理するまで保持する。
     private bool bufferedRequestAwaitingTick;
+
+    [Header("ホールド解除後の壁ジャンプ")]
+    [Tooltip("ホールドで壁食い込みを離してから壁ジャンプを受け付ける秒数です。0にすると無効になります。")]
+    [SerializeField, Min(0f)] private float wallJumpReleaseBufferSeconds = 0.15f;
+
+    private Vector3 releasedWallJumpNormal;
+    private bool releasedWallJumpHadBonus;
+    private float wallJumpReleaseBufferUntil = float.NegativeInfinity;
+
+    public bool HasBufferedWallJump =>
+        isActiveAndEnabled && Surface == ChainsawSurface.None && !IsRequested &&
+        !IsWeakEnemyAttack && Time.time < wallJumpReleaseBufferUntil;
 
     private float wallContactLostTime;
     private float ceilingBonusRamp;
@@ -268,7 +265,7 @@ public class SensorChainsawDigging : MonoBehaviour
                     : 0f;
 
     [Header("移動食い込み中の接触攻撃")]
-    [Tooltip("床・壁・天井への食い込み移動で敵に触れたときの、食い込み攻撃力に対する倍率。0.3なら30%。")]
+    [Tooltip("床・壁・天井への食い込み移動で敵に触れたときの固定ダメージ倍率です。0.3なら食い込み攻撃力の30%。アクセル値とボーナスでは変化しません。")]
     [SerializeField, Range(0f, 1f)] private float movementContactDamageMultiplier = 0.3f;
 
     // 物理衝突を無視するボーナス中も検出できるよう、Overlapで接触を調べる。
@@ -467,7 +464,17 @@ public class SensorChainsawDigging : MonoBehaviour
 
             if (!requested && IsRequested)
             {
+                // ホールドを離した時だけ、解除で消える壁の法線とボーナスを保存する。
+                Vector3 releasedNormal = !held && Surface == ChainsawSurface.Wall
+                    ? SurfaceNormal : Vector3.zero;
+                bool hadBonus = HasBonus;
                 Cancel(false);
+                if (wallJumpReleaseBufferSeconds > 0f && Mathf.Abs(releasedNormal.x) > 0.01f)
+                {
+                    releasedWallJumpNormal = releasedNormal;
+                    releasedWallJumpHadBonus = hadBonus;
+                    wallJumpReleaseBufferUntil = Time.time + wallJumpReleaseBufferSeconds;
+                }
             }
 
             if (pressed && requested && !IsRequested)
@@ -489,13 +496,10 @@ public class SensorChainsawDigging : MonoBehaviour
         particleFrameSurface = ChainsawSurface.None;
         DiggingParticleFrameChanged?.Invoke();
         detector.SetFacingDirection(facingDirection);
-        // 天井専用センサーの接触を優先し、それ以外は既存の面選択を使用する。
-        bool hasContact = detector.TryGetCeilingContact(out SensorChainsawContact initialContact);
-        if (!hasContact)
-        {
-            hasContact = detector.TryGetContact(null, out initialContact,
-                ChainsawSurface.None, facingDirection);
-        }
+        ClearWallJumpReleaseBuffer();
+        // 全候補を同じ照会で比較し、敵・天井・壁・床の優先順位で開始対象を決める。
+        bool hasContact = detector.TryGetContact(null, out SensorChainsawContact initialContact,
+            ChainsawSurface.None, facingDirection);
 
         contact = initialContact;
         Surface = ChainsawSurface.None;
@@ -630,7 +634,9 @@ public class SensorChainsawDigging : MonoBehaviour
             foundContact &&
             next.Surface == ChainsawSurface.Enemy;
 
-        if (Surface == ChainsawSurface.Wall && !foundEnemy)
+        // 壁の接触猶予で、より優先度の高い天井への切り替えを打ち消さない。
+        bool foundCeiling = foundContact && next.Surface == ChainsawSurface.Ceiling;
+        if (Surface == ChainsawSurface.Wall && !foundEnemy && !foundCeiling)
         {
             bool foundWall =
                 foundContact &&
@@ -753,11 +759,12 @@ public class SensorChainsawDigging : MonoBehaviour
                     $"{contact.Collider.name}",
                     contact.Collider);
             }
-            else if (next.Surface == ChainsawSurface.Enemy &&
-                     Surface != ChainsawSurface.Enemy)
+            else if ((next.Surface == ChainsawSurface.Enemy &&
+                      Surface != ChainsawSurface.Enemy) ||
+                     (next.Surface == ChainsawSurface.Ceiling &&
+                      (Surface == ChainsawSurface.Floor || Surface == ChainsawSurface.Wall)))
             {
-                // 判定範囲内で検出した敵へ、
-                // 食い込み要求を維持したまま切り替える。
+                // 敵、または床・壁より優先する天井へ、要求を維持したまま切り替える。
                 contact = next;
                 Surface = ChainsawSurface.None;
 
@@ -1103,6 +1110,28 @@ public class SensorChainsawDigging : MonoBehaviour
         return true;
     }
 
+    // ホールド解除後の壁をジャンプに一度だけ使い、ボーナス条件も確認する。
+    public bool TryTakeBufferedWallJump(out Vector3 wallNormal)
+    {
+        wallNormal = default;
+        if (!HasBufferedWallJump) return false;
+
+        wallNormal = releasedWallJumpNormal;
+        if (releasedWallJumpHadBonus && MeetsBonusAcceleratorThreshold)
+            GrantEvade(diggingParameter.wallEvadeTime);
+
+        ClearWallJumpReleaseBuffer();
+        return true;
+    }
+
+    // 着地や別の食い込みに移ったとき、以前の壁を使えないようにする。
+    public void ClearWallJumpReleaseBuffer()
+    {
+        wallJumpReleaseBufferUntil = float.NegativeInfinity;
+        releasedWallJumpNormal = Vector3.zero;
+        releasedWallJumpHadBonus = false;
+    }
+
     // 指定時間まで回避判定を延長する。
     private void GrantEvade(
         float duration)
@@ -1277,6 +1306,7 @@ public class SensorChainsawDigging : MonoBehaviour
     public void Cancel(
         bool immediate)
     {
+        ClearWallJumpReleaseBuffer();
         bufferedRequestAwaitingTick = false;
         if (IsWeakEnemyAttack)
         {

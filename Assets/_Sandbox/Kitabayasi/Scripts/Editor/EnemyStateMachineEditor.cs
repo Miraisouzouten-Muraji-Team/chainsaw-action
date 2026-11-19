@@ -230,13 +230,15 @@ public sealed class EnemyStateMachineEditor : Editor
             return;
         }
 
-        Vector3 patrolStartPosition =
-            stateMachine.transform.position;
+        Vector3 patrolStartPosition = EditorApplication.isPlaying
+            ? chargeEnemySearchStrategy.PatrolStartPosition
+            : stateMachine.transform.position;
+        float displayOffset = EditorApplication.isPlaying
+            ? chargeEnemySearchStrategy.ActivePatrolOffset
+            : chargeEnemySearchStrategy.PatrolOffset;
 
         Vector3 patrolEndPosition =
-            patrolStartPosition +
-            Vector3.right *
-            chargeEnemySearchStrategy.PatrolOffset;
+            patrolStartPosition + Vector3.right * displayOffset;
 
         DrawPatrolRange(
             patrolStartPosition,
@@ -261,9 +263,12 @@ public sealed class EnemyStateMachineEditor : Editor
             return;
         }
 
-        DrawPatrolOffsetEditor(
-            stateMachine,
-            chargeEnemySearchStrategy);
+        // Play中の巡回範囲は実行時の値をGizmoに表示し、
+        // 編集ハンドルでPrefabの符号付き設定を上書きしない。
+        if (!EditorApplication.isPlaying)
+        {
+            DrawPatrolOffsetEditor(stateMachine, chargeEnemySearchStrategy);
+        }
     }
 
     /// <summary>

@@ -229,6 +229,7 @@ MonoBehaviour:
   attackStrategy:
     rid: 2559746894314340429
   visualRoot: {fileID: 2952497546087976549}
+  discoveryFacingRotationSpeed: 360
   deathStrategy:
     rid: 2559746894314340427
   showPatrolDebugVisualization: 0
@@ -294,6 +295,7 @@ MonoBehaviour:
   maximumPieceMass: 10
   minimumCapsuleAspectRatio: 1.2
   preGeneratedPieceCount: 0
+  keepCutSidesAsSinglePieces: 0
   cutDirectionSampleCount: 4
   cutRangeAxis: 0
   cutRangeMinimumNormalized: 0.2
@@ -368,7 +370,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -434,8 +436,16 @@ MonoBehaviour:
   targetSkinnedMeshRenderer: {fileID: 0}
   targetMeshFilter: {fileID: 9141602656570420839}
   cutSurfaceMaterial: {fileID: 2100000, guid: efba80df10aeb624e82f4d1d32902613, type: 2}
-  targetPieceCount: 8
   cutSurfaceUvScale: 1
+  bakedPieceMeshes:
+  - {fileID: 4300000, guid: 71aab7a7000fec74e80f6f09520bc10d, type: 2}
+  - {fileID: 4300000, guid: 205aff9a2703cba4ab5c4fc63b17e613, type: 2}
+  - {fileID: 4300000, guid: d9244531ee75f3e4888164ac62186a98, type: 2}
+  - {fileID: 4300000, guid: 4d09c90b1101e844aa0a7bd881cc791a, type: 2}
+  - {fileID: 4300000, guid: 04a96c9e1af366a44a533f91e15f505e, type: 2}
+  - {fileID: 4300000, guid: 8ec37a23413de9443858a505210d4bb3, type: 2}
+  - {fileID: 4300000, guid: c6b2914bcb93f164f92202c101738a98, type: 2}
+  - {fileID: 4300000, guid: 27d435b6af49e71409d617aac315fcf0, type: 2}
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10

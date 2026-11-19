@@ -1,0 +1,68 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4bbb7c6225850224daa707f94737f45a, type: 3}
+  m_Name: PlayerParameter
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerParameter
+  moveSpeed: 11
+  acceleration: 20
+  deceleration: 30
+  attackMoveSpeedMultiplier: 0.4
+  moveDeadZone: 0.4
+  jumpForce: 41
+  airJumpForce: 40
+  coyoteTime: 0.15
+  gravityScale: 8
+  jumpStartGravityMultiplier: 0.5
+  maxFallGravityMultiplier: 2.1
+  fallGravityIncreaseTime: 0.9
+  maxFallSpeed: 40
+  jumpLaunchImpulse: 7
+  airJumpLaunchImpulse: 5
+  jumpHoldMaxSeconds: 0
+  jumpHoldGravityScale: 0.05
+  jumpReleaseSpeedRatio: 0.9
+  jumpFallGravityScale: 1
+  jumpApexGravityMultiplier: 0.4
+  jumpApexGravityMultiplierFall: 0.8
+  enableCeilingFallGrace: 1
+  ceilingFallGraceMaxSeconds: 0.15
+  groundRayLayers:
+    serializedVersion: 2
+    m_Bits: 128
+  groundRaySideOffset: 0.4
+  groundRayStartHeight: 0.1
+  groundRayDistance: 1
+  groundRayNormalThreshold: 0.7
+  groundRayContactTolerance: 0.5
+  slopeGroundSnapDistance: 0.1
+  slopeGroundStickSpeed: 1
+  slopeGroundProbeDistance: 0.2
+  wallKnockbackSpeed: 0
+  wallKnockbackDeceleration: 20
+  wallKnockbackUpwardForce: 7
+  diggingImpactStunDuration: 0.15
+  impactShakeDuration: 0.15
+  impactShakeMagnitude: 0.1
+  surfaceStickSpeed: 1
+  wallClimbSpeed: 5
+  directWallSpeedDivisor: 5
+  surfaceStickJumpForce: 30
+  surfaceStickJumpAngle: 60
+  surfaceStickJumpStunTime: 0.1
+  surfaceStickJumpCameraShake: 0.1
+  surfaceStickJumpNoOverrideTime: 0.1
+  surfaceStickCollisionSpeed: 5
+  cornerTolerance: 10
+  cornerPushSpeed: 20
+  cornerJumpForce: 7
+  impactSurfaceNormalThreshold: 0.7
+  comboAdvanceTime: 1

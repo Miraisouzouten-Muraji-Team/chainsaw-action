@@ -18,7 +18,7 @@ using UnityEngine;
 public sealed class ChainsawAttackTrajectoryProfile : ScriptableObject
 {
     [Header("対応攻撃")]
-    [Tooltip("この軌跡を使用する通常攻撃のAttackData。Enemy側は死亡原因のAttackDataと参照一致で照合する。")]
+    [Tooltip("この軌跡を使用する通常攻撃の元AttackData。")]
     [SerializeField]
     private AttackData attackData;
 

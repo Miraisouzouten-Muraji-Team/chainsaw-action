@@ -33,16 +33,16 @@ public class SensorChainsawContactDetector : MonoBehaviour
     private Quaternion rightSensorWorldRotation;
     private Vector3 rightSensorWorldOffset;
 
-    [Header("正面の上・中央・下。すべて3D BoxCollider / Is Trigger ON")]
+    [Header("正面の上・中央・下。すべて3D Collider / Is Trigger ON")]
 
-    [Tooltip("天井専用。床・壁・敵には使用しない")]
-    [SerializeField] private BoxCollider upperSensor;
+    [Tooltip("天井専用の3D Colliderです。Is Triggerをオンにしてください。床・壁・敵には使用しません。")]
+    [SerializeField] private Collider upperSensor;
 
-    [Tooltip("敵専用。壁はFront Rayで取得する")]
-    [SerializeField] private BoxCollider middleSensor;
+    [Tooltip("敵用の3D Colliderです。Is Triggerをオンにしてください。壁用Triggerの接触確認にも使用します。")]
+    [SerializeField] private Collider middleSensor;
 
-    [Tooltip("床専用。斜面も面の法線で床かどうか判定する")]
-    [SerializeField] private BoxCollider lowerSensor;
+    [Tooltip("床専用の3D Colliderです。Is Triggerをオンにしてください。斜面も面の法線で判定します。")]
+    [SerializeField] private Collider lowerSensor;
 
     [Header("接触判定パラメータ")]
     [Tooltip("地形と敵のレイヤー、法線のしきい値、Rayの長さを管理するScriptableObject")]
@@ -78,16 +78,11 @@ public class SensorChainsawContactDetector : MonoBehaviour
             return;
 
         Physics.SyncTransforms();
-        Vector3 center = middleSensor.transform.TransformPoint(middleSensor.center);
-        Vector3 scale = middleSensor.transform.lossyScale;
-        Vector3 half = Vector3.Scale(middleSensor.size * 0.5f,
-            new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
-        Quaternion rotation = middleSensor.transform.rotation;
+        GetSensorQueryBox(middleSensor, out Vector3 center, out _, out _);
         int count;
         do
         {
-            count = Physics.OverlapBoxNonAlloc(center, half, overlapBuffer, rotation,
-                contactDetectorParameter.EnemyLayers.value, QueryTriggerInteraction.Collide);
+            count = OverlapSensor(middleSensor, overlapBuffer, contactDetectorParameter.EnemyLayers.value);
             if (count < overlapBuffer.Length) break;
             System.Array.Resize(ref overlapBuffer, overlapBuffer.Length * 2);
         } while (true);
@@ -95,7 +90,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             Collider target = overlapBuffer[i];
-            if (target != null)
+            if (target != null && OverlapsSensorShape(middleSensor, target))
                 AddMovementEnemyContact(destination, target, center, target.ClosestPoint(center));
         }
 
@@ -106,9 +101,8 @@ public class SensorChainsawContactDetector : MonoBehaviour
         // 地形を越えた先へ先読み攻撃しないよう、進行方向を塞ぐ面までに限定する。
         do
         {
-            count = Physics.BoxCastNonAlloc(center, half, direction, movementHitBuffer,
-                rotation, distance, contactDetectorParameter.TerrainLayers.value,
-                QueryTriggerInteraction.Ignore);
+            count = CastSensor(middleSensor, direction, movementHitBuffer,
+                distance, contactDetectorParameter.TerrainLayers.value, QueryTriggerInteraction.Ignore);
             if (count < movementHitBuffer.Length) break;
             System.Array.Resize(ref movementHitBuffer, movementHitBuffer.Length * 2);
         } while (true);
@@ -126,9 +120,8 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
         do
         {
-            count = Physics.BoxCastNonAlloc(center, half, direction, movementHitBuffer,
-                rotation, allowedDistance, contactDetectorParameter.EnemyLayers.value,
-                QueryTriggerInteraction.Collide);
+            count = CastSensor(middleSensor, direction, movementHitBuffer,
+                allowedDistance, contactDetectorParameter.EnemyLayers.value, QueryTriggerInteraction.Collide);
             if (count < movementHitBuffer.Length) break;
             System.Array.Resize(ref movementHitBuffer, movementHitBuffer.Length * 2);
         } while (true);
@@ -264,7 +257,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
         if (!configured)
         {
             Debug.LogError(
-                "食い込み判定：Sensor Rootと、異なる3つの子BoxCollider" +
+                "食い込み判定：Sensor Rootと、異なる3つの子Collider" +
                 "（Is Trigger ON）を設定してください。",
                 this
             );
@@ -289,7 +282,106 @@ public class SensorChainsawContactDetector : MonoBehaviour
         }
     }
 
-    private bool IsValidSensor(BoxCollider sensor)
+    // Boxでは既存の向き付きサイズを維持し、それ以外の補助照会にはワールド範囲を返す。
+    private static void GetSensorQueryBox(Collider sensor, out Vector3 center,
+        out Vector3 half, out Quaternion rotation)
+    {
+        if (sensor is BoxCollider box)
+        {
+            center = box.transform.TransformPoint(box.center);
+            half = Vector3.Scale(box.size * 0.5f, GetAbsoluteScale(box.transform));
+            rotation = box.transform.rotation;
+            return;
+        }
+        center = sensor.bounds.center;
+        half = sensor.bounds.extents;
+        rotation = Quaternion.identity;
+    }
+
+    // 左右反転による負のスケールを、照会に使う正の寸法へ変換する。
+    private static Vector3 GetAbsoluteScale(Transform target)
+    {
+        Vector3 scale = target.lossyScale;
+        return new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
+    }
+
+    // Sphereの中心と、不均等スケールを考慮したワールド半径を取得する。
+    private static void GetSphereGeometry(SphereCollider sphere, out Vector3 center, out float radius)
+    {
+        Vector3 scale = GetAbsoluteScale(sphere.transform);
+        center = sphere.transform.TransformPoint(sphere.center);
+        radius = sphere.radius * Mathf.Max(scale.x, Mathf.Max(scale.y, scale.z));
+    }
+
+    // Capsuleの軸方向・左右反転・スケールを考慮し、両端の球中心と半径を取得する。
+    private static void GetCapsuleGeometry(CapsuleCollider capsule,
+        out Vector3 pointA, out Vector3 pointB, out float radius)
+    {
+        Vector3 scale = GetAbsoluteScale(capsule.transform);
+        int axisIndex = capsule.direction;
+        Vector3 localAxis = axisIndex == 0 ? Vector3.right :
+            axisIndex == 1 ? Vector3.up : Vector3.forward;
+        float radialScale = axisIndex == 0 ? Mathf.Max(scale.y, scale.z) :
+            axisIndex == 1 ? Mathf.Max(scale.x, scale.z) : Mathf.Max(scale.x, scale.y);
+        radius = capsule.radius * radialScale;
+        float halfSegment = Mathf.Max(0f, capsule.height * scale[axisIndex] * 0.5f - radius);
+        Vector3 center = capsule.transform.TransformPoint(capsule.center);
+        Vector3 offset = capsule.transform.TransformDirection(localAxis).normalized * halfSegment;
+        pointA = center + offset;
+        pointB = center - offset;
+    }
+
+    // Box・Sphere・Capsuleは各形状で重なりを照会し、その他は範囲で候補を収集する。
+    private static int OverlapSensor(Collider sensor, Collider[] results, int layerMask)
+    {
+        if (sensor is SphereCollider sphere)
+        {
+            GetSphereGeometry(sphere, out Vector3 center, out float radius);
+            return Physics.OverlapSphereNonAlloc(center, radius, results, layerMask,
+                QueryTriggerInteraction.Collide);
+        }
+        if (sensor is CapsuleCollider capsule)
+        {
+            GetCapsuleGeometry(capsule, out Vector3 pointA, out Vector3 pointB, out float radius);
+            return Physics.OverlapCapsuleNonAlloc(pointA, pointB, radius, results, layerMask,
+                QueryTriggerInteraction.Collide);
+        }
+        GetSensorQueryBox(sensor, out Vector3 boxCenter, out Vector3 half, out Quaternion rotation);
+        return Physics.OverlapBoxNonAlloc(boxCenter, half, results, rotation, layerMask,
+            QueryTriggerInteraction.Collide);
+    }
+
+    // Meshの範囲だけに重なる候補を除外し、凸Meshの実形状に重なっていることを確認する。
+    private static bool OverlapsSensorShape(Collider sensor, Collider target)
+    {
+        if (!(sensor is MeshCollider mesh) || !mesh.convex) return true;
+        return Physics.ComputePenetration(sensor, sensor.transform.position, sensor.transform.rotation,
+            target, target.transform.position, target.transform.rotation, out _, out _);
+    }
+
+    // 移動接触をセンサー形状で掃引する。その他のColliderは外接範囲による保守的な掃引を行う。
+    private static int CastSensor(Collider sensor, Vector3 direction, RaycastHit[] results,
+        float distance, int layerMask, QueryTriggerInteraction triggerInteraction)
+    {
+        if (sensor is SphereCollider sphere)
+        {
+            GetSphereGeometry(sphere, out Vector3 center, out float radius);
+            return Physics.SphereCastNonAlloc(center, radius, direction, results,
+                distance, layerMask, triggerInteraction);
+        }
+        if (sensor is CapsuleCollider capsule)
+        {
+            GetCapsuleGeometry(capsule, out Vector3 pointA, out Vector3 pointB, out float radius);
+            return Physics.CapsuleCastNonAlloc(pointA, pointB, radius, direction, results,
+                distance, layerMask, triggerInteraction);
+        }
+        GetSensorQueryBox(sensor, out Vector3 boxCenter, out Vector3 half, out Quaternion rotation);
+        return Physics.BoxCastNonAlloc(boxCenter, half, direction, results,
+            rotation, distance, layerMask, triggerInteraction);
+    }
+
+    // Triggerとセンサー専用階層の条件を確認する。Colliderの種類は限定しない。
+    private bool IsValidSensor(Collider sensor)
     {
         return
             sensor != null &&
@@ -355,13 +447,30 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
         float bestScore = float.PositiveInfinity;
 
-        CollectContacts(
-            upperSensor,
-            preferred,
-            currentSurface,
-            ref contact,
-            ref bestScore
-        );
+        // 天井継続中は有効な支持面を候補へ登録し、その後に他の種別と比較する。
+        // 選択後に天井で上書きすると、優先度の高い敵の候補が失われるため先に登録する。
+        if (currentSurface == ChainsawSurface.Ceiling)
+        {
+            if (TryGetCeilingBodySupport(ceilingMoveSpeed, ceilingDeltaTime,
+                ceilingPreviousNormal, out SensorChainsawContact support))
+            {
+                Consider(support.Collider, support.Enemy, support.Surface,
+                    support.Point, support.Normal, preferred, currentSurface,
+                    ref contact, ref bestScore);
+                // 天井追従で使う本体の目標位置も維持する。
+                contact = support;
+            }
+        }
+        else
+        {
+            CollectContacts(
+                upperSensor,
+                preferred,
+                currentSurface,
+                ref contact,
+                ref bestScore
+            );
+        }
 
         // 中央センサーは壁用Triggerの継続確認にも使用する。
         // 敵への新規食い込みはCollectContacts内で未食い込み時だけに制限する。
@@ -387,18 +496,6 @@ public class SensorChainsawContactDetector : MonoBehaviour
             ref contact,
             ref bestScore
         );
-
-        // 開始時はUpper、継続中は本体の次の移動位置を支える天井で判定する。
-        // 前方の遠い面や、後ろに残った斜面の法線だけで移動方向を決めない。
-        if (currentSurface == ChainsawSurface.Ceiling)
-        {
-            if (contact.Surface != ChainsawSurface.Wall &&
-                TryGetCeilingBodySupport(ceilingMoveSpeed, ceilingDeltaTime,
-                ceilingPreviousNormal, out SensorChainsawContact support))
-                contact = support;
-            else if (contact.Surface == ChainsawSurface.Ceiling)
-                contact = default;
-        }
 
         // 床候補は通常移動と同じ支持面へそろえる。
         // 敵・壁・天井の優先順位は既存どおり維持する。
@@ -693,8 +790,9 @@ public class SensorChainsawContactDetector : MonoBehaviour
         contact = ground;
     }
 
+    // センサー形状で接触候補を集め、用途と優先順位に従って対象を選ぶ。
     private void CollectContacts(
-        BoxCollider sensor,
+        Collider sensor,
         Collider preferred,
         ChainsawSurface currentSurface,
         ref SensorChainsawContact contact,
@@ -705,33 +803,17 @@ public class SensorChainsawContactDetector : MonoBehaviour
             return;
         }
 
-        Vector3 center = sensor.transform.TransformPoint(sensor.center);
-        Vector3 scale = sensor.transform.lossyScale;
-
-        Vector3 half = Vector3.Scale(
-            sensor.size * 0.5f,
-            new Vector3(
-                Mathf.Abs(scale.x),
-                Mathf.Abs(scale.y),
-                Mathf.Abs(scale.z)
-            )
-        );
+        GetSensorQueryBox(sensor, out Vector3 center, out _, out _);
 
         int count;
 
         // バッファ満杯時に候補を黙って捨てない。
         while (true)
         {
-            count = Physics.OverlapBoxNonAlloc(
-                center,
-                half,
-                overlapBuffer,
-                sensor.transform.rotation,
+            count = OverlapSensor(sensor, overlapBuffer,
                 sensor == middleSensor
                     ? contactDetectorParameter.EnemyLayers.value | contactDetectorParameter.TerrainLayers.value
-                    : contactDetectorParameter.TerrainLayers.value,
-                QueryTriggerInteraction.Collide
-            );
+                    : contactDetectorParameter.TerrainLayers.value);
 
             if (count < overlapBuffer.Length)
             {
@@ -748,7 +830,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
         {
             Collider target = overlapBuffer[i];
 
-            if (target == null || IsOwner(target))
+            if (target == null || IsOwner(target) || !OverlapsSensorShape(sensor, target))
             {
                 continue;
             }
@@ -843,8 +925,9 @@ public class SensorChainsawContactDetector : MonoBehaviour
         }
     }
 
+    // センサー内の接触点から地形の法線を取得し、床・天井の担当範囲を確認する。
     private void SampleSurface(
-        BoxCollider sensor,
+        Collider sensor,
         Collider target,
         Vector3 direction,
         ChainsawSurface expectedSurface,
@@ -1131,20 +1214,20 @@ public class SensorChainsawContactDetector : MonoBehaviour
         );
     }
 
-    private bool ContainsPoint(
-        BoxCollider sensor,
-        Vector3 point)
+    // Boxは既存のローカル範囲判定を維持し、それ以外はColliderの実形状から範囲内か調べる。
+    private bool ContainsPoint(Collider sensor, Vector3 point)
     {
-        Vector3 local =
-            sensor.transform.InverseTransformPoint(point) -
-            sensor.center;
+        if (sensor is BoxCollider box)
+        {
+            Vector3 local = box.transform.InverseTransformPoint(point) - box.center;
+            Vector3 half = box.size * 0.5f;
+            return Mathf.Abs(local.x) <= half.x + POINT_TOLERANCE &&
+                Mathf.Abs(local.y) <= half.y + POINT_TOLERANCE &&
+                Mathf.Abs(local.z) <= half.z + POINT_TOLERANCE;
+        }
 
-        Vector3 half = sensor.size * 0.5f;
-
-        return
-            Mathf.Abs(local.x) <= half.x + POINT_TOLERANCE &&
-            Mathf.Abs(local.y) <= half.y + POINT_TOLERANCE &&
-            Mathf.Abs(local.z) <= half.z + POINT_TOLERANCE;
+        return (sensor.ClosestPoint(point) - point).sqrMagnitude <=
+            POINT_TOLERANCE * POINT_TOLERANCE;
     }
 
     private bool IsBlocked(
@@ -1176,6 +1259,7 @@ public class SensorChainsawContactDetector : MonoBehaviour
         return false;
     }
 
+    // 種別の優先順位を最初に比較し、同じ種別の中だけで盾・継続対象・距離を比較する。
     private void Consider(
         Collider target,
         MonoBehaviour enemy,
@@ -1187,6 +1271,21 @@ public class SensorChainsawContactDetector : MonoBehaviour
         ref SensorChainsawContact contact,
         ref float bestScore)
     {
+        if (contact.Collider != null)
+        {
+            int candidatePriority = GetSurfacePriority(surface);
+            int selectedPriority = GetSurfacePriority(contact.Surface);
+            if (candidatePriority > selectedPriority)
+            {
+                return;
+            }
+
+            if (candidatePriority < selectedPriority)
+            {
+                bestScore = float.PositiveInfinity;
+            }
+        }
+
         float distance = Vector3.Distance(
             ownerRoot.position,
             point
@@ -1194,7 +1293,8 @@ public class SensorChainsawContactDetector : MonoBehaviour
 
         float score = distance / (1f + distance);
 
-        // 同時に盾と胴体へ届いても、明示した壁用Triggerを優先する。
+        // 同じ壁候補の中では、明示した壁用Triggerの優先を維持する。
+        // 種別比較を済ませているため、盾が敵や天井より優先されることはない。
         ChainsawContactZone zone = ChainsawContactZone.GetZone(target);
         if (surface == ChainsawSurface.Wall && zone != null &&
             zone.TryGetWallNormal(target, out _))
@@ -1244,6 +1344,19 @@ public class SensorChainsawContactDetector : MonoBehaviour
         };
     }
 
+    // 数字が小さい種別ほど優先する。候補との距離や現在の食い込み先には依存しない。
+    private static int GetSurfacePriority(ChainsawSurface surface)
+    {
+        switch (surface)
+        {
+            case ChainsawSurface.Enemy: return 0;
+            case ChainsawSurface.Ceiling: return 1;
+            case ChainsawSurface.Wall: return 2;
+            case ChainsawSurface.Floor: return 3;
+            default: return 4;
+        }
+    }
+
     private bool IsOwner(Collider target)
     {
         return
@@ -1276,26 +1389,23 @@ public class SensorChainsawContactDetector : MonoBehaviour
         }
     }
 
-    private static void DrawSensor(
-        BoxCollider sensor,
-        Color color)
+    // Boxは従来の向き付き枠、それ以外はワールド範囲の枠を描く。実形状はColliderのギズモで確認する。
+    private static void DrawSensor(Collider sensor, Color color)
     {
-        if (sensor == null)
-        {
-            return;
-        }
-
+        if (sensor == null) return;
         Matrix4x4 previousMatrix = Gizmos.matrix;
         Color previousColor = Gizmos.color;
-
-        Gizmos.matrix = sensor.transform.localToWorldMatrix;
         Gizmos.color = color;
-
-        Gizmos.DrawWireCube(
-            sensor.center,
-            sensor.size
-        );
-
+        if (sensor is BoxCollider box)
+        {
+            Gizmos.matrix = box.transform.localToWorldMatrix;
+            Gizmos.DrawWireCube(box.center, box.size);
+        }
+        else
+        {
+            Gizmos.matrix = Matrix4x4.identity;
+            Gizmos.DrawWireCube(sensor.bounds.center, sensor.bounds.size);
+        }
         Gizmos.matrix = previousMatrix;
         Gizmos.color = previousColor;
     }

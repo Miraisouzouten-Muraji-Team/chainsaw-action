@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 /// <summary>
@@ -65,7 +65,7 @@ public sealed class EnemyAlertState :
     /// <param name="collision">
     /// StateMachineから渡されたCollision情報。
     /// </param>
-    public void HandleCollisionEnter(Collision collision)
+    public void HandleCollisionEnter(EnemyContactInfo collision)
     {
         alertStrategy.HandleCollision(collision);
     }
@@ -77,7 +77,7 @@ public sealed class EnemyAlertState :
     /// <param name="collision">
     /// StateMachineから渡されたCollision情報。
     /// </param>
-    public void HandleCollisionStay(Collision collision)
+    public void HandleCollisionStay(EnemyContactInfo collision)
     {
         alertStrategy.HandleCollision(collision);
     }

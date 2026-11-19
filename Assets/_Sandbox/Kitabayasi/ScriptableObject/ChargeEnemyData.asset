@@ -12,12 +12,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 85be3c9438c110e4da5600a6244b5dd6, type: 3}
   m_Name: ChargeEnemyData
   m_EditorClassIdentifier: Assembly-CSharp::ChargeEnemyData
-  maxHealth: 120
-  attackPower: 10
-  detectionRadius: 5
+  maxHealth: 90
+  attackPower: 15
+  detectionRadius: 8
   postAttackSearchFailureWaitDuration: 0.5
   alertDuration: 1
-  alertContactDamagePercent: 0
+  alertContactDamagePercent: 40
   damageFlashDuration: 0.1
   hitTiltDuration: 0.5
   hitTiltRecoveryDuration: 0.15
@@ -28,15 +28,19 @@ MonoBehaviour:
   patrolDistance: 2
   patrolMoveSpeed: 3
   patrolTurnDuration: 0.5
-  patrolContactDamagePercent: 0
-  attackPreparationDuration: 0.75
-  chargeDistance: 5
-  attackMoveSpeed: 10
+  patrolContactDamagePercent: 40
+  attackPreparationDuration: 1
+  preparationAnimationSpeed: 1
+  chargeDistance: 1
+  attackMoveSpeed: 13
   attackContactDamagePercent: 100
   stageLayerMask:
     serializedVersion: 2
-    m_Bits: 4294959496
+    m_Bits: 4294943112
   groundCheckForwardOffset: 0.1
   groundCheckDownDistance: 0.25
-  maxGroundHeightDifference: 0.1
-  maxGroundSlopeAngle: 5
+  maxGroundHeightDifference: 1
+  maxGroundSlopeAngle: 89
+  groundConnectionHeightTolerance: 0.08
+  groundConnectionGapTolerance: 0.1
+  maxGroundPenetrationRecovery: 0.1

@@ -615,7 +615,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -681,6 +681,7 @@ MonoBehaviour:
   attackStrategy:
     rid: 3765262294644686930
   visualRoot: {fileID: 8268815077929578589}
+  discoveryFacingRotationSpeed: 360
   deathStrategy:
     rid: 3765262294644686918
   showPatrolDebugVisualization: 0
@@ -881,8 +882,16 @@ MonoBehaviour:
   targetSkinnedMeshRenderer: {fileID: 0}
   targetMeshFilter: {fileID: 2142591561785936369}
   cutSurfaceMaterial: {fileID: 2100000, guid: fd9c9ee73e2d66143b28564b9e869f9a, type: 2}
-  targetPieceCount: 8
   cutSurfaceUvScale: 1
+  bakedPieceMeshes:
+  - {fileID: 4300000, guid: 98bfc33333338a04b9bc46dbd63c621d, type: 2}
+  - {fileID: 4300000, guid: f39671be5f1e3db49a36f282df0d15c9, type: 2}
+  - {fileID: 4300000, guid: 684a50a5f28974a408701487c0e1dfef, type: 2}
+  - {fileID: 4300000, guid: 604bb00cae7b0ca4cbb904a92f938949, type: 2}
+  - {fileID: 4300000, guid: 34eb13672e39ce245ba3bb80ee852202, type: 2}
+  - {fileID: 4300000, guid: a834d3c1a47089b428d5f40ea4bfc41e, type: 2}
+  - {fileID: 4300000, guid: 7a23201c3ba683344941fc0560c470f2, type: 2}
+  - {fileID: 4300000, guid: 4c16a9fc43e97864694b1c767a2f28ba, type: 2}
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10

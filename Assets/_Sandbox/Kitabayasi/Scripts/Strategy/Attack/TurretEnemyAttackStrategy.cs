@@ -186,13 +186,13 @@ public sealed class TurretEnemyAttackStrategy :
     }
 
     public void HandleCollisionEnter(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         // Turret本体の接触ダメージは持たない。
     }
 
     public void HandleCollisionStay(
-        Collision collision)
+        EnemyContactInfo collision)
     {
         // Turret本体の接触ダメージは持たない。
     }

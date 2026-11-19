@@ -128582,6 +128582,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 0}
     - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: enemyDiggingJumpSpeed
+      value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: airAttackEffect.Prefab
       value: 
       objectReference: {fileID: 5588217659967268500, guid: 0370ad69a671aa143906ca2e9b705246, type: 3}
@@ -128605,6 +128609,10 @@ PrefabInstance:
       propertyPath: airAttackEffect.SpawnPoint
       value: 
       objectReference: {fileID: 577497384}
+    - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: enemyReleaseUpwardCarryTime
+      value: 0.2
+      objectReference: {fileID: 0}
     - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: groundAttackEffect.Lifetime
       value: 0.75
@@ -128770,8 +128778,44 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1082406077}
     - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingZoomSmoothTime
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: cameraAreas.Array.size
       value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingZoomCurve.m_Curve.Array.data[1].time
+      value: 0.999923
+      objectReference: {fileID: 0}
+    - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingZoomCurve.m_Curve.Array.data[1].value
+      value: 2.000259
+      objectReference: {fileID: 0}
+    - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingZoomCurve.m_Curve.Array.data[0].inSlope
+      value: 0.2400618
+      objectReference: {fileID: 0}
+    - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingZoomCurve.m_Curve.Array.data[1].inSlope
+      value: 0.25952634
+      objectReference: {fileID: 0}
+    - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingZoomCurve.m_Curve.Array.data[0].outSlope
+      value: 0.2400618
+      objectReference: {fileID: 0}
+    - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingZoomCurve.m_Curve.Array.data[1].inWeight
+      value: 0.09166668
+      objectReference: {fileID: 0}
+    - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingZoomCurve.m_Curve.Array.data[1].outSlope
+      value: 0.25952634
+      objectReference: {fileID: 0}
+    - target: {fileID: 2678019025659954012, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: diggingZoomCurve.m_Curve.Array.data[0].outWeight
+      value: 0.12222223
       objectReference: {fileID: 0}
     - target: {fileID: 2840198925962737462, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.z
@@ -129036,6 +129080,10 @@ PrefabInstance:
     - target: {fileID: 6607921360783841346, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: orthographic
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6607921360783841346, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: orthographic size
+      value: 5
       objectReference: {fileID: 0}
     - target: {fileID: 6870913615251527396, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_Size.x

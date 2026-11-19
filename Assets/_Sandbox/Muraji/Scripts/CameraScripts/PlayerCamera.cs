@@ -8,7 +8,7 @@ public class PlayerCamera : MonoBehaviour
     private const float REFERENCE_FRAME_RATE = 60f;
 
     [Header("カメラデータ")]
-    [Tooltip("通常・食い込み・空中のオフセットと追従率を設定したCameraDataを指定してください。")]
+    [Tooltip("オフセット、追従率、食い込み時のズームを設定したCameraDataを指定してください。")]
     [SerializeField]
     private CameraData cameraData;
 
@@ -20,6 +20,9 @@ public class PlayerCamera : MonoBehaviour
     [Tooltip("同じプレイヤーの食い込み処理を指定してください。未設定なら自動取得します。")]
     [SerializeField]
     private SensorChainsawDigging chainsawDigging;
+
+    [Tooltip("追従対象のアクセルです。空欄ならPlayer Controllerのオブジェクトと子階層から探します。")]
+    [SerializeField] private ChainsawAccelerator chainsawAccelerator;
 
     [Header("エリア制限")]
     [Tooltip("カメラの表示範囲を収めるエリアのColliderを登録してください。")]
@@ -42,6 +45,11 @@ public class PlayerCamera : MonoBehaviour
     [SerializeField] private bool debugAreaLimited;
 
     private Camera targetCamera;
+    private float normalOrthographicSize;
+    private float diggingZoomVelocity;
+    private bool wasDiggingForZoom;
+    private float diggingZoomStartSize;
+    private float diggingZoomProgress = 1f;
     private Collider currentArea;
     private float smoothedFacingDirection;
     // 登録されているエリア数を公開する。
@@ -117,6 +125,12 @@ public class PlayerCamera : MonoBehaviour
                 this);
         }
 
+        if (chainsawAccelerator == null)
+        {
+            chainsawAccelerator = playerController.GetComponentInChildren<ChainsawAccelerator>(true);
+        }
+
+        normalOrthographicSize = targetCamera.orthographicSize;
         smoothedFacingDirection =
             playerController.FacingDirection;
 
@@ -129,6 +143,89 @@ public class PlayerCamera : MonoBehaviour
 
         // 初期位置のみ即座に設定する。
         transform.position = initialPosition;
+    }
+
+    // ピクセル描画用カメラがLateUpdateで投影設定をコピーする前に、引きの量を反映する。
+    private void Update()
+    {
+        float deltaTime = Time.deltaTime;
+        if (deltaTime <= 0f || cameraData == null || targetCamera == null || !targetCamera.orthographic ||
+            normalOrthographicSize <= 0f)
+        {
+            return;
+        }
+
+        bool isDiggingForZoom = chainsawDigging != null &&
+            chainsawDigging.isActiveAndEnabled && chainsawDigging.IsDigging &&
+            chainsawAccelerator != null && chainsawAccelerator.isActiveAndEnabled;
+
+        if (isDiggingForZoom != wasDiggingForZoom)
+        {
+            // 再食い込みでも、その瞬間に映っている画角から同じ時間で補間する。
+            wasDiggingForZoom = isDiggingForZoom;
+            diggingZoomStartSize = targetCamera.orthographicSize;
+            diggingZoomProgress = 0f;
+            diggingZoomVelocity = 0f;
+        }
+
+        float targetSize = normalOrthographicSize;
+        if (isDiggingForZoom)
+        {
+            float ratio = chainsawAccelerator.PowerRatio;
+            AnimationCurve diggingZoomCurve = cameraData.diggingZoomCurve;
+            float zoom = diggingZoomCurve != null && diggingZoomCurve.length > 0
+                ? Mathf.Clamp01(diggingZoomCurve.Evaluate(ratio))
+                : ratio;
+            targetSize *= Mathf.Lerp(1f, Mathf.Max(1f, cameraData.diggingZoomMultiplier), zoom);
+        }
+
+        float diggingZoomSmoothTime = cameraData.diggingZoomSmoothTime;
+        if (diggingZoomSmoothTime <= 0f)
+        {
+            targetCamera.orthographicSize = targetSize;
+            diggingZoomProgress = 1f;
+            diggingZoomVelocity = 0f;
+            return;
+        }
+
+        if (diggingZoomProgress < 1f)
+        {
+            // アクセル値は引きの大きさに使い、経過時間だけで補間の進み具合を決める。
+            diggingZoomProgress = Mathf.Min(1f, diggingZoomProgress + deltaTime / diggingZoomSmoothTime);
+            targetCamera.orthographicSize = diggingZoomProgress >= 1f
+                ? targetSize
+                : Mathf.SmoothStep(diggingZoomStartSize, targetSize, diggingZoomProgress);
+            return;
+        }
+
+        if (Mathf.Abs(targetCamera.orthographicSize - targetSize) < 0.0001f)
+        {
+            targetCamera.orthographicSize = targetSize;
+            diggingZoomVelocity = 0f;
+            return;
+        }
+
+        // 切り替え完了後も、食い込みが続いている間の細かなアクセル変化をなめらかに反映する。
+        targetCamera.orthographicSize = Mathf.SmoothDamp(
+            targetCamera.orthographicSize, targetSize, ref diggingZoomVelocity,
+            diggingZoomSmoothTime, Mathf.Infinity, deltaTime);
+    }
+
+    // 復活や無効化のときに、通常の画角と補間速度へ戻す。
+    private void ResetDiggingZoom()
+    {
+        if (targetCamera != null && normalOrthographicSize > 0f)
+            targetCamera.orthographicSize = normalOrthographicSize;
+
+        wasDiggingForZoom = false;
+        diggingZoomStartSize = normalOrthographicSize;
+        diggingZoomProgress = 1f;
+        diggingZoomVelocity = 0f;
+    }
+
+    private void OnDisable()
+    {
+        ResetDiggingZoom();
     }
 
     // 描画前にプレイヤーの表示位置へ追従する。パララックスカメラはこの後に更新する。
@@ -239,6 +336,8 @@ public class PlayerCamera : MonoBehaviour
 
         // 通常のカメラ更新と同じ条件でオフセットを取得する。
         GetFollowSettings(out Vector2 offset, out _);
+
+        ResetDiggingZoom();
 
         // このメソッド内で使用するローカル変数として宣言する。
         Vector3 targetPosition = CalculateFollowTargetPosition(offset);

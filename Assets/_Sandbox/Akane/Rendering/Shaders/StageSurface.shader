@@ -29,7 +29,7 @@ Shader "Custom/StageSurface"
         [HideInInspector] _BaseMap("Base Map", 2D) = "white" {}
         [HideInInspector] _BaseColor("Base Color", Color) = (1, 1, 1, 1)
         [HideInInspector] _Surface("Surface Type", Float) = 0
-        
+
         // 通常の地形と生成した縁メッシュを切り替える。
         [HideInInspector] _StageEdgeOnly("Stage Edge Only", Float) = 0
 

@@ -61,9 +61,10 @@ MonoBehaviour:
   surfaceStickJumpCameraShake: 0.1
   surfaceStickJumpNoOverrideTime: 0.1
   surfaceStickCollisionSpeed: 5
-  enemyDiggingJumpSpeed: 30
+  enemyDiggingJumpSpeed: 45
   enemyReleaseEaseDuration: 0.5
   enemyReleaseGravityBlendTime: 1
+  enemyDiggingJumpProbeDistance: 1
   cornerTolerance: 10
   cornerPushSpeed: 20
   cornerJumpForce: 7

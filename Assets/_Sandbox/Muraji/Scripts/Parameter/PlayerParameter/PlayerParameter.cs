@@ -167,6 +167,10 @@ public class PlayerParameter : ScriptableObject
     [SerializeField, Min(0f)]
     public float enemyReleaseGravityBlendTime = 0.2f;
 
+    [Tooltip("敵食い込みジャンプで、飛び出す方向のステージとの干渉を調べる距離です。1物理フレームの移動距離より短い場合は、その移動距離を使用します。")]
+    [SerializeField, Min(0f)]
+    public float enemyDiggingJumpProbeDistance = 1f;
+
     [Header("角のパラメータ")]
     // 天井の角の処理値
     [Tooltip("角の許容範囲")]

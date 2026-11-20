@@ -279,6 +279,59 @@ Transform:
   m_Children: []
   m_Father: {fileID: 2710749393844264851}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2958839305671788639
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3689337801478718559}
+  - component: {fileID: 3392223487772518855}
+  m_Layer: 0
+  m_Name: TerrainDetermination_EnemyJump
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &3689337801478718559
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2958839305671788639}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -0.59795046, y: 0.9424542, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2710749393844264851}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &3392223487772518855
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2958839305671788639}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1.2698925, y: 1.5966067, z: 1}
+  m_Center: {x: 1.25, y: 0.92, z: 0}
 --- !u!1 &2987452612666823727
 GameObject:
   m_ObjectHideFlags: 0
@@ -901,6 +954,7 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 3689337801478718559}
   - {fileID: 8112381940391189133}
   - {fileID: 6112818066757244544}
   - {fileID: 5293579344036460687}
@@ -1022,8 +1076,11 @@ MonoBehaviour:
   chainsawAccelerator: {fileID: 7827059146430071563}
   chainsawAudioSource: {fileID: 0}
   directWallSpeedDivisor: 5
+  wallTopMaxRise: 0.85
+  wallTopMoveSpeed: 8
   ceilingJumpReleaseSpeed: 6
   ceilingJumpReleaseDuration: 0.12
+  enemyDiggingJumpProbe: {fileID: 3392223487772518855}
   groundCheckTransform: {fileID: 2542484686250553154}
   isGroundedByRay: 0
   visualRoot: {fileID: 2710749393844264851}
@@ -1076,6 +1133,7 @@ MonoBehaviour:
   diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
   weakAttackDiggingData: {fileID: 11400000, guid: 805e87899d869204da3ec278acfd7d06, type: 2}
   airWeakAttackDiggingData: {fileID: 11400000, guid: 0ff38655cd9be3643a633c1a45c07f96, type: 2}
+  wallJumpReleaseBufferSeconds: 0.15
   movementContactDamageMultiplier: 1
 --- !u!114 &4829992285001150481
 MonoBehaviour:
@@ -1670,7 +1728,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawAccelerator
   accelerationParameter: {fileID: 11400000, guid: 49f0f6b37d9166b4393cdf12508c13ad, type: 2}
-  diggingDecelerationTime: 0.3
 --- !u!114 &5486676222258567367
 MonoBehaviour:
   m_ObjectHideFlags: 0

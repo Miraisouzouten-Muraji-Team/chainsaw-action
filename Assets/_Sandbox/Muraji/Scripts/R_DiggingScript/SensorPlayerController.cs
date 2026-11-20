@@ -261,6 +261,10 @@ public class SensorPlayerController : MonoBehaviour
 
     private float wallJumpStunRemaining;
     private float wallJumpDirectionHoldRemaining;
+    [Header("敵食い込みジャンプの地形判定")]
+    [Tooltip("プレイヤー本体を覆う判定専用BoxColliderを指定します。Is Triggerをオンにしてください。未設定・無効の場合は本体の物理Colliderを使います。")]
+    [SerializeField] private BoxCollider enemyDiggingJumpProbe;
+
     private Vector3 enemyReleaseFlightInitialVelocity;
     private float enemyReleaseFlightElapsed;
     private Vector3 pendingEnemyReleaseBoost;
@@ -689,9 +693,13 @@ public class SensorPlayerController : MonoBehaviour
             );
         }
         if (wasDiggingEnemy && chainsawDigging.Surface == ChainsawSurface.None &&
-            !slashPressed && !IsAttacking)
+            !jumpPressed && !slashPressed && !IsAttacking)
         {
-            pendingEnemyReleaseBoost = ReadEnemyReleaseBoost();
+            Vector2 stick = ReadEnemyReleaseStickDirection();
+            if (stick.sqrMagnitude == 0f)
+                TryBeginEnemyDiggingJump(stick);
+            else
+                pendingEnemyReleaseBoost = stick * Mathf.Max(0f, playerParameter.enemyDiggingJumpSpeed);
         }
 
         // 予約した食い込みを開始できた場合は、硬直明けの反発予約による即離脱を防ぐ。
@@ -1749,12 +1757,25 @@ public class SensorPlayerController : MonoBehaviour
         enemyReleaseFlightElapsed = 0f;
     }
 
-    // 移動用のInput Actionに割り当てられたスティックから、飛び出しの初速を求める。
+    // 物理更新内で敵との接続が切れたときに、離脱方向と初速を決める。
     private Vector3 ReadEnemyReleaseBoost()
+    {
+        float launchSpeed = Mathf.Max(0f, playerParameter.enemyDiggingJumpSpeed);
+        Vector2 stick = ReadEnemyReleaseStickDirection();
+        if (stick.sqrMagnitude > 0f)
+            return stick * launchSpeed;
+
+        return launchSpeed > 0f && TryGetEnemyDiggingJumpDirection(launchSpeed, stick, out Vector3 direction)
+            ? direction * launchSpeed
+            : Vector3.zero;
+    }
+
+    // Moveに割り当てられたスティックから、上下を含む入力方向を読み取る。
+    private Vector2 ReadEnemyReleaseStickDirection()
     {
         InputAction moveAction = input.SharedInputActions?.FindAction("Player/Move");
         if (moveAction == null || !moveAction.enabled)
-            return Vector3.zero;
+            return Vector2.zero;
 
         float deadZone = Mathf.Clamp01(playerParameter.moveDeadZone);
         float deadZoneSquared = deadZone * deadZone;
@@ -1778,9 +1799,9 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         if (direction.sqrMagnitude <= deadZoneSquared)
-            return Vector3.zero;
+            return Vector2.zero;
 
-        return direction.normalized * Mathf.Max(0f, playerParameter.enemyDiggingJumpSpeed);
+        return direction.normalized;
     }
 
     // 横軸や左右ボタンのバインドから、両軸を持つ親のスティックを取得する。
@@ -1797,16 +1818,126 @@ public class SensorPlayerController : MonoBehaviour
         return null;
     }
 
-    // ジャンプで敵食い込みを解除し、通常の解除と同じ加速を予約する。
-    private bool TryBeginEnemyDiggingJump()
+    // ジャンプの候補を入力に近い順で調べ、地形に阻まれない方向を選ぶ。
+    private bool TryGetEnemyDiggingJumpDirection(float launchSpeed, Vector2 stick, out Vector3 direction)
     {
-        Vector3 boost = ReadEnemyReleaseBoost();
-        if (boost.sqrMagnitude == 0f)
+        direction = Vector3.zero;
+        int stageLayers = playerParameter.groundRayLayers.value | ResolvedImpactTerrainLayers |
+            chainsawDigging.TerrainLayerMask;
+        Collider probe = GetEnemyDiggingJumpProbe();
+        if (probe == null || stageLayers == 0)
+        {
+            Debug.LogWarning("敵食い込みジャンプには有効な判定用Colliderとステージのレイヤー設定が必要です。", this);
             return false;
+        }
+        float facing = facingDirection < 0f ? -1f : 1f;
+        float horizontal = stick.x == 0f ? facing : Mathf.Sign(stick.x);
+        // 真上と斜め上45度の中間（22.5度）より真上側にある入力は、真上を優先する。
+        bool preferUp = stick.y > 0f && Mathf.Abs(stick.x) <= stick.y * 0.41421356f;
+        Vector3 diagonal = new Vector3(horizontal, 1f, 0f).normalized;
+        Vector3 oppositeDiagonal = new Vector3(-horizontal, 1f, 0f).normalized;
+        Vector3 first = preferUp ? Vector3.up : diagonal;
+        Vector3 second = preferUp ? diagonal : Vector3.up;
+        float checkDistance = Mathf.Max(playerParameter.enemyDiggingJumpProbeDistance,
+            launchSpeed * Time.fixedDeltaTime);
 
-        chainsawDigging.Cancel(true);
+        if (IsEnemyDiggingJumpPathClear(probe, first, checkDistance, stageLayers))
+            direction = first;
+        else if (IsEnemyDiggingJumpPathClear(probe, second, checkDistance, stageLayers))
+            direction = second;
+        else if (IsEnemyDiggingJumpPathClear(probe, oppositeDiagonal, checkDistance, stageLayers))
+            direction = oppositeDiagonal;
+
+        return direction.sqrMagnitude > 0f;
+    }
+
+    // 専用の判定が使えないときは、本体Rigidbodyの有効な物理Colliderから選ぶ。
+    private Collider GetEnemyDiggingJumpProbe()
+    {
+        if (enemyDiggingJumpProbe != null && enemyDiggingJumpProbe.enabled &&
+            enemyDiggingJumpProbe.gameObject.activeInHierarchy)
+            return enemyDiggingJumpProbe;
+
+        Collider bodyProbe = null;
+        float tallest = 0f;
+        foreach (Collider body in wallTopBodyColliders)
+        {
+            if (body == null || !body.enabled || body.isTrigger ||
+                !body.gameObject.activeInHierarchy || body.attachedRigidbody != playerRigidbody ||
+                !(body is BoxCollider || body is CapsuleCollider || body is SphereCollider))
+                continue;
+
+            float height = body.bounds.size.y;
+            if (height > tallest)
+            {
+                bodyProbe = body;
+                tallest = height;
+            }
+        }
+
+        return bodyProbe;
+    }
+
+    // 判定用Colliderの幅で進路を検査し、接触中の面から離れる動きは許可する。
+    private bool IsEnemyDiggingJumpPathClear(
+        Collider probe, Vector3 direction, float distance, int stageLayers)
+    {
+        Transform probeTransform = probe.transform;
+        Quaternion rotation = probeTransform.rotation;
+        Bounds bounds = probe.bounds;
+        Vector3 center = bounds.center;
+        Vector3 halfSize = bounds.extents;
+        Quaternion boxOrientation = Quaternion.identity;
+        if (probe is BoxCollider box)
+        {
+            Vector3 scale = probeTransform.lossyScale;
+            halfSize = Vector3.Scale(box.size,
+                new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z))) * 0.5f;
+            center = probeTransform.TransformPoint(box.center);
+            boxOrientation = rotation;
+        }
+
+        foreach (RaycastHit hit in Physics.BoxCastAll(center, halfSize, direction, boxOrientation,
+            distance, stageLayers, QueryTriggerInteraction.Ignore))
+        {
+            Collider stage = hit.collider;
+            if (stage == null || stage.attachedRigidbody == playerRigidbody ||
+                stage.transform.IsChildOf(transform))
+                continue;
+
+            if (hit.distance > 0f)
+                return false;
+
+            // 開始時に重なるBoxCastの法線は使わず、実際に重なりを解消する方向で判定する。
+            if (Physics.ComputePenetration(probe, probeTransform.position, rotation,
+                stage, stage.transform.position, stage.transform.rotation, out Vector3 separation, out _))
+            {
+                if (Vector3.Dot(direction, separation) < -0.001f)
+                    return false;
+            }
+            // ちょうど触れていて押し分け方向が取れない場合は、進路側へ少し進めて重なりを確認する。
+            else if (Physics.ComputePenetration(probe,
+                probeTransform.position + direction * Mathf.Min(0.01f, distance), rotation,
+                stage, stage.transform.position, stage.transform.rotation, out _, out _))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // 空いている方向があるときだけ、敵食い込みを解除してジャンプを予約する。
+    private void TryBeginEnemyDiggingJump(Vector2 stick)
+    {
+        float launchSpeed = Mathf.Max(0f, playerParameter.enemyDiggingJumpSpeed);
+        if (launchSpeed == 0f || !TryGetEnemyDiggingJumpDirection(launchSpeed, stick, out Vector3 direction))
+            return;
+
+        if (chainsawDigging.Surface == ChainsawSurface.Enemy)
+            chainsawDigging.Cancel(true);
         ClearDiggingReleaseMomentum();
-        pendingEnemyReleaseBoost = boost;
+        pendingEnemyReleaseBoost = direction * launchSpeed;
         wallJumpDirectionHoldRemaining = 0f;
         pendingJumpCount = 1;
         jumpsUsed = 1;
@@ -1818,10 +1949,9 @@ public class SensorPlayerController : MonoBehaviour
 
         playerAnimator.PlayJump();
         SpawnMovementEffect(jumpEffect);
-        return true;
     }
 
-    // 壁ジャンプ、接地・猶予中の初段、二段目の順でジャンプを予約する。
+    // 敵・壁ジャンプ、接地・猶予中の初段、二段目の順でジャンプを予約する。
     void Jump(bool wasDiggingEnemy)
     {
         // 天井から離れている最中に、再度上向きジャンプを予約しない。
@@ -1840,9 +1970,9 @@ public class SensorPlayerController : MonoBehaviour
         ChainsawSurface surfaceBeforeJump = chainsawDigging.Surface;
         Vector3 wallNormal = chainsawDigging.SurfaceNormal;
 
-        if ((wasDiggingEnemy || surfaceBeforeJump == ChainsawSurface.Enemy) &&
-            TryBeginEnemyDiggingJump())
+        if (wasDiggingEnemy || surfaceBeforeJump == ChainsawSurface.Enemy)
         {
+            TryBeginEnemyDiggingJump(ReadEnemyReleaseStickDirection());
             return;
         }
 

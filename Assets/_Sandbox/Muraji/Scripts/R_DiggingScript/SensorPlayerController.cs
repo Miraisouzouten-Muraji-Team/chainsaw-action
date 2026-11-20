@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
 
 public class SensorPlayerController : MonoBehaviour
 {
@@ -1748,19 +1749,52 @@ public class SensorPlayerController : MonoBehaviour
         enemyReleaseFlightElapsed = 0f;
     }
 
-    // 左スティックの向きと共通の速さから、敵食い込み解除時の初速を求める。
+    // 移動用のInput Actionに割り当てられたスティックから、飛び出しの初速を求める。
     private Vector3 ReadEnemyReleaseBoost()
     {
-        Gamepad gamepad = Gamepad.current;
-        if (gamepad == null)
+        InputAction moveAction = input.SharedInputActions?.FindAction("Player/Move");
+        if (moveAction == null || !moveAction.enabled)
             return Vector3.zero;
 
-        Vector2 direction = gamepad.leftStick.ReadValue();
         float deadZone = Mathf.Clamp01(playerParameter.moveDeadZone);
-        if (direction.sqrMagnitude <= deadZone * deadZone)
+        float deadZoneSquared = deadZone * deadZone;
+        StickControl activeStick = FindMoveStick(moveAction.activeControl);
+        Vector2 direction = activeStick != null ? activeStick.ReadValue() : Vector2.zero;
+
+        // Moveは横軸だけなので、真上・真下ではactiveControlがない場合もある。
+        // Moveに割り当てられたスティックを調べ、親のスティックから上下も読み取る。
+        if (direction.sqrMagnitude <= deadZoneSquared)
+        {
+            foreach (InputControl control in moveAction.controls)
+            {
+                StickControl stick = FindMoveStick(control);
+                if (stick == null || stick == activeStick)
+                    continue;
+
+                Vector2 candidate = stick.ReadValue();
+                if (candidate.sqrMagnitude > direction.sqrMagnitude)
+                    direction = candidate;
+            }
+        }
+
+        if (direction.sqrMagnitude <= deadZoneSquared)
             return Vector3.zero;
 
         return direction.normalized * Mathf.Max(0f, playerParameter.enemyDiggingJumpSpeed);
+    }
+
+    // 横軸や左右ボタンのバインドから、両軸を持つ親のスティックを取得する。
+    private static StickControl FindMoveStick(InputControl control)
+    {
+        while (control != null)
+        {
+            if (control is StickControl stick)
+                return stick;
+
+            control = control.parent;
+        }
+
+        return null;
     }
 
     // ジャンプで敵食い込みを解除し、通常の解除と同じ加速を予約する。

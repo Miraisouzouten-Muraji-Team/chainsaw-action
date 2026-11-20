@@ -260,14 +260,8 @@ public class SensorPlayerController : MonoBehaviour
 
     private float wallJumpStunRemaining;
     private float wallJumpDirectionHoldRemaining;
-    [Header("敵食い込み解除の加速")]
-    [Tooltip("敵から離れた瞬間、左スティック方向へ加算する速度です。単位は毎秒の移動距離です。")]
-    [SerializeField, Min(0f)] private float enemyDiggingJumpSpeed = 18f;
-
-    [Tooltip("上方向へ飛び出した直後に重力を抑える秒数です。0で通常の重力がすぐにかかります。")]
-    [SerializeField, Min(0f)] private float enemyReleaseUpwardCarryTime = 0.1f;
-
-    private float enemyReleaseUpwardCarryRemaining;
+    private Vector3 enemyReleaseFlightInitialVelocity;
+    private float enemyReleaseFlightElapsed;
     private Vector3 pendingEnemyReleaseBoost;
     private Vector3 pendingWallJumpVelocity;
     private float wallJumpHorizontalVelocity;
@@ -727,13 +721,12 @@ public class SensorPlayerController : MonoBehaviour
     private void FixedUpdate()
     {
         float deltaTime = Time.fixedDeltaTime;
-        float upwardCarryTime = Mathf.Min(deltaTime, enemyReleaseUpwardCarryRemaining);
-        enemyReleaseUpwardCarryRemaining -= upwardCarryTime;
         Vector3 enemyReleaseBoost = pendingEnemyReleaseBoost;
         pendingEnemyReleaseBoost = Vector3.zero;
 
         if (playerRigidbody == null || playerRigidbody.isKinematic)
         {
+            ClearEnemyReleaseFlight();
             ClearWallTopClimb();
             ResetCeilingFallGrace(true);
             ascentStartSpeed = 0f;
@@ -754,12 +747,14 @@ public class SensorPlayerController : MonoBehaviour
         // 被弾硬直中は入力による移動を止め、落下と硬直時間だけを進める。
         if (TickDamageStun(deltaTime))
         {
+            ClearEnemyReleaseFlight();
             return;
         }
 
         // 初段命中後の食い込み中は、重力・入力移動・踏み込みを適用しない。
         if (weakAttackHoldActive)
         {
+            ClearEnemyReleaseFlight();
             playerRigidbody.linearVelocity = Vector3.zero;
             if (chainsawAccelerator.isActiveAndEnabled)
             {
@@ -795,12 +790,14 @@ public class SensorPlayerController : MonoBehaviour
 
         if (TickDiggingImpactStun(deltaTime))
         {
+            ClearEnemyReleaseFlight();
             return;
         }
 
         // 壁ジャンプ前の硬直中は操作による移動を停止する。
         if (TickWallJumpStun(deltaTime))
         {
+            ClearEnemyReleaseFlight();
             return;
         }
 
@@ -814,12 +811,14 @@ public class SensorPlayerController : MonoBehaviour
 
         if (TickWallTopClimb(deltaTime))
         {
+            ClearEnemyReleaseFlight();
             return;
         }
 
         // 食い込み状態の更新前に、前回の移動で天井に触れたか確認する。
         if (TryBeginUpperSensorImpact())
         {
+            ClearEnemyReleaseFlight();
             return;
         }
 
@@ -863,6 +862,7 @@ public class SensorPlayerController : MonoBehaviour
                 ? chainsawDigging.SurfaceNormal : climbedWallNormal) &&
             TickWallTopClimb(deltaTime))
         {
+            ClearEnemyReleaseFlight();
             return;
         }
 
@@ -884,6 +884,11 @@ public class SensorPlayerController : MonoBehaviour
         // 食い込み状態と押し戻しの予約が確定してから猶予を更新する。
         UpdateCoyoteTime();
 
+        bool isKnockbackActive =
+            knockbackVelocity != 0f || knockbackHopPending;
+        bool isEnemyReleaseFlying = TryGetEnemyReleaseFlightVelocity(
+            enemyReleaseBoost, deltaTime, isKnockbackActive, out Vector3 enemyReleaseFlightVelocity);
+
         // 空中攻撃中は、直前までの移動処理で管理していた横速度を保持する。
         // Rigidbodyから速度を取り直さず、通常入力による加減速も行わない。
         bool preserveAirAttackMomentum =
@@ -891,14 +896,11 @@ public class SensorPlayerController : MonoBehaviour
             !IsGrounded() &&
             !chainsawDigging.IsDigging;
 
-        if (!preserveAirAttackMomentum)
+        if (!preserveAirAttackMomentum && !isEnemyReleaseFlying)
         {
             // 地上・非攻撃時・食い込み中は、既存の移動処理を行う。
             Move();
         }
-
-        bool isKnockbackActive =
-            knockbackVelocity != 0f || knockbackHopPending;
 
         // 攻撃中の横移動倍率を取得する。食い込みと押し戻しは既存の速度を優先する。
         float attackMovementMultiplier =
@@ -1003,8 +1005,6 @@ public class SensorPlayerController : MonoBehaviour
 
         if (jumpPending)
         {
-            upwardCarryTime = 0f;
-            enemyReleaseUpwardCarryRemaining = 0f;
             ResetCeilingFallGrace(true);
             jumpPending = false;
             traceJumpLaunch = logJumpDiagnostics;
@@ -1036,18 +1036,10 @@ public class SensorPlayerController : MonoBehaviour
             ignoreGroundUntil = Time.time + 0.1f;
         }
 
-        // 食い込みによる重力抑制を優先する。
-        // 攻撃中も上下速度を維持し、攻撃データの倍率を重力計算内で適用する。
-        // 上向きの離脱直後だけ重力を抑え、接触で上昇が止まったら通常の重力に戻す。
-        bool canCarryEnemyRelease = velocity.y > 0f && !chainsawDigging.IsDigging &&
-            !isKnockbackActive && !IsAttacking && !wallJumpLaunchPending;
-        if (!canCarryEnemyRelease)
-            enemyReleaseUpwardCarryRemaining = 0f;
-
-        if (!suppressGravity)
+        // 食い込み中と敵からの飛び出し中は、それぞれ専用の速度を使う。
+        if (!suppressGravity && !isEnemyReleaseFlying)
         {
-            float gravityTime = canCarryEnemyRelease ? deltaTime - upwardCarryTime : deltaTime;
-            ApplyJumpGravity(ref velocity, deltaTime, gravityTime);
+            ApplyJumpGravity(ref velocity, deltaTime);
         }
 
         // 踏み込みは通常移動とは別に、同じ攻撃中の倍率を掛けて加算する。
@@ -1106,23 +1098,11 @@ public class SensorPlayerController : MonoBehaviour
         // ジャンプ・壁ジャンプ・角補正の決定後に、通常の斜面歩行だけを適用する。
         ApplyGroundSlopeMovement(ref velocity, isKnockbackActive);
 
-        // 離脱時の入力を通常速度に一度だけ足し、横速度は次の移動更新へ引き継ぐ。
-        if (enemyReleaseBoost.sqrMagnitude > 0f &&
-            chainsawDigging.Surface == ChainsawSurface.None &&
-            !IsAttacking && !isKnockbackActive && !IsDamageStunned && !IsImpactStunned)
+        // 飛び出し方向と速さを保つため、X・Yに同じ減衰率を適用した速度を使う。
+        if (isEnemyReleaseFlying)
         {
-            velocity += enemyReleaseBoost;
-            currentSpeed = velocity.x;
-            enemyReleaseUpwardCarryRemaining = enemyReleaseBoost.y > 0f && velocity.y > 0f
-                ? Mathf.Max(0f, enemyReleaseUpwardCarryTime)
-                : 0f;
-            if (velocity.y > 0f)
-            {
-                ClearJumpGroundState();
-                ascentStartSpeed = velocity.y;
-                fallElapsedTime = 0f;
-                ignoreGroundUntil = Time.time + 0.1f;
-            }
+            velocity = enemyReleaseFlightVelocity;
+            currentSpeed = 0f;
         }
 
         // 敵への食い込み中だけ、開始時の位置差を維持する速度で追従する。
@@ -1164,6 +1144,11 @@ public class SensorPlayerController : MonoBehaviour
         // Rigidbodyへ渡す実際の移動速度だけを、最後に制限する。
         debugVelocityBeforeWall = velocity;
         debugWallBlocked = ApplyWallMovementBlock(ref velocity);
+        if (isEnemyReleaseFlying && debugWallBlocked &&
+            enemyReleaseFlightVelocity.x != 0f && velocity.x == 0f)
+        {
+            ClearEnemyReleaseFlight();
+        }
         debugVelocityAfterWall = velocity;
         if (traceJumpLaunch)
         {
@@ -1174,9 +1159,8 @@ public class SensorPlayerController : MonoBehaviour
         playerRigidbody.linearVelocity = velocity;
         RecordWallClimbMotion(velocity);
 
-        playerAnimator.SetSpeed(
-            knockbackVelocity != 0f ? 0f : currentSpeed
-        );
+        float animationSpeed = isEnemyReleaseFlying ? velocity.x : currentSpeed;
+        playerAnimator.SetSpeed(knockbackVelocity != 0f ? 0f : animationSpeed);
 
         // 最終移動量で敵への接触攻撃を照会する。貫通中もTrigger通知に依存しない。
         // 命中先から被弾などが再入しても、ここより後で速度を上書きしない。
@@ -1244,7 +1228,7 @@ public class SensorPlayerController : MonoBehaviour
     // 通常時は被弾硬直を開始する。成立済みの食い込み中は姿勢・移動・接続を維持する。
     public void BeginDamageStun(float duration)
     {
-        enemyReleaseUpwardCarryRemaining = 0f;
+        ClearEnemyReleaseFlight();
         ClearCeilingJumpRelease();
         ResetCeilingTravelImpact();
         ClearDiggingReleaseMomentum();
@@ -1676,7 +1660,95 @@ public class SensorPlayerController : MonoBehaviour
             jumpsUsed = MAX_JUMP_COUNT - 1;
     }
 
-    // 左スティックの向きから、敵食い込み解除時に加算する速度を求める。
+    // 敵食い込みからの飛び出し速度を、向きに関係なく同じ二次曲線で減らす。
+    private bool TryGetEnemyReleaseFlightVelocity(
+        Vector3 launchVelocity, float deltaTime, bool isKnockbackActive, out Vector3 velocity)
+    {
+        velocity = Vector3.zero;
+        if (chainsawDigging.Surface != ChainsawSurface.None ||
+            IsAttacking || IsDamageStunned || IsImpactStunned || isKnockbackActive || jumpPending ||
+            wallJumpLaunchPending || wallJumpDirectionHoldRemaining > 0f ||
+            ceilingCornerJumpPending || ceilingJumpLaunchPending || ceilingJumpReleaseRemaining > 0f)
+        {
+            ClearEnemyReleaseFlight();
+            return false;
+        }
+
+        if (launchVelocity.sqrMagnitude > 0f)
+        {
+            enemyReleaseFlightInitialVelocity = launchVelocity;
+            enemyReleaseFlightElapsed = 0f;
+            variableJumpActive = false;
+            ResetCeilingFallGrace(false);
+            ClearDiggingReleaseMomentum();
+            ascentStartSpeed = 0f;
+            fallElapsedTime = 0f;
+            if (launchVelocity.y > 0f)
+            {
+                ClearJumpGroundState();
+                ignoreGroundUntil = Time.time + 0.1f;
+            }
+
+            // 解除した物理フレームは減衰前の初速を使う。
+            velocity = launchVelocity;
+        }
+        else
+        {
+            if (enemyReleaseFlightInitialVelocity.sqrMagnitude == 0f)
+                return false;
+
+            enemyReleaseFlightElapsed += deltaTime;
+            float easeDuration = playerParameter.enemyReleaseEaseDuration;
+            if (enemyReleaseFlightElapsed >= easeDuration)
+            {
+                ClearEnemyReleaseFlight();
+                return false;
+            }
+
+            float remaining = 1f - enemyReleaseFlightElapsed / easeDuration;
+            velocity = enemyReleaseFlightInitialVelocity * (remaining * remaining);
+
+            // 徐々に強くなる重力を経過時間で積分し、飛び出しの勢いが残る間も軌道を下へ曲げる。
+            float gravityBlendTime = Mathf.Max(0f, playerParameter.enemyReleaseGravityBlendTime);
+            float gravityTime = enemyReleaseFlightElapsed;
+            if (gravityBlendTime > 0f)
+            {
+                float progress = Mathf.Clamp01(enemyReleaseFlightElapsed / gravityBlendTime);
+                gravityTime = gravityBlendTime * progress * progress * progress * (1f - 0.5f * progress)
+                    + Mathf.Max(0f, enemyReleaseFlightElapsed - gravityBlendTime);
+            }
+
+            float fallVelocity = Physics.gravity.y * playerParameter.gravityScale * gravityTime;
+            velocity.y += Mathf.Max(fallVelocity, -playerParameter.maxFallSpeed);
+        }
+
+        return true;
+    }
+
+    // 衝突した面に向かう飛び出しを止め、次の物理更新で通常の移動へ戻す。
+    private void StopEnemyReleaseFlightOnContact(Collision collision)
+    {
+        if (enemyReleaseFlightInitialVelocity.sqrMagnitude == 0f)
+            return;
+
+        Vector3 direction = enemyReleaseFlightInitialVelocity.normalized;
+        for (int i = 0; i < collision.contactCount; i++)
+        {
+            if (Vector3.Dot(direction, collision.GetContact(i).normal) < -0.1f)
+            {
+                ClearEnemyReleaseFlight();
+                return;
+            }
+        }
+    }
+
+    private void ClearEnemyReleaseFlight()
+    {
+        enemyReleaseFlightInitialVelocity = Vector3.zero;
+        enemyReleaseFlightElapsed = 0f;
+    }
+
+    // 左スティックの向きと共通の速さから、敵食い込み解除時の初速を求める。
     private Vector3 ReadEnemyReleaseBoost()
     {
         Gamepad gamepad = Gamepad.current;
@@ -1688,7 +1760,7 @@ public class SensorPlayerController : MonoBehaviour
         if (direction.sqrMagnitude <= deadZone * deadZone)
             return Vector3.zero;
 
-        return direction.normalized * Mathf.Max(0f, enemyDiggingJumpSpeed);
+        return direction.normalized * Mathf.Max(0f, playerParameter.enemyDiggingJumpSpeed);
     }
 
     // ジャンプで敵食い込みを解除し、通常の解除と同じ加速を予約する。
@@ -2029,8 +2101,7 @@ public class SensorPlayerController : MonoBehaviour
     // 通常の上昇・落下と攻撃時の重力を更新する。天井猶予中は残った上昇の勢いだけを減らし、上下移動を止める。
     private void ApplyJumpGravity(
         ref Vector3 velocity,
-        float deltaTime,
-        float? gravityTime = null)
+        float deltaTime)
     {
         // 坂を登る上向き速度を、ジャンプ上昇と誤認しない。
         // ジャンプや押し戻しの発動直後は、既存の接地無視時間を優先する。
@@ -2112,7 +2183,7 @@ public class SensorPlayerController : MonoBehaviour
             gravityMultiplier *
             variableGravityScale *
             attackGravityMultiplier *
-            (gravityTime ?? deltaTime);
+            deltaTime;
 
         // 攻撃中も既存の落下速度上限を維持する。
         velocity.y = Mathf.Max(
@@ -2242,6 +2313,7 @@ public class SensorPlayerController : MonoBehaviour
         if (chainsawDigging != null) chainsawDigging.QueueMovementEnemyCollision(collision);
         // 移動を止める処理より先に、実際に触れた地形の面を記録する。
         if (groundProbe != null) groundProbe.RecordContact(collision);
+        StopEnemyReleaseFlightOnContact(collision);
         if (IsDamageStunned) return;
 
         // 頭部が天井の端に軽く当たったときだけ、横移動を予約する。
@@ -2269,6 +2341,7 @@ public class SensorPlayerController : MonoBehaviour
         if (chainsawDigging != null) chainsawDigging.QueueMovementEnemyCollision(collision);
         // 移動を止める処理より先に、実際に触れた地形の面を記録する。
         if (groundProbe != null) groundProbe.RecordContact(collision);
+        StopEnemyReleaseFlightOnContact(collision);
         if (IsDamageStunned) return;
 
         // 同じ地形への接触中も、角の状態を判定し直す。
@@ -3312,7 +3385,7 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
-        enemyReleaseUpwardCarryRemaining = 0f;
+        ClearEnemyReleaseFlight();
         pendingEnemyReleaseBoost = Vector3.zero;
         foreach (var trail in attackTrails)
             if (trail.effect != null) Destroy(trail.effect.gameObject);

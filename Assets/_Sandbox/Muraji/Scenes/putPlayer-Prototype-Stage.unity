@@ -128583,7 +128583,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: enemyDiggingJumpSpeed
-      value: 50
+      value: 60
       objectReference: {fileID: 0}
     - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: airAttackEffect.Prefab
@@ -128596,6 +128596,10 @@ PrefabInstance:
     - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: airAttackEffect.Lifetime
       value: 0.75
+      objectReference: {fileID: 0}
+    - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: enemyReleaseEaseDuration
+      value: 1.25
       objectReference: {fileID: 0}
     - target: {fileID: 705452435969714617, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: airSwingEffect.SpawnPoint

@@ -2017,7 +2017,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7154227568031423939, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: enemyData
@@ -2374,7 +2374,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -3202,7 +3202,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -3502,7 +3502,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawRotation
   accelerationParameter: {fileID: 0}
-  diggingDecelerationTime: 0.3
 --- !u!114 &1450766279
 MonoBehaviour:
   m_ObjectHideFlags: 0

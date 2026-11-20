@@ -1,89 +1,109 @@
+
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// ステージ全体の外周距離画像と描画Materialを一括管理する。
-/// Cube側に専用スクリプトを追加する必要はない。
-/// 現在のShaderはグローバル変数を使うため、同時に有効にするMaskは原則1つとする。
+/// ステージの外周生成設定を管理する。
+/// 実行時には生成済みメッシュを通常のMeshRendererで描画する。
 /// </summary>
-[ExecuteAlways]
 [DisallowMultipleComponent]
 public sealed class StageSurfaceMask : MonoBehaviour
 {
-    private static readonly int STAGE_EDGE_DISTANCE_TEX_ID = Shader.PropertyToID("_StageEdgeDistanceTex");
-    private static readonly int STAGE_MASK_UV_TRANSFORM_ID = Shader.PropertyToID("_StageMaskUvTransform");
-    private static readonly int STAGE_MASK_MAX_DISTANCE_ID = Shader.PropertyToID("_StageMaskMaxDistance");
-    private static readonly int STAGE_MASK_ENABLED_ID = Shader.PropertyToID("_StageMaskEnabled");
+    public const string GENERATED_OBJECT_NAME = "__StageEdgeOverlay";
 
-    [Header("一括設定")]
-    [Tooltip("子のCubeへ一括適用するステージ用Material。")]
+    [Header("マテリアル")]
     [SerializeField] private Material stageMaterial;
-    [Tooltip("外周からテクスチャを表示する幅（ワールド単位）。Apply & Bake時にMaterialへ反映する。")]
-    [SerializeField, Range(0f, 2f)] private float edgeWidth = 0.5f;
-    [Tooltip("対象の地形の親。空欄ならこのオブジェクト以下から自動取得する。")]
+    [SerializeField] private Material edgeMaterial;
+
+    [Header("地形")]
     [SerializeField] private Transform stageRoot;
-    [Tooltip("非アクティブなCubeも対象にするか。")]
     [SerializeField] private bool includeInactive;
-    [Tooltip("Apply & Bake時に旧StageSurfacePieceを取り除く。操作はUndo可能。")]
-    [SerializeField] private bool removeLegacyPiecesOnApply = true;
 
-    [Header("外周距離画像の生成")]
-    [Tooltip("1ワールド単位あたりの画素数。通常は16～32程度。")]
-    [SerializeField, Range(4, 64)] private int pixelsPerUnit = 24;
-    [Tooltip("画像に保存する最大距離。Edge Widthより大きくする。")]
-    [SerializeField, Min(0.1f)] private float maxDistance = 2f;
-    [Tooltip("ステージの外側へ確保する余白（ワールド単位）。")]
-    [SerializeField, Min(0.1f)] private float padding = 1f;
+    [Header("外周")]
+    [SerializeField, Range(0.01f, 2f)]
+    private float edgeWidth = 0.35f;
 
-    [Header("生成結果（自動設定）")]
-    [SerializeField] private Texture2D distanceTexture;
-    [SerializeField] private Vector4 uvTransform;
-    [SerializeField] private float bakedMaxDistance;
+    [Header("角の丸め")]
+    [Tooltip("凸角の内側を丸める半径。")]
+    [SerializeField, Min(0f)] private float cornerRadius = 0.15f;
+
+    [Tooltip("円弧を何分割するか。")]
+    [SerializeField, Range(2, 16)] private int cornerSegments = 8;
+
+    public float CornerRadius => cornerRadius;
+    public int CornerSegments => cornerSegments;
+
+    [Header("深度")]
+    [Tooltip("カメラが-Z側から地形を見る場合はON。")]
+    [SerializeField] private bool cameraAtNegativeZ = true;
+
+    [Tooltip("元の地形面からカメラ側へ離す距離。")]
+    [SerializeField, Range(0f, 0.02f)]
+    private float depthOffset = 0.002f;
+
+    [Header("生成済み形状")]
+    [SerializeField] private StagePieceProfileLibrary profileLibrary;
 
     public Material StageMaterial => stageMaterial;
-    public float EdgeWidth => edgeWidth;
-    public Transform StageRoot => stageRoot != null ? stageRoot : transform;
+    public Material EdgeMaterial => edgeMaterial;
+    public Transform StageRoot =>
+        stageRoot != null ? stageRoot : transform;
     public bool IncludeInactive => includeInactive;
-    public bool RemoveLegacyPiecesOnApply => removeLegacyPiecesOnApply;
-    public int PixelsPerUnit => pixelsPerUnit;
-    public float MaxDistance => maxDistance;
-    public float Padding => padding;
-    public Texture2D DistanceTexture => distanceTexture;
-
-    private void OnEnable()
-    {
-        ApplyGlobalShaderData();
-    }
-
-    private void OnDisable()
-    {
-        Shader.SetGlobalFloat(STAGE_MASK_ENABLED_ID, 0f);
-    }
+    public float EdgeWidth => edgeWidth;
+    public bool CameraAtNegativeZ => cameraAtNegativeZ;
+    public float DepthOffset => depthOffset;
+    public StagePieceProfileLibrary ProfileLibrary => profileLibrary;
 
     /// <summary>
-    /// 焼き込み結果を登録し、Shaderが参照する値を更新する。
+    /// 外周処理の対象となるMeshFilterを取得する。
+    /// 生成した縁メッシュは除外する。
     /// </summary>
-    public void SetBakedData(Texture2D texture, Vector4 maskUvTransform, float bakedDistance)
+    public List<MeshFilter> CollectStageMeshes()
     {
-        distanceTexture = texture;
-        uvTransform = maskUvTransform;
-        bakedMaxDistance = bakedDistance;
-        ApplyGlobalShaderData();
-    }
+        MeshFilter[] filters =
+            StageRoot.GetComponentsInChildren<MeshFilter>(
+                includeInactive);
 
-    /// <summary>
-    /// Shaderへ共通の距離画像を渡す。各CubeにはMaterialPropertyBlockを使わない。
-    /// </summary>
-    public void ApplyGlobalShaderData()
-    {
-        if (!isActiveAndEnabled || distanceTexture == null || bakedMaxDistance <= 0f)
+        List<MeshFilter> result = new(filters.Length);
+
+        foreach (MeshFilter filter in filters)
         {
-            Shader.SetGlobalFloat(STAGE_MASK_ENABLED_ID, 0f);
-            return;
+            if (filter == null || filter.sharedMesh == null)
+                continue;
+
+            // 再構築時に生成済みオブジェクトを収集しない。
+            if (filter.name.StartsWith(
+                GENERATED_OBJECT_NAME,
+                StringComparison.Ordinal))
+                continue;
+
+            if (!filter.TryGetComponent(
+                out MeshRenderer meshRenderer))
+                continue;
+
+            if (!meshRenderer.enabled)
+                continue;
+
+            result.Add(filter);
         }
 
-        Shader.SetGlobalTexture(STAGE_EDGE_DISTANCE_TEX_ID, distanceTexture);
-        Shader.SetGlobalVector(STAGE_MASK_UV_TRANSFORM_ID, uvTransform);
-        Shader.SetGlobalFloat(STAGE_MASK_MAX_DISTANCE_ID, bakedMaxDistance);
-        Shader.SetGlobalFloat(STAGE_MASK_ENABLED_ID, 1f);
+        return result;
+    }
+
+    /// <summary>
+    /// Editorで作成した形状データを登録する。
+    /// </summary>
+    public void SetProfileLibrary(StagePieceProfileLibrary library)
+    {
+        profileLibrary = library;
+    }
+
+    /// <summary>
+    /// Editorで作成した縁用マテリアルを登録する。
+    /// </summary>
+    public void SetEdgeMaterial(Material material)
+    {
+        edgeMaterial = material;
     }
 }

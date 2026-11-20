@@ -29,6 +29,17 @@ Shader "Custom/StageSurface"
         [HideInInspector] _BaseMap("Base Map", 2D) = "white" {}
         [HideInInspector] _BaseColor("Base Color", Color) = (1, 1, 1, 1)
         [HideInInspector] _Surface("Surface Type", Float) = 0
+        
+        // 通常の地形と生成した縁メッシュを切り替える。
+        [HideInInspector] _StageEdgeOnly("Stage Edge Only", Float) = 0
+
+        // 地形本体は深度を書き、縁メッシュは書かない。
+        [HideInInspector] _StageZWrite("Stage ZWrite", Float) = 1
+
+        // 縁メッシュの深度競合を軽減する。
+        [HideInInspector] _StageDepthBiasFactor("Stage Depth Bias Factor", Float) = 0
+        [HideInInspector] _StageDepthBiasUnits("Stage Depth Bias Units", Float) = 0
+
     }
 
     SubShader
@@ -66,8 +77,9 @@ Shader "Custom/StageSurface"
             Tags { "LightMode" = "UniversalGBuffer" }
 
             Cull Back
-            ZWrite On
+            ZWrite [_StageZWrite]
             ZTest LEqual
+            Offset [_StageDepthBiasFactor], [_StageDepthBiasUnits]
 
             HLSLPROGRAM
 
@@ -126,8 +138,9 @@ Shader "Custom/StageSurface"
             Tags { "LightMode" = "UniversalForward" }
 
             Cull Back
-            ZWrite On
+            ZWrite [_StageZWrite]
             ZTest LEqual
+            Offset [_StageDepthBiasFactor], [_StageDepthBiasUnits]
 
             HLSLPROGRAM
 
@@ -217,7 +230,7 @@ Shader "Custom/StageSurface"
             Tags { "LightMode" = "DepthOnly" }
 
             Cull Back
-            ZWrite On
+            ZWrite [_StageZWrite]
             ZTest LEqual
             ColorMask R
 
@@ -245,8 +258,9 @@ Shader "Custom/StageSurface"
             Tags { "LightMode" = "DepthNormals" }
 
             Cull Back
-            ZWrite On
+            ZWrite [_StageZWrite]
             ZTest LEqual
+            Offset [_StageDepthBiasFactor], [_StageDepthBiasUnits]
 
             HLSLPROGRAM
 

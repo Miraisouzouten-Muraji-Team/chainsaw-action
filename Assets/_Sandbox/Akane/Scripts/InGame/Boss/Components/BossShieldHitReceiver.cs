@@ -9,6 +9,7 @@ namespace Project.InGame.Boss
     public sealed class BossShieldHitReceiver : MonoBehaviour, IAttackHitReceiver
     {
         [SerializeField] private BossShieldController shield;
+        [SerializeField] private BossDamageFlash damageFlash;
 
         private void Awake()
         {
@@ -32,7 +33,10 @@ namespace Project.InGame.Boss
             if (attackData.damage <= 0) { return; }
 
             // 本体とは独立した盾HPにダメージを与える。
-            shield.TakeDamage(attackData.damage);
+            if (shield.TakeDamage(attackData.damage))
+            {
+                damageFlash?.Play();
+            }
         }
     }
 }

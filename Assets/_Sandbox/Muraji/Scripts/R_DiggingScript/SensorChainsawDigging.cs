@@ -151,6 +151,18 @@ public class SensorChainsawDigging : MonoBehaviour
     // Hold操作の予約押下を、最低1回の物理更新で処理するまで保持する。
     private bool bufferedRequestAwaitingTick;
 
+    [Header("ホールド解除後の壁ジャンプ")]
+    [Tooltip("ホールドで壁食い込みを離してから壁ジャンプを受け付ける秒数です。0にすると無効になります。")]
+    [SerializeField, Min(0f)] private float wallJumpReleaseBufferSeconds = 0.15f;
+
+    private Vector3 releasedWallJumpNormal;
+    private bool releasedWallJumpHadBonus;
+    private float wallJumpReleaseBufferUntil = float.NegativeInfinity;
+
+    public bool HasBufferedWallJump =>
+        isActiveAndEnabled && Surface == ChainsawSurface.None && !IsRequested &&
+        !IsWeakEnemyAttack && Time.time < wallJumpReleaseBufferUntil;
+
     private float wallContactLostTime;
     private float ceilingBonusRamp;
 
@@ -452,7 +464,17 @@ public class SensorChainsawDigging : MonoBehaviour
 
             if (!requested && IsRequested)
             {
+                // ホールドを離した時だけ、解除で消える壁の法線とボーナスを保存する。
+                Vector3 releasedNormal = !held && Surface == ChainsawSurface.Wall
+                    ? SurfaceNormal : Vector3.zero;
+                bool hadBonus = HasBonus;
                 Cancel(false);
+                if (wallJumpReleaseBufferSeconds > 0f && Mathf.Abs(releasedNormal.x) > 0.01f)
+                {
+                    releasedWallJumpNormal = releasedNormal;
+                    releasedWallJumpHadBonus = hadBonus;
+                    wallJumpReleaseBufferUntil = Time.time + wallJumpReleaseBufferSeconds;
+                }
             }
 
             if (pressed && requested && !IsRequested)
@@ -474,6 +496,7 @@ public class SensorChainsawDigging : MonoBehaviour
         particleFrameSurface = ChainsawSurface.None;
         DiggingParticleFrameChanged?.Invoke();
         detector.SetFacingDirection(facingDirection);
+        ClearWallJumpReleaseBuffer();
         // 全候補を同じ照会で比較し、敵・天井・壁・床の優先順位で開始対象を決める。
         bool hasContact = detector.TryGetContact(null, out SensorChainsawContact initialContact,
             ChainsawSurface.None, facingDirection);
@@ -1087,6 +1110,28 @@ public class SensorChainsawDigging : MonoBehaviour
         return true;
     }
 
+    // ホールド解除後の壁をジャンプに一度だけ使い、ボーナス条件も確認する。
+    public bool TryTakeBufferedWallJump(out Vector3 wallNormal)
+    {
+        wallNormal = default;
+        if (!HasBufferedWallJump) return false;
+
+        wallNormal = releasedWallJumpNormal;
+        if (releasedWallJumpHadBonus && MeetsBonusAcceleratorThreshold)
+            GrantEvade(diggingParameter.wallEvadeTime);
+
+        ClearWallJumpReleaseBuffer();
+        return true;
+    }
+
+    // 着地や別の食い込みに移ったとき、以前の壁を使えないようにする。
+    public void ClearWallJumpReleaseBuffer()
+    {
+        wallJumpReleaseBufferUntil = float.NegativeInfinity;
+        releasedWallJumpNormal = Vector3.zero;
+        releasedWallJumpHadBonus = false;
+    }
+
     // 指定時間まで回避判定を延長する。
     private void GrantEvade(
         float duration)
@@ -1261,6 +1306,7 @@ public class SensorChainsawDigging : MonoBehaviour
     public void Cancel(
         bool immediate)
     {
+        ClearWallJumpReleaseBuffer();
         bufferedRequestAwaitingTick = false;
         if (IsWeakEnemyAttack)
         {

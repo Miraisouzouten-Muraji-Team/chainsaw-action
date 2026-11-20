@@ -14,8 +14,26 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackDefinition
   type: 3
   range: 8
-  targetDistanceRatio: 0.5
-  preparationTime: 0.5
-  activeTime: 1
+  targetDistanceRatio: 0.3
   recoveryTime: 1
   animatorTrigger: 
+  parameters:
+    rid: 6889452243276005461
+  references:
+    version: 2
+    RefIds:
+    - rid: 6889452243276005461
+      type: {class: BossVerticalSlashParameters, ns: Project.InGame.Boss, asm: Assembly-CSharp}
+      data:
+        shielded:
+          preparationTime: 0.75
+          activeTime: 1
+          damageMultiplier: 0.8
+          animationSpeed: 1
+        unshielded:
+          preparationTime: 1
+          activeTime: 1
+          damageMultiplier: 0.85
+          animationSpeed: 0.95
+        raiseAngle: -180
+        finishAngle: 0

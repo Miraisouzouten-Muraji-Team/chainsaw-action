@@ -13,9 +13,28 @@ MonoBehaviour:
   m_Name: Laser Attack
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAttackDefinition
   type: 4
-  range: 8
-  targetDistanceRatio: 0.5
-  preparationTime: 0.5
-  activeTime: 1
+  range: 50
+  targetDistanceRatio: 1
   recoveryTime: 1
   animatorTrigger: 
+  parameters:
+    rid: 6889452243276005457
+  references:
+    version: 2
+    RefIds:
+    - rid: 6889452243276005457
+      type: {class: BossLaserParameters, ns: Project.InGame.Boss, asm: Assembly-CSharp}
+      data:
+        shotInterval: 0.5
+        shielded:
+          preparationTime: 1
+          shotCount: 5
+          speed: 10
+          aimWidth: 3
+          damageMultiplier: 0.1
+        unshielded:
+          preparationTime: 1
+          shotCount: 8
+          speed: 12.5
+          aimWidth: 5
+          damageMultiplier: 0.1

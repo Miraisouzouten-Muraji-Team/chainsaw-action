@@ -201,6 +201,39 @@
                     "isPartOfComposite": true
                 },
                 {
+                    "name": "1D Axis Ps",
+                    "id": "1f7d26ee-620e-44f5-92cf-d0256e3e17b3",
+                    "path": "1DAxis",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Move",
+                    "isComposite": true,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "negative",
+                    "id": "33231112-831b-4dd0-a8c6-27458b1278bd",
+                    "path": "<Joystick>/stick/left",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Move",
+                    "isComposite": false,
+                    "isPartOfComposite": true
+                },
+                {
+                    "name": "positive",
+                    "id": "878858de-8e3e-44ce-968d-b9c88e3eee50",
+                    "path": "",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Move",
+                    "isComposite": false,
+                    "isPartOfComposite": true
+                },
+                {
                     "name": "",
                     "id": "3b6defb6-5d17-43d1-881b-897299ce7628",
                     "path": "<Mouse>/rightButton",
@@ -270,6 +303,17 @@
                     "name": "",
                     "id": "fd6827bf-7e6a-43f8-8444-5008e387b1f5",
                     "path": "<XInputController>/buttonWest",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Attack",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "c532e6c7-9876-4066-a76b-c9e25371381d",
+                    "path": "",
                     "interactions": "",
                     "processors": "",
                     "groups": "",

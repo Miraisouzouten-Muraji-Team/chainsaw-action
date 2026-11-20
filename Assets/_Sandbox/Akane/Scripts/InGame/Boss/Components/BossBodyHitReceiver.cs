@@ -6,14 +6,20 @@ namespace Project.InGame.Boss
     /// ボス本体への攻撃命中を受信し、HPへ反映する。
     /// </summary>
     [DisallowMultipleComponent]
-    [RequireComponent(typeof(BossHealth))]
     public sealed class BossBodyHitReceiver : MonoBehaviour, IAttackHitReceiver
     {
+        [SerializeField] private BossDamageFlash damageFlash;
         private BossHealth health;
 
         private void Awake()
         {
-            health = GetComponent<BossHealth>();
+            health = GetComponentInParent<BossHealth>();
+
+            if (health == null)
+            {
+                Debug.LogError("BossBodyHitReceiver: BossHealthが見つかりません。", this);
+                enabled = false;
+            }
         }
 
         /// <summary>
@@ -30,7 +36,10 @@ namespace Project.InGame.Boss
             if (attackData.damage <= 0) { return; }
 
             // 本体のHPにダメージを与える。
-            health.TakeDamage(attackData.damage);
+            if (health.TakeDamage(attackData.damage))
+            {
+                damageFlash?.Play();
+            }
         }
     }
 }

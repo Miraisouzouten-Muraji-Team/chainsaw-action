@@ -1165,6 +1165,10 @@ PrefabInstance:
       propertyPath: m_Color.r
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 5531849285090225007, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
+      propertyPath: m_text
+      value: "\u306F\u3044"
+      objectReference: {fileID: 0}
     - target: {fileID: 6391084821200442679, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
       propertyPath: m_Name
       value: YesButton
@@ -1532,6 +1536,10 @@ PrefabInstance:
       propertyPath: m_Color.r
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 5531849285090225007, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
+      propertyPath: m_text
+      value: "\u3044\u3044\u3048"
+      objectReference: {fileID: 0}
     - target: {fileID: 6391084821200442679, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
       propertyPath: m_Name
       value: NoButton
@@ -1782,7 +1790,7 @@ PrefabInstance:
     - target: {fileID: 2363111312679742826, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
       propertyPath: targetScene
       value: 
-      objectReference: {fileID: 102900000, guid: d2d0ba0c3c3285a478d6c4f1094b2276, type: 3}
+      objectReference: {fileID: 102900000, guid: cf3fc27612d3d38479d63a7cdbd0b8f8, type: 3}
     - target: {fileID: 2363111312679742826, guid: 54aac4348bfbca046a9821baf8c6527b, type: 3}
       propertyPath: transitionType
       value: 3

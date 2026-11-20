@@ -17,7 +17,7 @@ MonoBehaviour:
     m_Bits: 128
   enemyLayers:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 131136
   surfaceNormalThreshold: 0.7
   normalRayBackoff: 0.25
   frontRayDistance: 0.5

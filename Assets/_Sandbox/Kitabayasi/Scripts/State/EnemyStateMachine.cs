@@ -434,10 +434,17 @@ public class EnemyStateMachine : MonoBehaviour
 
         turretAttackStrategy = attackStrategy as TurretEnemyAttackStrategy;
 
+        // 事前にVisualRoot配下のAnimatorをすべて取得する。
+        // 非アクティブな子も含め、Damage中に表示された場合も再生させない。
+        Animator[] damageAnimators = visualRoot != null
+            ? visualRoot.GetComponentsInChildren<Animator>(true)
+            : Array.Empty<Animator>();
+
         damageState =
             new EnemyDamageState(
                 enemyDamageFlash,
                 enemyKnockbackMotor,
+                damageAnimators,
                 // 土台まで傾くのを防ぐため、固定タレットは被弾時の見た目の傾斜を行わない。
                 // ダメージ点滅・HP処理は変更せず、物理ノックバックは別途禁止する。
                 turretAttackStrategy != null ? null : visualRoot,
@@ -926,6 +933,13 @@ public class EnemyStateMachine : MonoBehaviour
     /// </summary>
     private void HandleDied()
     {
+        // 死亡メッシュ生成時に白黒Materialが引き継がれないよう、
+        // Death Stateへ遷移する前に被弾演出を確実に解除する。
+        if (enemyDamageFlash != null)
+        {
+            enemyDamageFlash.StopDamageFlash();
+        }
+
         // 死亡後に再有効化された際、
         // 死亡前のStateへ戻らないように破棄する。
         suspendedState = null;

@@ -6,6 +6,7 @@ using UnityEngine;
 /// </summary>
 /// <remarks>
 /// 責務:
+/// ・やられState中はVisualRoot配下のAnimatorを停止し、終了時に元の再生速度へ戻す。
 /// ・やられState開始時にダメージ点滅を開始する。
 /// ・やられ中、攻撃を受けた側とは反対方向へ見た目用Transformを傾ける。
 /// ・攻撃に応じてEnemyKnockbackMotorへ被弾ノックバックの開始・停止を要求する。
@@ -25,6 +26,8 @@ public sealed class EnemyDamageState : IEnemyState
 {
     private readonly EnemyDamageFlash enemyDamageFlash;
     private readonly EnemyKnockbackMotor enemyKnockbackMotor;
+    private readonly Animator[] damageAnimators;
+    private readonly float[] animatorSpeedsBeforeDamage;
     private readonly Transform tiltTarget;
     private readonly float damageStateDuration;
     private readonly float tiltRecoveryDuration;
@@ -45,10 +48,12 @@ public sealed class EnemyDamageState : IEnemyState
     private bool isTiltApplied;
     private bool isTiltRecovering;
     private bool hasRequestedDamageRecovery;
+    private bool hasPausedAnimators;
 
     public EnemyDamageState(
         EnemyDamageFlash enemyDamageFlash,
         EnemyKnockbackMotor enemyKnockbackMotor,
+        Animator[] damageAnimators,
         Transform tiltTarget,
         float damageStateDuration,
         float tiltRecoveryDuration,
@@ -63,6 +68,11 @@ public sealed class EnemyDamageState : IEnemyState
         this.enemyKnockbackMotor = enemyKnockbackMotor
             ?? throw new ArgumentNullException(
                 nameof(enemyKnockbackMotor));
+
+        this.damageAnimators = damageAnimators
+            ?? throw new ArgumentNullException(
+                nameof(damageAnimators));
+        animatorSpeedsBeforeDamage = new float[damageAnimators.Length];
 
         this.tiltTarget = tiltTarget;
 
@@ -93,6 +103,7 @@ public sealed class EnemyDamageState : IEnemyState
 
         ResetTiltRecovery();
 
+        PauseAnimators();
         CaptureOriginalRotation();
         ApplyTilt();
 
@@ -137,6 +148,7 @@ public sealed class EnemyDamageState : IEnemyState
         enemyKnockbackMotor.StopKnockback();
 
         RestoreOriginalRotation();
+        ResumeAnimators();
 
         hasCapturedOriginalRotation = false;
         elapsedTime = 0f;
@@ -186,6 +198,9 @@ public sealed class EnemyDamageState : IEnemyState
 
         ResetTiltRecovery();
 
+        // 再被弾時は停止前の速度を保存し直さず、0のまま維持する。
+        PauseAnimators();
+
         if (!hasCapturedOriginalRotation)
         {
             CaptureOriginalRotation();
@@ -196,6 +211,53 @@ public sealed class EnemyDamageState : IEnemyState
         StartOrCancelKnockback();
 
         enemyDamageFlash.PlayDamageFlash();
+    }
+
+    /// <summary>
+    /// 現在の再生速度を最初の入場時だけ保存し、Damage State中は全Animatorを停止する。
+    /// 再被弾でも保存した速度を上書きしない。
+    /// </summary>
+    private void PauseAnimators()
+    {
+        for (int i = 0; i < damageAnimators.Length; i++)
+        {
+            Animator animator = damageAnimators[i];
+            if (animator == null)
+            {
+                continue;
+            }
+
+            if (!hasPausedAnimators)
+            {
+                animatorSpeedsBeforeDamage[i] = animator.speed;
+            }
+
+            animator.speed = 0f;
+        }
+
+        hasPausedAnimators = true;
+    }
+
+    /// <summary>
+    /// State遷移・無効化・死亡でExitした場合も、各Animator固有の速度に戻す。
+    /// </summary>
+    private void ResumeAnimators()
+    {
+        if (!hasPausedAnimators)
+        {
+            return;
+        }
+
+        for (int i = 0; i < damageAnimators.Length; i++)
+        {
+            Animator animator = damageAnimators[i];
+            if (animator != null)
+            {
+                animator.speed = animatorSpeedsBeforeDamage[i];
+            }
+        }
+
+        hasPausedAnimators = false;
     }
 
     /// <summary>

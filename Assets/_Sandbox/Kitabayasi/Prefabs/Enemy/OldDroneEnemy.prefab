@@ -245,6 +245,9 @@ MonoBehaviour:
         - {fileID: 11400000, guid: 51cf14bc037d2294990288d016e884dc, type: 2}
         additionalDeathPieces: []
         diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
+        additionalDiggingAttackData:
+        - {fileID: 11400000, guid: 805e87899d869204da3ec278acfd7d06, type: 2}
+        - {fileID: 11400000, guid: 0ff38655cd9be3643a633c1a45c07f96, type: 2}
         enableMeshCutDiagnosticLogs: 0
         enableTrajectoryCoordinateValidation: 0
         drawReconstructedTrajectory: 0

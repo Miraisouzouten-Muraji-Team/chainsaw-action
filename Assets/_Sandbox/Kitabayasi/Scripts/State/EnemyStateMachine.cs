@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -79,6 +80,7 @@ public class EnemyStateMachine : MonoBehaviour
 
     private EnemyPlayerReference facingPlayerReference;
     private Collider facingPlayerCollider;
+    private List<Collider> facingPlayerColliderCandidates;
     private Quaternion lastDetectedFacingRotation;
     private float lastDetectedFacingDirectionSign = 1f;
     private bool hasAlertFacingTarget;
@@ -183,8 +185,7 @@ public class EnemyStateMachine : MonoBehaviour
 
         CurrentState?.Update();
 
-        if (isInitialized && !enemyHealth.IsDead &&
-            turretAttackStrategy == null)
+        if (isActiveAndEnabled && isInitialized && !enemyHealth.IsDead)
         {
             // DroneのSearch/AttackではPlanarMotorがStage移動を既に制限する。
             // 共通Motorは通常Playerへの侵入を止め、Stageの二重補正を避ける。
@@ -210,69 +211,36 @@ public class EnemyStateMachine : MonoBehaviour
             enemyTriggerMovementMotor?.Step(
                 HandleMotorContact,
                 HandleContactExit,
+                HandleAttackSweepHit,
                 stageMovementHandledByDrone,
-                allowPlayerPassThrough);
+                allowPlayerPassThrough,
+                isStationary: turretAttackStrategy != null);
         }
     }
 
     /// <summary>
-    /// 移動前Queryが検出した接触と、Triggerが通知したPlayer接触をStateへ配信する。
-    /// UnityのOnCollisionイベントはTrigger本体では発生しない。
+    /// Stageの移動制限と、Player本体への現在の接触をStateへ配信する。
     /// </summary>
     private void HandleMotorContact(EnemyContactInfo contact, bool isNewContact)
     {
         if (isNewContact)
         {
+            IEnemyState contactState = CurrentState;
             HandleContactEnter(contact);
+            if (!ReferenceEquals(CurrentState, contactState))
+            {
+                return;
+            }
         }
 
         HandleContactStay(contact);
     }
 
-    /// <summary>
-    /// 攻撃本体が有効になった瞬間のPlayer接触をAttack Stateへ再通知する。
-    /// </summary>
-    private void NotifyAttackStartContacts()
+    private void HandleAttackSweepHit(EnemyContactInfo contact)
     {
-        if (!isActiveAndEnabled || !isInitialized || enemyHealth.IsDead ||
-            !ReferenceEquals(CurrentState, attackState))
+        if (isActiveAndEnabled && !enemyHealth.IsDead && ReferenceEquals(CurrentState, attackState))
         {
-            return;
-        }
-
-        enemyTriggerMovementMotor?.NotifyPlayerContactsAtAttackStart(HandleContactStay);
-    }
-
-    private void OnTriggerEnter(Collider other)
-    {
-        if (other != null &&
-            other.gameObject.layer == LayerMask.NameToLayer("PlayerBody") &&
-            enemyTriggerMovementMotor != null &&
-            !enemyTriggerMovementMotor.IsContactTracked(other))
-        {
-            HandleContactEnter(enemyTriggerMovementMotor.CreateTriggerContact(other));
-        }
-    }
-
-    private void OnTriggerStay(Collider other)
-    {
-        if (other != null &&
-            other.gameObject.layer == LayerMask.NameToLayer("PlayerBody") &&
-            enemyTriggerMovementMotor != null &&
-            !enemyTriggerMovementMotor.IsContactTracked(other))
-        {
-            HandleContactStay(enemyTriggerMovementMotor.CreateTriggerContact(other));
-        }
-    }
-
-    private void OnTriggerExit(Collider other)
-    {
-        if (other != null &&
-            other.gameObject.layer == LayerMask.NameToLayer("PlayerBody") &&
-            enemyTriggerMovementMotor != null &&
-            !enemyTriggerMovementMotor.IsContactTracked(other))
-        {
-            HandleContactExit(enemyTriggerMovementMotor.CreateTriggerContact(other));
+            attackState.HandleCollisionStay(contact);
         }
     }
 
@@ -466,10 +434,17 @@ public class EnemyStateMachine : MonoBehaviour
 
         turretAttackStrategy = attackStrategy as TurretEnemyAttackStrategy;
 
+        // 事前にVisualRoot配下のAnimatorをすべて取得する。
+        // 非アクティブな子も含め、Damage中に表示された場合も再生させない。
+        Animator[] damageAnimators = visualRoot != null
+            ? visualRoot.GetComponentsInChildren<Animator>(true)
+            : Array.Empty<Animator>();
+
         damageState =
             new EnemyDamageState(
                 enemyDamageFlash,
                 enemyKnockbackMotor,
+                damageAnimators,
                 // 土台まで傾くのを防ぐため、固定タレットは被弾時の見た目の傾斜を行わない。
                 // ダメージ点滅・HP処理は変更せず、物理ノックバックは別途禁止する。
                 turretAttackStrategy != null ? null : visualRoot,
@@ -560,8 +535,7 @@ public class EnemyStateMachine : MonoBehaviour
         attackState =
             new EnemyAttackState(
                 attackStrategy,
-                RequestAttackCycleCompletion,
-                NotifyAttackStartContacts);
+                RequestAttackCycleCompletion);
     }
 
     /// <summary>
@@ -842,19 +816,43 @@ public class EnemyStateMachine : MonoBehaviour
             // 初回検知時と同じ代表Colliderを参照し、Player Rootの座標へ
             // 突然目標が切り替わるのを防ぐ。
             if (facingPlayerCollider == null ||
-                (facingPlayerCollider.transform != playerTransform &&
-                 !facingPlayerCollider.transform.IsChildOf(playerTransform)))
+                !facingPlayerCollider.enabled ||
+                !facingPlayerCollider.gameObject.activeInHierarchy ||
+                facingPlayerCollider.transform.parent != playerTransform ||
+                facingPlayerCollider.transform.name != PLAYER_FACING_COLLIDER_NAME)
             {
+                facingPlayerCollider = null;
+
                 Transform targetTransform =
                     playerTransform.Find(PLAYER_FACING_COLLIDER_NAME);
-                facingPlayerCollider = targetTransform != null
-                    ? targetTransform.GetComponent<Collider>()
-                    : null;
+
+                if (targetTransform != null &&
+                    targetTransform.gameObject.activeInHierarchy)
+                {
+                    if (facingPlayerColliderCandidates == null)
+                    {
+                        facingPlayerColliderCandidates = new List<Collider>(2);
+                    }
+
+                    // 無効なBoxColliderより有効なCapsuleCollider等を優先する。
+                    targetTransform.GetComponents(facingPlayerColliderCandidates);
+
+                    for (int i = 0; i < facingPlayerColliderCandidates.Count; i++)
+                    {
+                        Collider candidate = facingPlayerColliderCandidates[i];
+
+                        if (candidate == null || !candidate.enabled)
+                        {
+                            continue;
+                        }
+
+                        facingPlayerCollider = candidate;
+                        break;
+                    }
+                }
             }
 
-            if (facingPlayerCollider == null ||
-                !facingPlayerCollider.enabled ||
-                !facingPlayerCollider.gameObject.activeInHierarchy)
+            if (facingPlayerCollider == null)
             {
                 return false;
             }
@@ -935,6 +933,13 @@ public class EnemyStateMachine : MonoBehaviour
     /// </summary>
     private void HandleDied()
     {
+        // 死亡メッシュ生成時に白黒Materialが引き継がれないよう、
+        // Death Stateへ遷移する前に被弾演出を確実に解除する。
+        if (enemyDamageFlash != null)
+        {
+            enemyDamageFlash.StopDamageFlash();
+        }
+
         // 死亡後に再有効化された際、
         // 死亡前のStateへ戻らないように破棄する。
         suspendedState = null;

@@ -84,6 +84,8 @@ public sealed class StandardEnemyDeathStrategy :
 
     private EnemyData enemyData;
 
+    private EnemyHealth enemyHealth;
+
     private EnemyAttackHitReceiver
         enemyAttackHitReceiver;
 
@@ -156,6 +158,9 @@ public sealed class StandardEnemyDeathStrategy :
         enemyAttackHitReceiver =
             enemyObject.GetComponent<
                 EnemyAttackHitReceiver>();
+
+        enemyHealth =
+            enemyObject.GetComponent<EnemyHealth>();
 
         enemyMeshCutter =
             enemyObject.GetComponent<
@@ -555,22 +560,15 @@ public sealed class StandardEnemyDeathStrategy :
     {
         using (deathMeshEffectProfilerMarker.Auto())
         {
-        if (enemyAttackHitReceiver != null)
-        {
-            PlayerAttackHitData lastPlayerAttackHitData =
-                enemyAttackHitReceiver
-                    .LastPlayerAttackHitData;
-
-            if (lastPlayerAttackHitData?.AttackData is AttackData attackData &&
+            PlayerAttackHitData lethalHit = enemyHealth?.LethalPlayerAttackHitData;
+            if (lethalHit?.AttackData is AttackData attackData &&
                 IsDiggingAttackData(attackData))
             {
                 TryBeginDiggingDeathMesh();
                 return;
             }
-        }
 
-        TryCutDeathMesh();
-
+            TryCutDeathMesh(lethalHit);
         }
     }
 
@@ -644,7 +642,7 @@ public sealed class StandardEnemyDeathStrategy :
     /// 死亡原因のAttackDataに対応するBake済みチェンソー軌跡をWorld空間へ復元し、
     /// 通常攻撃用のMesh分割死亡演出を開始する。
     /// </summary>
-    private void TryCutDeathMesh()
+    private void TryCutDeathMesh(PlayerAttackHitData lethalHit)
     {
         using (normalDeathMeshProfilerMarker.Auto())
         {
@@ -669,30 +667,20 @@ public sealed class StandardEnemyDeathStrategy :
             return;
         }
 
-        PlayerAttackHitData
-            lastPlayerAttackHitData =
-                enemyAttackHitReceiver
-                    .LastPlayerAttackHitData;
-
-        if (lastPlayerAttackHitData == null)
+        if (lethalHit == null)
         {
-            Debug.LogWarning(
-                $"{nameof(StandardEnemyDeathStrategy)}: " +
-                "死亡原因となったPlayerAttackHitDataがありません。" +
-                "メッシュ分割は実行されません。");
-
             if (ShouldRunMeshCutDiagnostics)
             {
                 LogMeshCutDiagnosticWarning(
                     "Death-02 HitData",
-                    "LastPlayerAttackHitData=nullのため停止しました。");
+                    "致死ダメージにPlayerAttackHitDataがないため、メッシュ分割を行いません。");
             }
 
             return;
         }
 
         ScriptableObject attackData =
-            lastPlayerAttackHitData.AttackData;
+            lethalHit.AttackData;
 
         if (ShouldRunMeshCutDiagnostics)
         {
@@ -713,7 +701,10 @@ public sealed class StandardEnemyDeathStrategy :
                 $"{nameof(StandardEnemyDeathStrategy)}: " +
                 "死亡原因のAttackDataに対応する" +
                 $"{nameof(ChainsawAttackTrajectoryProfile)}がありません。" +
-                "通常攻撃のメッシュ切断は実行されません。");
+                $" AttackData='{(attackData != null ? attackData.name : "<null>")}'。" +
+                "食い込み用AttackDataの場合は追加の食い込み攻撃設定を確認してください。" +
+                "通常攻撃のメッシュ切断は実行されません。",
+                enemyAttackHitReceiver);
 
             if (ShouldRunMeshCutDiagnostics)
             {
@@ -849,7 +840,7 @@ public sealed class StandardEnemyDeathStrategy :
                 "EnemyMeshCutter.TryCutが成功しました。切断片Effects開始へ進みます。");
         }
 
-        TryBeginCutPieceEffects();
+        TryBeginCutPieceEffects(lethalHit);
 
         }
     }
@@ -1571,7 +1562,7 @@ public sealed class StandardEnemyDeathStrategy :
             (tipPosition + rootPosition) * 0.5f;
     }
 
-    private void TryBeginCutPieceEffects()
+    private void TryBeginCutPieceEffects(PlayerAttackHitData lethalHit)
     {
         var cutPieceTransforms =
             new List<Transform>();
@@ -1619,21 +1610,12 @@ public sealed class StandardEnemyDeathStrategy :
         }
         else
         {
-            PlayerAttackHitData lastPlayerAttackHitData =
-                enemyAttackHitReceiver
-                    .LastPlayerAttackHitData;
-
             float chainsawRotationRatio =
-                lastPlayerAttackHitData != null &&
-                lastPlayerAttackHitData
-                    .HasChainsawRotationRatio
-                    ? lastPlayerAttackHitData
-                        .ChainsawRotationRatio
+                lethalHit.HasChainsawRotationRatio
+                    ? lethalHit.ChainsawRotationRatio
                     : 0f;
 
-            if (lastPlayerAttackHitData == null ||
-                !lastPlayerAttackHitData
-                    .HasChainsawRotationRatio)
+            if (!lethalHit.HasChainsawRotationRatio)
             {
                 Debug.LogWarning(
                     $"{nameof(StandardEnemyDeathStrategy)}: " +

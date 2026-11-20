@@ -34,6 +34,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
     private RaycastHit[] sightHitBuffer;
     private Collider[] muzzleOverlapBuffer;
     private Collider playerTargetCollider;
+    private Transform playerAimTargetTransform;
 
     private Vector3 lastAimTargetPosition;
     private Vector2 playerToDroneOffsetAtPreparationStart;
@@ -157,7 +158,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
             return;
         }
 
-        if (CanShootFromPosition(enemyRigidbody.position, playerTargetCollider))
+        if (CanShootFromPosition(enemyRigidbody.position, targetPosition, playerTargetCollider))
         {
             StartAimingPreparation();
             return;
@@ -195,7 +196,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         planarMotor.StopPlanarMovement();
         RefreshAimTarget();
         projectileShooter.ShowAim(lastAimTargetPosition);
-        projectileShooter.ShowAttackWarning(lastAimTargetPosition, playerTargetCollider);
+        projectileShooter.ShowAttackWarning(lastAimTargetPosition, playerAimTargetTransform);
 
         preparationElapsedTime += Time.fixedDeltaTime;
         if (preparationElapsedTime < enemyData.AttackPreparationDuration)
@@ -226,7 +227,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         }
 
         projectileShooter.ShowAim(lastAimTargetPosition);
-        projectileShooter.ShowAttackWarning(lastAimTargetPosition, playerTargetCollider);
+        projectileShooter.ShowAttackWarning(lastAimTargetPosition, playerAimTargetTransform);
     }
 
     private void UpdateShootingPositionSearch()
@@ -238,7 +239,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
             return;
         }
 
-        if (CanShootFromPosition(enemyRigidbody.position, playerTargetCollider))
+        if (CanShootFromPosition(enemyRigidbody.position, playerPosition, playerTargetCollider))
         {
             StartAimingPreparation();
             return;
@@ -246,7 +247,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
 
         // 移動中にPlayerが射撃位置から隠れた場合、次の許可時刻にだけ再探索する。
         if (hasShootingDestination &&
-            !CanShootFromPosition(shootingDestination, playerTargetCollider))
+            !CanShootFromPosition(shootingDestination, playerPosition, playerTargetCollider))
         {
             hasShootingDestination = false;
             pathNavigator.Reset();
@@ -303,7 +304,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         Collider targetCollider = playerTargetCollider;
         bool found = pathNavigator.TryBeginPathToNearestMatchingPosition(
             playerPosition,
-            position => CanShootFromPosition(position, targetCollider),
+            position => CanShootFromPosition(position, playerPosition, targetCollider),
             out Vector3 selectedPosition);
 
         if (found)
@@ -332,10 +333,11 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
 
     /// <summary>
     /// 発射時の弾PrefabのColliderをXY平面の照準方向にスイープし、
-    /// Playerの対象Colliderに触れるまでにStageへ衝突しない地点だけを許可する。
+    /// AimTargetへの照準方向でPlayerの対象Colliderに触れるまでにStageへ衝突しない地点だけを許可する。
     /// 命中率・拡散は位置選択に含めない。
     /// </summary>
-    private bool CanShootFromPosition(Vector3 bodyPosition, Collider targetCollider)
+    private bool CanShootFromPosition(
+        Vector3 bodyPosition, Vector3 targetPosition, Collider targetCollider)
     {
         if (targetCollider == null || !targetCollider.enabled ||
             !targetCollider.gameObject.activeInHierarchy)
@@ -344,11 +346,11 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
         }
 
         Vector3 muzzlePosition = GetPredictedFirePointPosition(
-            bodyPosition, targetCollider.bounds.center);
+            bodyPosition, targetPosition);
 
         Vector3 planarTarget = new Vector3(
-            targetCollider.bounds.center.x,
-            targetCollider.bounds.center.y,
+            targetPosition.x,
+            targetPosition.y,
             muzzlePosition.z);
         Vector3 shotVector = planarTarget - muzzlePosition;
         float shotDistance = shotVector.magnitude;
@@ -884,13 +886,16 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
 
     private bool TryGetCurrentPlayerTargetPosition(out Vector3 targetWorldPosition)
     {
-        if (!playerReference.TryGetPlayerTransform(out Transform playerTransform))
+        if (!playerReference.TryGetPlayerTransform(out Transform playerTransform) ||
+            !playerReference.TryGetPlayerAimTargetTransform(out playerAimTargetTransform))
         {
             playerTargetCollider = null;
+            playerAimTargetTransform = null;
             targetWorldPosition = default;
             return false;
         }
 
+        // 射撃可能地点の判定には引き続き対象Colliderを使うが、照準座標には使わない。
         if (playerTargetCollider != null &&
             playerTargetCollider.transform != playerTransform &&
             !playerTargetCollider.transform.IsChildOf(playerTransform))
@@ -907,16 +912,7 @@ public sealed class NewDroneEnemyAttackStrategy : IEnemyAttackStrategy
             }
         }
 
-        if (playerTargetCollider != null &&
-            playerTargetCollider.enabled &&
-            playerTargetCollider.gameObject.activeInHierarchy)
-        {
-            targetWorldPosition = playerTargetCollider.bounds.center;
-            return true;
-        }
-
-        // タレットと同様、射撃そのものはPlayer Rootでも継続可能にする。
-        targetWorldPosition = playerTransform.position;
+        targetWorldPosition = playerAimTargetTransform.position;
         return true;
     }
 

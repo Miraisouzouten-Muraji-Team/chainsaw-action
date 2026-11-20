@@ -23,7 +23,6 @@ public sealed class EnemyAttackState :
 {
     private readonly IEnemyAttackStrategy attackStrategy;
     private readonly Action requestAttackCycleCompletion;
-    private readonly Action notifyAttackStartContacts;
 
     private float initialAttackDirectionSign = 1f;
     private bool hasBegunAttack;
@@ -31,16 +30,13 @@ public sealed class EnemyAttackState :
 
     public EnemyAttackState(
         IEnemyAttackStrategy attackStrategy,
-        Action requestAttackCycleCompletion,
-        Action notifyAttackStartContacts)
+        Action requestAttackCycleCompletion)
     {
         this.attackStrategy = attackStrategy
             ?? throw new ArgumentNullException(nameof(attackStrategy));
 
         this.requestAttackCycleCompletion = requestAttackCycleCompletion
             ?? throw new ArgumentNullException(nameof(requestAttackCycleCompletion));
-        this.notifyAttackStartContacts = notifyAttackStartContacts
-            ?? throw new ArgumentNullException(nameof(notifyAttackStartContacts));
     }
 
     /// <summary>
@@ -81,9 +77,6 @@ public sealed class EnemyAttackState :
 
             hasBegunAttack = true;
             attackStrategy.BeginAttack();
-            // BeginAttack後でなければStrategyが命中を受け付けない。
-            // 予備動作中からの接触も、同じ攻撃の開始時点で改めて判定する。
-            notifyAttackStartContacts.Invoke();
             return;
         }
 

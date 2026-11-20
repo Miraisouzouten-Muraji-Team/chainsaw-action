@@ -63,6 +63,37 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     [Min(0.0001f)]
     private float maximumPieceMass = 10f;
 
+    [Header("分割片の疑似押し出し")]
+
+    [Tooltip("プレイヤーColliderと分割片Colliderの表面間で、押し出しを開始できる距離（m）。接近検出Triggerにも反映する。")]
+    [SerializeField, Min(0f)]
+    private float playerPushReactionDistance = 0.08f;
+
+    [Tooltip("プレイヤーの水平速度に掛ける押し出し速度の倍率。")]
+    [SerializeField, Min(0f)]
+    private float playerPushSpeedMultiplier = 0.85f;
+
+    [Tooltip("押し出しによる分割片の目標水平速度の上限（m/s）。吹き飛ばし速度そのものは制限しない。")]
+    [SerializeField, Min(0f)]
+    private float playerPushMaximumSpeed = 4f;
+
+    [Tooltip("1物理ステップで押し出しが加える速度変化の上限（m/s）。")]
+    [SerializeField, Min(0f)]
+    private float playerPushMaximumVelocityChangePerStep = 1.5f;
+
+    [Tooltip("上下方向の重なりに必要な、両Colliderの低い方の高さに対する割合。大きいほどジャンプ中の反応を抑える。")]
+    [SerializeField, Range(0f, 1f)]
+    private float playerPushMinimumSideOverlapRatio = 0.25f;
+
+    [Tooltip("疑似押し出し時に質量中心から上へずらして力を加える割合。0なら追加回転なし。")]
+    [SerializeField, Range(0f, 0.5f)]
+    private float playerPushRollingLeverArmRatio = 0.1f;
+
+    [Tooltip("死亡直後の吹き飛ばしと干渉しないよう、押し出し開始を遅らせる秒数。")]
+    [SerializeField, Min(0f)]
+    private float playerPushInitialDelay = 0.15f;
+
+
     [Header("分割片コライダー")]
 
     [Tooltip(
@@ -148,9 +179,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
     private readonly EnemyPlayerReference playerReference =
         new EnemyPlayerReference();
-
-    private readonly List<Collider> playerColliders =
-        new List<Collider>();
 
     private bool hasCompletedCut;
 
@@ -377,8 +405,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
             Material[] pieceMaterials =
                 BuildPieceMaterials(sourceRenderer);
-
-            ResolvePlayerCollidersForPieceCollision();
 
             int pieceCount =
                 finalPieceMeshes.Count;
@@ -949,9 +975,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         pieceObject.name =
             $"{sourceRenderer.name}_Cut_{suffix}";
 
-        pieceObject.layer =
-            sourceRenderer.gameObject.layer;
-
         Transform pieceTransform =
             pieceObject.transform;
 
@@ -1059,6 +1082,11 @@ public sealed class EnemyMeshCutter : MonoBehaviour
         pieceRigidbody.isKinematic =
             false;
 
+        // 再利用したPieceに以前の押し出し・回転速度を残さない。
+        // この後の死亡演出が今回の吹き飛ばし初速度を付与する。
+        pieceRigidbody.linearVelocity = Vector3.zero;
+        pieceRigidbody.angularVelocity = Vector3.zero;
+
         // 疑似体積は分割片生成時に1回だけ計算する。
         // Massを慣性テンソル再計算より先に設定することで、
         // サイズとMassの両方を反映した回転しにくさをUnity Physicsへ引き継ぐ。
@@ -1081,15 +1109,21 @@ public sealed class EnemyMeshCutter : MonoBehaviour
 
         playerReference.TryGetPlayerTransform(out Transform playerRoot);
         pieceObject.GetComponentInChildren<EnemyCutPiecePlayerPushReaction>(true)
-            .Configure(pieceRigidbody, pieceCollider, playerRoot);
+            .Configure(
+                pieceRigidbody,
+                pieceCollider,
+                playerRoot,
+                playerPushReactionDistance,
+                playerPushSpeedMultiplier,
+                playerPushMaximumSpeed,
+                playerPushMaximumVelocityChangePerStep,
+                playerPushMinimumSideOverlapRatio,
+                playerPushRollingLeverArmRatio,
+                playerPushInitialDelay);
 
-        // 事前生成時にはPlayer Colliderが変化する可能性があるためIgnoreCollisionを固定せず、
-        // Mesh・Collider・Rigidbody・Transform確定後の有効化時に毎回適用する。
+        // 本体とSensorのレイヤーを確定してから物理シミュレーションへ参加させる。
         pieceObject.SetActive(
             true);
-
-        IgnorePlayerCollisions(
-            pieceCollider);
 
         if (ShouldRunDiagnostics)
         {
@@ -1111,53 +1145,6 @@ public sealed class EnemyMeshCutter : MonoBehaviour
                 $"PieceWorldBoundsSize={FormatVector3(meshRenderer.bounds.size)}, " +
                 $"SourceWorldBoundsCenter={FormatVector3(sourceRenderer.bounds.center)}, " +
                 $"SourceWorldBoundsSize={FormatVector3(sourceRenderer.bounds.size)}");
-        }
-
-    }
-
-    /// <summary>
-    /// Player Tagから解決したPlayer階層のColliderを、今回生成する全Piece用に保持する。
-    /// </summary>
-    private void ResolvePlayerCollidersForPieceCollision()
-    {
-        playerColliders.Clear();
-
-        if (playerReference.TryGetPlayerColliders(
-                playerColliders))
-        {
-            return;
-        }
-
-        Debug.LogWarning(
-            $"{nameof(EnemyMeshCutter)}: " +
-            "Player TagからPlayer Colliderを取得できませんでした。" +
-            "Piece生成は継続しますが、Playerとの衝突無効化は適用されません。",
-            this);
-
-    }
-
-    /// <summary>
-    /// Piece ColliderとPlayer階層の各Colliderの組み合わせだけ物理衝突を無効化する。
-    /// </summary>
-    private void IgnorePlayerCollisions(
-        Collider pieceCollider)
-    {
-        for (int colliderIndex = 0;
-             colliderIndex < playerColliders.Count;
-             colliderIndex++)
-        {
-            Collider playerCollider =
-                playerColliders[colliderIndex];
-
-            if (playerCollider == null)
-            {
-                continue;
-            }
-
-            Physics.IgnoreCollision(
-                pieceCollider,
-                playerCollider,
-                true);
         }
 
     }
@@ -1670,6 +1657,14 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             Mathf.Max(
                 minimumPieceMass,
                 maximumPieceMass);
+
+        playerPushReactionDistance = Mathf.Max(0f, playerPushReactionDistance);
+        playerPushSpeedMultiplier = Mathf.Max(0f, playerPushSpeedMultiplier);
+        playerPushMaximumSpeed = Mathf.Max(0f, playerPushMaximumSpeed);
+        playerPushMaximumVelocityChangePerStep = Mathf.Max(0f, playerPushMaximumVelocityChangePerStep);
+        playerPushMinimumSideOverlapRatio = Mathf.Clamp01(playerPushMinimumSideOverlapRatio);
+        playerPushRollingLeverArmRatio = Mathf.Clamp(playerPushRollingLeverArmRatio, 0f, 0.5f);
+        playerPushInitialDelay = Mathf.Max(0f, playerPushInitialDelay);
     }
 #endif
 

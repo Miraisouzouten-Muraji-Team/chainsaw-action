@@ -1227,7 +1227,7 @@ public sealed class MeshPlaneSplitter
     /// <remarks>
     /// 境界検証はCutSegment生成後かつCap生成前に行う。通常攻撃のCut Rangeのような
     /// 利用側固有ルールをMesh分割アルゴリズムへ依存させず、従来の失敗タイミングを維持するための内部入口。
-    /// Plane上頂点fan対応はShieldのEditor事前生成だけで有効化し、既存Runtime経路では無効のまま使用する。
+    /// Plane上頂点fan対応は呼び出し側で必要な場合だけ有効にする。
     /// </remarks>
     internal bool TrySplit(
         Mesh sourceMesh,
@@ -1331,6 +1331,7 @@ public sealed class MeshPlaneSplitter
         string secondSideMeshNamePrefix,
         Func<IReadOnlyList<Vector3>, string> cutBoundaryValidator,
         bool enableDiagnostics,
+        bool enablePlaneTouchingVertexFanHandling,
         bool keepCutSidesAsSinglePieces,
         out List<Mesh> pieceMeshes,
         out string failureReason)
@@ -1349,7 +1350,7 @@ public sealed class MeshPlaneSplitter
                 secondSideMeshNamePrefix,
                 cutBoundaryValidator,
                 enableDiagnostics,
-                false,
+                enablePlaneTouchingVertexFanHandling,
                 true,
                 keepCutSidesAsSinglePieces,
                 out _,
@@ -2382,13 +2383,14 @@ public sealed class MeshPlaneSplitter
         }
 
         // Plane上頂点を含むfanでは、Plane上Edgeが正負両側のTriangleを隔てる場合がある。
-        // 通常Runtime分割は従来挙動を維持するため、この追加Topology走査は明示的にONのときだけ行う。
+        // この追加Topology走査は、平面上の辺を境界候補として扱う場合だけ実行する。
         if (enablePlaneTouchingVertexFanHandling &&
             !TryAddPlaneTouchingVertexFanBoundarySegments(
                 sourceMesh,
                 sourceVertices,
                 cutPlane,
                 geometryEpsilon,
+                sourceConnectivityVertexIds,
                 cutSegments,
                 out failureReason))
         {
@@ -2505,6 +2507,7 @@ public sealed class MeshPlaneSplitter
                 uncappedBoundaryEdgePoints,
                 uncappedBoundarySourceVertexIndices,
                 enableDiagnostics,
+                splitConnectedComponents && !keepCutSidesAsSinglePieces,
                 firstBuilder,
                 secondBuilder,
                 out int generatedCapRegionCount,
@@ -3519,6 +3522,7 @@ public sealed class MeshPlaneSplitter
         IReadOnlyList<Vector3> sourceVertices,
         Plane cutPlane,
         float geometryEpsilon,
+        IReadOnlyList<int> sourceConnectivityVertexIds,
         List<CutSegment> cutSegments,
         out string failureReason)
     {
@@ -3544,7 +3548,8 @@ public sealed class MeshPlaneSplitter
 
         // UV seam / hard edgeでindexが分かれていても同じ幾何Edgeを候補として探せるようにする。
         // このIDだけでEdgeを確定せず、下の位置比較で既存Boundaryと同等の厳しい条件へ絞り込む。
-        int[] sourceConnectivityVertexIds =
+        bool preserveConnectivity = sourceConnectivityVertexIds != null;
+        sourceConnectivityVertexIds ??=
             MeshConnectedComponentSplitter.BuildConnectedVertexIds(
                 sourceVertices,
                 sourceMesh.bounds);
@@ -3651,6 +3656,7 @@ public sealed class MeshPlaneSplitter
                     sourceSplitVertexMatchEpsilon,
                     sourceVertices,
                     sourceConnectivityVertexIds,
+                    preserveConnectivity,
                     candidateSegments,
                     candidateSideMasks,
                     candidateHasCoplanarNeighbor,
@@ -3669,6 +3675,7 @@ public sealed class MeshPlaneSplitter
                     sourceSplitVertexMatchEpsilon,
                     sourceVertices,
                     sourceConnectivityVertexIds,
+                    preserveConnectivity,
                     candidateSegments,
                     candidateSideMasks,
                     candidateHasCoplanarNeighbor,
@@ -3687,6 +3694,7 @@ public sealed class MeshPlaneSplitter
                     sourceSplitVertexMatchEpsilon,
                     sourceVertices,
                     sourceConnectivityVertexIds,
+                    preserveConnectivity,
                     candidateSegments,
                     candidateSideMasks,
                     candidateHasCoplanarNeighbor,
@@ -3736,6 +3744,7 @@ public sealed class MeshPlaneSplitter
         float sourceSplitVertexMatchEpsilon,
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<int> sourceConnectivityVertexIds,
+        bool preserveConnectivity,
         List<CutSegment> candidateSegments,
         List<byte> candidateSideMasks,
         List<bool> candidateHasCoplanarNeighbor,
@@ -3843,8 +3852,8 @@ public sealed class MeshPlaneSplitter
         int newCandidateIndex =
             candidateSegments.Count;
 
-        // Connectivity IDはUV seamをまたぐ候補検索だけに使う。
-        // 生成Segmentへは持ち込まず、既存2Mesh分割のBoundary / Cap側のConnectivity意味を変えない。
+        // 連結成分分割では、Capを既存Surfaceの頂点と同じIDへ接続する。
+        // IDを使わない従来の2Mesh分割では候補検索だけに使用する。
         candidateSegments.Add(
             new CutSegment(
                 firstPosition,
@@ -3853,8 +3862,8 @@ public sealed class MeshPlaneSplitter
                 firstVertexIndex,
                 secondVertexIndex,
                 secondVertexIndex,
-                -1,
-                -1,
+                preserveConnectivity ? firstConnectivityVertexId : -1,
+                preserveConnectivity ? secondConnectivityVertexId : -1,
                 sourceSubMeshIndex,
                 sourceTriangleIndexBufferOffset / 3,
                 sourceTriangleIndexBufferOffset,
@@ -6252,6 +6261,7 @@ public sealed class MeshPlaneSplitter
         IReadOnlyList<Vector3> uncappedBoundaryEdgePoints,
         IReadOnlyList<List<int>> uncappedBoundarySourceVertexIndices,
         bool enableDiagnostics,
+        bool preserveBoundaryEdges,
         PieceMeshBuilder firstBuilder,
         PieceMeshBuilder secondBuilder,
         out int generatedCapRegionCount,
@@ -6318,6 +6328,7 @@ public sealed class MeshPlaneSplitter
                     planeAxisV,
                     geometryEpsilon,
                     uncappedBoundaryEdgePoints.Count > 0,
+                    preserveBoundaryEdges,
                     out PreparedBoundaryLoop preparedLoop))
             {
                 failureReason =
@@ -7415,6 +7426,7 @@ public sealed class MeshPlaneSplitter
         Vector3 planeAxisV,
         float geometryEpsilon,
         bool validateSelfIntersection,
+        bool preserveBoundaryEdges,
         out PreparedBoundaryLoop preparedLoop)
     {
         using var tryPrepareBoundaryLoopProfileScope = prepareCapLoopProfilerMarker.Auto();
@@ -7458,7 +7470,8 @@ public sealed class MeshPlaneSplitter
             positions,
             projectedPoints,
             connectivityVertexIds,
-            geometryEpsilon);
+            geometryEpsilon,
+            preserveBoundaryEdges);
 
         if (positions.Count < 3 ||
             (validateSelfIntersection &&
@@ -7559,7 +7572,8 @@ public sealed class MeshPlaneSplitter
         List<Vector3> positions,
         List<Vector2> projectedPoints,
         List<int> connectivityVertexIds,
-        float geometryEpsilon)
+        float geometryEpsilon,
+        bool preserveBoundaryEdges)
     {
         if (positions.Count < 3)
         {
@@ -7609,6 +7623,12 @@ public sealed class MeshPlaneSplitter
                     connectivityVertexIds.RemoveAt(i);
                     removedPoint = true;
                     break;
+                }
+
+                // SurfaceとCapを辺で連結する経路では、同一直線上でも境界辺を省略しない。
+                if (preserveBoundaryEdges)
+                {
+                    continue;
                 }
 
                 Vector2 firstDirection =

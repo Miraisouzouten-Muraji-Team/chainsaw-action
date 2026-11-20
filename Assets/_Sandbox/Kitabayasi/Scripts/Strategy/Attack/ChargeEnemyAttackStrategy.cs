@@ -12,6 +12,7 @@ using UnityEngine;
 /// ・Playerに命中しても突進は継続し、指定距離の終端に向けて減速する。
 /// ・Stage壁による進行阻害、崖・段差等の進行不能で現在の攻撃を終了する。
 /// ・Player命中時に攻撃情報を1回だけ送信する。
+/// ・突進中のEffect再生と、終了・中断時の停止を行う。
 ///
 /// 担当しない責務:
 /// ・Stateの保持やState遷移。
@@ -63,6 +64,18 @@ public sealed class ChargeEnemyAttackStrategy :
         "未設定の場合はEffectを生成しない。")]
     [SerializeField]
     private GameObject collisionEffectPrefab;
+
+    [Header("突進中エフェクト")]
+    [Tooltip("突進中だけ再生するEffect Prefab。ParticleSystemは実行時にループ再生する。")]
+    [SerializeField]
+    private GameObject chargeEffectPrefab;
+
+    [Tooltip("Effectの発生位置と向きの基準。未設定ならVisualRootを使用する。")]
+    [SerializeField]
+    private Transform chargeEffectOrigin;
+
+    private GameObject chargeEffectInstance;
+    private ParticleSystem[] chargeEffectParticleSystems;
 
     private ChargeEnemyData enemyData;
 
@@ -294,6 +307,7 @@ public sealed class ChargeEnemyAttackStrategy :
 
         FaceAttackDirection();
         PlayAnimation(attackAnimationStateHash);
+        PlayChargeEffect();
         enemyRigidbody.WakeUp();
     }
 
@@ -560,19 +574,20 @@ public sealed class ChargeEnemyAttackStrategy :
     private void HandlePlayerCollision(
         EnemyContactInfo collision)
     {
-        if (!hasDamagedPlayerThisAttack)
+        if (hasDamagedPlayerThisAttack)
         {
-            hasDamagedPlayerThisAttack = true;
+            return;
+        }
 
+        hasDamagedPlayerThisAttack = true;
+        float damage = enemyData.AttackPower * (enemyData.AttackContactDamagePercent / 100f);
+        if (damage > 0f)
+        {
             if (playerReference.TryGetAttackHitReceiver(
                     requireActiveAndEnabled: true,
                     out IAttackHitReceiver playerAttackHitReceiver,
                     out _))
             {
-                float damage =
-                    enemyData.AttackPower *
-                    (enemyData.AttackContactDamagePercent / 100f);
-
                 playerAttackHitReceiver.ReceiveAttackHit(
                     new EnemyAttackHitData(
                         enemyData,
@@ -587,11 +602,11 @@ public sealed class ChargeEnemyAttackStrategy :
 
                 hasWarnedMissingPlayerReceiver = true;
             }
-
-            // 貫通中の接触継続でEffectが毎物理更新生成されないよう、最初の命中時だけ出す。
-            SpawnCollisionEffect(
-                GetCollisionEffectPosition(collision));
         }
+
+        // 貫通中の接触継続でEffectが毎物理更新生成されないよう、最初の命中時だけ出す。
+        SpawnCollisionEffect(
+            GetCollisionEffectPosition(collision));
     }
 
     private void CompleteAttack(
@@ -617,6 +632,7 @@ public sealed class ChargeEnemyAttackStrategy :
 
         isAttackActive = false;
         isAttackComplete = true;
+        StopChargeEffect();
     }
 
     /// <summary>
@@ -847,6 +863,98 @@ public sealed class ChargeEnemyAttackStrategy :
                 targetLayerMask) != 0;
     }
 
+    /// <summary>
+    /// 突進用EffectはEnemyごとに1つだけ生成し、再突進時にも使い回す。
+    /// VisualRoot以下に追従させ、突進開始のたびに粒子を先頭から再生する。
+    /// </summary>
+    private void PlayChargeEffect()
+    {
+        if (chargeEffectPrefab == null)
+        {
+            return;
+        }
+
+        if (chargeEffectInstance == null)
+        {
+            Transform effectParent = visualRoot;
+            if (chargeEffectOrigin != null)
+            {
+                // Enemy外に生成すると、死亡・破棄時にEffectだけ残る恐れがある。
+                if (chargeEffectOrigin == enemyObject.transform ||
+                    chargeEffectOrigin.IsChildOf(enemyObject.transform))
+                {
+                    effectParent = chargeEffectOrigin;
+                }
+                else
+                {
+                    Debug.LogWarning(
+                        $"{nameof(ChargeEnemyAttackStrategy)}: " +
+                        "Charge Effect OriginはEnemy以下のTransformを指定してください。" +
+                        "VisualRootを使用します。",
+                        enemyObject);
+                }
+            }
+
+            chargeEffectInstance = UnityEngine.Object.Instantiate(
+                chargeEffectPrefab,
+                effectParent,
+                false);
+
+            // PrefabのScaleは維持し、発生位置と向きだけOriginへ合わせる。
+            chargeEffectInstance.transform.localPosition = Vector3.zero;
+            chargeEffectInstance.transform.localRotation = Quaternion.identity;
+
+            // Rootが空GameObjectでも、子ParticleSystemを全て取得する。
+            chargeEffectParticleSystems =
+                chargeEffectInstance.GetComponentsInChildren<ParticleSystem>(true);
+
+            foreach (ParticleSystem particleSystem in chargeEffectParticleSystems)
+            {
+                ParticleSystem.MainModule main = particleSystem.main;
+                main.loop = true;
+                // Prefab側のStopActionで再利用インスタンスが消えないようにする。
+                main.stopAction = ParticleSystemStopAction.None;
+            }
+        }
+
+        chargeEffectInstance.SetActive(true);
+
+        // 毎回先頭から再生。親と子の両方がParticleSystemでも重複再生しない。
+        foreach (ParticleSystem particleSystem in chargeEffectParticleSystems)
+        {
+            if (particleSystem == null || !particleSystem.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            particleSystem.Stop(false, ParticleSystemStopBehavior.StopEmittingAndClear);
+            particleSystem.Play(false);
+        }
+    }
+
+    private void StopChargeEffect()
+    {
+        if (chargeEffectInstance == null || !chargeEffectInstance.activeSelf)
+        {
+            return;
+        }
+
+        if (chargeEffectParticleSystems != null)
+        {
+            foreach (ParticleSystem particleSystem in chargeEffectParticleSystems)
+            {
+                if (particleSystem != null && particleSystem.gameObject.activeInHierarchy)
+                {
+                    particleSystem.Stop(
+                        false,
+                        ParticleSystemStopBehavior.StopEmittingAndClear);
+                }
+            }
+        }
+
+        chargeEffectInstance.SetActive(false);
+    }
+
     private void SpawnCollisionEffect(
         Vector3 position)
     {
@@ -972,6 +1080,8 @@ public sealed class ChargeEnemyAttackStrategy :
 
     private void ResetRuntimeState()
     {
+        StopChargeEffect();
+
         isPreparationActive = false;
         isAttackActive = false;
         isAttackComplete = false;

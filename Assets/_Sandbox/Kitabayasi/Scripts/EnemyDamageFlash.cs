@@ -59,6 +59,15 @@ public class EnemyDamageFlash : MonoBehaviour
 
     private void OnDisable()
     {
+        StopDamageFlash();
+    }
+
+    /// <summary>
+    /// ダメージ点滅を中断し、点滅前のMaterial構成を復元する。
+    /// 死亡演出が現在のRendererのMaterialを取得する前に呼び出す。
+    /// </summary>
+    public void StopDamageFlash()
+    {
         StopActiveFlash();
         RestoreOriginalMaterials();
     }

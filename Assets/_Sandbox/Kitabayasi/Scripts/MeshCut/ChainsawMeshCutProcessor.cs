@@ -232,13 +232,72 @@ public sealed class ChainsawMeshCutProcessor
             int planeDistanceCalculationCount = 0;
             int planeDistanceCacheHitCount = 0;
 
-            Plane correctedCutPlane = default;
-            bool hasValidCutPlane;
+            IReadOnlyList<int> sourceConnectivityVertexIds = null;
+            List<Mesh> splitPieces = null;
+
+            string ValidateCutBoundary(IReadOnlyList<Vector3> cutBoundaryPoints)
+            {
+                return TryValidateFinalCutBoundaryWithinRange(
+                        cutBoundaryPoints,
+                        sourceToCutRangeSpace,
+                        cutRangeAxis,
+                        cutRangeSpaceBounds,
+                        cutRangeMinimum,
+                        cutRangeMaximum,
+                        cutRangeGeometryEpsilon,
+                        enableDiagnostics,
+                        out string boundaryFailureReason)
+                    ? null
+                    : boundaryFailureReason;
+            }
+
+            Func<IReadOnlyList<Vector3>, string> validateCutBoundary = ValidateCutBoundary;
+
+            string TrySplitCandidate(Plane plane, bool hasPlaneTouchingEdges)
+            {
+                if (useSharedMeshConnectivityCache && sourceConnectivityVertexIds == null)
+                {
+                    sourceConnectivityVertexIds =
+                        GetOrBuildSharedMeshConnectivityVertexIds(
+                            sourceMesh,
+                            sourceVertices,
+                            out bool connectivityCacheHit);
+
+                    if (enableDiagnostics)
+                    {
+                        Debug.Log(
+                            "[MeshCutConnectivityCache] " +
+                            $"{(connectivityCacheHit ? "HIT" : "MISS")} / " +
+                            $"Mesh={sourceMesh.name}, VertexCount={sourceVertices.Count}");
+                    }
+                }
+
+                bool succeeded = meshPlaneSplitter.TrySplitConnectedPieces(
+                    sourceMesh,
+                    plane,
+                    cutSurfaceUvScale,
+                    sourceVertices,
+                    sourceTrianglesBySubMesh,
+                    sourceVertexPlaneDistances,
+                    triangleClassificationsBySubMesh,
+                    sourceConnectivityVertexIds,
+                    "EnemyCut_FirstPiece",
+                    "EnemyCut_SecondPiece",
+                    validateCutBoundary,
+                    enableDiagnostics,
+                    hasPlaneTouchingEdges,
+                    keepCutSidesAsSinglePieces,
+                    out splitPieces,
+                    out string splitFailureReason);
+
+                return succeeded
+                    ? null
+                    : $"候補PlaneのMesh分割に失敗しました。{splitFailureReason}";
+            }
 
             try
             {
-                hasValidCutPlane =
-                    TryCreateCutPlane(
+                if (!TryCutWithCandidatePlanes(
                         sourceVertices,
                         sourceTrianglesBySubMesh,
                         sourceVertexPlaneDistances,
@@ -262,8 +321,11 @@ public sealed class ChainsawMeshCutProcessor
                         ref planeDistanceCacheRequestCount,
                         ref planeDistanceCalculationCount,
                         ref planeDistanceCacheHitCount,
-                        out correctedCutPlane,
-                        out failureReason);
+                        TrySplitCandidate,
+                        out failureReason))
+                {
+                    return false;
+                }
             }
             finally
             {
@@ -284,65 +346,7 @@ public sealed class ChainsawMeshCutProcessor
                 }
             }
 
-            if (!hasValidCutPlane)
-            {
-                return false;
-            }
-
-            IReadOnlyList<int> sourceConnectivityVertexIds = null;
-
-            if (useSharedMeshConnectivityCache)
-            {
-                sourceConnectivityVertexIds =
-                    GetOrBuildSharedMeshConnectivityVertexIds(
-                        sourceMesh,
-                        sourceVertices,
-                        out bool connectivityCacheHit);
-
-                if (enableDiagnostics)
-                {
-                    Debug.Log(
-                        "[MeshCutConnectivityCache] " +
-                        $"{(connectivityCacheHit ? "HIT" : "MISS")} / " +
-                        $"Mesh={sourceMesh.name}, " +
-                        $"VertexCount={sourceVertices.Count}");
-                }
-            }
-
-            if (!meshPlaneSplitter.TrySplitConnectedPieces(
-                    sourceMesh,
-                    correctedCutPlane,
-                    cutSurfaceUvScale,
-                    sourceVertices,
-                    sourceTrianglesBySubMesh,
-                    sourceVertexPlaneDistances,
-                    triangleClassificationsBySubMesh,
-                    sourceConnectivityVertexIds,
-                    "EnemyCut_FirstPiece",
-                    "EnemyCut_SecondPiece",
-                    cutBoundaryPoints =>
-                    {
-                        return TryValidateFinalCutBoundaryWithinRange(
-                                cutBoundaryPoints,
-                                sourceToCutRangeSpace,
-                                cutRangeAxis,
-                                cutRangeSpaceBounds,
-                                cutRangeMinimum,
-                                cutRangeMaximum,
-                                cutRangeGeometryEpsilon,
-                                enableDiagnostics,
-                                out string boundaryFailureReason)
-                            ? null
-                            : boundaryFailureReason;
-                    },
-                    enableDiagnostics,
-                    keepCutSidesAsSinglePieces,
-                    out pieceMeshes,
-                    out failureReason))
-            {
-                return false;
-            }
-
+            pieceMeshes = splitPieces;
             return true;
         }
         finally
@@ -662,7 +666,7 @@ public sealed class ChainsawMeshCutProcessor
     }
 
 
-    private bool TryCreateCutPlane(
+    private bool TryCutWithCandidatePlanes(
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<List<int>> sourceTrianglesBySubMesh,
         float[] sourceVertexPlaneDistances,
@@ -686,12 +690,12 @@ public sealed class ChainsawMeshCutProcessor
         ref int planeDistanceCacheRequestCount,
         ref int planeDistanceCalculationCount,
         ref int planeDistanceCacheHitCount,
-        out Plane correctedCutPlane,
+        Func<Plane, bool, string> trySplitCandidate,
         out string failureReason)
     {
-        correctedCutPlane = default;
-
         string lastTrajectoryCandidateFailure = null;
+        string lastTrajectorySplitFailure = null;
+        bool hadCrossingTrajectoryCandidate = false;
         int sampleCount = localTipPositions.Count;
 
         // Plane候補ごとにListを生成せず、軌跡候補とFallback候補で同じ領域を再利用する。
@@ -766,6 +770,7 @@ public sealed class ChainsawMeshCutProcessor
                     out float intersectionMinimum,
                     out float intersectionMaximum,
                     out int intersectionSegmentCount,
+                    out bool hasPlaneTouchingEdges,
                     out candidateFailureReason))
             {
                 lastTrajectoryCandidateFailure =
@@ -773,8 +778,14 @@ public sealed class ChainsawMeshCutProcessor
                 continue;
             }
 
-            correctedCutPlane =
-                candidatePlane;
+            // 次の候補を検証する前に、このPlaneに対応する距離・分類バッファで分割を試す。
+            hadCrossingTrajectoryCandidate |= intersectionSegmentCount > 0;
+            string splitFailure = trySplitCandidate(candidatePlane, hasPlaneTouchingEdges);
+            if (splitFailure != null)
+            {
+                lastTrajectorySplitFailure = splitFailure;
+                continue;
+            }
 
             if (enableDiagnostics)
             {
@@ -800,10 +811,16 @@ public sealed class ChainsawMeshCutProcessor
             return true;
         }
 
-        // 軌跡由来の角度ではCut Rangeを守れない場合、
-        // 「範囲外を切らない」を最優先してCut Range Axisに直交するPlaneへフォールバックする。
+        // 軌跡由来の候補が予備検証を通過していた場合は、分割処理の失敗として返す。
+        if (hadCrossingTrajectoryCandidate)
+        {
+            failureReason = lastTrajectorySplitFailure;
+            return false;
+        }
+
+        // 軌跡由来の角度ではCut Rangeを守れない場合、従来のAxis直交Planeを試す。
         // 位置は軌跡サンプルから選ぶため、切断高さ/左右位置は可能な限り攻撃軌跡へ追従する。
-        if (TryCreateAxisAlignedFallbackCutPlane(
+        if (TryCutWithAxisAlignedFallbackPlanes(
                 sourceVertices,
                 sourceTrianglesBySubMesh,
                 sourceVertexPlaneDistances,
@@ -827,21 +844,16 @@ public sealed class ChainsawMeshCutProcessor
                 ref planeDistanceCacheRequestCount,
                 ref planeDistanceCalculationCount,
                 ref planeDistanceCacheHitCount,
-                out correctedCutPlane,
+                trySplitCandidate,
                 out failureReason))
         {
             return true;
         }
 
-        if (!string.IsNullOrEmpty(
-                lastTrajectoryCandidateFailure))
-        {
-            failureReason =
-                "Bake済み軌跡由来のCut Planeでは切断境界をCut Range内に収められず、" +
-                "Axis直交Planeへのフォールバックにも失敗しました。" +
-                $" 最後の軌跡候補: {lastTrajectoryCandidateFailure} / " +
-                $"Fallback: {failureReason}";
-        }
+        failureReason =
+            "Bake済み軌跡の候補とAxis直交Planeで分割できませんでした。" +
+            $" 軌跡: {lastTrajectorySplitFailure ?? lastTrajectoryCandidateFailure} / " +
+            $"Axis直交Plane: {failureReason}";
 
         return false;
     }
@@ -1132,6 +1144,7 @@ public sealed class ChainsawMeshCutProcessor
         out float intersectionMinimum,
         out float intersectionMaximum,
         out int intersectionSegmentCount,
+        out bool hasPlaneTouchingEdges,
         out string failureReason)
     {
         intersectionMinimum =
@@ -1142,6 +1155,10 @@ public sealed class ChainsawMeshCutProcessor
 
         intersectionSegmentCount =
             0;
+
+        hasPlaneTouchingEdges = false;
+        bool hasPositiveTouchingEdge = false;
+        bool hasNegativeTouchingEdge = false;
 
         if (sourceVertexPlaneDistances == null ||
             sourceVertexPlaneDistances.Length < sourceVertices.Count ||
@@ -1284,6 +1301,24 @@ public sealed class ChainsawMeshCutProcessor
                 if (triangleClassification !=
                     MeshPlaneSplitter.TRIANGLE_CLASSIFICATION_INTERSECTING)
                 {
+                    // 平面上の辺を挟んで正負のTriangleが隣接する場合、境界はSplitterで復元する。
+                    // 両側に候補辺がある場合だけ追加の隣接解析を実行する。
+                    if (!hasPositiveTouchingEdge || !hasNegativeTouchingEdge)
+                    {
+                        bool onPlaneA = Mathf.Abs(distanceA) <= geometryEpsilon;
+                        bool onPlaneB = Mathf.Abs(distanceB) <= geometryEpsilon;
+                        bool onPlaneC = Mathf.Abs(distanceC) <= geometryEpsilon;
+                        bool hasTwoOnPlaneVertices = onPlaneA
+                            ? onPlaneB != onPlaneC
+                            : onPlaneB && onPlaneC;
+                        if (hasTwoOnPlaneVertices)
+                        {
+                            hasPositiveTouchingEdge |= triangleClassification ==
+                                MeshPlaneSplitter.TRIANGLE_CLASSIFICATION_POSITIVE;
+                            hasNegativeTouchingEdge |= triangleClassification ==
+                                MeshPlaneSplitter.TRIANGLE_CLASSIFICATION_NEGATIVE;
+                        }
+                    }
                     continue;
                 }
 
@@ -1355,7 +1390,8 @@ public sealed class ChainsawMeshCutProcessor
             }
         }
 
-        if (intersectionSegmentCount == 0)
+        hasPlaneTouchingEdges = hasPositiveTouchingEdge && hasNegativeTouchingEdge;
+        if (intersectionSegmentCount == 0 && !hasPlaneTouchingEdges)
         {
             failureReason =
                 "Cut PlaneとMeshから有効な切断境界を取得できませんでした。";
@@ -1661,7 +1697,7 @@ public sealed class ChainsawMeshCutProcessor
             0);
     }
 
-    private static bool TryCreateAxisAlignedFallbackCutPlane(
+    private static bool TryCutWithAxisAlignedFallbackPlanes(
         IReadOnlyList<Vector3> sourceVertices,
         IReadOnlyList<List<int>> sourceTrianglesBySubMesh,
         float[] sourceVertexPlaneDistances,
@@ -1685,11 +1721,9 @@ public sealed class ChainsawMeshCutProcessor
         ref int planeDistanceCacheRequestCount,
         ref int planeDistanceCalculationCount,
         ref int planeDistanceCacheHitCount,
-        out Plane fallbackCutPlane,
+        Func<Plane, bool, string> trySplitCandidate,
         out string failureReason)
     {
-        fallbackCutPlane = default;
-
         Matrix4x4 cutRangeSpaceToSource =
             sourceToCutRangeSpace.inverse;
 
@@ -1735,6 +1769,7 @@ public sealed class ChainsawMeshCutProcessor
             cutRangeGeometryEpsilon);
 
         string lastFailureReason = null;
+        string lastSplitFailure = null;
 
         for (int candidateIndex = 0;
              candidateIndex < candidateAxisPositions.Count;
@@ -1800,6 +1835,7 @@ public sealed class ChainsawMeshCutProcessor
                     out float intersectionMinimum,
                     out float intersectionMaximum,
                     out int intersectionSegmentCount,
+                    out bool hasPlaneTouchingEdges,
                     out string candidateFailureReason))
             {
                 lastFailureReason =
@@ -1807,8 +1843,12 @@ public sealed class ChainsawMeshCutProcessor
                 continue;
             }
 
-            fallbackCutPlane =
-                planeInSourceSpace;
+            string splitFailure = trySplitCandidate(planeInSourceSpace, hasPlaneTouchingEdges);
+            if (splitFailure != null)
+            {
+                lastSplitFailure = splitFailure;
+                continue;
+            }
 
             if (enableDiagnostics)
             {
@@ -1835,9 +1875,8 @@ public sealed class ChainsawMeshCutProcessor
         }
 
         failureReason =
-            string.IsNullOrEmpty(lastFailureReason)
-                ? "Cut Range内でMeshを2分割できるAxis直交Plane候補がありませんでした。"
-                : lastFailureReason;
+            lastSplitFailure ?? lastFailureReason ??
+            "Cut Range内でMeshを2分割できるAxis直交Plane候補がありませんでした。";
 
         return false;
     }

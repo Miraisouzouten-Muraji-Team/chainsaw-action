@@ -32,6 +32,9 @@ public class EnemyHealth : MonoBehaviour
     // HPが0になり、死亡が成立したときに通知する。
     public event Action Died;
 
+    // HPを0にした処理に紐づく命中情報。Player攻撃以外で死亡した場合はnull。
+    internal PlayerAttackHitData LethalPlayerAttackHitData { get; private set; }
+
     public int CurrentHealth
     {
         get
@@ -70,6 +73,11 @@ public class EnemyHealth : MonoBehaviour
     /// <param name="damage">適用するダメージ量。</param>
     public void TakeDamage(int damage)
     {
+        TakeDamage(damage, null);
+    }
+
+    internal void TakeDamage(int damage, PlayerAttackHitData playerAttackHitData)
+    {
         InitializeHealth();
 
         // EnemyDataが正常に取得できていない場合は処理しない。
@@ -89,17 +97,20 @@ public class EnemyHealth : MonoBehaviour
         // HPが0未満にならないよう下限を0にする。
         currentHealth = Mathf.Max(0, currentHealth - damage);
 
-        // HP変化を通知する。
-        HealthChanged?.Invoke(previousHealth, currentHealth);
-
-        if (currentHealth > 0)
+        // HP変更通知の購読処理から再度ダメージを受けても、致死打は一度だけ確定する。
+        bool isLethalDamage = currentHealth == 0;
+        if (isLethalDamage)
         {
-            return;
+            LethalPlayerAttackHitData = playerAttackHitData;
+            isDead = true;
         }
 
-        // Diedを一度だけ通知するため、通知前に死亡状態を確定する。
-        isDead = true;
-        Died?.Invoke();
+        HealthChanged?.Invoke(previousHealth, currentHealth);
+
+        if (isLethalDamage)
+        {
+            Died?.Invoke();
+        }
     }
 
     /// <summary>

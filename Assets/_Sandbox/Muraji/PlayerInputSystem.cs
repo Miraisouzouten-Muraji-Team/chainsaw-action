@@ -311,7 +311,7 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                 {
                     ""name"": ""positive"",
                     ""id"": ""878858de-8e3e-44ce-968d-b9c88e3eee50"",
-                    ""path"": """",
+                    ""path"": ""<Joystick>/stick/right"",
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": """",

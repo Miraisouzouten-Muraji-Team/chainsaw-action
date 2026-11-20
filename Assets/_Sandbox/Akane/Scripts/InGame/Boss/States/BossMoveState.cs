@@ -66,6 +66,7 @@ namespace Project.InGame.Boss
 
         public void Exit()
         {
+            context.Boss.PhysicsMotor?.StopHorizontal();
         }
     }
 }

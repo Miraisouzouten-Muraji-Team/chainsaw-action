@@ -28,17 +28,30 @@ namespace Project.InGame.Boss
         /// <summary>
         /// ボス本体にダメージを適用する。
         /// </summary>
-        public void TakeDamage(float damage)
+        public bool TakeDamage(float damage)
         {
             if (IsDead || damage <= 0f ||
                 float.IsNaN(damage) || float.IsInfinity(damage))
-                return;
+                return false;
 
             currentHealth = Mathf.Max(0f, currentHealth - damage);
             HealthChanged?.Invoke(currentHealth, maxHealth);
 
             if (IsDead)
                 Died?.Invoke();
+
+            return true;
         }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// 動作確認用。ボス本体のHPを0にする。
+        /// </summary>
+        [ContextMenu("Debug/Kill Boss")]
+        private void DebugKillBoss()
+        {
+            TakeDamage(currentHealth);
+        }
+#endif
     }
 }

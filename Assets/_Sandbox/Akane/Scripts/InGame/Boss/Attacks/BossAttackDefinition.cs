@@ -1,9 +1,11 @@
+
+using System;
 using UnityEngine;
 
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// ボスが使用する攻撃の種類。
+    /// ボスの攻撃種類。
     /// </summary>
     public enum BossAttackType
     {
@@ -15,45 +17,69 @@ namespace Project.InGame.Boss
     }
 
     /// <summary>
-    /// 攻撃ごとの設定データ。
+    /// 攻撃の共通設定と、選択された種類の専用設定を保持する。
     /// </summary>
     [CreateAssetMenu(
         fileName = "BossAttack",
         menuName = "Project/Boss/Attack Definition")]
     public sealed class BossAttackDefinition : ScriptableObject
     {
-        [Header("攻撃の種類")]
-        [Tooltip("攻撃の種類を指定する。")]
+        [Header("攻撃種類")]
         [SerializeField] private BossAttackType type;
 
         [Header("射程と移動")]
-        [Tooltip("攻撃が有効な距離")]
         [SerializeField, Min(0.01f)] private float range = 5f;
-        [Tooltip("攻撃時にターゲットまでの距離を何割まで詰めるか")]
-        [SerializeField, Range(0.05f, 1f)] private float targetDistanceRatio = 0.5f;
+        [SerializeField, Range(0.05f, 1f)]
+        private float targetDistanceRatio = 0.5f;
 
-        [Header("攻撃時間")]
-        [Tooltip("攻撃の準備時間")]
-        [SerializeField, Min(0f)] private float preparationTime = 0.5f;
-        [Tooltip("攻撃が有効な時間")]
-        [SerializeField, Min(0f)] private float activeTime = 0.2f;
-        [Tooltip("攻撃後の回復時間")]
+        [Header("共通")]
         [SerializeField, Min(0f)] private float recoveryTime = 1f;
-
-        [Header("アニメーション")]
         [SerializeField] private string animatorTrigger;
+
+        [SerializeReference] private BossAttackParameters parameters;
 
         public BossAttackType Type => type;
         public float Range => range;
         public float TargetDistanceRatio => targetDistanceRatio;
-        public float PreparationTime => preparationTime;
-        public float ActiveTime => activeTime;
         public float RecoveryTime => recoveryTime;
         public string AnimatorTrigger => animatorTrigger;
 
-        // 盾を使う攻撃は盾がある場合に限り選択できる。
         public bool RequiresShield =>
             type == BossAttackType.ShieldBash ||
             type == BossAttackType.ShieldThrow;
+
+        public bool IsConfigured =>
+            parameters != null && parameters.Type == type;
+
+        /// <summary>
+        /// 指定した攻撃専用データを取得する。
+        /// </summary>
+        public T GetParameters<T>() where T : BossAttackParameters
+        {
+            if (!IsConfigured || parameters is not T typedParameters)
+            {
+                throw new InvalidOperationException(
+                    $"{name}: 攻撃種類と設定データが一致していません。");
+            }
+
+            return typedParameters;
+        }
+
+        /// <summary>
+        /// 盾の有無に応じた準備時間を返す。
+        /// </summary>
+        public float GetPreparationTime(bool hasShield)
+        {
+            return IsConfigured
+                ? parameters.GetPreparationTime(hasShield)
+                : 0f;
+        }
+
+        public float GetDamageMultiplier(bool hasShield)
+        {
+            return IsConfigured
+                ? parameters.GetDamageMultiplier(hasShield)
+                : 0f;
+        }
     }
 }

@@ -494,12 +494,19 @@ public class SensorChainsawDigging : MonoBehaviour
     // 弱攻撃が正常に終わったときだけ、継続中のホールド入力で通常の食い込みを始める。
     public bool ResumeHeldDiggingAfterAttack(float facingDirection, bool isGrounded)
     {
+        return ResumeHeldDiggingAfterAttack(facingDirection, isGrounded, false);
+    }
+
+    // 長押しから食い込みを始め、Animatorが選択済みならその遷移を引き継ぐ。
+    public bool ResumeHeldDiggingAfterAttack(float facingDirection, bool isGrounded, bool adoptAnimatorTransition)
+    {
         if (!CanResumeHeldDigging) return false;
 
         // 攻撃姿勢から切り替わる瞬間に接触がなければ、ホールド中だけ次の接触を待つ。
         holdBlocked = false;
         lastPressTime = Time.time;
-        BeginRequest(facingDirection, true, waitBrieflyOnGround: isGrounded, blendFromAttack: true);
+        BeginRequest(facingDirection, true, waitBrieflyOnGround: isGrounded, blendFromAttack: true,
+            adoptAnimatorTransition: adoptAnimatorTransition);
         return IsRequested;
     }
 
@@ -511,7 +518,7 @@ public class SensorChainsawDigging : MonoBehaviour
 
     // 入力時に接触を確認し、接触中ならその場で成立、空中なら接触待機を開始する。
     private void BeginRequest(float facingDirection, bool waitForContact, bool waitBrieflyOnGround = false,
-        bool blendFromAttack = false)
+        bool blendFromAttack = false, bool adoptAnimatorTransition = false)
     {
         particleFrameSurface = ChainsawSurface.None;
         DiggingParticleFrameChanged?.Invoke();
@@ -533,11 +540,11 @@ public class SensorChainsawDigging : MonoBehaviour
 
         if (hasContact)
         {
-            BeginDigging(blendFromAttack);
+            BeginDigging(blendFromAttack, adoptAnimatorTransition);
             return;
         }
 
-        if (!playerAnimator.StartDiggingAnimation(ChainsawSurface.Floor, blendFromAttack))
+        if (!playerAnimator.StartDiggingAnimation(ChainsawSurface.Floor, blendFromAttack, adoptAnimatorTransition))
         {
             Cancel(true);
             return;
@@ -575,6 +582,7 @@ public class SensorChainsawDigging : MonoBehaviour
     // 未接触の空中待機中だけ、空中用の姿勢でアニメーションを止める。
     public void OnAirDiggingFrame(AnimationEvent animationEvent = null)
     {
+        if (playerAnimator != null) playerAnimator.SynchronizeAnimatorWeakAttackExit();
         if (isActiveAndEnabled && IsRequested && isWaitingForContact && !IsDigging &&
             playerAnimator != null)
         {
@@ -588,6 +596,7 @@ public class SensorChainsawDigging : MonoBehaviour
     // 現在食い込んでいる面と一致するイベントだけで姿勢を止める。
     private void HoldSurfaceAnimation(ChainsawSurface surface, AnimationEvent animationEvent)
     {
+        if (playerAnimator != null) playerAnimator.SynchronizeAnimatorWeakAttackExit();
         if (isActiveAndEnabled && IsRequested && Surface == surface &&
             playerAnimator != null && playerAnimator.TryHoldDiggingAnimationAtEvent(animationEvent))
         {
@@ -990,7 +999,7 @@ public class SensorChainsawDigging : MonoBehaviour
     }
 
     // 接触面に応じて食い込み状態とボーナスを初期化する。
-    private bool BeginDigging(bool blendFromAttack = false)
+    private bool BeginDigging(bool blendFromAttack = false, bool adoptAnimatorTransition = false)
     {
         if (contact.Surface ==
             ChainsawSurface.Enemy &&
@@ -1024,7 +1033,7 @@ public class SensorChainsawDigging : MonoBehaviour
         ceilingBonusRamp = 0f;
 
         // 成立した面のモーションを開始し、面ごとのAnimation Event位置まで再生する。
-        if (!playerAnimator.StartDiggingAnimation(Surface, blendFromAttack))
+        if (!playerAnimator.StartDiggingAnimation(Surface, blendFromAttack, adoptAnimatorTransition))
         {
             Cancel(true);
             return false;

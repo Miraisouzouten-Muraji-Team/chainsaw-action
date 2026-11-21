@@ -2966,21 +2966,20 @@ public class SensorPlayerController : MonoBehaviour
     // 攻撃の再生完了と、Animatorの遷移でステートを抜けた場合の両方を処理する。
     void UpdateSlash()
     {
-        if (!IsAttacking ||
-            Time.frameCount == attackStartFrame)
+        if (!IsAttacking || Time.timeScale <= 0f) return;
+        if (playerAnimator.UsesAnimatorWeakAttackExit)
         {
-            return;
+            playerAnimator.SetWeakAttackExit(!weakAttackHoldActive, CanResumeDiggingAfterSlash());
+            SynchronizeAnimatorWeakAttackExit();
+            if (!IsAttacking) return;
         }
 
-        if (Time.timeScale <= 0f)
-        {
-            return;
-        }
+        if (Time.frameCount == attackStartFrame) return;
 
         if (!playerAnimator.TryGetAttackPlayback(out float progress, out bool exitedAttackState,
             out bool transitioningToIdle))
         {
-            if (exitedAttackState && attackStateObserved && !weakAttackHoldActive)
+            if (!playerAnimator.UsesAnimatorWeakAttackExit && exitedAttackState && attackStateObserved && !weakAttackHoldActive)
             {
                 // Animatorが選んだ遷移先を使い、必要なら長押し中の食い込みへ切り替える。
                 FinishSlash(false);
@@ -3005,10 +3004,32 @@ public class SensorPlayerController : MonoBehaviour
 
         attackStateObserved = true;
 
-        // 既存のIdle遷移が始まっても、長押し中は待機への到着を待たず食い込みへつなぐ。
+        if (playerAnimator.UsesAnimatorWeakAttackExit) return;
+
+        // 旧Controllerを使う場合は、従来の再生終了判定で遷移を要求する。
         if (progress >= 1f || (transitioningToIdle && !weakAttackHoldActive && CanResumeDiggingAfterSlash()))
         {
             FinishSlash(!transitioningToIdle);
+        }
+    }
+
+    // Animatorが出口を選んだ後で、攻撃を閉じて選ばれた食い込みを開始する。
+    public void SynchronizeAnimatorWeakAttackExit()
+    {
+        if (!IsAttacking || weakAttackHoldActive || Time.timeScale <= 0f) return;
+
+        if (!attackStateObserved && playerAnimator.TryGetAttackProgress(out _))
+            attackStateObserved = true;
+        if (!playerAnimator.TryGetWeakAttackExit(attackStateObserved, out bool startsDigging)) return;
+
+        playerAnimator.EndSlash(false);
+        ClearSlashState();
+
+        if (startsDigging &&
+            (!CanResumeDiggingAfterSlash() ||
+             !chainsawDigging.ResumeHeldDiggingAfterAttack(facingDirection, IsGrounded(), adoptAnimatorTransition: true)))
+        {
+            playerAnimator.EndSlash(true);
         }
     }
 

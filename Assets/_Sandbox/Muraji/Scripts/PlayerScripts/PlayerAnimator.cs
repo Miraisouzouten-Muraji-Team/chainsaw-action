@@ -42,6 +42,7 @@ public class PlayerAnimator : MonoBehaviour
         else fallPeakHeight = Mathf.Max(fallPeakHeight, height);
         fallAirborne = !grounded;
 
+        SynchronizeAnimatorWeakAttackExit();
         UpdateDiggingAnimation();
 
         if (attackActive || IsDiggingAnimationActive || isHurtAnimationActive || requestedActionStateHash != 0 ||
@@ -185,6 +186,10 @@ public class PlayerAnimator : MonoBehaviour
 
     private const string WEAK_ACTION_TARGET_PARAMETER = "WeakActionTarget";
     private const string WEAK_ACTION_REQUEST_TRIGGER = "WeakActionRequested";
+    private const string WEAK_ATTACK_EXIT_PARAMETER = "WeakAttackExit";
+    private const int WEAK_ATTACK_EXIT_BLOCKED = -1;
+    private const int WEAK_ATTACK_EXIT_IDLE = 0;
+    private const int WEAK_ATTACK_EXIT_DIGGING = 1;
     private const float ACTION_FALLBACK_BLEND_SECONDS = 0.05f;
 
     // AnimatorのInt条件で、トリガー受信時の遷移先を選ぶ。
@@ -198,6 +203,8 @@ public class PlayerAnimator : MonoBehaviour
         CeilingDigging = 5,
         EnemyDigging = 6
     }
+
+    public bool UsesAnimatorWeakAttackExit { get; private set; }
 
     private int requestedActionStateHash;
     private int requestedActionFrame;
@@ -229,6 +236,7 @@ public class PlayerAnimator : MonoBehaviour
         weakAttackPreviousSpeed = animator.speed;
         weakAttackPreviousRootMotion = animator.applyRootMotion;
         IsWeakAttackHeld = true;
+        SetWeakAttackExit(false, false);
         animator.speed = 0f;
         animator.applyRootMotion = false;
         if (weakAttackController == null) weakAttackController = GetComponent<SensorPlayerController>();
@@ -303,8 +311,14 @@ public class PlayerAnimator : MonoBehaviour
         return StartDiggingAnimation(surface, false);
     }
 
-    // 通常の食い込み再生を開始し、弱攻撃からの復帰時には現在の姿勢からブレンドする。
+    // 既存の呼び出しからは、通常どおり食い込みモーションを開始する。
     public bool StartDiggingAnimation(ChainsawSurface surface, bool blendFromAttack)
+    {
+        return StartDiggingAnimation(surface, blendFromAttack, false);
+    }
+
+    // 食い込みモーションを開始するか、Animatorが始めた遷移を引き継ぐ。
+    public bool StartDiggingAnimation(ChainsawSurface surface, bool blendFromAttack, bool adoptAnimatorTransition)
     {
         CancelFallAnimation();
         if (isHurtAnimationActive) return false;
@@ -364,6 +378,12 @@ public class PlayerAnimator : MonoBehaviour
         blendingFromAttackToDigging = blend;
 
         animator.SetBool("IsDigging", true);
+        // Animatorがすでに開始した遷移を引き継ぎ、再生位置とブレンドを保つ。
+        if (adoptAnimatorTransition && TryGetActionState(diggingStateHash, out _))
+        {
+            return true;
+        }
+
         if (blend)
         {
             // 対象別のステートがなければ、通常の食い込みステートへ遷移する。
@@ -388,6 +408,7 @@ public class PlayerAnimator : MonoBehaviour
     // 止めたい位置のAnimation Eventから呼ぶ。
     public void HoldDiggingAnimation(AnimationEvent animationEvent = null)
     {
+        SynchronizeAnimatorWeakAttackExit();
         // 解除済みなら停止しない。
         // 停止位置より前に解除した場合にも対応する。
         if (diggingAnimationPhase != DiggingAnimationPhase.Starting)
@@ -764,6 +785,16 @@ public class PlayerAnimator : MonoBehaviour
 
         activeHash = hash;
         attackActive = true;
+        UsesAnimatorWeakAttackExit = false;
+        foreach (AnimatorControllerParameter parameter in animator.parameters)
+        {
+            if (parameter.name == WEAK_ATTACK_EXIT_PARAMETER && parameter.type == AnimatorControllerParameterType.Int)
+            {
+                UsesAnimatorWeakAttackExit = true;
+                SetWeakAttackExit(false, false);
+                break;
+            }
+        }
 
         // 古いTriggerを残さない。
         animator.ResetTrigger("Slash");
@@ -857,6 +888,45 @@ public class PlayerAnimator : MonoBehaviour
             "対象の遷移の Has Exit Time と、WeakActionRequested / WeakActionTarget の条件を確認してください。", this);
     }
 
+    // 食い込みを受理できるかだけを通知する。遷移の開始位置はAnimatorのExit Timeで決まる。
+    public void SetWeakAttackExit(bool canExit, bool canDig)
+    {
+        if (!UsesAnimatorWeakAttackExit || animator == null || !animator.isActiveAndEnabled) return;
+
+        int target = WEAK_ATTACK_EXIT_BLOCKED;
+        if (canExit && !IsWeakAttackHeld)
+            target = canDig ? WEAK_ATTACK_EXIT_DIGGING : WEAK_ATTACK_EXIT_IDLE;
+        animator.SetInteger(WEAK_ATTACK_EXIT_PARAMETER, target);
+    }
+
+    // 攻撃から別ステートへ出たとき、Animatorが選んだ遷移先を読み取る。
+    public bool TryGetWeakAttackExit(bool observedAttack, out bool startsDigging)
+    {
+        startsDigging = false;
+        if (!UsesAnimatorWeakAttackExit || !attackActive || IsWeakAttackHeld || isHurtAnimationActive ||
+            animator == null || !animator.isActiveAndEnabled) return false;
+
+        int currentHash = animator.GetCurrentAnimatorStateInfo(0).fullPathHash;
+        bool inTransition = animator.IsInTransition(0);
+        int destination = inTransition ? animator.GetNextAnimatorStateInfo(0).fullPathHash : currentHash;
+        if (destination == 0 || destination == activeHash || (!observedAttack && (!inTransition || currentHash != activeHash)))
+            return false;
+
+        startsDigging = destination == Animator.StringToHash(diggingState) ||
+            (!string.IsNullOrEmpty(wallDiggingState) && destination == Animator.StringToHash(wallDiggingState)) ||
+            (!string.IsNullOrEmpty(ceilingDiggingState) && destination == Animator.StringToHash(ceilingDiggingState)) ||
+            (!string.IsNullOrEmpty(enemyDiggingState) && destination == Animator.StringToHash(enemyDiggingState));
+        return true;
+    }
+
+    // Animatorの評価直後や、食い込み先のAnimation Eventより先にゲーム側の状態を合わせる。
+    public void SynchronizeAnimatorWeakAttackExit()
+    {
+        if (!UsesAnimatorWeakAttackExit) return;
+        if (fallController == null) fallController = GetComponentInParent<SensorPlayerController>();
+        if (fallController != null) fallController.SynchronizeAnimatorWeakAttackExit();
+    }
+
     // 弱攻撃が現在または次のステートで再生中かを調べる。
     public bool TryGetAttackProgress(out float progress)
     {
@@ -917,6 +987,8 @@ public class PlayerAnimator : MonoBehaviour
     {
         ClearRequestedActionTransition();
         ResumeWeakAttackPose();
+        SetWeakAttackExit(false, false);
+        UsesAnimatorWeakAttackExit = false;
         attackActive = false;
 
         if (slashTrailEffect != null)

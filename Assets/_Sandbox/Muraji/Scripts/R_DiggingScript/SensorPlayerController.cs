@@ -265,8 +265,13 @@ public class SensorPlayerController : MonoBehaviour
     [Tooltip("プレイヤー本体を覆う判定専用BoxColliderを指定します。Is Triggerをオンにしてください。未設定・無効の場合は本体の物理Colliderを使います。")]
     [SerializeField] private BoxCollider enemyDiggingJumpProbe;
 
-    private Vector3 enemyReleaseFlightInitialVelocity;
+    private bool enemyReleaseFlightActive;
+    private bool enemyReleaseAirControlActive;
+    private Vector2 enemyReleaseFlightSegmentSpeed;
+    private Vector3 enemyReleaseFlightLastVelocity;
+    private float enemyReleaseFlightSegmentStart;
     private float enemyReleaseFlightElapsed;
+    private const float ENEMY_RELEASE_TURN_BRAKE_TIME = 0.08f;
     private Vector3 pendingEnemyReleaseBoost;
     private Vector3 pendingWallJumpVelocity;
     private float wallJumpHorizontalVelocity;
@@ -895,8 +900,9 @@ public class SensorPlayerController : MonoBehaviour
 
         bool isKnockbackActive =
             knockbackVelocity != 0f || knockbackHopPending;
-        bool isEnemyReleaseFlying = TryGetEnemyReleaseFlightVelocity(
-            enemyReleaseBoost, deltaTime, isKnockbackActive, out Vector3 enemyReleaseFlightVelocity);
+        bool isEnemyReleaseFlying = TryGetEnemyReleaseFlightSpeed(
+            enemyReleaseBoost, deltaTime, isKnockbackActive, out Vector2 enemyReleaseFlightSpeed,
+            out bool enemyReleaseReachedApex);
 
         // 空中攻撃中は、直前までの移動処理で管理していた横速度を保持する。
         // Rigidbodyから速度を取り直さず、通常入力による加減速も行わない。
@@ -1045,8 +1051,17 @@ public class SensorPlayerController : MonoBehaviour
             ignoreGroundUntil = Time.time + 0.1f;
         }
 
-        // 食い込み中と敵からの飛び出し中は、それぞれ専用の速度を使う。
-        if (!suppressGravity && !isEnemyReleaseFlying)
+        // 上向きの離脱は横方向と同じ速度曲線で進め、頂点から通常の落下へつなぐ。
+        bool isEnemyReleaseAscending = isEnemyReleaseFlying && enemyReleaseFlightSpeed.y > 0f;
+        if (isEnemyReleaseAscending)
+            velocity.y = enemyReleaseFlightSpeed.y;
+        else if (isEnemyReleaseFlying && enemyReleaseBoost.sqrMagnitude > 0f)
+            velocity.y = enemyReleaseBoost.y;
+        else if (enemyReleaseReachedApex)
+            velocity.y = Mathf.Min(velocity.y, 0f);
+
+        // 落下時はプレイヤー共通の重力と速度上限を1回だけ適用する。
+        if (!suppressGravity && !isEnemyReleaseAscending)
         {
             ApplyJumpGravity(ref velocity, deltaTime);
         }
@@ -1104,14 +1119,16 @@ public class SensorPlayerController : MonoBehaviour
         // 天井離脱中は角補正による上向き速度を上書きし、通常の落下へつなぐ。
         ApplyCeilingJumpRelease(ref velocity, deltaTime);
 
-        // ジャンプ・壁ジャンプ・角補正の決定後に、通常の斜面歩行だけを適用する。
-        ApplyGroundSlopeMovement(ref velocity, isKnockbackActive);
-
-        // 飛び出し方向と速さを保つため、X・Yに同じ減衰率を適用した速度を使う。
         if (isEnemyReleaseFlying)
         {
-            velocity = enemyReleaseFlightVelocity;
-            currentSpeed = 0f;
+            velocity.x = ResolveEnemyReleaseHorizontalSpeed(enemyReleaseFlightSpeed.x, deltaTime);
+            // 飛び出しの終了後も、直前の横速度から通常移動を続ける。
+            currentSpeed = velocity.x;
+        }
+        else
+        {
+            // ジャンプ・壁ジャンプ・角補正の決定後に、通常の斜面歩行を適用する。
+            ApplyGroundSlopeMovement(ref velocity, isKnockbackActive);
         }
 
         // 敵への食い込み中だけ、開始時の位置差を維持する速度で追従する。
@@ -1153,10 +1170,13 @@ public class SensorPlayerController : MonoBehaviour
         // Rigidbodyへ渡す実際の移動速度だけを、最後に制限する。
         debugVelocityBeforeWall = velocity;
         debugWallBlocked = ApplyWallMovementBlock(ref velocity);
-        if (isEnemyReleaseFlying && debugWallBlocked &&
-            enemyReleaseFlightVelocity.x != 0f && velocity.x == 0f)
+        if (isEnemyReleaseFlying)
         {
-            ClearEnemyReleaseFlight();
+            if (debugWallBlocked && enemyReleaseFlightSpeed.x != 0f && velocity.x == 0f)
+                enemyReleaseFlightSegmentSpeed.x = 0f;
+
+            // 物理衝突でどの成分を止めるかを、実際に適用した速度から判断する。
+            enemyReleaseFlightLastVelocity = velocity;
         }
         debugVelocityAfterWall = velocity;
         if (traceJumpLaunch)
@@ -1586,19 +1606,7 @@ public class SensorPlayerController : MonoBehaviour
             chainsawDigging.Surface == ChainsawSurface.Ceiling;
 
         // ワールドX方向の入力を使い、見た目の負スケールで移動方向を二重反転させない。
-        float moveInput = isAutoMoving
-            ? facingDirection
-            : Mathf.Clamp(input.MoveInput, -1f, 1f);
-
-        // 手動移動では遊びの範囲を無視し、残りの入力範囲を0～1へ補正する。
-        if (!isAutoMoving)
-        {
-            float deadZone = Mathf.Clamp01(playerParameter.moveDeadZone);
-            float inputMagnitude = Mathf.Abs(moveInput);
-            moveInput = inputMagnitude <= deadZone
-                ? 0f
-                : Mathf.Sign(moveInput) * Mathf.InverseLerp(deadZone, 1f, inputMagnitude);
-        }
+        float moveInput = isAutoMoving ? facingDirection : ReadHorizontalMoveInput();
 
         float speedBonus = chainsawDigging.MoveSpeedBonus;
         float targetSpeed = moveInput * (playerParameter.moveSpeed + speedBonus);
@@ -1626,6 +1634,17 @@ public class SensorPlayerController : MonoBehaviour
         debugRotationSpeed = chainsawAccelerator.CurrentSpeed;
         debugSpeedBonus = speedBonus;
         debugTargetSpeed = targetSpeed;
+    }
+
+    // 通常移動と空中操作で同じ入力を使い、遊びを除いた入力の強さを返す。
+    private float ReadHorizontalMoveInput()
+    {
+        float moveInput = Mathf.Clamp(input.MoveInput, -1f, 1f);
+        float deadZone = Mathf.Clamp01(playerParameter.moveDeadZone);
+        float inputMagnitude = Mathf.Abs(moveInput);
+        return inputMagnitude <= deadZone
+            ? 0f
+            : Mathf.Sign(moveInput) * Mathf.InverseLerp(deadZone, 1f, inputMagnitude);
     }
 
     // 壁ジャンプの硬直時間をFixedUpdateで進め、終了したらジャンプを予約する。
@@ -1669,11 +1688,13 @@ public class SensorPlayerController : MonoBehaviour
             jumpsUsed = MAX_JUMP_COUNT - 1;
     }
 
-    // 敵食い込みからの飛び出し速度を、向きに関係なく同じ二次曲線で減らす。
-    private bool TryGetEnemyReleaseFlightVelocity(
-        Vector3 launchVelocity, float deltaTime, bool isKnockbackActive, out Vector3 velocity)
+    // 横と上向きの飛び出しに共通の減衰をかけ、上昇区間を終えたフレームも返す。
+    private bool TryGetEnemyReleaseFlightSpeed(
+        Vector3 launchVelocity, float deltaTime, bool isKnockbackActive, out Vector2 speed,
+        out bool reachedApex)
     {
-        velocity = Vector3.zero;
+        speed = Vector2.zero;
+        reachedApex = false;
         if (chainsawDigging.Surface != ChainsawSurface.None ||
             IsAttacking || IsDamageStunned || IsImpactStunned || isKnockbackActive || jumpPending ||
             wallJumpLaunchPending || wallJumpDirectionHoldRemaining > 0f ||
@@ -1685,7 +1706,10 @@ public class SensorPlayerController : MonoBehaviour
 
         if (launchVelocity.sqrMagnitude > 0f)
         {
-            enemyReleaseFlightInitialVelocity = launchVelocity;
+            enemyReleaseFlightActive = true;
+            enemyReleaseAirControlActive = false;
+            enemyReleaseFlightSegmentSpeed = new Vector2(launchVelocity.x, Mathf.Max(0f, launchVelocity.y));
+            enemyReleaseFlightSegmentStart = 0f;
             enemyReleaseFlightElapsed = 0f;
             variableJumpActive = false;
             ResetCeilingFallGrace(false);
@@ -1698,62 +1722,126 @@ public class SensorPlayerController : MonoBehaviour
                 ignoreGroundUntil = Time.time + 0.1f;
             }
 
-            // 解除した物理フレームは減衰前の初速を使う。
-            velocity = launchVelocity;
+            speed = enemyReleaseFlightSegmentSpeed;
         }
         else
         {
-            if (enemyReleaseFlightInitialVelocity.sqrMagnitude == 0f)
+            if (!enemyReleaseFlightActive)
                 return false;
 
             enemyReleaseFlightElapsed += deltaTime;
             float easeDuration = playerParameter.enemyReleaseEaseDuration;
             if (enemyReleaseFlightElapsed >= easeDuration)
             {
+                reachedApex = enemyReleaseFlightSegmentSpeed.y > 0f;
+                if (!enemyReleaseAirControlActive)
+                {
+                    // 減衰時間が極端に短いときも、余った初速を通常移動へ持ち越さない。
+                    float targetSpeed = ReadHorizontalMoveInput() * playerParameter.moveSpeed;
+                    currentSpeed = Mathf.Clamp(currentSpeed,
+                        Mathf.Min(0f, targetSpeed), Mathf.Max(0f, targetSpeed));
+                }
                 ClearEnemyReleaseFlight();
                 return false;
             }
 
-            float remaining = 1f - enemyReleaseFlightElapsed / easeDuration;
-            velocity = enemyReleaseFlightInitialVelocity * (remaining * remaining);
-
-            // 徐々に強くなる重力を経過時間で積分し、飛び出しの勢いが残る間も軌道を下へ曲げる。
-            float gravityBlendTime = Mathf.Max(0f, playerParameter.enemyReleaseGravityBlendTime);
-            float gravityTime = enemyReleaseFlightElapsed;
-            if (gravityBlendTime > 0f)
-            {
-                float progress = Mathf.Clamp01(enemyReleaseFlightElapsed / gravityBlendTime);
-                gravityTime = gravityBlendTime * progress * progress * progress * (1f - 0.5f * progress)
-                    + Mathf.Max(0f, enemyReleaseFlightElapsed - gravityBlendTime);
-            }
-
-            float fallVelocity = Physics.gravity.y * playerParameter.gravityScale * gravityTime;
-            velocity.y += Mathf.Max(fallVelocity, -playerParameter.maxFallSpeed);
+            // 衝突後も、離脱時に決まった終了時刻まで同じ曲線で減衰させる。
+            float remaining = (easeDuration - enemyReleaseFlightElapsed) /
+                (easeDuration - enemyReleaseFlightSegmentStart);
+            speed = enemyReleaseFlightSegmentSpeed * (remaining * remaining);
         }
 
         return true;
     }
 
-    // 衝突した面に向かう飛び出しを止め、次の物理更新で通常の移動へ戻す。
-    private void StopEnemyReleaseFlightOnContact(Collision collision)
+    // 飛び出しの初速を残し、減衰や衝突で横の勢いが落ちたら入力で加速する。
+    private float ResolveEnemyReleaseHorizontalSpeed(float launchSpeed, float deltaTime)
     {
-        if (enemyReleaseFlightInitialVelocity.sqrMagnitude == 0f)
-            return;
+        if (enemyReleaseFlightElapsed <= 0f)
+            return launchSpeed;
 
-        Vector3 direction = enemyReleaseFlightInitialVelocity.normalized;
-        for (int i = 0; i < collision.contactCount; i++)
+        float moveInput = ReadHorizontalMoveInput();
+        float targetSpeed = moveInput * playerParameter.moveSpeed;
+        float moveSpeed = Mathf.Abs(targetSpeed);
+
+        if (!enemyReleaseAirControlActive)
         {
-            if (Vector3.Dot(direction, collision.GetContact(i).normal) < -0.1f)
-            {
-                ClearEnemyReleaseFlight();
-                return;
-            }
+            bool launchStillFaster = launchSpeed * moveInput > 0f && Mathf.Abs(launchSpeed) > moveSpeed;
+            if (moveInput == 0f || launchStillFaster)
+                return launchSpeed;
+
+            // 一度入力に切り替えた後は、スティックを戻しても古い飛び出し速度に戻さない。
+            enemyReleaseAirControlActive = true;
         }
+
+        float speed = Mathf.Abs(currentSpeed);
+        float rate = moveSpeed > speed ? playerParameter.acceleration : playerParameter.deceleration;
+        if (currentSpeed * targetSpeed < 0f)
+        {
+            // 反対入力では速度を徐々に落とし、減速後に反対方向へ加速する。
+            rate = Mathf.Max(rate, speed / ENEMY_RELEASE_TURN_BRAKE_TIME);
+        }
+
+        return Mathf.MoveTowards(currentSpeed, targetSpeed, rate * deltaTime);
     }
 
+    // 接触面へ向かう成分だけを止め、面に沿う速度で残りの飛び出しを続ける。
+    private void SlideEnemyReleaseFlightOnContact(Collision collision)
+    {
+        if (!enemyReleaseFlightActive)
+            return;
+
+        Vector3 velocity = enemyReleaseFlightLastVelocity;
+        bool blocked = false;
+        for (int i = 0; i < collision.contactCount; i++)
+        {
+            Vector3 normal = collision.GetContact(i).normal;
+            normal.z = 0f;
+            // 奥行き方向の接触は、プレイヤーの移動平面に影響させない。
+            if (normal.sqrMagnitude <= 0.0001f)
+                continue;
+
+            normal.Normalize();
+            float normalSpeed = Vector3.Dot(velocity, normal);
+            if (normalSpeed < -0.001f)
+            {
+                velocity -= normal * normalSpeed;
+                blocked = true;
+            }
+        }
+
+        if (!blocked)
+            return;
+
+        // 面に沿った縦速度を次の通常重力の計算へ渡す。
+        velocity.y = Mathf.Max(velocity.y, -playerParameter.maxFallSpeed);
+        // 空中操作も壁に遮られた後の横速度から加速し直す。
+        currentSpeed = velocity.x;
+        Vector3 bodyVelocity = playerRigidbody.linearVelocity;
+        bodyVelocity.y = velocity.y;
+        playerRigidbody.linearVelocity = bodyVelocity;
+
+        if (velocity.sqrMagnitude <= 0.0001f)
+        {
+            ClearEnemyReleaseFlight();
+            return;
+        }
+
+        enemyReleaseFlightLastVelocity = velocity;
+        enemyReleaseFlightSegmentSpeed.x = velocity.x;
+        if (enemyReleaseFlightSegmentSpeed.y > 0f)
+            enemyReleaseFlightSegmentSpeed.y = Mathf.Max(0f, velocity.y);
+        enemyReleaseFlightSegmentStart = enemyReleaseFlightElapsed;
+    }
+
+    // 飛び出しと空中操作の状態を解除する。
     private void ClearEnemyReleaseFlight()
     {
-        enemyReleaseFlightInitialVelocity = Vector3.zero;
+        enemyReleaseFlightActive = false;
+        enemyReleaseAirControlActive = false;
+        enemyReleaseFlightSegmentSpeed = Vector2.zero;
+        enemyReleaseFlightLastVelocity = Vector3.zero;
+        enemyReleaseFlightSegmentStart = 0f;
         enemyReleaseFlightElapsed = 0f;
     }
 
@@ -2477,14 +2565,16 @@ public class SensorPlayerController : MonoBehaviour
         if (chainsawDigging != null) chainsawDigging.QueueMovementEnemyCollision(collision);
         // 移動を止める処理より先に、実際に触れた地形の面を記録する。
         if (groundProbe != null) groundProbe.RecordContact(collision);
-        StopEnemyReleaseFlightOnContact(collision);
+        bool wasEnemyReleaseFlying = enemyReleaseFlightActive;
+        SlideEnemyReleaseFlightOnContact(collision);
         if (IsDamageStunned) return;
 
         // 頭部が天井の端に軽く当たったときだけ、横移動を予約する。
         // 天井移動中の実際の壁衝突は、頭部の小さな角補正より先に判定する。
         bool ceilingTravel = lastDiggingPhysicsSurface == ChainsawSurface.Ceiling || HasRecentCeilingTravelImpact;
         if (ceilingTravel) TryBeginDiggingImpact(collision);
-        bool correctingCeilingCorner = !IsImpactStunned && TryQueueCeilingCornerCorrection(collision);
+        bool correctingCeilingCorner = !wasEnemyReleaseFlying && !IsImpactStunned &&
+            TryQueueCeilingCornerCorrection(collision);
         if (!ceilingTravel && !correctingCeilingCorner)
             TryBeginDiggingImpact(collision);
 
@@ -2505,14 +2595,16 @@ public class SensorPlayerController : MonoBehaviour
         if (chainsawDigging != null) chainsawDigging.QueueMovementEnemyCollision(collision);
         // 移動を止める処理より先に、実際に触れた地形の面を記録する。
         if (groundProbe != null) groundProbe.RecordContact(collision);
-        StopEnemyReleaseFlightOnContact(collision);
+        bool wasEnemyReleaseFlying = enemyReleaseFlightActive;
+        SlideEnemyReleaseFlightOnContact(collision);
         if (IsDamageStunned) return;
 
         // 同じ地形への接触中も、角の状態を判定し直す。
         // 天井移動中の実際の壁衝突は、頭部の小さな角補正より先に判定する。
         bool ceilingTravel = lastDiggingPhysicsSurface == ChainsawSurface.Ceiling || HasRecentCeilingTravelImpact;
         if (ceilingTravel) TryBeginDiggingImpact(collision);
-        bool correctingCeilingCorner = !IsImpactStunned && TryQueueCeilingCornerCorrection(collision);
+        bool correctingCeilingCorner = !wasEnemyReleaseFlying && !IsImpactStunned &&
+            TryQueueCeilingCornerCorrection(collision);
         if (!ceilingTravel && !correctingCeilingCorner)
             TryBeginDiggingImpact(collision);
 

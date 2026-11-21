@@ -159,13 +159,9 @@ public class PlayerParameter : ScriptableObject
     [SerializeField, Min(0f)]
     public float enemyDiggingJumpSpeed = 18f;
 
-    [Tooltip("敵から飛び出した後、飛び出しの勢いがなくなるまでの秒数です。0なら最初の物理フレームだけ飛び出す速度を使います。")]
+    [Tooltip("敵から飛び出したときの勢いを弱める秒数です。横方向は、残りの勢いと移動入力に応じて途中で空中操作に切り替わります。0なら飛び出し専用の速度を最初の物理フレームにだけ適用します。")]
     [SerializeField, Min(0f)]
     public float enemyReleaseEaseDuration = 0.4f;
-
-    [Tooltip("敵から飛び出した後、重力が通常の強さに戻るまでの秒数です。0ならすぐに重力がかかります。")]
-    [SerializeField, Min(0f)]
-    public float enemyReleaseGravityBlendTime = 0.2f;
 
     [Tooltip("敵食い込みジャンプで、飛び出す方向のステージとの干渉を調べる距離です。1物理フレームの移動距離より短い場合は、その移動距離を使用します。")]
     [SerializeField, Min(0f)]

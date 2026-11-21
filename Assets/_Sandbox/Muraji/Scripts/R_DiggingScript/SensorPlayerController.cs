@@ -686,7 +686,8 @@ public class SensorPlayerController : MonoBehaviour
         chainsawDigging.SetFacingDirection(facingDirection);
         // 入力で壁食い込みが解除される前に、離脱後の空中ジャンプを1回分確保する。
         RestoreAirJumpFromWallDigging();
-        if (wallTopTimeRemaining <= 0f)
+        // 同時押しでは先に食い込みモーションを出さず、現在の姿勢から弱攻撃に入る。
+        if (wallTopTimeRemaining <= 0f && (!slashPressed || IsAttacking))
         {
             chainsawDigging.HandleInput(
                 input.WedgieInput || diggingBuffered,
@@ -2952,10 +2953,12 @@ public class SensorPlayerController : MonoBehaviour
         {
             jumpPending = false;
             bool groundedBeforeAttack = IsGrounded();
-            chainsawDigging.Cancel(true);
+            // 弱攻撃のブレンド元として、食い込みの見た目の姿勢を残しておく。
+            chainsawDigging.Cancel(true, keepAnimationPose: true);
 
             isAirAttackCombo = !groundedBeforeAttack;
             StartSlash(1);
+            if (!IsAttacking) playerAnimator.ExitDiggingImmediately();
         }
 
     }
@@ -2974,7 +2977,8 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
-        if (!playerAnimator.TryGetAttackPlayback(out float progress, out bool exitedAttackState))
+        if (!playerAnimator.TryGetAttackPlayback(out float progress, out bool exitedAttackState,
+            out bool transitioningToIdle))
         {
             if (exitedAttackState && attackStateObserved && !weakAttackHoldActive)
             {
@@ -3001,9 +3005,10 @@ public class SensorPlayerController : MonoBehaviour
 
         attackStateObserved = true;
 
-        if (progress >= 1f)
+        // 既存のIdle遷移が始まっても、長押し中は待機への到着を待たず食い込みへつなぐ。
+        if (progress >= 1f || (transitioningToIdle && !weakAttackHoldActive && CanResumeDiggingAfterSlash()))
         {
-            FinishSlash(true);
+            FinishSlash(!transitioningToIdle);
         }
     }
 
@@ -3144,14 +3149,24 @@ public class SensorPlayerController : MonoBehaviour
     // 弱攻撃を最後まで再生したら、押し続けている食い込みボタンを通常判定へ渡す。
     void FinishSlash(bool returnToIdle)
     {
-        playerAnimator.EndSlash(returnToIdle);
+        // 当たり判定を閉じてから、食い込みへ直接ブレンドできるよう攻撃の姿勢を残す。
+        playerAnimator.EndSlash(false);
         ClearSlashState();
 
-        if (input.WedgieHeld && wallTopTimeRemaining <= 0f &&
-            !ceilingJumpLaunchPending && ceilingJumpReleaseRemaining <= 0f)
+        if (CanResumeDiggingAfterSlash() &&
+            chainsawDigging.ResumeHeldDiggingAfterAttack(facingDirection, IsGrounded()))
         {
-            chainsawDigging.ResumeHeldDiggingAfterAttack(facingDirection, IsGrounded());
+            return;
         }
+
+        if (returnToIdle) playerAnimator.ReturnToIdleAfterSlash();
+    }
+
+    // ホールド操作中の長押しと、他のアクションによる解除制限を確認する。
+    private bool CanResumeDiggingAfterSlash()
+    {
+        return input.WedgieHeld && chainsawDigging.CanResumeHeldDigging && wallTopTimeRemaining <= 0f &&
+            !ceilingJumpLaunchPending && ceilingJumpReleaseRemaining <= 0f;
     }
 
     public void CancelAttack()

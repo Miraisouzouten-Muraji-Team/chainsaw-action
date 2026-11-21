@@ -2960,6 +2960,7 @@ public class SensorPlayerController : MonoBehaviour
 
     }
 
+    // 攻撃の再生完了と、Animatorの遷移でステートを抜けた場合の両方を処理する。
     void UpdateSlash()
     {
         if (!IsAttacking ||
@@ -2973,9 +2974,15 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
-        if (!playerAnimator.TryGetAttackProgress(
-                out float progress))
+        if (!playerAnimator.TryGetAttackPlayback(out float progress, out bool exitedAttackState))
         {
+            if (exitedAttackState && attackStateObserved && !weakAttackHoldActive)
+            {
+                // Animatorが選んだ遷移先を使い、必要なら長押し中の食い込みへ切り替える。
+                FinishSlash(false);
+                return;
+            }
+
             stateWaitTime += Time.deltaTime;
 
             if (attackStateObserved || stateWaitTime > 0.5f)
@@ -2996,7 +3003,7 @@ public class SensorPlayerController : MonoBehaviour
 
         if (progress >= 1f)
         {
-            FinishSlash();
+            FinishSlash(true);
         }
     }
 
@@ -3134,10 +3141,17 @@ public class SensorPlayerController : MonoBehaviour
         attackMoveDirection = 0f;
     }
 
-    void FinishSlash()
+    // 弱攻撃を最後まで再生したら、押し続けている食い込みボタンを通常判定へ渡す。
+    void FinishSlash(bool returnToIdle)
     {
-        playerAnimator.EndSlash(true);
+        playerAnimator.EndSlash(returnToIdle);
         ClearSlashState();
+
+        if (input.WedgieHeld && wallTopTimeRemaining <= 0f &&
+            !ceilingJumpLaunchPending && ceilingJumpReleaseRemaining <= 0f)
+        {
+            chainsawDigging.ResumeHeldDiggingAfterAttack(facingDirection, IsGrounded());
+        }
     }
 
     public void CancelAttack()

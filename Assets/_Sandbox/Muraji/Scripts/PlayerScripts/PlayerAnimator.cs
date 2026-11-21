@@ -733,6 +733,27 @@ public class PlayerAnimator : MonoBehaviour
                state.fullPathHash == activeHash;
     }
 
+    // 攻撃のブレンド中も進行度を読み、攻撃ステートから出たことを判定する。
+    public bool TryGetAttackPlayback(out float progress, out bool exitedAttackState)
+    {
+        progress = 0f;
+        exitedAttackState = false;
+        if (!attackActive || isHurtAnimationActive || animator == null || !animator.isActiveAndEnabled)
+            return false;
+
+        AnimatorStateInfo state = animator.GetCurrentAnimatorStateInfo(0);
+        if (state.fullPathHash == activeHash)
+        {
+            progress = state.normalizedTime;
+            return true;
+        }
+
+        // 攻撃ステートに入る側の遷移は終了として扱わない。
+        exitedAttackState = !animator.IsInTransition(0) ||
+            animator.GetNextAnimatorStateInfo(0).fullPathHash != activeHash;
+        return false;
+    }
+
     public void EndSlash(bool returnToIdle)
     {
         ResumeWeakAttackPose();

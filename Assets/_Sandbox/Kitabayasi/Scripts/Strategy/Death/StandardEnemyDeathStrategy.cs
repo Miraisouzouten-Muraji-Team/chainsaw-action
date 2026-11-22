@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Unity.Profiling;
 using UnityEngine;
@@ -561,6 +561,21 @@ public sealed class StandardEnemyDeathStrategy :
         using (deathMeshEffectProfilerMarker.Auto())
         {
             PlayerAttackHitData lethalHit = enemyHealth?.LethalPlayerAttackHitData;
+            // HPのDied通知はTakeDamage内で同期実行される。受信直前に確定した
+            // 実効AttackDataを使い、通常攻撃中の食い込みだけ通常2分割へ振り分ける。
+            bool weakAttackDiggingLethalHit =
+                lethalHit != null && enemyAttackHitReceiver != null &&
+                ReferenceEquals(enemyAttackHitReceiver.LastPlayerAttackHitData, lethalHit) &&
+                enemyAttackHitReceiver.LastHitWasWeakAttackDigging;
+            if (weakAttackDiggingLethalHit)
+            {
+                TryCutDeathMesh(
+                    lethalHit,
+                    enemyAttackHitReceiver.LastEffectiveAttackData,
+                    true);
+                return;
+            }
+
             if (lethalHit?.AttackData is AttackData attackData &&
                 IsDiggingAttackData(attackData))
             {
@@ -642,7 +657,10 @@ public sealed class StandardEnemyDeathStrategy :
     /// 死亡原因のAttackDataに対応するBake済みチェンソー軌跡をWorld空間へ復元し、
     /// 通常攻撃用のMesh分割死亡演出を開始する。
     /// </summary>
-    private void TryCutDeathMesh(PlayerAttackHitData lethalHit)
+    private void TryCutDeathMesh(
+        PlayerAttackHitData lethalHit,
+        AttackData overrideAttackData = null,
+        bool forceSinglePiecePerSide = false)
     {
         using (normalDeathMeshProfilerMarker.Auto())
         {
@@ -680,7 +698,7 @@ public sealed class StandardEnemyDeathStrategy :
         }
 
         ScriptableObject attackData =
-            lethalHit.AttackData;
+            overrideAttackData != null ? overrideAttackData : lethalHit.AttackData;
 
         if (ShouldRunMeshCutDiagnostics)
         {
@@ -819,7 +837,8 @@ public sealed class StandardEnemyDeathStrategy :
 
         bool cutSucceeded =
             enemyMeshCutter.TryCut(
-                worldTrajectory);
+                worldTrajectory,
+                forceSinglePiecePerSide);
 
         if (!cutSucceeded)
         {
@@ -840,7 +859,7 @@ public sealed class StandardEnemyDeathStrategy :
                 "EnemyMeshCutter.TryCutが成功しました。切断片Effects開始へ進みます。");
         }
 
-        TryBeginCutPieceEffects(lethalHit);
+        TryBeginCutPieceEffects(lethalHit, forceSinglePiecePerSide);
 
         }
     }
@@ -1562,7 +1581,9 @@ public sealed class StandardEnemyDeathStrategy :
             (tipPosition + rootPosition) * 0.5f;
     }
 
-    private void TryBeginCutPieceEffects(PlayerAttackHitData lethalHit)
+    private void TryBeginCutPieceEffects(
+        PlayerAttackHitData lethalHit,
+        bool useWeakAttackRotationRatio)
     {
         var cutPieceTransforms =
             new List<Transform>();
@@ -1610,12 +1631,17 @@ public sealed class StandardEnemyDeathStrategy :
         }
         else
         {
-            float chainsawRotationRatio =
-                lethalHit.HasChainsawRotationRatio
+            bool useResolvedRotationRatio = useWeakAttackRotationRatio &&
+                enemyAttackHitReceiver.HasLastWeakAttackRotationRatio;
+            bool hasRotationRatio = useResolvedRotationRatio ||
+                lethalHit.HasChainsawRotationRatio;
+            float chainsawRotationRatio = useResolvedRotationRatio
+                ? enemyAttackHitReceiver.LastWeakAttackRotationRatio
+                : lethalHit.HasChainsawRotationRatio
                     ? lethalHit.ChainsawRotationRatio
                     : 0f;
 
-            if (!lethalHit.HasChainsawRotationRatio)
+            if (!hasRotationRatio)
             {
                 Debug.LogWarning(
                     $"{nameof(StandardEnemyDeathStrategy)}: " +

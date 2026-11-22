@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Unity.Profiling;
 using UnityEngine;
 
@@ -222,6 +222,18 @@ public sealed class EnemyMeshCutter : MonoBehaviour
     /// </returns>
     public bool TryCut(ChainsawAttackTrajectory trajectory)
     {
+        return TryCut(trajectory, false);
+    }
+
+    /// <summary>
+    /// 指定された命中だけ、Inspector設定とは独立して両側を各1Pieceにできる切断処理。
+    /// </summary>
+    /// <param name="forceSinglePiecePerSide">
+    /// trueなら切断Planeの両側をそれぞれ1Pieceとして生成する。
+    /// </param>
+    public bool TryCut(ChainsawAttackTrajectory trajectory, bool forceSinglePiecePerSide)
+    {
+        bool useSinglePiecePerSide = keepCutSidesAsSinglePieces || forceSinglePiecePerSide;
         using (tryCutProfilerMarker.Auto())
         {
         if (ShouldRunDiagnostics)
@@ -344,7 +356,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             bool succeeded = cutProcessor.TryCut(
                 sourceMesh,
                 targetMeshFilter != null,
-                keepCutSidesAsSinglePieces,
+                useSinglePiecePerSide,
                 localTipPositions,
                 localRootPositions,
                 cutDirectionSampleCount,
@@ -398,7 +410,7 @@ public sealed class EnemyMeshCutter : MonoBehaviour
             {
                 LogDiagnostic(
                     "Cutter-05 FinalPieces",
-                    keepCutSidesAsSinglePieces
+                    useSinglePiecePerSide
                         ? $"切断Planeの両側から各1Piece、合計{finalPieceMeshes.Count}個を取得しました。"
                         : $"中間First / Second Meshを生成せず、Connected Component確定後の最終Pieceを{finalPieceMeshes.Count}個取得しました。");
             }

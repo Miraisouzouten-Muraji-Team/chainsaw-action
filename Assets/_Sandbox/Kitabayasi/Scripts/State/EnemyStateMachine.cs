@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -333,6 +333,21 @@ public class EnemyStateMachine : MonoBehaviour
         Vector2 attackVector,
         AttackData hitAttackData = null)
     {
+        RequestDamageState(hitSourceDirectionSign, attackVector, hitAttackData, false);
+    }
+
+    /// <summary>
+    /// 攻撃の識別と物理ノックバック抑制を独立させてDamage Stateへ渡す。
+    /// </summary>
+    /// <param name="suppressPhysicalKnockback">
+    /// 通常攻撃として扱いつつ、食い込み中のEnemy本体の位置ノックバックだけ止める場合に指定する。
+    /// </param>
+    public void RequestDamageState(
+        float hitSourceDirectionSign,
+        Vector2 attackVector,
+        AttackData hitAttackData,
+        bool suppressPhysicalKnockback)
+    {
         if (!isActiveAndEnabled ||
             !isInitialized ||
             enemyHealth.IsDead ||
@@ -342,7 +357,7 @@ public class EnemyStateMachine : MonoBehaviour
         }
 
         bool applyPhysicalKnockback =
-            ShouldApplyPhysicalKnockback(hitAttackData);
+            !suppressPhysicalKnockback && ShouldApplyPhysicalKnockback(hitAttackData);
 
         damageState.SetHitData(
             hitSourceDirectionSign,

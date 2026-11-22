@@ -34,6 +34,23 @@ public sealed class EnemyAttackHitReceiver :
     public PlayerAttackHitData LastPlayerAttackHitData { get; private set; }
 
     /// <summary>
+    /// 最後の命中について、敵側で判定した攻撃種別に対応するAttackData。
+    /// 弱攻撃の食い込み中はPlayerの通常攻撃データを使うが、元の命中情報は変更しない。
+    /// </summary>
+    public AttackData LastEffectiveAttackData { get; private set; }
+
+    /// <summary>
+    /// 最後の有効命中が、弱攻撃アニメーション中の食い込みダメージだったか。
+    /// </summary>
+    public bool LastHitWasWeakAttackDigging { get; private set; }
+
+    /// <summary>
+    /// 弱攻撃食い込み命中時のチェンソー回転率。取得できた場合のみ有効。
+    /// </summary>
+    public bool HasLastWeakAttackRotationRatio { get; private set; }
+    public float LastWeakAttackRotationRatio { get; private set; }
+
+    /// <summary>
     /// 最後に受けたPlayer攻撃について、左右判定まで反映した初速度。
     /// 被弾時に位置移動を禁止する攻撃でも、死亡時の切断片飛散に使用するため保持する。
     /// </summary>
@@ -130,16 +147,32 @@ public sealed class EnemyAttackHitReceiver :
         float hitSourceDirectionSign =
             ResolveHitSourceDirectionSign();
 
+        // Playerの送信データは変更しない。弱攻撃の食い込み中だけ、敵側で
+        // 通常攻撃用AttackDataを選び直してから同期的な死亡通知へ進める。
+        bool isWeakAttackDiggingHit = TryResolveWeakAttackDigging(
+            out AttackData weakAttackData,
+            out float? weakAttackRotationRatio);
+        AttackData effectiveAttackData = isWeakAttackDiggingHit
+            ? weakAttackData
+            : playerAttackData;
+
         LastPlayerAttackHitData =
             playerAttackHitData;
+        LastEffectiveAttackData = effectiveAttackData;
+        LastHitWasWeakAttackDigging = isWeakAttackDiggingHit;
+        HasLastWeakAttackRotationRatio = weakAttackRotationRatio.HasValue;
+        LastWeakAttackRotationRatio = weakAttackRotationRatio ?? 0f;
+        LastHitSourceDirectionSign = hitSourceDirectionSign;
 
-        LastHitSourceDirectionSign =
-            hitSourceDirectionSign;
-
+        // 食い込み中は本体をノックバックさせないが、死亡後の切断片は
+        // 通常攻撃のAttackVectorで飛散させるため、別々の値を保持する。
+        Vector2 deathPieceAttackVector = isWeakAttackDiggingHit
+            ? effectiveAttackData.attackVector
+            : hitAttackVector;
         LastResolvedKnockbackVelocity =
             EnemyKnockbackMotor
                 .CalculateInitialKnockbackVelocity(
-                    hitAttackVector,
+                    deathPieceAttackVector,
                     hitSourceDirectionSign);
 
         // TakeDamage内でDiedが同期通知されるため、
@@ -158,8 +191,44 @@ public sealed class EnemyAttackHitReceiver :
 
         enemyStateMachine.RequestDamageState(
             hitSourceDirectionSign,
-            hitAttackVector,
-            playerAttackData);
+            isWeakAttackDiggingHit ? effectiveAttackData.attackVector : hitAttackVector,
+            effectiveAttackData,
+            isWeakAttackDiggingHit);
+    }
+
+    /// <summary>
+    /// 既存のPlayer状態だけで、通常弱攻撃に含まれる食い込みを識別する。
+    /// 通常のRキー食い込みはIsWeakEnemyAttack=falseなので従来どおり処理する。
+    /// </summary>
+    private bool TryResolveWeakAttackDigging(
+        out AttackData normalAttackData,
+        out float? chainsawRotationRatio)
+    {
+        normalAttackData = null;
+        chainsawRotationRatio = null;
+
+        if (!TryGetPlayerTransform(out Transform playerRoot))
+        {
+            return false;
+        }
+
+        SensorChainsawDigging digging = playerRoot.GetComponent<SensorChainsawDigging>();
+        SensorPlayerController controller = playerRoot.GetComponent<SensorPlayerController>();
+        if (digging == null || !digging.isActiveAndEnabled ||
+            !digging.IsWeakEnemyAttack || controller == null ||
+            !controller.isActiveAndEnabled || controller.CurrentAttackData == null)
+        {
+            return false;
+        }
+
+        normalAttackData = controller.CurrentAttackData;
+        ChainsawAccelerator accelerator =
+            playerRoot.GetComponentInChildren<ChainsawAccelerator>(true);
+        if (accelerator != null)
+        {
+            chainsawRotationRatio = Mathf.Clamp01(accelerator.PowerRatio);
+        }
+        return true;
     }
 
     /// <summary>

@@ -289,6 +289,9 @@ public class PlayerAnimator : MonoBehaviour
     [Tooltip("壁ジャンプ時に再生するAnimatorステートのフルパス")]
     [SerializeField] private string wallJumpState = "Base Layer.WallJump";
 
+    [Tooltip("敵食い込みから飛び出すときに全方向で使うAnimatorステートのフルパスです。例：Base Layer.EnemyDiggingJump。空欄または無効な場合は従来のモーションを使用します。")]
+    [SerializeField] private string enemyDiggingJumpState = "";
+
     private DiggingAnimationPhase diggingAnimationPhase;
     private int diggingStateHash;
     private int diggingStartFrame;
@@ -655,6 +658,26 @@ public class PlayerAnimator : MonoBehaviour
         if (animator != null) animator.SetFloat("Speed", 0f);
         CancelFallAnimation();
         PlayAdditionalJumpState(wallJumpState);
+    }
+
+    // 成立した敵食い込みジャンプに、飛び出す方向に共通のモーションを再生する。
+    public void PlayEnemyDiggingJump(bool useNormalJumpFallback)
+    {
+        if (isHurtAnimationActive || animator == null || !animator.isActiveAndEnabled) return;
+
+        int stateHash = string.IsNullOrWhiteSpace(enemyDiggingJumpState)
+            ? 0 : Animator.StringToHash(enemyDiggingJumpState);
+        if (stateHash == 0 || !animator.HasState(0, stateHash))
+        {
+            if (useNormalJumpFallback) PlayJump();
+            return;
+        }
+
+        // 食い込み・落下の固定姿勢を解除し、専用ステートの先頭から再生する。
+        animator.SetFloat("Speed", 0f);
+        CancelFallAnimation();
+        CancelDiggingAnimation();
+        animator.Play(stateHash, 0, 0f);
     }
 
     // 指定された追加ジャンプステートを再生する。

@@ -13,6 +13,7 @@ public class ChainsawAttack : MonoBehaviour
     private Vector3 weakDigPoint;
     private bool weakDigHolding;
     private bool lastHitDealtDamage;
+    private bool weakFinisherAcceleratorGranted;
     private SensorChainsawDigging weakAttackDigging;
     private Collider finishingTargetCollider;
 
@@ -187,8 +188,15 @@ public class ChainsawAttack : MonoBehaviour
         new HashSet<MonoBehaviour>();
 
     [Header("アクセルによるダメージボーナス")]
-    [Tooltip("プレイヤーのアクセル管理です。未指定なら、この武器の最上位の親とその子から取得します。")]
+    [Tooltip("ダメージボーナスと弱攻撃の命中加算に使うプレイヤーのアクセル管理です。未指定なら、この武器の最上位の親とその子から取得します。")]
     [SerializeField] private ChainsawAccelerator damageBonusAccelerator;
+
+    [Header("弱攻撃の命中で増えるアクセル")]
+    [Tooltip("食い込み3連撃でダメージが成立するたびに増えるアクセル値です。")]
+    [SerializeField, Min(0f)] private float weakDiggingAcceleratorGain = 1f;
+
+    [Tooltip("振り抜きでダメージが成立したときに増えるアクセル値です。複数の敵に当たっても弱攻撃1回につき一度だけ増えます。")]
+    [SerializeField, Min(0f)] private float weakFinisherAcceleratorGain = 5f;
 
     // AttackDataのチェック・発動基準・上乗せ割合から、今回のダメージ倍率を求める。
     private float GetAttackDamageMultiplier(AttackData data)
@@ -249,6 +257,7 @@ public class ChainsawAttack : MonoBehaviour
 
         currentData = data;
         slashHitIndex = 0;
+        weakFinisherAcceleratorGranted = false;
 
         // 各段の開始時点で演出値を保存する。
         attackHitStopTime = Mathf.Max(0f, data.hitStopTime);
@@ -563,6 +572,8 @@ public class ChainsawAttack : MonoBehaviour
             hitEnemies.Add(receiver);
             AttackData bossData = GetScaledDiggingData(attackData, attackData.damage, true);
             ((IAttackHitReceiver)receiver).ReceiveAttackHit(new PlayerAttackHitData(bossData));
+            // 専用ReceiverはHPを公開しないため、既存の食い込みと同様に正のダメージの送信を命中として扱う。
+            if (attackDamage > 0) GrantWeakFinisherAccelerator();
             PlayHitEffects(point, hitStopTime, true, shakeMagnitude);
             return;
         }
@@ -585,6 +596,8 @@ public class ChainsawAttack : MonoBehaviour
             hitEnemies.Remove(regular);
             return;
         }
+
+        if (lastHitDealtDamage) GrantWeakFinisherAccelerator();
 
         // ベクトルは既存の命中情報で敵側へ送信済み。速度をプレイヤー側から再設定しない。
 
@@ -654,9 +667,20 @@ public class ChainsawAttack : MonoBehaviour
     {
         if (!weakDigHolding || !lastHitDealtDamage) return false;
         slashHitIndex++;
+        if (damageBonusAccelerator != null)
+            damageBonusAccelerator.AddSpeed(weakDiggingAcceleratorGain);
         // 初段の接触自体はダメージに数えないため、接触時の値1に3回を足す。
         if (slashHitIndex >= SLASH_HIT_COUNT) FinishWeakDigHold();
         return true;
+    }
+
+    // 複数の敵に振り抜きが当たった場合も、加算は弱攻撃1回につき一度にする。
+    private void GrantWeakFinisherAccelerator()
+    {
+        if (weakFinisherAcceleratorGranted || damageBonusAccelerator == null) return;
+
+        weakFinisherAcceleratorGranted = true;
+        damageBonusAccelerator.AddSpeed(weakFinisherAcceleratorGain);
     }
 
     // プレイヤーの食い込み停止姿勢を解除し、次の判定を振り抜きとして扱う。

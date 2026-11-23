@@ -294,6 +294,19 @@ public class ChainsawAccelerator : MonoBehaviour
         CancelBonusDeceleration();
     }
 
+    // 命中などで得た回転数を上限内で加算し、加速・ブレーキのカーブを現在値に合わせ直す。
+    public void AddSpeed(float amount)
+    {
+        if (!isActiveAndEnabled || accelerationParameter == null || !(amount > 0f)) return;
+
+        float nextSpeed = Mathf.Min(MaxSpeed, CurrentSpeed + amount);
+        if (nextSpeed <= CurrentSpeed) return;
+
+        CurrentSpeed = nextSpeed;
+        isCharging = false;
+        isBraking = false;
+    }
+
     // 指定量を消費する。残量不足の場合は消費せず失敗を返す。
     public bool TryConsume(float amount)
     {

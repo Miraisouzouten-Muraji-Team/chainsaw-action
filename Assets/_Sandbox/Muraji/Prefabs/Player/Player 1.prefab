@@ -792,9 +792,9 @@ CapsuleCollider:
   m_Enabled: 1
   serializedVersion: 2
   m_Radius: 0.14616778
-  m_Height: 1.449074
+  m_Height: 1.5318167
   m_Direction: 1
-  m_Center: {x: -0.09061097, y: -0.24199705, z: 0.4282031}
+  m_Center: {x: -0.09061099, y: -0.20062569, z: 0.42820218}
 --- !u!114 &3797053096475727516
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -817,6 +817,8 @@ MonoBehaviour:
   duration: 0.05
   hitStopSystem: {fileID: 2890008487338418416}
   damageBonusAccelerator: {fileID: 0}
+  weakDiggingAcceleratorGain: 1
+  weakFinisherAcceleratorGain: 5
 --- !u!114 &2890008487338418416
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1220,6 +1222,7 @@ MonoBehaviour:
   jumpState: Base Layer.Jump
   doubleJumpState: Base Layer.Doublejump
   wallJumpState: Base Layer.Kickjump
+  enemyDiggingJumpState: Base Layer.Doublejump
 --- !u!114 &2369446601455359112
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1666,6 +1669,18 @@ PrefabInstance:
       value: 0.0175
       objectReference: {fileID: 0}
     - target: {fileID: 4053526177978615818, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0.00348
+      objectReference: {fileID: 0}
+    - target: {fileID: 4053526177978615818, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.00059
+      objectReference: {fileID: 0}
+    - target: {fileID: 4053526177978615818, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0.00485
+      objectReference: {fileID: 0}
+    - target: {fileID: 4053526177978615818, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}
       propertyPath: m_ConstrainProportionsScale
       value: 1
       objectReference: {fileID: 0}
@@ -1709,6 +1724,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 8995551614851784341, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}
       insertIndex: -1
       addedObject: {fileID: 2533889677586747518}
+    - targetCorrespondingSourceObject: {fileID: 8995551614851784341, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7579767523189317383}
   m_SourcePrefab: {fileID: 100100000, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}
 --- !u!1 &849174344698192883 stripped
 GameObject:
@@ -1783,6 +1801,22 @@ MonoBehaviour:
   root: {fileID: 2390426614343665826}
   tip: {fileID: 5465031076796918799}
   maxSamples: 180
+--- !u!114 &7579767523189317383
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 849174344698192883}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 739e798f14de2b14394dcc97ab828605, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ChainsawAcceleratorEmission
+  accelerator: {fileID: 0}
+  targetRenderer: {fileID: 0}
+  materialIndex: 0
+  maxEmissionBoost: {r: 217.48279, g: 5.204874, b: 350.09683, a: 1}
 --- !u!4 &5719366523003041132 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4053526177978615818, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}

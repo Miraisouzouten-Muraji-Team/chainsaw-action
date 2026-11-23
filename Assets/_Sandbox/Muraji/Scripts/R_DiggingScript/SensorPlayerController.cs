@@ -273,6 +273,7 @@ public class SensorPlayerController : MonoBehaviour
     private float enemyReleaseFlightElapsed;
     private const float ENEMY_RELEASE_TURN_BRAKE_TIME = 0.08f;
     private Vector3 pendingEnemyReleaseBoost;
+    private bool pendingEnemyJumpAnimationFallback;
     private Vector3 pendingWallJumpVelocity;
     private float wallJumpHorizontalVelocity;
     private bool wallJumpLaunchPending;
@@ -705,7 +706,10 @@ public class SensorPlayerController : MonoBehaviour
             if (stick.sqrMagnitude == 0f)
                 TryBeginEnemyDiggingJump(stick);
             else
+            {
                 pendingEnemyReleaseBoost = stick * Mathf.Max(0f, playerParameter.enemyDiggingJumpSpeed);
+                pendingEnemyJumpAnimationFallback = false;
+            }
         }
 
         // 予約した食い込みを開始できた場合は、硬直明けの反発予約による即離脱を防ぐ。
@@ -737,7 +741,9 @@ public class SensorPlayerController : MonoBehaviour
     {
         float deltaTime = Time.fixedDeltaTime;
         Vector3 enemyReleaseBoost = pendingEnemyReleaseBoost;
+        bool useNormalEnemyJumpAnimation = pendingEnemyJumpAnimationFallback;
         pendingEnemyReleaseBoost = Vector3.zero;
+        pendingEnemyJumpAnimationFallback = false;
 
         if (playerRigidbody == null || playerRigidbody.isKinematic)
         {
@@ -858,6 +864,7 @@ public class SensorPlayerController : MonoBehaviour
             chainsawDigging.Surface == ChainsawSurface.None)
         {
             enemyReleaseBoost = ReadEnemyReleaseBoost();
+            useNormalEnemyJumpAnimation = false;
         }
 
         // 物理更新で壁食い込みが成立した場合も、Updateを待たずに回復する。
@@ -904,6 +911,12 @@ public class SensorPlayerController : MonoBehaviour
         bool isEnemyReleaseFlying = TryGetEnemyReleaseFlightSpeed(
             enemyReleaseBoost, deltaTime, isKnockbackActive, out Vector2 enemyReleaseFlightSpeed,
             out bool enemyReleaseReachedApex);
+
+        // 飛び出しが成立した物理更新だけ、方向に共通のアニメーションを開始する。
+        if (isEnemyReleaseFlying && enemyReleaseBoost.sqrMagnitude > 0f)
+        {
+            playerAnimator.PlayEnemyDiggingJump(useNormalEnemyJumpAnimation);
+        }
 
         // 空中攻撃中は、直前までの移動処理で管理していた横速度を保持する。
         // Rigidbodyから速度を取り直さず、通常入力による加減速も行わない。
@@ -2027,6 +2040,7 @@ public class SensorPlayerController : MonoBehaviour
             chainsawDigging.Cancel(true);
         ClearDiggingReleaseMomentum();
         pendingEnemyReleaseBoost = direction * launchSpeed;
+        pendingEnemyJumpAnimationFallback = true;
         wallJumpDirectionHoldRemaining = 0f;
         pendingJumpCount = 1;
         jumpsUsed = 1;
@@ -2036,7 +2050,6 @@ public class SensorPlayerController : MonoBehaviour
         ClearJumpGroundState();
         ignoreGroundUntil = Time.time + 0.1f;
 
-        playerAnimator.PlayJump();
         SpawnMovementEffect(jumpEffect);
     }
 
@@ -3693,6 +3706,7 @@ public class SensorPlayerController : MonoBehaviour
     {
         ClearEnemyReleaseFlight();
         pendingEnemyReleaseBoost = Vector3.zero;
+        pendingEnemyJumpAnimationFallback = false;
         foreach (var trail in attackTrails)
             if (trail.effect != null) Destroy(trail.effect.gameObject);
         attackTrails.Clear();

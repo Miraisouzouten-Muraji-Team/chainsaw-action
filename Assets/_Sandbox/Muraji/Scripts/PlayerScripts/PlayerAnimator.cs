@@ -680,6 +680,22 @@ public class PlayerAnimator : MonoBehaviour
         animator.Play(stateHash, 0, 0f);
     }
 
+    [Tooltip("低アクセルで敵から跳ね返った時に再生するステートのフルパスです。例：Base Layer.EnemyRebound")]
+    [SerializeField] private string enemyReboundState;
+
+    // 通常敵食い込みの強制解除が成立した瞬間に、跳ね返りモーションを先頭から再生する。
+    public void PlayEnemyRebound()
+    {
+        if (isHurtAnimationActive || animator == null || !animator.isActiveAndEnabled ||
+            string.IsNullOrWhiteSpace(enemyReboundState)) return;
+
+        int stateHash = Animator.StringToHash(enemyReboundState);
+        if (!animator.HasState(0, stateHash)) return;
+        CancelFallAnimation();
+        CancelDiggingAnimation();
+        animator.Play(stateHash, 0, 0f);
+    }
+
     // 指定された追加ジャンプステートを再生する。
     // 既存のPlayJumpには手を加えず、未設定時のみそこへ戻す。
     private void PlayAdditionalJumpState(string statePath)
@@ -1114,3 +1130,4 @@ public class PlayerAnimator : MonoBehaviour
         EndSlash(false);
     }
 }
+

@@ -13,6 +13,8 @@ public class ChainsawAttack : MonoBehaviour
     private Vector3 weakDigPoint;
     private bool weakDigHolding;
     private bool lastHitDealtDamage;
+    // 通常敵はHP減少、専用Receiverは有効な命中送信を成立として扱う。
+    public bool LastHitDealtDamage => lastHitDealtDamage;
     private bool weakFinisherAcceleratorGranted;
     private SensorChainsawDigging weakAttackDigging;
     private Collider finishingTargetCollider;

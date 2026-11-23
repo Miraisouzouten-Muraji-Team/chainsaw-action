@@ -25,6 +25,34 @@ public class SensorChainsawDigging : MonoBehaviour
     [Tooltip("敵への食い込み攻撃データ")]
     [SerializeField] private AttackData diggingAttackData;
 
+    [Header("通常敵食い込みの跳ね返り")]
+    [Tooltip("攻撃の消費直前のアクセル値がこの値以下なら、跳ね返り用の命中回数を数えます。")]
+    [SerializeField, Min(0f)] private float enemyReboundThreshold = 20f;
+    [Tooltip("同じ敵への食い込み中、低アクセルで連続して何回命中すると跳ね返るかを指定します。")]
+    [SerializeField, Min(1)] private int enemyReboundHits = 3;
+    [Tooltip("跳ね返った瞬間から操作を止める秒数です。硬直中も跳ね返りの移動は続きます。")]
+    [SerializeField, Min(0f)] private float enemyReboundStunSeconds = 0.1f;
+
+    [Tooltip("敵から跳ね返された瞬間の横方向の速度です。大きいほど遠くへ押し戻されます。0で横方向の反動をなくします。")]
+    [SerializeField, Min(0f)] private float enemyReboundKnockbackSpeed = 4f;
+
+    [Tooltip("敵から跳ね返された瞬間の上方向の速度です。0にすると上向きの初速を加えません。")]
+    [SerializeField, Min(0f)] private float enemyReboundUpwardSpeed = 3f;
+
+    public float EnemyReboundUpwardSpeed => Mathf.Max(0f, enemyReboundUpwardSpeed);
+    public float EnemyReboundKnockbackSpeed => Mathf.Max(0f, enemyReboundKnockbackSpeed);
+    public float EnemyReboundStunSeconds => Mathf.Max(0f, enemyReboundStunSeconds);
+    private int lowSpeedHitCount;
+    private float pendingEnemyReboundDirection;
+
+    // 今回の物理更新で成立した跳ね返りの向きを一度だけ渡す。
+    public bool TryTakeEnemyRebound(out float direction)
+    {
+        direction = pendingEnemyReboundDirection;
+        pendingEnemyReboundDirection = 0f;
+        return direction != 0f;
+    }
+
     [Header("弱攻撃の食い込み専用データ")]
     [Tooltip("弱攻撃の最初の3回に使用する専用AttackDataです。通常の敵食い込み用とは別のアセットを指定してください。攻撃ベクトルは0にして、吹き飛ばしは振り抜き専用データで設定してください。")]
     [SerializeField] private AttackData weakAttackDiggingData;
@@ -498,7 +526,8 @@ public class SensorChainsawDigging : MonoBehaviour
     }
 
     // 長押しから食い込みを始め、Animatorが選択済みならその遷移を引き継ぐ。
-    public bool ResumeHeldDiggingAfterAttack(float facingDirection, bool isGrounded, bool adoptAnimatorTransition)
+    public bool ResumeHeldDiggingAfterAttack(
+        float facingDirection, bool isGrounded, bool adoptAnimatorTransition, bool bufferedPress = false)
     {
         if (!CanResumeHeldDigging) return false;
 
@@ -507,6 +536,10 @@ public class SensorChainsawDigging : MonoBehaviour
         lastPressTime = Time.time;
         BeginRequest(facingDirection, true, waitBrieflyOnGround: isGrounded, blendFromAttack: true,
             adoptAnimatorTransition: adoptAnimatorTransition);
+
+        // 予約したボタンをすでに離していても、食い込み判定を物理更新で一度処理する。
+        if (bufferedPress && IsRequested)
+            bufferedRequestAwaitingTick = true;
         return IsRequested;
     }
 
@@ -850,6 +883,9 @@ public class SensorChainsawDigging : MonoBehaviour
             float interval =
                 Mathf.Max(0.01f, diggingParameter.enemyAttackInterval);
 
+            if (accelerator.CurrentSpeed > enemyReboundThreshold)
+                lowSpeedHitCount = 0;
+
             while (timer >= interval)
             {
                 timer -= interval;
@@ -861,12 +897,28 @@ public class SensorChainsawDigging : MonoBehaviour
                     return;
                 }
 
+                bool lowSpeed = accelerator.CurrentSpeed <= enemyReboundThreshold;
+                var target = contact.Enemy;
+                float offsetX = transform.position.x - target.transform.position.x;
+                float away = Mathf.Abs(offsetX) > 0.001f ? Mathf.Sign(offsetX) : -Mathf.Sign(facingDirection);
                 bool hit = TrySendEnemyDiggingDamage();
 
                 if (!hit)
                 {
                     // 一時的な送信失敗で接続を解除せず、次の攻撃間隔で再試行する。
                     timer = 0f;
+                    return;
+                }
+
+                // 被弾通知中にプレイヤーが無効化・解除された場合は新しい反動を予約しない。
+                if (!isActiveAndEnabled || Surface != ChainsawSurface.Enemy || contact.Enemy != target)
+                    return;
+
+                if (lowSpeed && chainsawAttack.LastHitDealtDamage &&
+                    ++lowSpeedHitCount >= Mathf.Max(1, enemyReboundHits))
+                {
+                    Cancel(true);
+                    pendingEnemyReboundDirection = away;
                     return;
                 }
 
@@ -1055,6 +1107,7 @@ public class SensorChainsawDigging : MonoBehaviour
                 return false;
             }
 
+            lowSpeedHitCount = 0;
             enemyFollowOffset = transform.position - contact.Enemy.transform.position;
             enemyLocalHitPoint = contact.Enemy.transform.InverseTransformPoint(contact.Point);
             enemyPushApplied = false;
@@ -1347,6 +1400,8 @@ public class SensorChainsawDigging : MonoBehaviour
     // 弱攻撃へ移るときだけ、解除した食い込みの姿勢をブレンド元に残す。
     public void Cancel(bool immediate, bool keepAnimationPose)
     {
+        lowSpeedHitCount = 0;
+        pendingEnemyReboundDirection = 0f;
         ClearWallJumpReleaseBuffer();
         bufferedRequestAwaitingTick = false;
         attackResumeContactWaitUntil = 0f;

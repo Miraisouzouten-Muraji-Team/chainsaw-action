@@ -1133,6 +1133,11 @@ MonoBehaviour:
   playerAnimator: {fileID: 536866179471375810}
   chainsawAttack: {fileID: 3797053096475727516}
   diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
+  enemyReboundThreshold: 20
+  enemyReboundHits: 3
+  enemyReboundStunSeconds: 0.1
+  enemyReboundKnockbackSpeed: 15
+  enemyReboundUpwardSpeed: 5
   weakAttackDiggingData: {fileID: 11400000, guid: 805e87899d869204da3ec278acfd7d06, type: 2}
   airWeakAttackDiggingData: {fileID: 11400000, guid: 0ff38655cd9be3643a633c1a45c07f96, type: 2}
   wallJumpReleaseBufferSeconds: 0.15
@@ -1223,6 +1228,7 @@ MonoBehaviour:
   doubleJumpState: Base Layer.Doublejump
   wallJumpState: Base Layer.Kickjump
   enemyDiggingJumpState: Base Layer.Doublejump
+  enemyReboundState: 
 --- !u!114 &2369446601455359112
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1816,7 +1822,7 @@ MonoBehaviour:
   accelerator: {fileID: 0}
   targetRenderer: {fileID: 0}
   materialIndex: 0
-  maxEmissionBoost: {r: 217.48279, g: 5.204874, b: 350.09683, a: 1}
+  maxEmissionBoost: {r: 168.65883, g: 5.7014475, b: 383.498, a: 1}
 --- !u!4 &5719366523003041132 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4053526177978615818, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}

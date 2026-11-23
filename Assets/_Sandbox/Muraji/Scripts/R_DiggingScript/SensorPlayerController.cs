@@ -344,6 +344,10 @@ public class SensorPlayerController : MonoBehaviour
     private bool wallStallReported;
 
     private float knockbackVelocity;
+    private float enemyReboundUnlockTime;
+    private bool enemyReboundInputPending;
+    private float enemyReboundBufferedMove;
+    private bool enemyReboundActive;
 
     private bool knockbackHopPending;
 
@@ -611,6 +615,8 @@ public class SensorPlayerController : MonoBehaviour
 
     private enum ImpactBufferedAction { None, Slash, Jump, Digging }
     private ImpactBufferedAction impactBufferedAction;
+    private float impactBufferedDiggingMove;
+    private bool keepBufferedDiggingFacingUntilTick;
 
     // 衝突硬直中に押された行動を記録する。押下がないフレームでは前の予約を維持する。
     private void CaptureImpactBufferedInput()
@@ -618,14 +624,20 @@ public class SensorPlayerController : MonoBehaviour
         if (!enableImpactInputBuffer || input == null || IsDamageStunned) return;
         if (input.SlashInput) impactBufferedAction = ImpactBufferedAction.Slash;
         else if (input.JumpInput) impactBufferedAction = ImpactBufferedAction.Jump;
-        else if (input.WedgieInput) impactBufferedAction = ImpactBufferedAction.Digging;
+        else if (input.WedgieInput)
+        {
+            impactBufferedAction = ImpactBufferedAction.Digging;
+            impactBufferedDiggingMove = ReadHorizontalMoveInput();
+        }
     }
 
     // 硬直明けに予約を1回だけ取り出す。新しい入力がある場合は新しい操作を優先する。
-    private ImpactBufferedAction ConsumeImpactBufferedInput()
+    private ImpactBufferedAction ConsumeImpactBufferedInput(out float diggingMove)
     {
         ImpactBufferedAction action = impactBufferedAction;
+        diggingMove = action == ImpactBufferedAction.Digging ? impactBufferedDiggingMove : 0f;
         impactBufferedAction = ImpactBufferedAction.None;
+        impactBufferedDiggingMove = 0f;
         if (!enableImpactInputBuffer || input.SlashInput || input.JumpInput || input.WedgieInput)
             return ImpactBufferedAction.None;
         return action;
@@ -650,7 +662,9 @@ public class SensorPlayerController : MonoBehaviour
             input.ResetInput();
             return;
         }
-        // ヒットストップ中はコンボ予約だけ受け付ける。
+        CapturePostAttackDiggingInput();
+
+        // ヒットストップ中は攻撃後に使う食い込み入力も保持する。
         if (Time.timeScale <= 0f)
         {
             if (IsAttacking && input.SlashInput)
@@ -662,13 +676,39 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        bool resumeReboundDigging = false;
+        float reboundDiggingMove = 0f;
+        if (enemyReboundActive)
+        {
+            // ボタンを押したフレームの横入力を、硬直が終わるまで保存する。
+            if (input.WedgieInput || (input.WedgieHeld && enemyReboundBufferedMove == 0f))
+            {
+                enemyReboundInputPending = true;
+                enemyReboundBufferedMove = ReadHorizontalMoveInput();
+            }
+            if (Time.time < enemyReboundUnlockTime)
+            {
+                input.ResetInput();
+                return;
+            }
+            resumeReboundDigging = enemyReboundInputPending;
+            reboundDiggingMove = enemyReboundBufferedMove;
+            enemyReboundBufferedMove = 0f;
+            enemyReboundActive = false;
+            enemyReboundInputPending = false;
+        }
+
         // 入力ハンドラを書き換えず、このフレームの押下へ予約だけを合成する。
-        ImpactBufferedAction bufferedAction = ConsumeImpactBufferedInput();
+        ImpactBufferedAction bufferedAction = ConsumeImpactBufferedInput(out float impactDiggingMove);
         bool slashPressed = input.SlashInput || bufferedAction == ImpactBufferedAction.Slash;
         bool jumpPressed = input.JumpInput || bufferedAction == ImpactBufferedAction.Jump;
         // ホールド解除とジャンプを同時入力した場合も、解除直前の対象を使う。
         bool wasDiggingEnemy = chainsawDigging.Surface == ChainsawSurface.Enemy;
-        bool diggingBuffered = bufferedAction == ImpactBufferedAction.Digging;
+        bool diggingBuffered = resumeReboundDigging || bufferedAction == ImpactBufferedAction.Digging;
+        float savedDiggingMove = resumeReboundDigging ? reboundDiggingMove : impactDiggingMove;
+        bool useSavedDiggingMove = diggingBuffered && savedDiggingMove != 0f &&
+            !slashPressed && !jumpPressed;
+        float facingMove = useSavedDiggingMove ? savedDiggingMove : ReadHorizontalMoveInput();
 
         // 攻撃中は向きを固定し、左右入力による見た目と食い込み判定の反転を防ぐ。
         // 壁登りを含む食い込み中の向き固定も維持する。
@@ -677,10 +717,11 @@ public class SensorPlayerController : MonoBehaviour
             chainsawDigging.Surface != ChainsawSurface.Wall &&
             chainsawDigging.Surface != ChainsawSurface.Ceiling &&
             chainsawDigging.Surface != ChainsawSurface.Enemy &&
-            // 移動スティックの遊びを超えた場合だけ、入力方向へ向きを変える。
-            Mathf.Abs(input.MoveInput) > Mathf.Clamp01(playerParameter.moveDeadZone))
+            // 予約した向きを、接触判定が物理更新に引き継ぐまで保持する。
+            (!keepBufferedDiggingFacingUntilTick || !chainsawDigging.IsRequested || input.WedgieInput || useSavedDiggingMove) &&
+            facingMove != 0f)
         {
-            facingDirection = Mathf.Sign(input.MoveInput);
+            facingDirection = Mathf.Sign(facingMove);
             ApplyFacingRotation();
         }
 
@@ -715,6 +756,7 @@ public class SensorPlayerController : MonoBehaviour
         // 予約した食い込みを開始できた場合は、硬直明けの反発予約による即離脱を防ぐ。
         if (diggingBuffered && chainsawDigging.IsRequested)
         {
+            keepBufferedDiggingFacingUntilTick |= useSavedDiggingMove;
             knockbackVelocity = 0f;
             knockbackHopPending = false;
         }
@@ -815,6 +857,13 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        // 敵反発の硬直中は、直前の物理速度を使って落下まで継続する。
+        if (enemyReboundActive)
+        {
+            ApplyEnemyReboundVelocity(playerRigidbody.linearVelocity, deltaTime);
+            return;
+        }
+
         // 壁ジャンプ前の硬直中は操作による移動を停止する。
         if (TickWallJumpStun(deltaTime))
         {
@@ -859,6 +908,14 @@ public class SensorPlayerController : MonoBehaviour
             currentSpeed,
             ResolvedImpactTerrainLayers
         );
+
+        keepBufferedDiggingFacingUntilTick = false;
+
+        if (chainsawDigging.TryTakeEnemyRebound(out float reboundDirection))
+        {
+            BeginEnemyRebound(reboundDirection, deltaTime);
+            return;
+        }
 
         if (previousSurface == ChainsawSurface.Enemy &&
             chainsawDigging.Surface == ChainsawSurface.None)
@@ -1290,6 +1347,8 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        enemyReboundActive = false;
+        enemyReboundInputPending = false;
         ClearWallTopClimb();
         ResetCeilingFallGrace(false);
         RestoreImpactConstraints();
@@ -1336,6 +1395,61 @@ public class SensorPlayerController : MonoBehaviour
         ClearDiggingReleaseMomentum();
         if (input != null) input.ResetInput();
         playerAnimator.PlayHurt();
+    }
+
+    // 食い込みを離れた物理ステップで、敵から離れる方向へ跳ね返りの初速を適用する。
+    private void BeginEnemyRebound(float direction, float deltaTime)
+    {
+        ClearEnemyReleaseFlight();
+        ClearDiggingReleaseMomentum();
+        ClearCeilingJumpRelease();
+        ResetCeilingFallGrace(false);
+        ResetCeilingTravelImpact();
+        ResetFloorTravelImpact();
+        wallAscentImpactArmed = false;
+        pendingCornerCorrection = Vector3.zero;
+        ceilingCornerJumpPending = false;
+        jumpPending = false;
+        variableJumpActive = false;
+        knockbackVelocity = 0f;
+        knockbackHopPending = false;
+        chainsawDigging.TryTakeWallBounce(out _);
+
+        enemyReboundActive = true;
+        enemyReboundInputPending = input.WedgieHeld;
+        enemyReboundBufferedMove = enemyReboundInputPending ? ReadHorizontalMoveInput() : 0f;
+        enemyReboundUnlockTime = Time.fixedTime + chainsawDigging.EnemyReboundStunSeconds;
+
+        Vector3 launchVelocity = new Vector3(
+            direction * chainsawDigging.EnemyReboundKnockbackSpeed,
+            chainsawDigging.EnemyReboundUpwardSpeed,
+            0f);
+        ascentStartSpeed = launchVelocity.y;
+        fallElapsedTime = 0f;
+        if (launchVelocity.y > 0f)
+        {
+            ClearJumpGroundState();
+            ignoreGroundUntil = Time.time + 0.1f;
+        }
+
+        playerAnimator.PlayEnemyRebound();
+        ApplyEnemyReboundVelocity(launchVelocity, deltaTime);
+    }
+
+    // 跳ね返り中は通常の重力を使い、減衰・衝突後の実速度を次の物理更新まで引き継ぐ。
+    private void ApplyEnemyReboundVelocity(Vector3 velocity, float deltaTime)
+    {
+        ApplyJumpGravity(ref velocity, deltaTime);
+        velocity.z = 0f;
+        playerRigidbody.linearVelocity = velocity;
+        currentSpeed = velocity.x;
+        lastDiggingPhysicsVelocity = velocity;
+        lastDiggingPhysicsSurface = ChainsawSurface.None;
+        debugCurrentSpeed = velocity.x;
+        debugVelocityBeforeWall = velocity;
+        debugVelocityAfterWall = velocity;
+        debugWallBlocked = false;
+        playerAnimator.SetSpeed(0f);
     }
 
     // 硬直中の落下と残り時間を更新し、終了した物理更新で待機へ戻す。
@@ -2647,7 +2761,7 @@ public class SensorPlayerController : MonoBehaviour
     // Raycastは角で失敗しやすいため、BoxColliderでは使わない。
     private bool TryQueueCeilingCornerCorrection(Collision collision)
     {
-        if (wallTopTimeRemaining > 0f || !enableCornerCorrection || headCollider == null ||
+        if (enemyReboundActive || wallTopTimeRemaining > 0f || !enableCornerCorrection || headCollider == null ||
             !headCollider.enabled || headCollider.isTrigger ||
             playerRigidbody == null || IsImpactStunned ||
             (chainsawDigging != null && chainsawDigging.Surface == ChainsawSurface.Ceiling) ||
@@ -2781,6 +2895,9 @@ public class SensorPlayerController : MonoBehaviour
 
     private bool ApplyWallMovementBlock(ref Vector3 velocity)
     {
+        // 跳ね返り中の停止はRigidbodyの実衝突に任せ、接触履歴で速度を消さない。
+        if (enemyReboundActive) return false;
+
         // 本体幅の照会で天井の支持を確定した場合、角接触で残った壁停止を重ねない。
         // 凸の先端では法線が真下になる場合もあるため、法線Xの大きさで判定しない。
         // Rigidbodyの実衝突は維持するため、実際の垂直壁をすり抜けることはない。
@@ -2883,6 +3000,8 @@ public class SensorPlayerController : MonoBehaviour
 
     private bool weakAttackHoldActive;
     private Vector3 weakAttackHoldPosition;
+    private bool postAttackDiggingPressed;
+    private float postAttackDiggingMove;
 
     private GameObject weakStartEffect;
     private float weakEffectExpiresAt;
@@ -3035,12 +3154,7 @@ public class SensorPlayerController : MonoBehaviour
             attackStateObserved = true;
         if (!playerAnimator.TryGetWeakAttackExit(attackStateObserved, out bool startsDigging)) return;
 
-        playerAnimator.EndSlash(false);
-        ClearSlashState();
-
-        if (startsDigging &&
-            (!CanResumeDiggingAfterSlash() ||
-             !chainsawDigging.ResumeHeldDiggingAfterAttack(facingDirection, IsGrounded(), adoptAnimatorTransition: true)))
+        if (!CompleteSlash(startsDigging, adoptAnimatorTransition: true) && startsDigging)
         {
             playerAnimator.EndSlash(true);
         }
@@ -3083,6 +3197,7 @@ public class SensorPlayerController : MonoBehaviour
         BeginAttackMovement(data);
 
         IsAttacking = true;
+        CapturePostAttackDiggingInput();
         nextSlashReserved = false;
 
         attackStartFrame = Time.frameCount;
@@ -3180,27 +3295,56 @@ public class SensorPlayerController : MonoBehaviour
         attackMoveDirection = 0f;
     }
 
-    // 弱攻撃を最後まで再生したら、押し続けている食い込みボタンを通常判定へ渡す。
-    void FinishSlash(bool returnToIdle)
+    // 弱攻撃後の食い込み用に、ボタンと横入力を同じフレームで記録する。
+    private void CapturePostAttackDiggingInput()
     {
-        // 当たり判定を閉じてから、食い込みへ直接ブレンドできるよう攻撃の姿勢を残す。
-        playerAnimator.EndSlash(false);
-        ClearSlashState();
+        if (!IsAttacking) return;
 
-        if (CanResumeDiggingAfterSlash() &&
-            chainsawDigging.ResumeHeldDiggingAfterAttack(facingDirection, IsGrounded()))
+        if (input.WedgieInput)
         {
-            return;
+            postAttackDiggingPressed = true;
+            postAttackDiggingMove = ReadHorizontalMoveInput();
         }
-
-        if (returnToIdle) playerAnimator.ReturnToIdleAfterSlash();
+        else if (input.WedgieHeld && postAttackDiggingMove == 0f)
+        {
+            postAttackDiggingMove = ReadHorizontalMoveInput();
+        }
     }
 
-    // ホールド操作中の長押しと、他のアクションによる解除制限を確認する。
+    // 旧Animatorの攻撃終了時は、食い込みが成立しなければ待機へ戻す。
+    void FinishSlash(bool returnToIdle)
+    {
+        if (!CompleteSlash(allowDigging: true, adoptAnimatorTransition: false) && returnToIdle)
+            playerAnimator.ReturnToIdleAfterSlash();
+    }
+
+    // 当たり判定を閉じ、攻撃終了後の最初の食い込み判定へ予約した向きを渡す。
+    private bool CompleteSlash(bool allowDigging, bool adoptAnimatorTransition)
+    {
+        bool resumeDigging = allowDigging && CanResumeDiggingAfterSlash();
+        float move = postAttackDiggingMove != 0f ? postAttackDiggingMove : ReadHorizontalMoveInput();
+
+        playerAnimator.EndSlash(false);
+        ClearSlashState();
+        if (!resumeDigging) return false;
+
+        if (move != 0f)
+        {
+            facingDirection = Mathf.Sign(move);
+            ApplyFacingRotation();
+        }
+
+        bool started = chainsawDigging.ResumeHeldDiggingAfterAttack(
+            facingDirection, IsGrounded(), adoptAnimatorTransition, bufferedPress: true);
+        keepBufferedDiggingFacingUntilTick |= started && move != 0f;
+        return started;
+    }
+
+    // 予約した押下と長押しを確認し、通常食い込みへ移れるときだけ開始を許可する。
     private bool CanResumeDiggingAfterSlash()
     {
-        return input.WedgieHeld && chainsawDigging.CanResumeHeldDigging && wallTopTimeRemaining <= 0f &&
-            !ceilingJumpLaunchPending && ceilingJumpReleaseRemaining <= 0f;
+        return (postAttackDiggingPressed || input.WedgieHeld) && chainsawDigging.CanResumeHeldDigging &&
+            wallTopTimeRemaining <= 0f && !ceilingJumpLaunchPending && ceilingJumpReleaseRemaining <= 0f;
     }
 
     public void CancelAttack()
@@ -3222,6 +3366,8 @@ public class SensorPlayerController : MonoBehaviour
         ClearAttackMovement();
 
         IsAttacking = false;
+        postAttackDiggingPressed = false;
+        postAttackDiggingMove = 0f;
         nextSlashReserved = false;
         slashStep = 0;
         CurrentAttackData = null;
@@ -3704,6 +3850,11 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
+        keepBufferedDiggingFacingUntilTick = false;
+        impactBufferedDiggingMove = 0f;
+        enemyReboundBufferedMove = 0f;
+        enemyReboundActive = false;
+        enemyReboundInputPending = false;
         ClearEnemyReleaseFlight();
         pendingEnemyReleaseBoost = Vector3.zero;
         pendingEnemyJumpAnimationFallback = false;

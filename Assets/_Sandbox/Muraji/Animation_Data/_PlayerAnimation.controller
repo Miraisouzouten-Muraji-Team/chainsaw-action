@@ -433,6 +433,9 @@ AnimatorStateMachine:
   - serializedVersion: 1
     m_State: {fileID: -6057215285160352503}
     m_Position: {x: 450, y: 340, z: 0}
+  - serializedVersion: 1
+    m_State: {fileID: 3526575522693489170}
+    m_Position: {x: 291.235, y: 555.1931, z: 0}
   m_ChildStateMachines: []
   m_AnyStateTransitions:
   - {fileID: -3871564990310087637}
@@ -732,6 +735,32 @@ AnimatorState:
   m_CycleOffsetParameterActive: 0
   m_TimeParameterActive: 0
   m_Motion: {fileID: -203655887218126122, guid: 82a969a79caf001409ad6dffa558523c, type: 3}
+  m_Tag: 
+  m_SpeedParameter: 
+  m_MirrorParameter: 
+  m_CycleOffsetParameter: 
+  m_TimeParameter: 
+--- !u!1102 &3526575522693489170
+AnimatorState:
+  serializedVersion: 6
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: Rebound
+  m_Speed: 1
+  m_CycleOffset: 0
+  m_Transitions: []
+  m_StateMachineBehaviours: []
+  m_Position: {x: 50, y: 50, z: 0}
+  m_IKOnFeet: 0
+  m_WriteDefaultValues: 1
+  m_Mirror: 0
+  m_SpeedParameterActive: 0
+  m_MirrorParameterActive: 0
+  m_CycleOffsetParameterActive: 0
+  m_TimeParameterActive: 0
+  m_Motion: {fileID: -203655887218126122, guid: 02e2a68889bdb7e41bbe0ebe9fbec6e5, type: 3}
   m_Tag: 
   m_SpeedParameter: 
   m_MirrorParameter: 

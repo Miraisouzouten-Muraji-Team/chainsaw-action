@@ -1130,4 +1130,3 @@ public class PlayerAnimator : MonoBehaviour
         EndSlash(false);
     }
 }
-

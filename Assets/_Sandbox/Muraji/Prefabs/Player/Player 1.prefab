@@ -161,7 +161,7 @@ TrailRenderer:
   m_SmallMeshCulling: 1
   m_ForceMeshLod: -1
   m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 33554433
+  m_RenderingLayerMask: 16777217
   m_RendererPriority: 0
   m_Materials:
   - {fileID: 2100000, guid: 4ee7b3bb60164464a89d8d11df485683, type: 2}
@@ -1135,7 +1135,7 @@ MonoBehaviour:
   diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
   enemyReboundThreshold: 20
   enemyReboundHits: 3
-  enemyReboundStunSeconds: 0.1
+  enemyReboundStunSeconds: 0.3
   enemyReboundKnockbackSpeed: 15
   enemyReboundUpwardSpeed: 5
   weakAttackDiggingData: {fileID: 11400000, guid: 805e87899d869204da3ec278acfd7d06, type: 2}
@@ -1228,7 +1228,7 @@ MonoBehaviour:
   doubleJumpState: Base Layer.Doublejump
   wallJumpState: Base Layer.Kickjump
   enemyDiggingJumpState: Base Layer.Doublejump
-  enemyReboundState: 
+  enemyReboundState: Base Layer.Hurt
 --- !u!114 &2369446601455359112
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1632,12 +1632,16 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -7375200057469417375, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}
       propertyPath: m_RenderingLayerMask
-      value: 4294967295
+      value: 4194303999
       objectReference: {fileID: 0}
     - target: {fileID: -7375200057469417375, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: e7276798a66027b429efebfb3e455121, type: 2}
+    - target: {fileID: -4900419542553380344, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}
+      propertyPath: m_RenderingLayerMask
+      value: 16777217
+      objectReference: {fileID: 0}
     - target: {fileID: -4900419542553380344, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 

@@ -6,11 +6,10 @@ public class ChainsawAccelerator : MonoBehaviour
     private const float MIN_TRANSITION_DURATION = 0.01f;
 
     private const float DEFAULT_CHARGE_SECONDS = 2f;
-    private const float DEFAULT_BRAKE_SECONDS = 1f;
     private const int CHARGE_TIME_SEARCH_STEPS = 16;
 
-    [Header("アクセル値・食い込み加速・ブレーキ・SE")]
-    [Tooltip("アクセル値の範囲、食い込み加速とブレーキのカーブ、SEピッチを設定したアセットです。")]
+    [Header("アクセル値・食い込み加速・SE")]
+    [Tooltip("アクセル値の範囲、食い込み加速と自動減速のカーブ、SEピッチを設定したアセットです。")]
     [SerializeField] private AccelerationParameter accelerationParameter;
 
     private float minSpeed => accelerationParameter.minSpeed;
@@ -34,8 +33,6 @@ public class ChainsawAccelerator : MonoBehaviour
 
     private bool isCharging;
     private float chargeElapsed;
-    private bool isBraking;
-    private float brakeElapsed;
     private float autoDecelerationElapsed;
 
     private bool isBonusDecelerating;
@@ -64,8 +61,6 @@ public class ChainsawAccelerator : MonoBehaviour
         CurrentSpeed = minSpeed;
         isCharging = false;
         chargeElapsed = 0f;
-        isBraking = false;
-        brakeElapsed = 0f;
         autoDecelerationElapsed = 0f;
         isBonusDecelerating = false;
         bonusDecelerationElapsed = 0f;
@@ -75,23 +70,18 @@ public class ChainsawAccelerator : MonoBehaviour
         lastBonusDecelerationFixedTime = float.NegativeInfinity;
     }
 
-    // 食い込み中は加速または手動ブレーキ、食い込みを離れたら従来の自動減速を行う。
-    public void Tick(bool isAccelerating, float deltaTime, bool isDigging = false)
+    // 食い込み中は回転数を上げ、解除後は自動で減速する。
+    public void Tick(float deltaTime, bool isDigging)
     {
         if (accelerationParameter == null || deltaTime <= 0f) return;
 
-        // 既存の呼び出しやInput Actionとの互換性のため、引数名とボタン割り当ては維持する。
-        bool brakeHeld = isAccelerating;
         bool settlingBonus = isBonusDecelerating;
         if (settlingBonus)
-        {
             TickBonusDeceleration(deltaTime);
-        }
 
         if (!isDigging)
         {
             isCharging = false;
-            isBraking = false;
             if (settlingBonus)
                 autoDecelerationElapsed = 0f;
             else
@@ -100,14 +90,6 @@ public class ChainsawAccelerator : MonoBehaviour
         }
 
         autoDecelerationElapsed = 0f;
-        if (brakeHeld)
-        {
-            isCharging = false;
-            TickBrake(deltaTime);
-            return;
-        }
-
-        isBraking = false;
         if (!settlingBonus)
             TickDiggingCharge(deltaTime);
     }
@@ -126,8 +108,8 @@ public class ChainsawAccelerator : MonoBehaviour
         // 旧カーブは値が増えるほど減速が進む。曲線終了後も残りがあれば従来どおり減速する。
         float progress = previous >= 1f
             ? deltaTime / duration
-            : Mathf.Max(0f, EvaluateProgress(curve, next, 1f, false) -
-                             EvaluateProgress(curve, previous, 1f, false));
+            : Mathf.Max(0f, EvaluateProgress(curve, next, 1f) -
+                             EvaluateProgress(curve, previous, 1f));
         CurrentSpeed = Mathf.MoveTowards(CurrentSpeed, minSpeed, progress * (MaxSpeed - minSpeed));
     }
 
@@ -138,13 +120,13 @@ public class ChainsawAccelerator : MonoBehaviour
         float duration = CurveDuration(curve, DEFAULT_CHARGE_SECONDS);
         if (!isCharging)
         {
-            chargeElapsed = FindCurveTime(curve, duration, PowerRatio, false);
+            chargeElapsed = FindCurveTime(curve, duration, PowerRatio);
             isCharging = true;
         }
 
-        float previous = EvaluateProgress(curve, chargeElapsed, duration, false);
+        float previous = EvaluateProgress(curve, chargeElapsed, duration);
         chargeElapsed = Mathf.Min(duration, chargeElapsed + deltaTime);
-        float next = EvaluateProgress(curve, chargeElapsed, duration, false);
+        float next = EvaluateProgress(curve, chargeElapsed, duration);
         float increase = Mathf.Max(0f, next - previous) * (MaxSpeed - minSpeed);
         CurrentSpeed = Mathf.Min(MaxSpeed, CurrentSpeed + increase);
         if (chargeElapsed >= duration && next > 0f)
@@ -160,38 +142,18 @@ public class ChainsawAccelerator : MonoBehaviour
         }
     }
 
-    // 現在値に対応する時点から、ブレーキを押した秒数だけ減速カーブを進める。
-    private void TickBrake(float deltaTime)
+    // 加速に入ったときに、現在値に対応するカーブ上の時刻を探す。
+    private static float FindCurveTime(AnimationCurve curve, float duration, float ratio)
     {
-        AnimationCurve curve = accelerationParameter.brakeBySeconds;
-        float duration = CurveDuration(curve, DEFAULT_BRAKE_SECONDS);
-        if (!isBraking)
-        {
-            brakeElapsed = FindCurveTime(curve, duration, 1f - PowerRatio, true);
-            isBraking = true;
-        }
-
-        float previous = EvaluateProgress(curve, brakeElapsed, duration, true);
-        brakeElapsed = Mathf.Min(duration, brakeElapsed + deltaTime);
-        float next = EvaluateProgress(curve, brakeElapsed, duration, true);
-        float decrease = Mathf.Max(0f, next - previous) * (MaxSpeed - minSpeed);
-        // 他の処理で最低回転数を下回った場合も、ブレーキによって回転数を回復させない。
-        float target = Mathf.Min(minSpeed, CurrentSpeed);
-        CurrentSpeed = next >= 1f ? target : Mathf.MoveTowards(CurrentSpeed, target, decrease);
-    }
-
-    // 加速・減速に入ったときに、現在値に対応するカーブ上の時刻を探す。
-    private static float FindCurveTime(AnimationCurve curve, float duration, float ratio, bool braking)
-    {
-        if (ratio <= EvaluateProgress(curve, 0f, duration, braking)) return 0f;
-        if (ratio >= EvaluateProgress(curve, duration, duration, braking)) return duration;
+        if (ratio <= EvaluateProgress(curve, 0f, duration)) return 0f;
+        if (ratio >= EvaluateProgress(curve, duration, duration)) return duration;
 
         float low = 0f;
         float high = duration;
         for (int i = 0; i < CHARGE_TIME_SEARCH_STEPS; i++)
         {
             float middle = (low + high) * 0.5f;
-            if (EvaluateProgress(curve, middle, duration, braking) < ratio)
+            if (EvaluateProgress(curve, middle, duration) < ratio)
                 low = middle;
             else
                 high = middle;
@@ -207,14 +169,13 @@ public class ChainsawAccelerator : MonoBehaviour
             : Mathf.Max(MIN_TRANSITION_DURATION, curve[curve.length - 1].time);
     }
 
-    // カーブを0～1の進行量として読む。ブレーキは残量カーブなので1から引く。
-    private static float EvaluateProgress(AnimationCurve curve, float elapsed, float duration, bool braking)
+    // カーブを0～1の進行量として読む。
+    private static float EvaluateProgress(AnimationCurve curve, float elapsed, float duration)
     {
         if (curve == null || curve.length == 0)
             return Mathf.Clamp01(elapsed / duration);
 
-        float speedRatio = Mathf.Clamp01(curve.Evaluate(elapsed));
-        return braking ? 1f - speedRatio : speedRatio;
+        return Mathf.Clamp01(curve.Evaluate(elapsed));
     }
 
     // 現在値から指定値へ減速する準備を行う。現在値が低い場合は増やさない。
@@ -289,12 +250,11 @@ public class ChainsawAccelerator : MonoBehaviour
             CurrentSpeed = Mathf.Min(CurrentSpeed, bonusDecelerationTargetSpeed);
         }
         isCharging = false;
-        isBraking = false;
         autoDecelerationElapsed = 0f;
         CancelBonusDeceleration();
     }
 
-    // 命中などで得た回転数を上限内で加算し、加速・ブレーキのカーブを現在値に合わせ直す。
+    // 命中などで得た回転数を上限内で加算し、加速カーブを現在値に合わせ直す。
     public void AddSpeed(float amount)
     {
         if (!isActiveAndEnabled || accelerationParameter == null || !(amount > 0f)) return;
@@ -304,7 +264,6 @@ public class ChainsawAccelerator : MonoBehaviour
 
         CurrentSpeed = nextSpeed;
         isCharging = false;
-        isBraking = false;
     }
 
     // 指定量を消費する。残量不足の場合は消費せず失敗を返す。

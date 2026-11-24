@@ -16,10 +16,6 @@ public class PlayerInputHandler : MonoBehaviour
     public bool WedgieHeld =>
         inputSystem != null && inputSystem.Player.Wedgie.IsPressed();
 
-    // Input Actionsで設定したアクセルの長押し状態。
-    public bool AccelerateHeld =>
-        inputSystem != null && inputSystem.Player.Accelerate.IsPressed();
-
     private void Awake()
     {
         inputSystem = new PlayerInputSystem();

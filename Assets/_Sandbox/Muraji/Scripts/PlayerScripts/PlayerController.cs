@@ -249,7 +249,6 @@ public class PlayerController : MonoBehaviour
         if (chainsawAccelerator.isActiveAndEnabled)
         {
             chainsawAccelerator.Tick(
-                input.AccelerateHeld,
                 deltaTime,
                 chainsawDigging.IsDigging
             );

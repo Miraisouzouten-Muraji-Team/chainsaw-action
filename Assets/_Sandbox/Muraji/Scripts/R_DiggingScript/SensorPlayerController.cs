@@ -821,7 +821,7 @@ public class SensorPlayerController : MonoBehaviour
             playerRigidbody.linearVelocity = Vector3.zero;
             if (chainsawAccelerator.isActiveAndEnabled)
             {
-                chainsawAccelerator.Tick(input.AccelerateHeld, deltaTime, chainsawDigging.IsDigging);
+                chainsawAccelerator.Tick(deltaTime, chainsawDigging.IsDigging);
                 if (chainsawAudioSource != null) chainsawAudioSource.pitch = chainsawAccelerator.CurrentPitch;
             }
             // 通常敵食い込みと同じ接続情報・位置追従・リソース更新を実行する。
@@ -839,7 +839,6 @@ public class SensorPlayerController : MonoBehaviour
         if (chainsawAccelerator.isActiveAndEnabled)
         {
             chainsawAccelerator.Tick(
-                input.AccelerateHeld,
                 deltaTime,
                 chainsawDigging.IsDigging
             );

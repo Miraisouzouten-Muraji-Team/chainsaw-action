@@ -1,11 +1,11 @@
 using UnityEngine;
 
-/// <summary>チェーンソーの回転速度・食い込み加速・ブレーキ・SEピッチの設定値を管理する。</summary>
+/// <summary>チェーンソーの回転速度・食い込み加速・自動減速・SEピッチの設定値を管理する。</summary>
 [CreateAssetMenu(fileName = "AccelerationParameter", menuName = "Chanisaw/Acceleration Parameter")]
 public class AccelerationParameter : ScriptableObject
 {
     [Header("回転速度（回転 / 秒）")]
-    [Tooltip("初期回転数と、自動減速・ブレーキで目指す最低値です。")]
+    [Tooltip("初期回転数と、自動減速で目指す最低値です。")]
     [SerializeField, Min(0f)]
     public float minSpeed = 5f;
 
@@ -13,14 +13,14 @@ public class AccelerationParameter : ScriptableObject
     [SerializeField, Min(0.01f)]
     public float maxSpeed = 50f;
 
-    [Header("食い込み加速とブレーキ")]
+    [Header("食い込み加速")]
     [Tooltip("食い込み中の加速カーブです。横軸は秒、縦軸は最低値から最大値までの割合です。0秒・0から始め、時間に沿って0～1で上げます。")]
     [SerializeField]
     public AnimationCurve diggingChargeBySeconds =
         AnimationCurve.Linear(0f, 0f, 2f, 1f);
 
-    [Tooltip("食い込み中にブレーキを押している間の減速カーブです。横軸は秒、縦軸は最低値を0、最大値を1としたアクセル値です。0秒・1から始め、時間に沿って1～0に下げます。途中の値から押すと、対応するカーブの位置から減速します。")]
-    [SerializeField]
+    // 以前のアセットに保存された値は互換性のため保持する。
+    [HideInInspector, SerializeField]
     public AnimationCurve brakeBySeconds =
         AnimationCurve.Linear(0f, 1f, 1f, 0f);
 

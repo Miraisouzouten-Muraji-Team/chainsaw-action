@@ -27,12 +27,17 @@ MonoBehaviour:
   ceilingDashPower: 15
   ceilingEvadeTime: 0.35
   enemyAttackInterval: 0.15
-  enemyConsumeAmount: 1
-  bonusEnemyConsumeAmount: 2
+  enemyConsumeAmount: 0
+  bonusEnemyConsumeAmount: 0
   minDamageMultiplier: 0.9
   maxDamageMultiplier: 1.25
   bonusDamageMultiplier: 3
   enemyPushPower: 2
+  enemyReboundThreshold: 20
+  enemyReboundHits: 3
+  enemyReboundStunSeconds: 0.3
+  enemyReboundKnockbackSpeed: 15
+  enemyReboundUpwardSpeed: 5
   airContactWaitDuration: 1
   wallClimbInputWindow: 0.2
   floorTransitionWallGraceTime: 0.05

@@ -95,6 +95,20 @@ public class DiggingParameter : ScriptableObject
     [Min(0f)]
     public float enemyPushPower = 2f;
 
+    [Header("通常敵食い込みの跳ね返り")]
+    [Tooltip("攻撃の消費直前のアクセル値がこの値以下なら、跳ね返り用の命中回数を数えます。")]
+    [Min(0f)] public float enemyReboundThreshold = 20f;
+    [Tooltip("同じ敵への食い込み中、低アクセルで連続して何回命中すると跳ね返るかを指定します。")]
+    [Min(1)] public int enemyReboundHits = 3;
+    [Tooltip("跳ね返った瞬間から操作を止める秒数です。硬直中も跳ね返りの移動は続きます。")]
+    [Min(0f)] public float enemyReboundStunSeconds = 0.1f;
+
+    [Tooltip("敵から跳ね返された瞬間の横方向の速度です。大きいほど遠くへ押し戻されます。0で横方向の反動をなくします。")]
+    [Min(0f)] public float enemyReboundKnockbackSpeed = 4f;
+
+    [Tooltip("敵から跳ね返された瞬間の上方向の速度です。0にすると上向きの初速を加えません。")]
+    [Min(0f)] public float enemyReboundUpwardSpeed = 3f;
+
     [Header("空中入力の接触待ち")]
     [Tooltip("空中で食い込み入力後、最初の接触を待つ最大時間（秒）")]
     [Min(0f)]

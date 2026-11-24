@@ -28,6 +28,7 @@ public class PlayerAnimator : MonoBehaviour
     private void LateUpdate()
     {
         if (animator == null || !animator.isActiveAndEnabled) return;
+        UpdateRequestedActionTransition();
         if (fallController == null) fallController = GetComponentInParent<SensorPlayerController>();
         if (fallBody == null && fallController != null) fallBody = fallController.GetComponent<Rigidbody>();
         if (fallController == null || fallBody == null) return;
@@ -41,9 +42,10 @@ public class PlayerAnimator : MonoBehaviour
         else fallPeakHeight = Mathf.Max(fallPeakHeight, height);
         fallAirborne = !grounded;
 
+        SynchronizeAnimatorWeakAttackExit();
         UpdateDiggingAnimation();
 
-        if (attackActive || IsDiggingAnimationActive || isHurtAnimationActive ||
+        if (attackActive || IsDiggingAnimationActive || isHurtAnimationActive || requestedActionStateHash != 0 ||
             IsWeakAttackHeld)
         {
             CancelFallAnimation();
@@ -182,6 +184,33 @@ public class PlayerAnimator : MonoBehaviour
     [SerializeField] string slash3State = "Base Layer.Slash3";
     [SerializeField] string idleState = "Base Layer.Idle";
 
+    private const string WEAK_ACTION_TARGET_PARAMETER = "WeakActionTarget";
+    private const string WEAK_ACTION_REQUEST_TRIGGER = "WeakActionRequested";
+    private const string WEAK_ATTACK_EXIT_PARAMETER = "WeakAttackExit";
+    private const int WEAK_ATTACK_EXIT_BLOCKED = -1;
+    private const int WEAK_ATTACK_EXIT_IDLE = 0;
+    private const int WEAK_ATTACK_EXIT_DIGGING = 1;
+    private const float ACTION_FALLBACK_BLEND_SECONDS = 0.05f;
+
+    // AnimatorのInt条件で、トリガー受信時の遷移先を選ぶ。
+    private enum WeakActionTarget
+    {
+        Idle = 0,
+        GroundAttack = 1,
+        AirAttack = 2,
+        FloorDigging = 3,
+        WallDigging = 4,
+        CeilingDigging = 5,
+        EnemyDigging = 6
+    }
+
+    public bool UsesAnimatorWeakAttackExit { get; private set; }
+
+    private int requestedActionStateHash;
+    private int requestedActionFrame;
+    private double requestedActionFixedTime;
+    private bool actionTransitionWarningLogged;
+
     [Header("攻撃トレイル")]
     [SerializeField] SlashTrailEffect slashTrailEffect;
 
@@ -207,6 +236,7 @@ public class PlayerAnimator : MonoBehaviour
         weakAttackPreviousSpeed = animator.speed;
         weakAttackPreviousRootMotion = animator.applyRootMotion;
         IsWeakAttackHeld = true;
+        SetWeakAttackExit(false, false);
         animator.speed = 0f;
         animator.applyRootMotion = false;
         if (weakAttackController == null) weakAttackController = GetComponent<SensorPlayerController>();
@@ -259,9 +289,13 @@ public class PlayerAnimator : MonoBehaviour
     [Tooltip("壁ジャンプ時に再生するAnimatorステートのフルパス")]
     [SerializeField] private string wallJumpState = "Base Layer.WallJump";
 
+    [Tooltip("敵食い込みから飛び出すときに全方向で使うAnimatorステートのフルパスです。例：Base Layer.EnemyDiggingJump。空欄または無効な場合は従来のモーションを使用します。")]
+    [SerializeField] private string enemyDiggingJumpState = "";
+
     private DiggingAnimationPhase diggingAnimationPhase;
     private int diggingStateHash;
     private int diggingStartFrame;
+    private bool blendingFromAttackToDigging;
 
     // 終了モーション中もtrue。
     // 実際に食い込んでいるかどうかとは別の、演出用の状態。
@@ -277,6 +311,18 @@ public class PlayerAnimator : MonoBehaviour
 
     public bool StartDiggingAnimation(ChainsawSurface surface)
     {
+        return StartDiggingAnimation(surface, false);
+    }
+
+    // 既存の呼び出しからは、通常どおり食い込みモーションを開始する。
+    public bool StartDiggingAnimation(ChainsawSurface surface, bool blendFromAttack)
+    {
+        return StartDiggingAnimation(surface, blendFromAttack, false);
+    }
+
+    // 食い込みモーションを開始するか、Animatorが始めた遷移を引き継ぐ。
+    public bool StartDiggingAnimation(ChainsawSurface surface, bool blendFromAttack, bool adoptAnimatorTransition)
+    {
         CancelFallAnimation();
         if (isHurtAnimationActive) return false;
         if (animator == null)
@@ -289,7 +335,8 @@ public class PlayerAnimator : MonoBehaviour
             return false;
         }
 
-        // 再生中に何度も先頭へ戻さない。
+        // 食い込みのブレンド中に接触先が確定した場合も、姿勢の切り替えを滑らかにする。
+        bool blend = blendFromAttack || blendingFromAttackToDigging;
         if (IsDiggingAnimationActive)
         {
             CancelDiggingAnimation();
@@ -331,16 +378,40 @@ public class PlayerAnimator : MonoBehaviour
 
         diggingAnimationPhase = DiggingAnimationPhase.Starting;
         diggingStartFrame = Time.frameCount;
+        blendingFromAttackToDigging = blend;
 
         animator.SetBool("IsDigging", true);
-        animator.Play(diggingStateHash, 0, 0f);
+        // Animatorがすでに開始した遷移を引き継ぎ、再生位置とブレンドを保つ。
+        if (adoptAnimatorTransition && TryGetActionState(diggingStateHash, out _))
+        {
+            return true;
+        }
+
+        if (blend)
+        {
+            // 対象別のステートがなければ、通常の食い込みステートへ遷移する。
+            WeakActionTarget target = path == diggingState ? WeakActionTarget.FloorDigging : surface switch
+            {
+                ChainsawSurface.Wall => WeakActionTarget.WallDigging,
+                ChainsawSurface.Ceiling => WeakActionTarget.CeilingDigging,
+                ChainsawSurface.Enemy => WeakActionTarget.EnemyDigging,
+                _ => WeakActionTarget.FloorDigging
+            };
+            RequestActionTransition(diggingStateHash, target);
+        }
+        else
+        {
+            ClearRequestedActionTransition();
+            animator.Play(diggingStateHash, 0, 0f);
+        }
         return true;
     }
 
 
     // 止めたい位置のAnimation Eventから呼ぶ。
-    public void HoldDiggingAnimation()
+    public void HoldDiggingAnimation(AnimationEvent animationEvent = null)
     {
+        SynchronizeAnimatorWeakAttackExit();
         // 解除済みなら停止しない。
         // 停止位置より前に解除した場合にも対応する。
         if (diggingAnimationPhase != DiggingAnimationPhase.Starting)
@@ -348,18 +419,7 @@ public class PlayerAnimator : MonoBehaviour
             return;
         }
 
-        AnimatorStateInfo state =
-            animator.GetCurrentAnimatorStateInfo(0);
-
-        if (state.fullPathHash != diggingStateHash ||
-            animator.IsInTransition(0))
-        {
-            return;
-        }
-
-        diggingAnimationPhase = DiggingAnimationPhase.Holding;
-
-        animator.SetFloat(DIGGING_PLAYBACK_SPEED, 0f);
+        TryHoldDiggingAnimationAtEvent(animationEvent);
     }
 
     // 食い込み状態を維持したまま、停止中のモーションを現在位置から再開する。
@@ -397,7 +457,9 @@ public class PlayerAnimator : MonoBehaviour
     // 被弾・死亡・ジャンプなどで、終了モーションを省略するときに呼ぶ。
     public void CancelDiggingAnimation()
     {
+        ClearRequestedActionTransition();
         diggingAnimationPhase = DiggingAnimationPhase.None;
+        blendingFromAttackToDigging = false;
 
         if (animator != null)
         {
@@ -407,10 +469,11 @@ public class PlayerAnimator : MonoBehaviour
     }
 
 
+    // 食い込みへ向かうブレンドを維持し、別のモーションへ出たら食い込み再生を解除する。
     private void UpdateDiggingAnimation()
     {
         if (!IsDiggingAnimationActive ||
-            Time.frameCount == diggingStartFrame)
+            Time.frameCount == diggingStartFrame || requestedActionStateHash == diggingStateHash)
         {
             return;
         }
@@ -418,10 +481,14 @@ public class PlayerAnimator : MonoBehaviour
         AnimatorStateInfo state =
             animator.GetCurrentAnimatorStateInfo(0);
 
-        // 別のモーションへ切り替わった場合は、
-        // 食い込み用の停止設定を解除する。
-        if (state.fullPathHash != diggingStateHash ||
-            animator.IsInTransition(0))
+        if (animator.IsInTransition(0) &&
+            animator.GetNextAnimatorStateInfo(0).fullPathHash == diggingStateHash)
+        {
+            return;
+        }
+
+        blendingFromAttackToDigging = false;
+        if (state.fullPathHash != diggingStateHash || animator.IsInTransition(0))
         {
             CancelDiggingAnimation();
             return;
@@ -593,6 +660,42 @@ public class PlayerAnimator : MonoBehaviour
         PlayAdditionalJumpState(wallJumpState);
     }
 
+    // 成立した敵食い込みジャンプに、飛び出す方向に共通のモーションを再生する。
+    public void PlayEnemyDiggingJump(bool useNormalJumpFallback)
+    {
+        if (isHurtAnimationActive || animator == null || !animator.isActiveAndEnabled) return;
+
+        int stateHash = string.IsNullOrWhiteSpace(enemyDiggingJumpState)
+            ? 0 : Animator.StringToHash(enemyDiggingJumpState);
+        if (stateHash == 0 || !animator.HasState(0, stateHash))
+        {
+            if (useNormalJumpFallback) PlayJump();
+            return;
+        }
+
+        // 食い込み・落下の固定姿勢を解除し、専用ステートの先頭から再生する。
+        animator.SetFloat("Speed", 0f);
+        CancelFallAnimation();
+        CancelDiggingAnimation();
+        animator.Play(stateHash, 0, 0f);
+    }
+
+    [Tooltip("低アクセルで敵から跳ね返った時に再生するステートのフルパスです。例：Base Layer.EnemyRebound")]
+    [SerializeField] private string enemyReboundState;
+
+    // 通常敵食い込みの強制解除が成立した瞬間に、跳ね返りモーションを先頭から再生する。
+    public void PlayEnemyRebound()
+    {
+        if (isHurtAnimationActive || animator == null || !animator.isActiveAndEnabled ||
+            string.IsNullOrWhiteSpace(enemyReboundState)) return;
+
+        int stateHash = Animator.StringToHash(enemyReboundState);
+        if (!animator.HasState(0, stateHash)) return;
+        CancelFallAnimation();
+        CancelDiggingAnimation();
+        animator.Play(stateHash, 0, 0f);
+    }
+
     // 指定された追加ジャンプステートを再生する。
     // 既存のPlayJumpには手を加えず、未設定時のみそこへ戻す。
     private void PlayAdditionalJumpState(string statePath)
@@ -646,6 +749,19 @@ public class PlayerAnimator : MonoBehaviour
         animator.SetFloat(DIGGING_PLAYBACK_SPEED, 0f);
     }
 
+    // ブレンドで残っている別ステートのイベントを除外し、今回の食い込み姿勢だけを固定する。
+    public bool TryHoldDiggingAnimationAtEvent(AnimationEvent animationEvent)
+    {
+        if (!IsDiggingAnimationActive || diggingAnimationPhase == DiggingAnimationPhase.Ending ||
+            !IsActionAnimationEvent(animationEvent, diggingStateHash))
+        {
+            return false;
+        }
+
+        HoldDiggingAnimationImmediately();
+        return true;
+    }
+
     // 既存の呼び出しでは、地上用の攻撃ステートを再生する。
     public bool StartSlash(int step, AttackData data)
     {
@@ -675,7 +791,8 @@ public class PlayerAnimator : MonoBehaviour
             return false;
         }
 
-        string path = isAirAttack && !string.IsNullOrWhiteSpace(airSlashState)
+        bool useAirState = isAirAttack && !string.IsNullOrWhiteSpace(airSlashState);
+        string path = useAirState
             ? airSlashState
             : step == 1 ? slash1State
             : step == 2 ? slash2State
@@ -707,6 +824,16 @@ public class PlayerAnimator : MonoBehaviour
 
         activeHash = hash;
         attackActive = true;
+        UsesAnimatorWeakAttackExit = false;
+        foreach (AnimatorControllerParameter parameter in animator.parameters)
+        {
+            if (parameter.name == WEAK_ATTACK_EXIT_PARAMETER && parameter.type == AnimatorControllerParameterType.Int)
+            {
+                UsesAnimatorWeakAttackExit = true;
+                SetWeakAttackExit(false, false);
+                break;
+            }
+        }
 
         // 古いTriggerを残さない。
         animator.ResetTrigger("Slash");
@@ -715,27 +842,192 @@ public class PlayerAnimator : MonoBehaviour
         animator.ResetTrigger("Jump");
         animator.ResetTrigger("Wedgie");
 
-        // 遷移条件を待たず、指定ステートを先頭から再生。
-        animator.Play(hash, 0, 0f);
+        // 地上・空中弱攻撃のブレンドは、Animatorの遷移設定で行う。
+        if (step == 1 || useAirState)
+            RequestActionTransition(hash, useAirState ? WeakActionTarget.AirAttack : WeakActionTarget.GroundAttack);
+        else
+            animator.Play(hash, 0, 0f);
 
         return true;
     }
 
-    public bool TryGetAttackProgress(out float progress)
+    // Animatorへ遷移先を通知する。設定がない場合も、既存のステートで行動を続けられるようにする。
+    private void RequestActionTransition(int stateHash, WeakActionTarget target)
     {
-        AnimatorStateInfo state =
-            animator.GetCurrentAnimatorStateInfo(0);
+        ClearRequestedActionTransition();
+        if (animator.GetCurrentAnimatorStateInfo(0).fullPathHash == stateHash)
+        {
+            // 同じステートを連続で指定された場合も、先頭から再生する。
+            animator.Play(stateHash, 0, 0f);
+            return;
+        }
 
-        progress = state.normalizedTime;
+        bool hasTarget = false;
+        bool hasTrigger = false;
+        foreach (AnimatorControllerParameter parameter in animator.parameters)
+        {
+            hasTarget |= parameter.name == WEAK_ACTION_TARGET_PARAMETER &&
+                parameter.type == AnimatorControllerParameterType.Int;
+            hasTrigger |= parameter.name == WEAK_ACTION_REQUEST_TRIGGER &&
+                parameter.type == AnimatorControllerParameterType.Trigger;
+        }
 
-        return attackActive &&
-               !animator.IsInTransition(0) &&
-               state.fullPathHash == activeHash;
+        if (!hasTarget || !hasTrigger)
+        {
+            PlayActionTransitionFallback(stateHash);
+            return;
+        }
+
+        requestedActionStateHash = stateHash;
+        requestedActionFrame = Time.frameCount;
+        requestedActionFixedTime = Time.fixedTimeAsDouble;
+        animator.SetInteger(WEAK_ACTION_TARGET_PARAMETER, (int)target);
+        animator.SetTrigger(WEAK_ACTION_REQUEST_TRIGGER);
     }
 
+    // Animatorに遷移開始の機会を一度だけ渡し、未開始なら短いブレンドで再生する。
+    private void UpdateRequestedActionTransition()
+    {
+        if (requestedActionStateHash == 0) return;
+        if (TryGetActionState(requestedActionStateHash, out _))
+        {
+            ClearRequestedActionTransition();
+            return;
+        }
+
+        if (Time.timeScale <= 0f) return;
+        bool evaluatedAfterRequest = animator.updateMode == AnimatorUpdateMode.Fixed
+            ? Time.fixedTimeAsDouble > requestedActionFixedTime
+            : Time.frameCount > requestedActionFrame;
+        if (!evaluatedAfterRequest) return;
+
+        int stateHash = requestedActionStateHash;
+        ClearRequestedActionTransition();
+        if (IsDiggingAnimationActive && stateHash == diggingStateHash)
+            diggingStartFrame = Time.frameCount;
+        PlayActionTransitionFallback(stateHash);
+    }
+
+    // 終了・中断した行動のTriggerを次の行動へ持ち越さない。
+    private void ClearRequestedActionTransition()
+    {
+        if (requestedActionStateHash == 0) return;
+        requestedActionStateHash = 0;
+        if (animator != null && animator.isActiveAndEnabled)
+            animator.ResetTrigger(WEAK_ACTION_REQUEST_TRIGGER);
+    }
+
+    // 遷移が設定されていない場合も、現在の姿勢から短くブレンドして行動を開始する。
+    private void PlayActionTransitionFallback(int stateHash)
+    {
+        animator.CrossFadeInFixedTime(stateHash, ACTION_FALLBACK_BLEND_SECONDS, 0, 0f);
+        if (actionTransitionWarningLogged) return;
+        actionTransitionWarningLogged = true;
+        Debug.LogWarning("Animatorの弱攻撃・食い込み遷移が開始されなかったため、短いブレンドで再生しました。" +
+            "対象の遷移の Has Exit Time と、WeakActionRequested / WeakActionTarget の条件を確認してください。", this);
+    }
+
+    // 食い込みを受理できるかだけを通知する。遷移の開始位置はAnimatorのExit Timeで決まる。
+    public void SetWeakAttackExit(bool canExit, bool canDig)
+    {
+        if (!UsesAnimatorWeakAttackExit || animator == null || !animator.isActiveAndEnabled) return;
+
+        int target = WEAK_ATTACK_EXIT_BLOCKED;
+        if (canExit && !IsWeakAttackHeld)
+            target = canDig ? WEAK_ATTACK_EXIT_DIGGING : WEAK_ATTACK_EXIT_IDLE;
+        animator.SetInteger(WEAK_ATTACK_EXIT_PARAMETER, target);
+    }
+
+    // 攻撃から別ステートへ出たとき、Animatorが選んだ遷移先を読み取る。
+    public bool TryGetWeakAttackExit(bool observedAttack, out bool startsDigging)
+    {
+        startsDigging = false;
+        if (!UsesAnimatorWeakAttackExit || !attackActive || IsWeakAttackHeld || isHurtAnimationActive ||
+            animator == null || !animator.isActiveAndEnabled) return false;
+
+        int currentHash = animator.GetCurrentAnimatorStateInfo(0).fullPathHash;
+        bool inTransition = animator.IsInTransition(0);
+        int destination = inTransition ? animator.GetNextAnimatorStateInfo(0).fullPathHash : currentHash;
+        if (destination == 0 || destination == activeHash || (!observedAttack && (!inTransition || currentHash != activeHash)))
+            return false;
+
+        startsDigging = destination == Animator.StringToHash(diggingState) ||
+            (!string.IsNullOrEmpty(wallDiggingState) && destination == Animator.StringToHash(wallDiggingState)) ||
+            (!string.IsNullOrEmpty(ceilingDiggingState) && destination == Animator.StringToHash(ceilingDiggingState)) ||
+            (!string.IsNullOrEmpty(enemyDiggingState) && destination == Animator.StringToHash(enemyDiggingState));
+        return true;
+    }
+
+    // Animatorの評価直後や、食い込み先のAnimation Eventより先にゲーム側の状態を合わせる。
+    public void SynchronizeAnimatorWeakAttackExit()
+    {
+        if (!UsesAnimatorWeakAttackExit) return;
+        if (fallController == null) fallController = GetComponentInParent<SensorPlayerController>();
+        if (fallController != null) fallController.SynchronizeAnimatorWeakAttackExit();
+    }
+
+    // 弱攻撃が現在または次のステートで再生中かを調べる。
+    public bool TryGetAttackProgress(out float progress)
+    {
+        return TryGetAttackPlayback(out progress, out _);
+    }
+
+    // 攻撃へ入る途中も進行度を取得し、攻撃ステートから出たことを判定する。
+    public bool TryGetAttackPlayback(out float progress, out bool exitedAttackState)
+    {
+        return TryGetAttackPlayback(out progress, out exitedAttackState, out _);
+    }
+
+    // 攻撃の最中にIdleへの自動遷移が始まった場合も、待機へ着く前に終了先を選べるようにする。
+    public bool TryGetAttackPlayback(out float progress, out bool exitedAttackState, out bool transitioningToIdle)
+    {
+        progress = 0f;
+        exitedAttackState = false;
+        transitioningToIdle = false;
+        if (!attackActive || isHurtAnimationActive || animator == null || !animator.isActiveAndEnabled)
+            return false;
+
+        if (TryGetActionState(activeHash, out AnimatorStateInfo state))
+        {
+            progress = state.normalizedTime;
+            transitioningToIdle = animator.IsInTransition(0) &&
+                animator.GetNextAnimatorStateInfo(0).fullPathHash == Animator.StringToHash(idleState);
+            return true;
+        }
+
+        exitedAttackState = true;
+        return false;
+    }
+
+    // 同じレイヤーのブレンド先を先に見て、対象ステートの再生情報を取得する。
+    private bool TryGetActionState(int stateHash, out AnimatorStateInfo state)
+    {
+        if (animator.IsInTransition(0))
+        {
+            state = animator.GetNextAnimatorStateInfo(0);
+            if (state.fullPathHash == stateHash) return true;
+        }
+
+        state = animator.GetCurrentAnimatorStateInfo(0);
+        return state.fullPathHash == stateHash;
+    }
+
+    // Animation Eventを発火したステートを確認し、古い姿勢側のイベントを無視する。
+    private bool IsActionAnimationEvent(AnimationEvent animationEvent, int stateHash)
+    {
+        if (animator == null || !animator.isActiveAndEnabled) return false;
+        return animationEvent != null
+            ? animationEvent.isFiredByAnimator && animationEvent.animatorStateInfo.fullPathHash == stateHash
+            : TryGetActionState(stateHash, out _);
+    }
+
+    // 弱攻撃の当たり判定と演出を閉じる。必要な場合は待機モーションへ戻す。
     public void EndSlash(bool returnToIdle)
     {
+        ClearRequestedActionTransition();
         ResumeWeakAttackPose();
+        SetWeakAttackExit(false, false);
+        UsesAnimatorWeakAttackExit = false;
         attackActive = false;
 
         if (slashTrailEffect != null)
@@ -748,11 +1040,16 @@ public class PlayerAnimator : MonoBehaviour
             attackHitBox.EndAttack();
         }
 
-        if (returnToIdle && !isHurtAnimationActive &&
-            animator != null &&
-            animator.isActiveAndEnabled)
-        {
+        if (returnToIdle && !isHurtAnimationActive && animator != null && animator.isActiveAndEnabled)
             animator.Play(idleState, 0, 0f);
+    }
+
+    // 食い込みへつながらなかった弱攻撃が終わったら、待機モーションへ戻す。
+    public void ReturnToIdleAfterSlash()
+    {
+        if (!isHurtAnimationActive && animator != null && animator.isActiveAndEnabled)
+        {
+            RequestActionTransition(Animator.StringToHash(idleState), WeakActionTarget.Idle);
         }
     }
 
@@ -778,9 +1075,9 @@ public class PlayerAnimator : MonoBehaviour
     }
 
     // 斬撃エフェクトを出したいフレームの Animation Event から呼ぶ。
-    public void OnWeakAttackEffect()
+    public void OnWeakAttackEffect(AnimationEvent animationEvent = null)
     {
-        if (!attackActive || !TryGetAttackProgress(out _))
+        if (!attackActive || !IsActionAnimationEvent(animationEvent, activeHash))
         {
             return;
         }
@@ -797,27 +1094,28 @@ public class PlayerAnimator : MonoBehaviour
     }
 
     // 弱攻撃の振り抜きフレームでフィニッシャーの判定を開く。
-    public void OnWeakAttackSwing()
+    public void OnWeakAttackSwing(AnimationEvent animationEvent = null)
     {
-        if (attackActive && attackHitBox != null && TryGetAttackProgress(out _))
+        if (attackActive && attackHitBox != null && IsActionAnimationEvent(animationEvent, activeHash))
         {
             attackHitBox.EnableWeakAttackFinisher();
         }
     }
 
     // Animation Eventから呼ぶ。
-    public void EnableAttackHitBox()
+    public void EnableAttackHitBox(AnimationEvent animationEvent = null)
     {
-        if (attackActive && TryGetAttackProgress(out _))
+        if (attackActive && IsActionAnimationEvent(animationEvent, activeHash))
         {
             attackHitBox.EnableHitBox(); // ヒット判定開始
         }
     }
 
     // Animation Eventから呼ぶ。
-    public void DisableAttackHitBox()
+    public void DisableAttackHitBox(AnimationEvent animationEvent = null)
     {
-        if (attackHitBox != null)
+        if (attackHitBox != null && (animationEvent == null ||
+            (attackActive && IsActionAnimationEvent(animationEvent, activeHash))))
         {
             attackHitBox.DisableHitBox(); // ヒット判定終了
         }

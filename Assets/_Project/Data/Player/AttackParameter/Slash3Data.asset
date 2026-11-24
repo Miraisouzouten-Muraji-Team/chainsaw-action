@@ -13,9 +13,9 @@ MonoBehaviour:
   m_Name: Slash3Data
   m_EditorClassIdentifier: Assembly-CSharp::AttackData
   damage: 15
-  useAcceleratorDamageMultiplier: 0
+  useAcceleratorDamageMultiplier: 1
   acceleratorDamageBonusThresholdPercent: 80
-  acceleratorDamageBonusPercent: 50
+  acceleratorDamageBonusPercent: 200
   attackVector: {x: 3, y: -10}
   attackMoveRange: 2
   attackMoveDuration: 0.15

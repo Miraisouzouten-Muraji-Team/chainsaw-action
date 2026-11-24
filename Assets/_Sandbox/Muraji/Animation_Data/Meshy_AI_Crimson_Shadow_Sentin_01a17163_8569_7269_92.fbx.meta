@@ -36,7 +36,7 @@ ModelImporter:
       takeName: Armature|Armature|retarget_clip|BaseLayer
       internalID: -8577950333314681431
       firstFrame: 15
-      lastFrame: 41
+      lastFrame: 31
       wrapMode: 0
       orientationOffsetY: 30
       level: 0
@@ -81,21 +81,28 @@ ModelImporter:
           postInfinity: 3
           rotationOrder: 4
       events:
-      - time: 0.15927246
+      - time: 0
+        functionName: OnWeakAttackEffect
+        data: 
+        objectReferenceParameter: {instanceID: 0}
+        floatParameter: 0
+        intParameter: 3
+        messageOptions: 0
+      - time: 0.22195053
         functionName: EnableAttackHitBox
         data: 
         objectReferenceParameter: {instanceID: 0}
         floatParameter: 0
         intParameter: 0
         messageOptions: 0
-      - time: 0.33194068
+      - time: 0.55986094
         functionName: OnWeakAttackSwing
         data: 
         objectReferenceParameter: {instanceID: 0}
         floatParameter: 0
         intParameter: 3
         messageOptions: 0
-      - time: 0.41670054
+      - time: 0.65221804
         functionName: DisableAttackHitBox
         data: 
         objectReferenceParameter: {instanceID: 0}

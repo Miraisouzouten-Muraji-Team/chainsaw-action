@@ -72,7 +72,7 @@ using UnityEngine.InputSystem.Utilities;
 /// }
 /// </code>
 /// </example>
-public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
+public partial class @PlayerInputSystem : IInputActionCollection2, IDisposable
 {
     /// <summary>
     /// Provides access to the underlying asset instance.
@@ -136,16 +136,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                     ""name"": ""Slash"",
                     ""type"": ""Button"",
                     ""id"": ""76cc5316-932b-4a59-95a5-8c92274167b8"",
-                    ""expectedControlType"": """",
-                    ""processors"": """",
-                    ""interactions"": """",
-                    ""initialStateCheck"": false,
-                    ""priority"": 0
-                },
-                {
-                    ""name"": ""Accelerate"",
-                    ""type"": ""Button"",
-                    ""id"": ""2024d991-d8fe-407c-baf9-48984c2ef433"",
                     ""expectedControlType"": """",
                     ""processors"": """",
                     ""interactions"": """",
@@ -311,7 +301,7 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                 {
                     ""name"": ""positive"",
                     ""id"": ""878858de-8e3e-44ce-968d-b9c88e3eee50"",
-                    ""path"": """",
+                    ""path"": ""<Joystick>/stick/right"",
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": """",
@@ -546,7 +536,7 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": """",
-                    ""action"": ""Accelerate"",
+                    ""action"": ""Wedgie"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 },
@@ -557,7 +547,7 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": """",
-                    ""action"": ""Accelerate"",
+                    ""action"": ""Wedgie"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 },
@@ -568,7 +558,7 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": """",
-                    ""action"": ""Accelerate"",
+                    ""action"": ""Wedgie"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 },
@@ -579,7 +569,7 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": """",
-                    ""action"": ""Accelerate"",
+                    ""action"": ""Wedgie"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 },
@@ -590,7 +580,7 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
                     ""interactions"": """",
                     ""processors"": """",
                     ""groups"": """",
-                    ""action"": ""Accelerate"",
+                    ""action"": ""Wedgie"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
                 }
@@ -907,7 +897,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
         m_Player_Attack = m_Player.FindAction("Attack", throwIfNotFound: true);
         m_Player_Jump = m_Player.FindAction("Jump", throwIfNotFound: true);
         m_Player_Slash = m_Player.FindAction("Slash", throwIfNotFound: true);
-        m_Player_Accelerate = m_Player.FindAction("Accelerate", throwIfNotFound: true);
         // Tutorial
         m_Tutorial = asset.FindActionMap("Tutorial", throwIfNotFound: true);
         m_Tutorial_Open = m_Tutorial.FindAction("Open", throwIfNotFound: true);
@@ -1000,7 +989,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
     private readonly InputAction m_Player_Attack;
     private readonly InputAction m_Player_Jump;
     private readonly InputAction m_Player_Slash;
-    private readonly InputAction m_Player_Accelerate;
     /// <summary>
     /// Provides access to input actions defined in input action map "Player".
     /// </summary>
@@ -1032,10 +1020,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
         /// Provides access to the underlying input action "Player/Slash".
         /// </summary>
         public InputAction @Slash => m_Wrapper.m_Player_Slash;
-        /// <summary>
-        /// Provides access to the underlying input action "Player/Accelerate".
-        /// </summary>
-        public InputAction @Accelerate => m_Wrapper.m_Player_Accelerate;
         /// <summary>
         /// Provides access to the underlying input action map instance.
         /// </summary>
@@ -1077,9 +1061,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
             @Slash.started += instance.OnSlash;
             @Slash.performed += instance.OnSlash;
             @Slash.canceled += instance.OnSlash;
-            @Accelerate.started += instance.OnAccelerate;
-            @Accelerate.performed += instance.OnAccelerate;
-            @Accelerate.canceled += instance.OnAccelerate;
         }
 
         /// <summary>
@@ -1106,9 +1087,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
             @Slash.started -= instance.OnSlash;
             @Slash.performed -= instance.OnSlash;
             @Slash.canceled -= instance.OnSlash;
-            @Accelerate.started -= instance.OnAccelerate;
-            @Accelerate.performed -= instance.OnAccelerate;
-            @Accelerate.canceled -= instance.OnAccelerate;
         }
 
         /// <summary>
@@ -1313,13 +1291,6 @@ public partial class @PlayerInputSystem: IInputActionCollection2, IDisposable
         /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
         /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
         void OnSlash(InputAction.CallbackContext context);
-        /// <summary>
-        /// Method invoked when associated input action "Accelerate" is either <see cref="UnityEngine.InputSystem.InputAction.started" />, <see cref="UnityEngine.InputSystem.InputAction.performed" /> or <see cref="UnityEngine.InputSystem.InputAction.canceled" />.
-        /// </summary>
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.started" />
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.performed" />
-        /// <seealso cref="UnityEngine.InputSystem.InputAction.canceled" />
-        void OnAccelerate(InputAction.CallbackContext context);
     }
     /// <summary>
     /// Interface to implement callback methods for all input action callbacks associated with input actions defined by "Tutorial" which allows adding and removing callbacks.

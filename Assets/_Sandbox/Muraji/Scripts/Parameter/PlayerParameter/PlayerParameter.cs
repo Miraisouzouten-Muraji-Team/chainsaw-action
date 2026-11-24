@@ -153,6 +153,20 @@ public class PlayerParameter : ScriptableObject
     [Tooltip("衝突速度")]
     [SerializeField, Min(0f)]
     public float surfaceStickCollisionSpeed = 5f;
+
+    [Header("敵食い込み解除の加速")]
+    [Tooltip("敵から飛び出すときの初速です。左スティックを倒した方向へ、どの向きでも同じ速さで飛び出します。")]
+    [SerializeField, Min(0f)]
+    public float enemyDiggingJumpSpeed = 18f;
+
+    [Tooltip("敵から飛び出したときの勢いを弱める秒数です。横方向は、残りの勢いと移動入力に応じて途中で空中操作に切り替わります。0なら飛び出し専用の速度を最初の物理フレームにだけ適用します。")]
+    [SerializeField, Min(0f)]
+    public float enemyReleaseEaseDuration = 0.4f;
+
+    [Tooltip("敵食い込みジャンプで、飛び出す方向のステージとの干渉を調べる距離です。1物理フレームの移動距離より短い場合は、その移動距離を使用します。")]
+    [SerializeField, Min(0f)]
+    public float enemyDiggingJumpProbeDistance = 1f;
+
     [Header("角のパラメータ")]
     // 天井の角の処理値
     [Tooltip("角の許容範囲")]

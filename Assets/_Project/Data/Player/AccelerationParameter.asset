@@ -14,9 +14,65 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AccelerationParameter
   minSpeed: 5
   maxSpeed: 50
+  diggingChargeBySeconds:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0.01909219
+      outSlope: 0.01909219
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0.41672656
+    - serializedVersion: 3
+      time: 7.0013795
+      value: 0.9990797
+      inSlope: 0.0026004943
+      outSlope: 0.0026004943
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.29130816
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  brakeBySeconds:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.64134705
+      value: 0.70548356
+      inSlope: -0.98675746
+      outSlope: -0.98675746
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.23202693
+    - serializedVersion: 3
+      time: 1
+      value: 0
+      inSlope: -2.4935057
+      outSlope: -2.4935057
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.12779303
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
   diggingMaxSpeed: 35
   accelerationTime: 4
-  decelerationTime: 0.75
   accelerationCurve:
     serializedVersion: 2
     m_Curve:
@@ -41,21 +97,22 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
+  decelerationTime: 2.5
   decelerationCurve:
     serializedVersion: 2
     m_Curve:
     - serializedVersion: 3
       time: 0
       value: 0
-      inSlope: 0
-      outSlope: 0
+      inSlope: -0.0131435925
+      outSlope: -0.0131435925
       tangentMode: 0
       weightedMode: 0
       inWeight: 0
-      outWeight: 0
+      outWeight: 0.63870424
     - serializedVersion: 3
-      time: 0.7
-      value: 0.3
+      time: 0.5561009
+      value: 0.30588847
       inSlope: 1.3416158
       outSlope: 1.3416158
       tangentMode: 0
@@ -63,8 +120,8 @@ MonoBehaviour:
       inWeight: 0
       outWeight: 0.21296301
     - serializedVersion: 3
-      time: 1
-      value: 1
+      time: 2.0004406
+      value: 0.99999934
       inSlope: 0
       outSlope: 0
       tangentMode: 0

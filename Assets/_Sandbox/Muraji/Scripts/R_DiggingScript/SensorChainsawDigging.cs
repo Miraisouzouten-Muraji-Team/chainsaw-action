@@ -30,6 +30,27 @@ public class SensorChainsawDigging : MonoBehaviour
     public float EnemyReboundStunSeconds => Mathf.Max(0f, diggingParameter.enemyReboundStunSeconds);
     private int lowSpeedHitCount;
     private float pendingEnemyReboundDirection;
+    private bool enemyDefeatJumpPending;
+    private EnemyHealth attachedEnemyHealth;
+
+    // 倒した敵からの離脱ジャンプを、プレイヤーの物理更新で一度だけ受け取る。
+    public bool TryTakeEnemyDefeatJump()
+    {
+        bool pending = enemyDefeatJumpPending;
+        enemyDefeatJumpPending = false;
+        return pending;
+    }
+
+    // 食い込み先が死亡した場合だけ、接続を終了して撃破ジャンプを予約する。
+    private bool TryEndDefeatedEnemyDigging()
+    {
+        if (attachedEnemyHealth == null || !attachedEnemyHealth.IsDead)
+            return false;
+
+        Cancel(false);
+        enemyDefeatJumpPending = true;
+        return true;
+    }
 
     // 今回の物理更新で成立した跳ね返りの向きを一度だけ渡す。
     public bool TryTakeEnemyRebound(out float direction)
@@ -658,6 +679,9 @@ public class SensorChainsawDigging : MonoBehaviour
 
         if (Surface == ChainsawSurface.Enemy)
         {
+            if (TryEndDefeatedEnemyDigging())
+                return;
+
             // 一度開始した敵は再検出しない。範囲外や他の敵への切り替えで解除しない。
             if (!SensorChainsawContactDetector.CanReceiveEnemyHit(contact.Enemy))
             {
@@ -900,6 +924,10 @@ public class SensorChainsawDigging : MonoBehaviour
                 if (!isActiveAndEnabled || Surface != ChainsawSurface.Enemy || contact.Enemy != target)
                     return;
 
+                // 倒したときは低アクセルの跳ね返りより撃破ジャンプを優先する。
+                if (TryEndDefeatedEnemyDigging())
+                    return;
+
                 if (lowSpeed && chainsawAttack.LastHitDealtDamage &&
                     ++lowSpeedHitCount >= Mathf.Max(1, diggingParameter.enemyReboundHits))
                 {
@@ -1094,6 +1122,7 @@ public class SensorChainsawDigging : MonoBehaviour
             }
 
             lowSpeedHitCount = 0;
+            attachedEnemyHealth = contact.Enemy.GetComponentInParent<EnemyHealth>();
             enemyFollowOffset = transform.position - contact.Enemy.transform.position;
             enemyLocalHitPoint = contact.Enemy.transform.InverseTransformPoint(contact.Point);
             enemyPushApplied = false;
@@ -1388,6 +1417,8 @@ public class SensorChainsawDigging : MonoBehaviour
     {
         lowSpeedHitCount = 0;
         pendingEnemyReboundDirection = 0f;
+        enemyDefeatJumpPending = false;
+        attachedEnemyHealth = null;
         ClearWallJumpReleaseBuffer();
         bufferedRequestAwaitingTick = false;
         attackResumeContactWaitUntil = 0f;

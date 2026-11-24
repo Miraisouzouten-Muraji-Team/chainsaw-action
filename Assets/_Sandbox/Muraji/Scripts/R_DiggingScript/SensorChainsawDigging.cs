@@ -25,23 +25,9 @@ public class SensorChainsawDigging : MonoBehaviour
     [Tooltip("敵への食い込み攻撃データ")]
     [SerializeField] private AttackData diggingAttackData;
 
-    [Header("通常敵食い込みの跳ね返り")]
-    [Tooltip("攻撃の消費直前のアクセル値がこの値以下なら、跳ね返り用の命中回数を数えます。")]
-    [SerializeField, Min(0f)] private float enemyReboundThreshold = 20f;
-    [Tooltip("同じ敵への食い込み中、低アクセルで連続して何回命中すると跳ね返るかを指定します。")]
-    [SerializeField, Min(1)] private int enemyReboundHits = 3;
-    [Tooltip("跳ね返った瞬間から操作を止める秒数です。硬直中も跳ね返りの移動は続きます。")]
-    [SerializeField, Min(0f)] private float enemyReboundStunSeconds = 0.1f;
-
-    [Tooltip("敵から跳ね返された瞬間の横方向の速度です。大きいほど遠くへ押し戻されます。0で横方向の反動をなくします。")]
-    [SerializeField, Min(0f)] private float enemyReboundKnockbackSpeed = 4f;
-
-    [Tooltip("敵から跳ね返された瞬間の上方向の速度です。0にすると上向きの初速を加えません。")]
-    [SerializeField, Min(0f)] private float enemyReboundUpwardSpeed = 3f;
-
-    public float EnemyReboundUpwardSpeed => Mathf.Max(0f, enemyReboundUpwardSpeed);
-    public float EnemyReboundKnockbackSpeed => Mathf.Max(0f, enemyReboundKnockbackSpeed);
-    public float EnemyReboundStunSeconds => Mathf.Max(0f, enemyReboundStunSeconds);
+    public float EnemyReboundUpwardSpeed => Mathf.Max(0f, diggingParameter.enemyReboundUpwardSpeed);
+    public float EnemyReboundKnockbackSpeed => Mathf.Max(0f, diggingParameter.enemyReboundKnockbackSpeed);
+    public float EnemyReboundStunSeconds => Mathf.Max(0f, diggingParameter.enemyReboundStunSeconds);
     private int lowSpeedHitCount;
     private float pendingEnemyReboundDirection;
 
@@ -883,7 +869,7 @@ public class SensorChainsawDigging : MonoBehaviour
             float interval =
                 Mathf.Max(0.01f, diggingParameter.enemyAttackInterval);
 
-            if (accelerator.CurrentSpeed > enemyReboundThreshold)
+            if (accelerator.CurrentSpeed > diggingParameter.enemyReboundThreshold)
                 lowSpeedHitCount = 0;
 
             while (timer >= interval)
@@ -897,7 +883,7 @@ public class SensorChainsawDigging : MonoBehaviour
                     return;
                 }
 
-                bool lowSpeed = accelerator.CurrentSpeed <= enemyReboundThreshold;
+                bool lowSpeed = accelerator.CurrentSpeed <= diggingParameter.enemyReboundThreshold;
                 var target = contact.Enemy;
                 float offsetX = transform.position.x - target.transform.position.x;
                 float away = Mathf.Abs(offsetX) > 0.001f ? Mathf.Sign(offsetX) : -Mathf.Sign(facingDirection);
@@ -915,7 +901,7 @@ public class SensorChainsawDigging : MonoBehaviour
                     return;
 
                 if (lowSpeed && chainsawAttack.LastHitDealtDamage &&
-                    ++lowSpeedHitCount >= Mathf.Max(1, enemyReboundHits))
+                    ++lowSpeedHitCount >= Mathf.Max(1, diggingParameter.enemyReboundHits))
                 {
                     Cancel(true);
                     pendingEnemyReboundDirection = away;

@@ -18,7 +18,7 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     [SerializeField] private PlayerDamageMaterialFlash damageMaterialFlash;
 
     [Header("敵からの被弾")]
-    [Tooltip("やられ状態で移動・攻撃・ジャンプ・食い込みの入力を止める秒数です。空中では落下を続けます。")]
+    [Tooltip("スーパーアーマーがないときの被弾硬直の秒数です。空中では硬直中も落下を続けます。")]
     [SerializeField, Min(0.01f)] private float hurtDuration = 0.4f;
     [Tooltip("敵からの追加ダメージを無効にする秒数です。硬直時間とは別です。0なら追加の無敵時間を設けません。")]
     [SerializeField, Min(0f)] private float damageInvulnerabilityDuration = 2f;

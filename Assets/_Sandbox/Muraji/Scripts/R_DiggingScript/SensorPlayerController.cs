@@ -1302,27 +1302,25 @@ public class SensorPlayerController : MonoBehaviour
             $"固定={playerRigidbody.constraints}", this);
     }
 
-    // 通常時は被弾硬直を開始する。成立済みの食い込み中は姿勢・移動・接続を維持する。
+    // 攻撃の入力が受理されるフレームから、攻撃終了・中断までスーパーアーマーを有効にする。
+    private bool HasAttackSuperArmor =>
+        IsAttacking ||
+        (input != null && input.SlashInput && Time.timeScale > 0f &&
+         !IsDamageStunned && !IsImpactStunned && wallJumpStunRemaining <= 0f &&
+         (!enemyReboundActive || Time.time >= enemyReboundUnlockTime));
+
+    // 被弾硬直を開始する。スーパーアーマー中は攻撃姿勢と移動を維持する。
     public void BeginDamageStun(float duration)
     {
+        // ダメージと被弾演出は受信側で処理済み。硬直だけを開始前に判定する。
+        if (!isActiveAndEnabled || playerRigidbody == null || playerAnimator == null || HasAttackSuperArmor)
+            return;
+
         ClearEnemyReleaseFlight();
         ClearCeilingJumpRelease();
         ResetCeilingTravelImpact();
         ClearDiggingReleaseMomentum();
         impactBufferedAction = ImpactBufferedAction.None;
-        if (!isActiveAndEnabled || playerRigidbody == null || playerAnimator == null)
-        {
-            return;
-        }
-
-        // HP減少・被弾後の無敵・点滅は受信側で処理するため、ここでは取り消さない。
-        // 床・壁・天井・敵への食い込み中は、やられ遷移と速度リセット、食い込み解除を行わない。
-        // 未接触の空中待機はIsDiggingがfalseなので、従来どおり被弾硬直に入る。
-        if (chainsawDigging != null &&
-            chainsawDigging.isActiveAndEnabled && chainsawDigging.IsDigging)
-        {
-            return;
-        }
 
         enemyReboundActive = false;
         enemyReboundInputPending = false;

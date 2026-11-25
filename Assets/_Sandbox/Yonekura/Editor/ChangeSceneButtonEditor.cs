@@ -1,36 +1,38 @@
 using UnityEditor;
 
+/// <summary>
+/// ChangeSceneButtonのInspector表示をカスタマイズする。
+/// </summary>
 [CustomEditor(typeof(ChangeSceneButton))]
 public class ChangeSceneButtonEditor : Editor
 {
+    /// <summary>
+    /// Inspectorの表示内容を描画する。
+    /// </summary>
     public override void OnInspectorGUI()
     {
         // 通常のInspectorを表示
         DrawDefaultInspector();
 
-        // Target Sceneがシーンファイルか確認
-        ChangeSceneButton button = (ChangeSceneButton)target;
+        // ボタンの動作を取得
+        SerializedProperty action =
+            serializedObject.FindProperty("action");
 
+        // Target Sceneの設定内容を取得
         SerializedProperty targetScene =
-            serializedObject.FindProperty("targetScene");
+            serializedObject.FindProperty("targetSceneName");
 
-        // Target Sceneが設定されているか確認
-        if (targetScene.objectReferenceValue != null)
+        // シーン遷移ボタンの場合のみ確認
+        if (action.enumValueIndex ==
+            (int)ChangeSceneButton.ButtonAction.ChangeScene)
         {
-            string path = AssetDatabase.GetAssetPath(
-                targetScene.objectReferenceValue
-            );
-
-            // シーンファイルか確認
-            if (!path.EndsWith(".unity"))
+            // シーン名が設定されていない場合
+            if (string.IsNullOrEmpty(targetScene.stringValue))
             {
                 EditorGUILayout.HelpBox(
-                    "Target Sceneにはシーンファイル（.unity）のみ設定できます。",
-                    MessageType.Error
+                    "遷移先のシーン名を設定してください。",
+                    MessageType.Warning
                 );
-
-                targetScene.objectReferenceValue = null;
-                serializedObject.ApplyModifiedProperties();
             }
         }
     }

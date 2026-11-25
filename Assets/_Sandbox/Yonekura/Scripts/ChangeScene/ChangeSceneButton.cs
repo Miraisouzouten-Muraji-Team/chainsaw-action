@@ -13,29 +13,35 @@ public class ChangeSceneButton : MonoBehaviour
         QuitGame
     }
 
-    // ボタンの動作を設定
+    [Header("ボタン設定")]
+    [Tooltip("ボタンを押したときの処理設定。")]
     [SerializeField] private ButtonAction action;
 
-    // 遷移先のシーン
-    [SerializeField] private Object targetScene;
+    [Header("シーン遷移設定")]
+    [Tooltip("遷移先のシーン名を設定してください。")]
+    //[SerializeField] private Object targetScene;
+    [SerializeField] private string targetSceneName;
 
-    // シーン遷移演出
+    [Tooltip("シーン遷移時に使用するTransitionManagerを設定してください。")]
     [SerializeField] private TransitionManager transitionManager;
 
-    // シーン遷移の種類
+    [Tooltip("シーン遷移時に使用するトランジションを設定してください。")]
     [SerializeField] private TransitionManager.TransitionType transitionType;
 
-    // 終了確認パネル
+    [Header("終了確認パネル設定")]
+    [Space(-8)]
+    [Header("(ボタン設定がシーン遷移の場合は設定不要)")]
+    [Tooltip("終了確認パネルを開くボタンを設定してください。")]
+    [SerializeField] private Button closeButton;
+
+    [Tooltip("ゲーム終了時に表示する確認パネルを設定してください。")]
     [SerializeField] private GameObject confirmPanel;
 
-    // 「いいえ」ボタン
+    [Tooltip("終了確認パネルの「いいえ」ボタンを設定してください。")]
     [SerializeField] private Button noButton;
 
-    // 「はい」ボタン
+    [Tooltip("終了確認パネルの「はい」ボタンを設定してください。")]
     [SerializeField] private Button yesButton;
-
-    // 終了ボタン
-    [SerializeField] private Button closeButton;
 
     private Button button;
 
@@ -120,7 +126,11 @@ public class ChangeSceneButton : MonoBehaviour
     // シーン切り替え
     private void ChangeToScene()
     {
-        if (targetScene == null)
+        Debug.Log(
+        $"[ChangeSceneButton] シーン遷移開始: {gameObject.scene.name}"
+        );
+
+        if (targetSceneName == null)
         {
             Debug.LogError("遷移先のシーンが設定されていません！");
             return;
@@ -132,8 +142,17 @@ public class ChangeSceneButton : MonoBehaviour
             return;
         }
 
+        Debug.Log(
+        $"[ChangeSceneButton] TransitionType: {transitionType}"
+        );
+
+        Debug.Log(
+            $"[ChangeSceneButton] TransitionManager: " +
+            $"{transitionManager.gameObject.name}"
+        );
+
         transitionManager.TransitionToScene(
-            targetScene.name,
+            targetSceneName,
             transitionType
         );
     }

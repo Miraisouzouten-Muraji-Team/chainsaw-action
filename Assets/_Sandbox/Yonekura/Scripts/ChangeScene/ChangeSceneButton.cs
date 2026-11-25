@@ -42,7 +42,7 @@ public class ChangeSceneButton : MonoBehaviour
 
     [Tooltip("終了確認パネルの「はい」ボタンを設定してください。")]
     [SerializeField] private Button yesButton;
-    
+
     private Button button;
 
     // ボタンを取得

@@ -252,8 +252,6 @@ public class TransitionManager : MonoBehaviour
     // フェードでシーン遷移
     private async UniTask Fade(string sceneName)
     {
-        Debug.Log("[TransitionManager] Fade開始");
-
         // フェード用のImageを表示
         fadeImage.gameObject.SetActive(true);
 
@@ -274,8 +272,6 @@ public class TransitionManager : MonoBehaviour
     // 斜めワイプでシーン遷移
     private async UniTask DiagonalWipe(string sceneName)
     {
-        Debug.Log("[TransitionManager] 斜めワイプ開始");
-
         // 斜めワイプ用のPanelを表示
         diagonalWipePanel.gameObject.SetActive(true);
 
@@ -299,8 +295,6 @@ public class TransitionManager : MonoBehaviour
     // 円形ワイプでシーン遷移
     private async UniTask CircleWipe(string sceneName)
     {
-        Debug.Log("[TransitionManager] 円形ワイプ開始");
-
         // 円形ワイプ用のPanelを表示
         circleWipePanel.gameObject.SetActive(true);
 
@@ -321,8 +315,6 @@ public class TransitionManager : MonoBehaviour
     // ジグザグワイプでシーン遷移
     private async UniTask ZigzagWipe(string sceneName)
     {
-        Debug.Log("[TransitionManager] ジグザグワイプ開始");
-
         if (zigzagWipePanel == null)
         {
             Debug.LogError("ZigzagWipePanelが設定されていません！");

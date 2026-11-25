@@ -38,13 +38,16 @@ public class MenuButtonEffect : MonoBehaviour
     );
 
     [Header("テキスト透明度設定")]
+    [Tooltip("非選択時の透明度")]
     [SerializeField]
     private float normalTextAlpha = 0.5f;
 
     [SerializeField]
+    [Tooltip("選択時の透明度")]
     private float selectedTextAlpha = 1.0f;
 
     [Header("選択マーク")]
+    [Tooltip("選択時のマークを設定してください。")]
     [SerializeField]
     private GameObject selectMark;
 

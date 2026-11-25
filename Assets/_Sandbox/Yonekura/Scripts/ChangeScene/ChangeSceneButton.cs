@@ -18,6 +18,7 @@ public class ChangeSceneButton : MonoBehaviour
 
     // 遷移先のシーン
     [SerializeField] private Object targetScene;
+    //[SerializeField] private string targetSceneName;
 
     // シーン遷移演出
     [SerializeField] private TransitionManager transitionManager;
@@ -120,6 +121,10 @@ public class ChangeSceneButton : MonoBehaviour
     // シーン切り替え
     private void ChangeToScene()
     {
+        Debug.Log(
+        $"[ChangeSceneButton] シーン遷移開始: {gameObject.scene.name}"
+        );
+
         if (targetScene == null)
         {
             Debug.LogError("遷移先のシーンが設定されていません！");
@@ -131,6 +136,15 @@ public class ChangeSceneButton : MonoBehaviour
             Debug.LogError("TransitionManagerが設定されていません！");
             return;
         }
+
+        Debug.Log(
+        $"[ChangeSceneButton] TransitionType: {transitionType}"
+        );
+
+        Debug.Log(
+            $"[ChangeSceneButton] TransitionManager: " +
+            $"{transitionManager.gameObject.name}"
+        );
 
         transitionManager.TransitionToScene(
             targetScene.name,

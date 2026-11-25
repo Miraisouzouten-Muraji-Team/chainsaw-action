@@ -68,6 +68,11 @@ public class BattleAreaEnemiesCondition : GimmickConditionBase
     }
 
 
+    private void OnEnable()
+    {
+        EnemyRespawnManager.LayerObjectsReset += HandleLayerObjectsReset;
+    }
+
     private void Start()
     {
         // 初回の検索をすぐに実行
@@ -92,11 +97,15 @@ public class BattleAreaEnemiesCondition : GimmickConditionBase
 
         scanTimer = 0f;
 
+        int registeredCount = areaAllEnemy.Count;
         ScanEnemiesInArea();
+        if (areaAllEnemy.Count != registeredCount && !IsInvoking(nameof(CheckAllEnemiesDefeated)))
+            CheckAllEnemiesDefeated();
     }
 
     private void OnDisable()
     {
+        EnemyRespawnManager.LayerObjectsReset -= HandleLayerObjectsReset;
         CancelInvoke(nameof(CheckAllEnemiesDefeated));
 
         foreach (var pair in deathHandlers)
@@ -114,6 +123,31 @@ public class BattleAreaEnemiesCondition : GimmickConditionBase
 
         hasRegisteredAnyEnemy = false;
         scanTimer = 0f;
+    }
+
+    private void HandleLayerObjectsReset(EnemyRespawnManager manager)
+    {
+        if (manager.gameObject.scene != gameObject.scene || hasTriggered) return;
+
+        CancelInvoke(nameof(CheckAllEnemiesDefeated));
+
+        bool IsRetired(EnemyHealth enemy) => enemy == null || manager.IsRetiredByReset(enemy);
+        subscribedEnemies.RemoveWhere(enemy =>
+        {
+            if (!IsRetired(enemy)) return false;
+
+            if (enemy != null) enemy.Died -= deathHandlers[enemy];
+            deathHandlers.Remove(enemy);
+            return true;
+        });
+        aliveEnemies.RemoveWhere(IsRetired);
+        areaAllEnemy.RemoveWhere(IsRetired);
+        hasRegisteredAnyEnemy = areaAllEnemy.Count > 0;
+        scanTimer = 0f;
+
+        // 新しい個体を一通り登録してから判定し、検索の途中で扉を開かない。
+        ScanEnemiesInArea();
+        CheckAllEnemiesDefeated();
     }
 
     /// <summary>
@@ -215,8 +249,6 @@ public class BattleAreaEnemiesCondition : GimmickConditionBase
             $"登録数={areaAllEnemy.Count}, 生存数={aliveEnemies.Count}",
             enemy
         );
-
-        CheckAllEnemiesDefeated();
     }
 
     /// <summary>

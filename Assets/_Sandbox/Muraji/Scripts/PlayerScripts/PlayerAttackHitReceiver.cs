@@ -18,10 +18,14 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     [SerializeField] private PlayerDamageMaterialFlash damageMaterialFlash;
 
     [Header("敵からの被弾")]
-    [Tooltip("スーパーアーマーがないときの被弾硬直の秒数です。空中では硬直中も落下を続けます。")]
+    [Tooltip("地上の待機・歩行中に被弾したときの硬直秒数です。")]
     [SerializeField, Min(0.01f)] private float hurtDuration = 0.4f;
     [Tooltip("敵からの追加ダメージを無効にする秒数です。硬直時間とは別です。0なら追加の無敵時間を設けません。")]
     [SerializeField, Min(0f)] private float damageInvulnerabilityDuration = 2f;
+
+    [Header("通常食い込み中の敵本体との衝突")]
+    [Tooltip("敵の接触攻撃通知が来なかった本体衝突でプレイヤーが失うHPです。0で補完ダメージを無効にします。")]
+    [SerializeField, Min(0f)] private float diggingBodyContactDamage = 1f;
 
     [Header("敵からの被弾時のカメラシェイク")]
     [Tooltip("被弾時に揺らす既存のCameraShake_Systemです。未設定ならMainCamera自身と親、子から探します。複数カメラがある場合は手動で指定してください。")]
@@ -49,6 +53,8 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
 
     private PlayerHealth playerHealth;
     private Rigidbody playerBody;
+    private Collider[] playerBodyColliders;
+    private readonly HashSet<Collider> touchingBodyTriggers = new HashSet<Collider>();
 
     // この処理が変更したColliderの組み合わせと、変更前の設定を記録する。
     private struct IgnoredEnemyPair
@@ -72,6 +78,8 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
 
     private bool warnedDamageCameraShake;
     private bool processingHit;
+    private bool pendingDiggingBodyContactDamage;
+    private double lastEnemyDamageFixedTime = double.NegativeInfinity;
     private int lifecycleVersion;
     private float previousHealth;
 
@@ -90,6 +98,8 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
         }
 
         playerBody = playerController.GetComponent<Rigidbody>();
+        if (playerBody != null)
+            playerBodyColliders = playerBody.GetComponentsInChildren<Collider>(true);
 
         // 既存のInspector設定を維持しつつ、材質を変更する担当を一つに統一する。
         if (damageMaterialFlash == null)
@@ -113,16 +123,97 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
         playerHealth.HealthChanged += HandleHealthChanged;
     }
 
+    private bool CanReceiveEnemyDamage =>
+        isActiveAndEnabled && !processingHit &&
+        playerHealth != null && playerHealth.isActiveAndEnabled && !playerHealth.IsDead &&
+        playerController != null && playerController.isActiveAndEnabled &&
+        !IsDamageInvulnerable && playerController.CanTakeDamage;
+
+    // 敵側の衝突通知と同時にHPを減らさず、次の物理更新で取りこぼしを補う。
+    public void QueueDiggingBodyContactDamage(Collider other)
+    {
+        if (!CanQueueDiggingBodyContactDamage || other == null || other.isTrigger) return;
+
+        // 敵が攻撃を受け付ける部位の設定から、本体との物理衝突を切り離す。
+        EnemyAttackHitReceiver enemy = other.GetComponentInParent<EnemyAttackHitReceiver>();
+        if (enemy == null && other.attachedRigidbody != null)
+            enemy = other.attachedRigidbody.GetComponentInChildren<EnemyAttackHitReceiver>();
+
+        pendingDiggingBodyContactDamage = SensorChainsawContactDetector.CanReceiveEnemyHit(enemy);
+    }
+
+    private bool CanQueueDiggingBodyContactDamage =>
+        !pendingDiggingBodyContactDamage && diggingBodyContactDamage > 0f &&
+        CanReceiveEnemyDamage && playerController.IsNormalDigging &&
+        lastEnemyDamageFixedTime != Time.fixedTimeAsDouble;
+
+    private bool CanObserveDiggingBodyTrigger =>
+        isActiveAndEnabled && diggingBodyContactDamage > 0f &&
+        playerController != null && playerController.IsNormalDigging;
+
+    // 通常敵の本体Triggerを受け取る。攻撃用の子Triggerはここでは対象にしない。
+    public void ObserveDiggingBodyTrigger(Collider other)
+    {
+        if (other == null || !other.isTrigger) return;
+        if (touchingBodyTriggers.Contains(other))
+        {
+            RemoveSeparatedBodyTrigger(other);
+            return;
+        }
+
+        if (!CanObserveDiggingBodyTrigger ||
+            !other.TryGetComponent(out EnemyAttackHitReceiver enemy) ||
+            !SensorChainsawContactDetector.CanReceiveEnemyHit(enemy) ||
+            !OverlapsPlayerBody(other))
+            return;
+
+        touchingBodyTriggers.RemoveWhere(collider => collider == null || !collider.enabled ||
+            !collider.gameObject.activeInHierarchy);
+        touchingBodyTriggers.Add(other);
+        if (CanQueueDiggingBodyContactDamage)
+            pendingDiggingBodyContactDamage = true;
+    }
+
+    // 先に刃先センサーがTriggerを抜けても、本体が重なっている間は接触を保持する。
+    public void RemoveSeparatedBodyTrigger(Collider other)
+    {
+        if (touchingBodyTriggers.Contains(other) &&
+            (other == null || !other.enabled || !OverlapsPlayerBody(other)))
+            touchingBodyTriggers.Remove(other);
+    }
+
+    private bool OverlapsPlayerBody(Collider other)
+    {
+        if (playerBodyColliders == null) return false;
+
+        foreach (Collider bodyCollider in playerBodyColliders)
+        {
+            if (!IsActiveBodyCollider(bodyCollider) || bodyCollider.attachedRigidbody != playerBody)
+                continue;
+
+            if (Physics.ComputePenetration(bodyCollider,
+                    bodyCollider.transform.position, bodyCollider.transform.rotation,
+                    other, other.transform.position, other.transform.rotation, out _, out _))
+                return true;
+        }
+
+        return false;
+    }
+
+    // 衝突時の食い込み状態を使い、次の物理更新でも生存と無敵を確認する。
+    public void ApplyPendingDiggingBodyContactDamage()
+    {
+        if (!pendingDiggingBodyContactDamage) return;
+
+        pendingDiggingBodyContactDamage = false;
+        if (CanReceiveEnemyDamage)
+            ApplyEnemyDamage(diggingBodyContactDamage, keepMovementDigging: true);
+    }
+
     // 有効な敵の命中だけを適用し、実際にHPが減った場合にやられと点滅を開始する。
     public void ReceiveAttackHit(AttackHitData attackHitData)
     {
-        if (!isActiveAndEnabled || processingHit || playerHealth == null ||
-            !playerHealth.isActiveAndEnabled || playerHealth.IsDead ||
-            playerController == null || !playerController.isActiveAndEnabled ||
-            IsDamageInvulnerable || !playerController.CanTakeDamage)
-        {
-            return;
-        }
+        if (!CanReceiveEnemyDamage) return;
 
         if (attackHitData is not EnemyAttackHitData enemyAttackHitData)
         {
@@ -130,7 +221,14 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
             return;
         }
 
-        float damage = enemyAttackHitData.Damage;
+        // 敵の移動処理はTriggerやSweepでも接触ダメージを送るため、命中情報から判定する。
+        bool keepMovementDigging = playerController.IsNormalMovementDigging &&
+            IsEnemyContactDamage(enemyAttackHitData);
+        ApplyEnemyDamage(enemyAttackHitData.Damage, keepMovementDigging);
+    }
+
+    private void ApplyEnemyDamage(float damage, bool keepMovementDigging)
+    {
         if (damage <= 0f || float.IsNaN(damage) || float.IsInfinity(damage)) return;
 
         processingHit = true;
@@ -153,13 +251,23 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
                 return;
             }
 
+            // 敵側の通知を先に受けた場合も後に受けた場合も、同じ衝突の補完分を加えない。
+            lastEnemyDamageFixedTime = Time.fixedTimeAsDouble;
+            pendingDiggingBodyContactDamage = false;
+
             // 無敵・回避で無効になった攻撃ではなく、実際にHPが減った被弾だけで演出する。
             if (damageScreenEffect != null)
                 damageScreenEffect.PlayDamageEffect();
 
-            playerController.BeginDamageStun(hurtDuration);
-            // 被弾を受信した物理ステップから、敵本体に押されないようにする。
-            UpdateEnemyCollisionIgnores();
+            if (keepMovementDigging)
+                playerController.SlowAfterDiggingContact();
+            else
+            {
+                playerController.BeginDamageStun(hurtDuration);
+                UpdateEnemyCollisionIgnores();
+            }
+            // 移動食い込み中の接触では、そのステップの双方の衝突通知を通す。
+            // 被弾後の衝突除外は次のFixedUpdateで適用する。
             if (damageMaterialFlash != null)
                 damageMaterialFlash.PlayDamageFlash(damageInvulnerabilityRemaining);
         }
@@ -167,6 +275,26 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
         {
             processingHit = false;
         }
+    }
+
+    // EnemyDataの接触ダメージ設定を使い、巡回・警戒・突進で送られる値を照合する。
+    private static bool IsEnemyContactDamage(EnemyAttackHitData hit)
+    {
+        if (hit.AttackData is not EnemyData data) return false;
+
+        bool Matches(float percent) =>
+            percent > 0f && Mathf.Approximately(hit.Damage, data.AttackPower * (percent / 100f));
+
+        if (Matches(data.AlertContactDamagePercent)) return true;
+
+        return data switch
+        {
+            ChargeEnemyData charge =>
+                Matches(charge.PatrolContactDamagePercent) || Matches(charge.AttackContactDamagePercent),
+            OldDroneEnemyData drone =>
+                Matches(drone.PatrolContactDamagePercent) || Matches(drone.AttackContactDamagePercent),
+            _ => false
+        };
     }
 
     // ダメージ元を問わずHPの減少を検出する。回復では揺らさず、連続ダメージでは揺れを更新する。
@@ -321,6 +449,9 @@ public sealed class PlayerAttackHitReceiver : MonoBehaviour, IAttackHitReceiver
     public void ResetDamageFeedback(bool returnToIdle)
     {
         lifecycleVersion++;
+        touchingBodyTriggers.Clear();
+        pendingDiggingBodyContactDamage = false;
+        lastEnemyDamageFixedTime = double.NegativeInfinity;
         damageInvulnerabilityRemaining = 0f;
         // 死亡・復活・無効化の際、画面の赤い縁取りも残さない。
         if (damageScreenEffect != null)

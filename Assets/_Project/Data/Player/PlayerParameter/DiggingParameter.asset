@@ -33,8 +33,8 @@ MonoBehaviour:
   maxDamageMultiplier: 1.25
   bonusDamageMultiplier: 3
   enemyPushPower: 2
-  enemyReboundThreshold: 20
-  enemyReboundHits: 3
+  enemyReboundThreshold: 100
+  enemyReboundHits: 15
   enemyReboundStunSeconds: 0.3
   enemyReboundKnockbackSpeed: 0
   enemyReboundUpwardSpeed: 0

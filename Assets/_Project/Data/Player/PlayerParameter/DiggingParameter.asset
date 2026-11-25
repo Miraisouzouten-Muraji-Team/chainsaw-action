@@ -36,8 +36,8 @@ MonoBehaviour:
   enemyReboundThreshold: 20
   enemyReboundHits: 3
   enemyReboundStunSeconds: 0.3
-  enemyReboundKnockbackSpeed: 15
-  enemyReboundUpwardSpeed: 5
+  enemyReboundKnockbackSpeed: 0
+  enemyReboundUpwardSpeed: 0
   airContactWaitDuration: 1
   wallClimbInputWindow: 0.2
   floorTransitionWallGraceTime: 0.05

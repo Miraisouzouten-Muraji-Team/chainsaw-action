@@ -25,6 +25,9 @@ public class SensorChainsawDigging : MonoBehaviour
     [Tooltip("敵への食い込み攻撃データ")]
     [SerializeField] private AttackData diggingAttackData;
 
+    [Tooltip("敵食い込みから跳ね返された瞬間に、敵を飛ばす方向と強さを設定します。")]
+    [SerializeField] private AttackData enemyReboundAttackData;
+
     public float EnemyReboundUpwardSpeed => Mathf.Max(0f, diggingParameter.enemyReboundUpwardSpeed);
     public float EnemyReboundKnockbackSpeed => Mathf.Max(0f, diggingParameter.enemyReboundKnockbackSpeed);
     public float EnemyReboundStunSeconds => Mathf.Max(0f, diggingParameter.enemyReboundStunSeconds);
@@ -933,6 +936,20 @@ public class SensorChainsawDigging : MonoBehaviour
                 {
                     Cancel(true);
                     pendingEnemyReboundDirection = away;
+
+                    // 命中済みの敵に、既存の被弾ステート経由でノックバックをかける。
+                    if (enemyReboundAttackData != null &&
+                        enemyReboundAttackData.attackVector != Vector2.zero &&
+                        target is EnemyAttackHitReceiver receiver &&
+                        receiver != null &&
+                        receiver.TryGetComponent<EnemyStateMachine>(out var enemyStateMachine))
+                    {
+                        enemyStateMachine.RequestDamageState(
+                            away,
+                            enemyReboundAttackData.attackVector,
+                            enemyReboundAttackData);
+                    }
+
                     return;
                 }
 

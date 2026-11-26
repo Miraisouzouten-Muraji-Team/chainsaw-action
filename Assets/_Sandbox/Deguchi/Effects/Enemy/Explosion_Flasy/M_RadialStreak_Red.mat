@@ -261,7 +261,7 @@ Material:
     - _DstBlendAlpha: 0
     - _EmissionAreaType: 1
     - _EmissionColorType: 0
-    - _EmissionIntensity: 1
+    - _EmissionIntensity: 5
     - _EmissionIntensityCoord: 0
     - _EmissionMapChannelsX: 0
     - _EmissionMapMode: 0

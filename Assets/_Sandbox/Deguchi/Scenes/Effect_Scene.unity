@@ -385642,6 +385642,63 @@ ParticleSystem:
         m_PostInfinity: 2
         m_RotationOrder: 4
     vectorLabel1_3: W
+--- !u!1001 &225934539575097476
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1062210464413051585, guid: 2dc259b4466e17244b429253aca00430, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1062210464413051585, guid: 2dc259b4466e17244b429253aca00430, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1062210464413051585, guid: 2dc259b4466e17244b429253aca00430, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1062210464413051585, guid: 2dc259b4466e17244b429253aca00430, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1062210464413051585, guid: 2dc259b4466e17244b429253aca00430, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1062210464413051585, guid: 2dc259b4466e17244b429253aca00430, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1062210464413051585, guid: 2dc259b4466e17244b429253aca00430, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1062210464413051585, guid: 2dc259b4466e17244b429253aca00430, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1062210464413051585, guid: 2dc259b4466e17244b429253aca00430, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1062210464413051585, guid: 2dc259b4466e17244b429253aca00430, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7891545978497103647, guid: 2dc259b4466e17244b429253aca00430, type: 3}
+      propertyPath: m_Name
+      value: PF_Boss_Explosion_ver2
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 2dc259b4466e17244b429253aca00430, type: 3}
 --- !u!1001 &833190450291414986
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -386291,7 +386348,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7525524716598316832, guid: 958dbcb1bb17fd545b1a02324b8da2b2, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7995437378345977964, guid: 958dbcb1bb17fd545b1a02324b8da2b2, type: 3}
       propertyPath: InitialModule.startColor.maxColor.a
@@ -386573,3 +386630,4 @@ SceneRoots:
   - {fileID: 6006969015454606233}
   - {fileID: 1174957257940916663}
   - {fileID: 7685558955491999191}
+  - {fileID: 225934539575097476}

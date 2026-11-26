@@ -2021,7 +2021,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7154227568031423939, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: enemyData
@@ -3163,7 +3163,7 @@ PrefabInstance:
     - target: {fileID: 480292550696096733, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: managedReferences[2559746817728970823].collisionEffectPrefab
       value: 
-      objectReference: {fileID: 7525524716598316832, guid: 958dbcb1bb17fd545b1a02324b8da2b2, type: 3}
+      objectReference: {fileID: 8542020770122436281, guid: c9648be6114d7b04bbea7d7eabc338c0, type: 3}
     - target: {fileID: 4687296828369897747, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -3210,7 +3210,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 6838508827869361679, guid: ccab11be655dd1d439affd221eecc5ac, type: 3}
       propertyPath: m_IsActive
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -3254,7 +3254,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyDeathEffect
   enemyHealth: {fileID: 895239201}
-  deathEffectPrefab: {fileID: 8542020770122436281, guid: c9648be6114d7b04bbea7d7eabc338c0, type: 3}
+  deathEffectPrefab: {fileID: 7891545978497103647, guid: 2dc259b4466e17244b429253aca00430, type: 3}
   effectLifetime: 5
 --- !u!114 &895239201 stripped
 MonoBehaviour:

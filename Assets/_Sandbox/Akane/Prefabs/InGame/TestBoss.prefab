@@ -820,7 +820,6 @@ Transform:
   m_Children:
   - {fileID: 7108845272733705930}
   - {fileID: 3034253172668978970}
-  - {fileID: 5557200893483421576}
   - {fileID: 8954391873261618179}
   - {fileID: 1368639672976272121}
   - {fileID: 8966003896417478315}
@@ -968,7 +967,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 3034253172668978970}
-  - component: {fileID: 1057394101911251021}
   m_Layer: 6
   m_Name: AnimatedBossModel
   m_TagString: Untagged
@@ -988,31 +986,10 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 5557200893483421576}
   m_Father: {fileID: 3833384375502994289}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!95 &1057394101911251021
-Animator:
-  serializedVersion: 7
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6410904425705021161}
-  m_Enabled: 1
-  m_Avatar: {fileID: 0}
-  m_Controller: {fileID: 0}
-  m_CullingMode: 0
-  m_UpdateMode: 0
-  m_ApplyRootMotion: 0
-  m_LinearVelocityBlending: 0
-  m_StabilizeFeet: 0
-  m_AnimatePhysics: 0
-  m_WarningMessage: 
-  m_HasTransformHierarchy: 1
-  m_AllowConstantClipSamplingOptimization: 1
-  m_KeepAnimatorStateOnDisable: 0
-  m_WriteDefaultValuesOnDisable: 0
 --- !u!1 &6643911657631037802
 GameObject:
   m_ObjectHideFlags: 0
@@ -1563,7 +1540,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossController
   player: {fileID: 0}
   visualRoot: {fileID: 3833384375502994289}
-  animator: {fileID: 0}
+  animator: {fileID: 497115953498092331}
   attackHitboxes: {fileID: 367784003729184206}
   attackVisuals: {fileID: 1549865825055903683}
   physicsMotor: {fileID: 7567599330849388132}
@@ -1895,7 +1872,7 @@ PrefabInstance:
   serializedVersion: 2
   m_Modification:
     serializedVersion: 3
-    m_TransformParent: {fileID: 3833384375502994289}
+    m_TransformParent: {fileID: 3034253172668978970}
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 2311be85cfdb4054ca5353d7a494c22e, type: 3}
       propertyPath: m_LocalPosition.x
@@ -1915,15 +1892,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2311be85cfdb4054ca5353d7a494c22e, type: 3}
       propertyPath: m_LocalRotation.x
-      value: 0
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2311be85cfdb4054ca5353d7a494c22e, type: 3}
       propertyPath: m_LocalRotation.y
-      value: 0
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2311be85cfdb4054ca5353d7a494c22e, type: 3}
       propertyPath: m_LocalRotation.z
-      value: 0
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2311be85cfdb4054ca5353d7a494c22e, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
@@ -1944,8 +1921,54 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 2311be85cfdb4054ca5353d7a494c22e, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 497115953498092331}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 2311be85cfdb4054ca5353d7a494c22e, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 6211989928874989433}
   m_SourcePrefab: {fileID: 100100000, guid: 2311be85cfdb4054ca5353d7a494c22e, type: 3}
+--- !u!1 &5067944210009707826 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 2311be85cfdb4054ca5353d7a494c22e, type: 3}
+  m_PrefabInstance: {fileID: 5374375150633183331}
+  m_PrefabAsset: {fileID: 0}
+--- !u!95 &497115953498092331
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5067944210009707826}
+  m_Enabled: 1
+  m_Avatar: {fileID: 0}
+  m_Controller: {fileID: 9100000, guid: 880591c24e50f2648ba9561a3c44347b, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 1
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
+--- !u!114 &6211989928874989433
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5067944210009707826}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9fc2ccd63bb6d2c42a5e57e46af4efc6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.InGame.Boss.BossAnimationEventReceiver
+  animationController: {fileID: 0}
 --- !u!4 &5557200893483421576 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 2311be85cfdb4054ca5353d7a494c22e, type: 3}

@@ -18,6 +18,10 @@ namespace Project.InGame.Boss
         public void Enter()
         {
             elapsedTime = 0f;
+
+            // 待機モーションを再生する。
+            context.Animation?.PlayIdle();
+
             context.Shield.TryRestore();
         }
 
@@ -57,6 +61,8 @@ namespace Project.InGame.Boss
             context.Boss.StateMachine.ChangeState(nextState);
         }
 
-        public void Exit() { }
+        public void Exit()
+        {
+        }
     }
 }

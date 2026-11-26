@@ -1,6 +1,6 @@
-
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace Project.InGame.Boss
 {
@@ -17,7 +17,7 @@ namespace Project.InGame.Boss
     }
 
     /// <summary>
-    /// 攻撃の共通設定と、選択された種類の専用設定を保持する。
+    /// 攻撃の共通設定と専用設定を保持する。
     /// </summary>
     [CreateAssetMenu(
         fileName = "BossAttack",
@@ -28,13 +28,21 @@ namespace Project.InGame.Boss
         [SerializeField] private BossAttackType type;
 
         [Header("射程と移動")]
-        [SerializeField, Min(0.01f)] private float range = 5f;
+        [SerializeField, Min(0.01f)]
+        private float range = 5f;
+
         [SerializeField, Range(0.05f, 1f)]
         private float targetDistanceRatio = 0.5f;
 
         [Header("共通")]
-        [SerializeField, Min(0f)] private float recoveryTime = 1f;
-        [SerializeField] private string animatorTrigger;
+        [SerializeField, Min(0f)]
+        private float recoveryTime = 1f;
+
+        [Header("アニメーション")]
+        [FormerlySerializedAs("animatorTrigger")]
+        [SerializeField] private string animatorState;
+
+        [SerializeField] private string noShieldAnimatorState;
 
         [SerializeReference] private BossAttackParameters parameters;
 
@@ -42,14 +50,30 @@ namespace Project.InGame.Boss
         public float Range => range;
         public float TargetDistanceRatio => targetDistanceRatio;
         public float RecoveryTime => recoveryTime;
-        public string AnimatorTrigger => animatorTrigger;
+
+        public string AnimatorState => animatorState;
+        public string NoShieldAnimatorState => noShieldAnimatorState;
 
         public bool RequiresShield =>
             type == BossAttackType.ShieldBash ||
             type == BossAttackType.ShieldThrow;
 
         public bool IsConfigured =>
-            parameters != null && parameters.Type == type;
+            parameters != null &&
+            parameters.Type == type;
+
+        /// <summary>
+        /// 攻撃開始時点の盾状態から使用するモーションを取得する。
+        /// </summary>
+        public string GetAnimatorState(bool hasShield)
+        {
+            if (!hasShield && !string.IsNullOrWhiteSpace(noShieldAnimatorState))
+            {
+                return noShieldAnimatorState;
+            }
+
+            return animatorState;
+        }
 
         /// <summary>
         /// 指定した攻撃専用データを取得する。

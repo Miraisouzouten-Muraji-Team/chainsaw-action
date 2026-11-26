@@ -8,8 +8,11 @@ namespace Project.InGame.Boss
     public sealed class BossContext
     {
         public BossController Boss { get; }
+
         public Transform Player => Boss.Player;
         public Animator Animator => Boss.Animator;
+        public BossAnimationController Animation => Boss.Animation;
+
         public BossHealth Health => Boss.Health;
         public BossShieldController Shield => Boss.Shield;
 

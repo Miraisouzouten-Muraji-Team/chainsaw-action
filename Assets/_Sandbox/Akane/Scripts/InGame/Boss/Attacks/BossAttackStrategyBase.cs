@@ -6,7 +6,7 @@ using UnityEngine;
 namespace Project.InGame.Boss
 {
     /// <summary>
-    /// ボス攻撃の開始・完了・中断と非同期処理の寿命を管理する。
+    /// ボス攻撃の開始・完了・中断と非同期処理を管理する。
     /// </summary>
     public abstract class BossAttackStrategyBase : IBossAttackStrategy
     {
@@ -16,11 +16,14 @@ namespace Project.InGame.Boss
         private int attackGeneration;
 
         protected bool HasShieldAtStart { get; private set; }
+        protected bool UsesAnimationEvents { get; private set; }
+        protected bool CompletedSuccessfully { get; private set; }
 
         public BossAttackDefinition Definition { get; }
         public bool IsFinished { get; private set; }
 
-        protected BossAttackStrategyBase(BossAttackDefinition definition)
+        protected BossAttackStrategyBase(
+            BossAttackDefinition definition)
         {
             Definition = definition ??
                 throw new ArgumentNullException(nameof(definition));
@@ -32,7 +35,8 @@ namespace Project.InGame.Boss
         protected float GetAttackDamage(BossContext context)
         {
             return context.Boss.CalculateAttackDamage(
-                Definition, HasShieldAtStart);
+                Definition,
+                HasShieldAtStart);
         }
 
         public void Enter(BossContext context)
@@ -42,26 +46,29 @@ namespace Project.InGame.Boss
             attackGeneration++;
             int generation = attackGeneration;
 
-            var source = CancellationTokenSource.CreateLinkedTokenSource(
-                context.Boss.destroyCancellationToken);
+            var source =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    context.Boss.destroyCancellationToken);
 
             attackCancellation = source;
+
             attackWindowOpen = false;
             exited = false;
+
             IsFinished = false;
+            CompletedSuccessfully = false;
+            UsesAnimationEvents = false;
+
             HasShieldAtStart = context.Shield.IsActive;
 
-            if (context.Animator != null &&
-                !string.IsNullOrEmpty(Definition.AnimatorTrigger))
-            {
-                context.Animator.SetTrigger(Definition.AnimatorTrigger);
-            }
-
-            RunAttackAsync(context, source, generation).Forget();
+            RunAttackAsync(
+                context,
+                source,
+                generation).Forget();
         }
 
         /// <summary>
-        /// 攻撃の実行と、終了後のリソース破棄を行う。
+        /// 攻撃の実行とリソースの破棄を行う。
         /// </summary>
         private async UniTaskVoid RunAttackAsync(
             BossContext context,
@@ -72,18 +79,25 @@ namespace Project.InGame.Boss
 
             try
             {
+                // 攻撃ごとに使用するモーション方式を確定する。
+                UsesAnimationEvents =
+                    context.Animation?.BeginAttack(
+                        Definition,
+                        HasShieldAtStart) ?? false;
+
                 await ExecuteAsync(context, token);
 
                 if (!token.IsCancellationRequested &&
                     generation == attackGeneration)
                 {
+                    CompletedSuccessfully = true;
                     IsFinished = true;
                 }
             }
             catch (OperationCanceledException)
                 when (token.IsCancellationRequested)
             {
-                // 死亡、状態遷移などによる正常な中断。
+                // 死亡や状態遷移による正常な中断。
             }
             catch (Exception exception)
             {
@@ -91,6 +105,11 @@ namespace Project.InGame.Boss
 
                 if (generation == attackGeneration)
                 {
+                    // イベント設定不備などが発生した場合も
+                    // 攻撃判定を残さない。
+                    context.Boss.AttackHitboxes?.CloseAll();
+
+                    CompletedSuccessfully = false;
                     IsFinished = true;
                 }
             }
@@ -106,18 +125,20 @@ namespace Project.InGame.Boss
                     attackCancellation = null;
                 }
 
-                // 非同期処理の終了後に破棄する。
                 source.Dispose();
             }
         }
 
         /// <summary>
-        /// 攻撃固有の進行処理。
+        /// 攻撃固有の処理。
         /// </summary>
         protected abstract UniTask ExecuteAsync(
             BossContext context,
             CancellationToken cancellationToken);
 
+        /// <summary>
+        /// 指定時間経過するまで待機する。
+        /// </summary>
         protected static async UniTask DelayAsync(
             float seconds,
             CancellationToken cancellationToken)
@@ -125,55 +146,86 @@ namespace Project.InGame.Boss
             cancellationToken.ThrowIfCancellationRequested();
 
             if (seconds <= 0f)
-            {
                 return;
-            }
 
             await UniTask.Delay(
                 TimeSpan.FromSeconds(seconds),
                 cancellationToken: cancellationToken);
         }
 
+        /// <summary>
+        /// Animator方式ではイベントを、
+        /// 仮モーション方式では指定時間を待機する。
+        /// </summary>
+        protected async UniTask WaitForPhaseAsync(
+            BossContext context,
+            BossAnimationEventType eventType,
+            float proceduralDuration,
+            CancellationToken cancellationToken)
+        {
+            if (UsesAnimationEvents)
+            {
+                await context.Animation.WaitForEventAsync(
+                    eventType,
+                    cancellationToken);
+            }
+            else
+            {
+                await DelayAsync(
+                    proceduralDuration,
+                    cancellationToken);
+            }
+        }
+
+        /// <summary>
+        /// 攻撃判定の開始を通知する。
+        /// </summary>
         protected void OpenAttackWindow(BossContext context)
         {
             if (attackWindowOpen)
-            {
                 return;
-            }
 
             attackWindowOpen = true;
-            context.Boss.NotifyAttackWindowOpened(Definition.Type);
+
+            context.Boss.NotifyAttackWindowOpened(
+                Definition.Type);
         }
 
+        /// <summary>
+        /// 攻撃判定の終了を通知する。
+        /// </summary>
         protected void CloseAttackWindow(BossContext context)
         {
             if (!attackWindowOpen)
-            {
                 return;
-            }
 
             attackWindowOpen = false;
-            context.Boss.NotifyAttackWindowClosed(Definition.Type);
+
+            context.Boss.NotifyAttackWindowClosed(
+                Definition.Type);
         }
 
-        public virtual void Tick(BossContext context, float deltaTime)
+        public virtual void Tick(
+            BossContext context,
+            float deltaTime)
         {
         }
 
         public void Exit(BossContext context)
         {
             if (exited)
-            {
                 return;
-            }
 
             exited = true;
             attackGeneration++;
 
             CancelCurrentAttack();
-            CloseAttackWindow(context);
 
+            context.Animation?.CancelAttack();
+
+            CloseAttackWindow(context);
             context.Boss.Telegraph?.Hide();
+
             OnExit(context);
         }
 
@@ -188,9 +240,11 @@ namespace Project.InGame.Boss
         private void CancelCurrentAttack()
         {
             CancellationTokenSource source = attackCancellation;
+
             attackCancellation = null;
 
-            if (source != null && !source.IsCancellationRequested)
+            if (source != null &&
+                !source.IsCancellationRequested)
             {
                 source.Cancel();
             }

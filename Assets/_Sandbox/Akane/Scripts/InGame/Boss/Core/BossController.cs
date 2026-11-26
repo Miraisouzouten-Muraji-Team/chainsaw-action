@@ -45,7 +45,10 @@ namespace Project.InGame.Boss
         [SerializeField] private List<BossAttackDefinition> attackDefinitions = new();
 
         [Header("アニメーション")]
-        [SerializeField] private string deathTrigger = "Dead";
+        [SerializeField]
+        private BossAnimationController animationController;
+
+        public BossAnimationController Animation => animationController;
 
         [SerializeField] private BossAttackTelegraph attackTelegraph;
         [Header("攻撃力")]
@@ -114,6 +117,7 @@ namespace Project.InGame.Boss
         {
             playerReference = new EnemyPlayerReference();
             outerCollider = GetComponent<Collider>();
+
             Health = GetComponent<BossHealth>();
             Shield = GetComponent<BossShieldController>();
 
@@ -122,6 +126,10 @@ namespace Project.InGame.Boss
             physicsMotor ??= GetComponent<BossPhysicsMotor>();
             shieldMotion ??= GetComponent<BossShieldMotionController>();
             laserController ??= GetComponent<BossLaserController>();
+
+            // アニメーション制御の初期化。
+            animationController ??= GetComponent<BossAnimationController>();
+            animationController?.Initialize(animator);
 
             var context = new BossContext(this);
             var strategies = CreateAttackStrategies();
@@ -138,7 +146,6 @@ namespace Project.InGame.Boss
             Health.Died += HandleDeath;
             Shield.ShieldBroken += HandleShieldBroken;
         }
-
         private void Start()
         {
             started = true;
@@ -481,10 +488,13 @@ namespace Project.InGame.Boss
         /// </summary>
         public void StopAllRuntimeActions()
         {
+            animationController?.CancelAttack();
+
             attackHitboxes?.CloseAll();
             attackVisuals?.ResetPose();
             shieldMotion?.CancelMotion();
             laserController?.CancelAll();
+
             Shield?.CancelRestoration();
             physicsMotor?.EndScriptedMotion();
         }
@@ -510,10 +520,7 @@ namespace Project.InGame.Boss
         /// </summary>
         public void PlayDeathAnimation()
         {
-            if (animator != null && !string.IsNullOrEmpty(deathTrigger))
-            {
-                animator.SetTrigger(deathTrigger);
-            }
+            animationController?.PlayDeath();
         }
 
         /// <summary>

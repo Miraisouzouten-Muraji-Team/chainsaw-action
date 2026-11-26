@@ -111,9 +111,10 @@ MonoBehaviour:
   - {fileID: 4080925466021557763}
   - {fileID: 5258720680466886612}
   - {fileID: 8378362383342218171}
+  - {fileID: 3567419154225549499}
   - {fileID: -4432953328512687642}
   - {fileID: -7017103792857020219}
-  m_RendererFeatureMap: 5cc3595a7aa7bbef4d7664bbef0e72222835536e892a9faf03760ff5165ca238d4af3ad498bafa48bbab9b7a32ec4574e6a11d3c6ffc7ac2c508b652473d9e9e
+  m_RendererFeatureMap: 5cc3595a7aa7bbef4d7664bbef0e72222835536e892a9faf03760ff5165ca238d4af3ad498bafa48bbab9b7a32ec4574bbd089dcd1048231e6a11d3c6ffc7ac2c508b652473d9e9e
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -162,6 +163,33 @@ MonoBehaviour:
   passIndex: 0
   bindDepthStencilAttachment: 0
   m_Version: 1
+--- !u!114 &3567419154225549499
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f39a8587911cba04b9a755d44491e2b6, type: 3}
+  m_Name: DynamicGiRendererFeature
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.DynamicGiRendererFeature
+  m_Active: 1
+  _giShader: {fileID: 4800000, guid: 3c669602b3180fc46bd8080653af5484, type: 3}
+  _useCompositeTextures: 0
+  _downsample: 4
+  _sampleCount: 16
+  _radius: 3
+  _intensity: 4
+  _sourceThreshold: 0.15
+  _maxRadiance: 8
+  _normalBias: 0.2
+  _occlusionBias: 0.1
+  _depthSigma: 1
+  _normalPower: 8
+  _showIndirectOnly: 0
+  _pixelateIndirect: 1
 --- !u!114 &4080925466021557763
 MonoBehaviour:
   m_ObjectHideFlags: 0

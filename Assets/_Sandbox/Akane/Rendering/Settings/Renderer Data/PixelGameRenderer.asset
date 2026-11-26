@@ -76,6 +76,33 @@ MonoBehaviour:
   m_Active: 1
   _fogMaterial: {fileID: 2100000, guid: f5fae617f0634ee4d8f7e660620b1a32, type: 2}
   _useCompositeDepth: 1
+--- !u!114 &-18446693885988654
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f39a8587911cba04b9a755d44491e2b6, type: 3}
+  m_Name: DynamicGiRendererFeature
+  m_EditorClassIdentifier: Assembly-CSharp::Project.Rendering.Pixel.DynamicGiRendererFeature
+  m_Active: 1
+  _giShader: {fileID: 4800000, guid: 3c669602b3180fc46bd8080653af5484, type: 3}
+  _useCompositeTextures: 1
+  _downsample: 4
+  _sampleCount: 15
+  _radius: 3
+  _intensity: 1
+  _sourceThreshold: 0.1
+  _maxRadiance: 4
+  _normalBias: 0.25
+  _occlusionBias: 0.2
+  _depthSigma: 0.3
+  _normalPower: 8
+  _showIndirectOnly: 0
+  _pixelateIndirect: 1
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -101,14 +128,15 @@ MonoBehaviour:
     probeSamplingDebugTexture: {fileID: 0}
     probeVolumeBlendStatesCS: {fileID: 0}
   m_RendererFeatures:
-  - {fileID: 2741325399967955328}
-  - {fileID: -4234388326851272860}
   - {fileID: 2482062767438460493}
+  - {fileID: 2741325399967955328}
+  - {fileID: -18446693885988654}
+  - {fileID: -4234388326851272860}
   - {fileID: -2936922619579999956}
   - {fileID: -5791863826025335512}
   - {fileID: 8704333894310543206}
   - {fileID: -41158547223072018}
-  m_RendererFeatureMap: 8079d856ed240b26641ff860406e3cc54d7664bbef0e72222cd91f1f70f43dd72835536e892a9faf66bfc5308f01cc78ee324cf584c66dff
+  m_RendererFeatureMap: 4d7664bbef0e72228079d856ed240b26d230a563d476beff641ff860406e3cc52cd91f1f70f43dd72835536e892a9faf66bfc5308f01cc78ee324cf584c66dff
   m_UseNativeRenderPass: 0
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}

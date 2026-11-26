@@ -1200,6 +1200,7 @@ MonoBehaviour:
   airWeakAttackDiggingData: {fileID: 11400000, guid: 0ff38655cd9be3643a633c1a45c07f96, type: 2}
   wallJumpReleaseBufferSeconds: 0.15
   movementContactDamageMultiplier: 1
+  movementContactKnockbackData: {fileID: 11400000, guid: 7cd2788a510bc254cb560322cba2f3ce, type: 2}
 --- !u!114 &4829992285001150481
 MonoBehaviour:
   m_ObjectHideFlags: 0

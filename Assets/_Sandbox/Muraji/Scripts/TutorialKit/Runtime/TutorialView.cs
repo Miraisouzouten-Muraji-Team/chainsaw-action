@@ -23,6 +23,12 @@ namespace Project.Tutorial
         private AnimationClip clip;
         private Sprite[] frames = System.Array.Empty<Sprite>();
         private float cycleSeconds;
+        private RuntimeAnimatorController pageController;
+        private CanvasGroup controllerVisibility;
+        private Image controllerArtwork;
+        private SpriteRenderer controllerSpriteSource;
+        private Sprite lastControllerSprite;
+        private float controllerClock;
 
         // 開閉用の親と、クリップが動かす画像を別に作る。
         internal TutorialView(Transform parent, Font font, bool modal)
@@ -97,14 +103,50 @@ namespace Project.Tutorial
             clipSpriteSource.sprite = null;
             // サインはこの時点で非表示の場合がある。再生開始は有効になった最初のTickで行う。
             artwork.enabled = artwork.sprite != null;
+
+            pageController = page?.animatorController;
+            if (pageController != null)
+            {
+                CreateControllerArtwork(artwork.sprite);
+                artwork.gameObject.SetActive(false);
+            }
         }
 
-        // ゲームが停止中でも進む時刻で、クリップまたは連番スプライトを再生する。
+        // Controller専用の再生先をページごとに作り、アニメーション値を次のページへ持ち越さない。
+        private void CreateControllerArtwork(Sprite initialSprite)
+        {
+            RectTransform container = Rect("Controller Artwork", imageRoot, Vector2.zero);
+            Place(container, Vector2.zero, Vector2.one);
+            container.SetSiblingIndex(artwork.transform.GetSiblingIndex());
+            controllerVisibility = container.gameObject.AddComponent<CanvasGroup>();
+            controllerVisibility.alpha = initialSprite != null ? 1f : 0f;
+
+            RectTransform imageRect = Rect("Artwork", container, Vector2.zero);
+            Place(imageRect, Vector2.zero, Vector2.one);
+            controllerArtwork = imageRect.gameObject.AddComponent<Image>();
+            controllerArtwork.preserveAspect = true;
+            controllerArtwork.raycastTarget = false;
+            controllerArtwork.sprite = initialSprite;
+            // 看板の遮蔽マテリアルが既に設定されている場合は、新しい画像にも引き継ぐ。
+            controllerArtwork.material = artwork.material;
+
+            // SpriteRendererに付けたスプライトキーも、既存のClipと同様にCanvasのImageに表示する。
+            controllerSpriteSource = imageRect.gameObject.AddComponent<SpriteRenderer>();
+            controllerSpriteSource.forceRenderingOff = true;
+        }
+
+        // ゲームが停止中でも進む時刻で、ページに設定されたアニメーションを再生する。
         internal void Tick(float clock)
         {
             if (!imageOnly)
             {
                 legacyView.Tick(clock);
+                return;
+            }
+
+            if (pageController != null)
+            {
+                TickController(clock);
                 return;
             }
 
@@ -141,6 +183,43 @@ namespace Project.Tutorial
             artwork.enabled = artwork.overrideSprite != null || artwork.sprite != null;
         }
 
+        // Controllerを現在のページのAnimatorに接続し、ページの経過時間の差分で遷移を進める。
+        private void TickController(float clock)
+        {
+            if (!clipGraph.IsValid())
+            {
+                Animator animator = controllerArtwork.gameObject.AddComponent<Animator>();
+                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                animator.fireEvents = false;
+
+                clipGraph = PlayableGraph.Create("Tutorial Artwork Controller");
+                clipGraph.SetTimeUpdateMode(DirectorUpdateMode.Manual);
+                AnimatorControllerPlayable controller = AnimatorControllerPlayable.Create(clipGraph, pageController);
+                AnimationPlayableOutput output = AnimationPlayableOutput.Create(clipGraph, "Tutorial Artwork", animator);
+                output.SetSourcePlayable(controller);
+                clipGraph.Play();
+            }
+
+            float deltaTime = Mathf.Max(0f, clock - controllerClock);
+            controllerClock = clock;
+            clipGraph.Evaluate(deltaTime);
+
+            Sprite sampledSprite = controllerSpriteSource.sprite;
+            if (sampledSprite != null)
+            {
+                if (controllerArtwork.sprite != sampledSprite) controllerArtwork.sprite = sampledSprite;
+            }
+            else if (lastControllerSprite != null && controllerArtwork.sprite == lastControllerSprite)
+            {
+                controllerArtwork.sprite = null;
+            }
+            lastControllerSprite = sampledSprite;
+
+            // 画像なしの空白フレームを透明にし、Controllerが設定したImageの有効状態や色を保つ。
+            controllerVisibility.alpha = controllerArtwork.overrideSprite != null || controllerArtwork.sprite != null
+                ? 1f : 0f;
+        }
+
         // Animatorへクリップを接続し、Presenterが供給する時刻だけで再生する。
         private void EnsureClipGraph()
         {
@@ -163,13 +242,27 @@ namespace Project.Tutorial
             clipGraph.Play();
         }
 
-        // ページ切り替えやPresenter破棄時に、クリップの再生リソースを解放する。
+        // ページ切り替えや終了時に、再生グラフとController専用の画像を解放する。
         internal void ReleaseClip()
         {
             if (clipGraph.IsValid()) clipGraph.Destroy();
             clipGraph = default;
             clipPlayable = default;
             clip = null;
+            pageController = null;
+            controllerClock = 0f;
+            lastControllerSprite = null;
+
+            if (controllerVisibility != null)
+            {
+                controllerVisibility.gameObject.SetActive(false);
+                Object.Destroy(controllerVisibility.gameObject);
+                artwork.gameObject.SetActive(true);
+            }
+
+            controllerVisibility = null;
+            controllerArtwork = null;
+            controllerSpriteSource = null;
         }
 
         // 両方の表示方式のボタンを共通のページ操作につなぐ。

@@ -306,6 +306,9 @@ public class SensorChainsawDigging : MonoBehaviour
     [Tooltip("床・壁・天井への食い込み移動で敵に触れたときの固定ダメージ倍率です。0.3なら食い込み攻撃力の30%。アクセル値とボーナスでは変化しません。")]
     [SerializeField, Range(0f, 1f)] private float movementContactDamageMultiplier = 0.3f;
 
+    [Tooltip("ボーナス外の床・壁・天井食い込みで敵に触れたときのノックバック専用AttackDataです。攻撃ベクトルだけを使います。通常食い込みに使うAttackDataとは別のアセットを指定してください。未設定なら接触ダメージだけを適用します。")]
+    [SerializeField] private AttackData movementContactKnockbackData;
+
     // 物理衝突を無視するボーナス中も検出できるよう、Overlapで接触を調べる。
     // 一度触れた敵は離れるまで再攻撃しない。
     private readonly HashSet<MonoBehaviour> touchingEnemies = new HashSet<MonoBehaviour>();
@@ -1430,7 +1433,8 @@ public class SensorChainsawDigging : MonoBehaviour
                 var hit = pendingMovementCollisions[i];
                 if (!SensorChainsawContactDetector.CanReceiveEnemyHit(hit.Enemy)) continue;
                 if (chainsawAttack.HitMovementContact(hit.Enemy, diggingAttackData,
-                        GetMovementContactDamageMultiplier(), hit.Point) && IsMovementDigging)
+                        GetMovementContactDamageMultiplier(), hit.Point,
+                        movementContactKnockbackData) && IsMovementDigging)
                 {
                     normalMovementHitEnemies.Add(hit.Enemy);
                 }

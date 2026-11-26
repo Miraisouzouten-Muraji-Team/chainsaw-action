@@ -469,12 +469,13 @@ public class ChainsawAttack : MonoBehaviour
         return true;
     }
 
-    // 成立済みの移動接触を送信する。被弾で食い込みが解除されても今回の命中は取り消さない。
+    // 成立済みの移動接触ダメージを送り、通常食い込みの接触だけに専用ノックバックを適用する。
     public bool HitMovementContact(
         Component enemy,
         AttackData data,
         float multiplier,
-        Vector3 point)
+        Vector3 point,
+        AttackData contactKnockbackData = null)
     {
         if (!isActiveAndEnabled ||
             enemy == null ||
@@ -510,6 +511,10 @@ public class ChainsawAttack : MonoBehaviour
         {
             return false;
         }
+        else if (lastHitDealtDamage)
+        {
+            ApplyMovementContactKnockback(receiver, data, contactKnockbackData);
+        }
 
         // 食い込みも、呼び出し元が渡した攻撃SOの演出設定を使用する。
         PlayHitEffects(
@@ -519,6 +524,26 @@ public class ChainsawAttack : MonoBehaviour
             Mathf.Max(0f, data.cameraShack));
 
         return true;
+    }
+
+    // 接触ダメージ適用後、既存の被弾状態に専用アセットの初速だけを渡す。
+    private static void ApplyMovementContactKnockback(
+        EnemyAttackHitReceiver receiver,
+        AttackData damageData,
+        AttackData knockbackData)
+    {
+        if (receiver == null || knockbackData == null || knockbackData == damageData ||
+            knockbackData.attackVector == Vector2.zero ||
+            !receiver.TryGetComponent<EnemyStateMachine>(out var stateMachine))
+        {
+            return;
+        }
+
+        // 被弾処理が確定した左右方向を再利用する。敵が死亡済みならEnemyStateMachineが無視する。
+        stateMachine.RequestDamageState(
+            receiver.LastHitSourceDirectionSign,
+            knockbackData.attackVector,
+            knockbackData);
     }
 
     /// <summary>

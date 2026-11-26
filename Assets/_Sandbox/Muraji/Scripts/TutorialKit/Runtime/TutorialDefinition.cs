@@ -41,13 +41,16 @@ namespace Project.Tutorial
     [Serializable]
     public sealed class TutorialPage
     {
-        [Tooltip("静止画として表示する画像です。画像・アニメーション専用モードではクリップの初期画像にも使います。")]
+        [Tooltip("静止画として表示する画像です。画像・アニメーション専用モードでは再生開始時の画像にも使います。")]
         public Sprite illustration;
 
-        [Tooltip("画像・アニメーション専用モードでページの画像を動かすクリップです。有効なクリップを優先します。ルートのImageまたはSpriteRendererを対象にしてください。")]
+        [Tooltip("画像・アニメーション専用モードでページの画像を動かすAnimator Controllerです。指定するとClipより優先します。アニメーションはルートのImageまたはSpriteRendererを対象にしてください。")]
+        public RuntimeAnimatorController animatorController;
+
+        [Tooltip("画像・アニメーション専用モードで、Controllerを指定していないときに再生するClipです。ルートのImageまたはSpriteRendererを対象にしてください。")]
         public AnimationClip animationClip;
 
-        [Tooltip("登録順にループ再生するスプライトです。画像・アニメーション専用モードではクリップが未設定または空の場合に使います。")]
+        [Tooltip("登録順にループ再生するスプライトです。画像・アニメーション専用モードで再生できるControllerやClipがないときに使います。")]
         public Sprite[] animationFrames = new Sprite[0];
 
         [Tooltip("連番スプライトが1周するまでの秒数です。")]

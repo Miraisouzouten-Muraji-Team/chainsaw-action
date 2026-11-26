@@ -44,8 +44,17 @@ namespace Project.Tutorial
         [Tooltip("静止画として表示する画像です。画像・アニメーション専用モードでは再生開始時の画像にも使います。")]
         public Sprite illustration;
 
-        [Tooltip("画像・アニメーション専用モードでページの画像を動かすAnimator Controllerです。指定するとClipより優先します。アニメーションはルートのImageまたはSpriteRendererを対象にしてください。")]
+        [Tooltip("画像・アニメーション専用モードで、このページの画像だけを拡大・縮小する倍率です。1で標準、0.5で半分、1.5で1.5倍です。0は標準サイズとして扱います。")]
+        [Min(0f)] public float imageScale = 1f;
+
+        [Tooltip("画像・アニメーション専用モードで使うAnimator Controllerです。指定するとClipより優先します。再生先プレハブが未設定の場合、ルートのImageまたはSpriteRendererが再生先になります。")]
         public RuntimeAnimatorController animatorController;
+
+        [Tooltip("子オブジェクトの画像を動かす場合は、アニメーション作成時のAnimatorの位置をルートにしたUIプレハブを指定してください。ルートにRectTransform、ルートまたは子にImageが必要です。")]
+        public GameObject animatorArtworkPrefab;
+
+        [Tooltip("自動表示の範囲から出たとき、AnimatorのFinishトリガーを送ってからフェードを始めるまでの秒数です。終了アニメーションの長さに合わせてください。")]
+        [Min(0.01f)] public float zoneExitAnimationSeconds = 0.5f;
 
         [Tooltip("画像・アニメーション専用モードで、Controllerを指定していないときに再生するClipです。ルートのImageまたはSpriteRendererを対象にしてください。")]
         public AnimationClip animationClip;

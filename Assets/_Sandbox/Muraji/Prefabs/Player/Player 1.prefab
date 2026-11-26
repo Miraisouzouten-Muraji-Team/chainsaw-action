@@ -53,6 +53,59 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.005, y: 0.02656796, z: 0.027988687}
   m_Center: {x: 1.7155481e-17, y: 0.005379079, z: 0.007634345}
+--- !u!1 &382224097172049045
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 6587338038275298179}
+  - component: {fileID: 36270336697324364}
+  m_Layer: 0
+  m_Name: WeakFinisherHitBox
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &6587338038275298179
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 382224097172049045}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2710749393844264851}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &36270336697324364
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 382224097172049045}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 0
+  serializedVersion: 3
+  m_Size: {x: 2.7634134, y: 2.051373, z: 1}
+  m_Center: {x: 0.9651489, y: 1.2043498, z: 0}
 --- !u!1 &1366238412560834323
 GameObject:
   m_ObjectHideFlags: 0
@@ -637,6 +690,7 @@ MonoBehaviour:
   damageMaterialFlash: {fileID: 4834754917676779231}
   hurtDuration: 0.4
   damageInvulnerabilityDuration: 2
+  diggingBodyContactDamage: 1
   damageCameraShake: {fileID: 0}
   damageShakeDuration: 0.15
   damageShakeMagnitude: 0.1
@@ -810,13 +864,14 @@ MonoBehaviour:
   enemyDiggingShakeAmplitude: 0.025
   enemyDiggingShakeFrequency: 20
   hitBox: {fileID: 5368958557941454636}
+  weakFinisherHitBox: {fileID: 36270336697324364}
   slashKnockbackPriorityDuration: 10
   damagePopupPresenter: {fileID: 1801222058023634693}
   hitParticle: {fileID: 0}
   cameraShake: {fileID: 0}
   duration: 0.05
   hitStopSystem: {fileID: 2890008487338418416}
-  damageBonusAccelerator: {fileID: 0}
+  damageBonusAccelerator: {fileID: 7827059146430071563}
   weakDiggingAcceleratorGain: 1
   weakFinisherAcceleratorGain: 5
 --- !u!114 &2890008487338418416
@@ -969,6 +1024,7 @@ Transform:
   - {fileID: 4452954944320363198}
   - {fileID: 6721667708137078184}
   - {fileID: 73539903849341666}
+  - {fileID: 6587338038275298179}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!54 &1407844629575893527
@@ -1080,6 +1136,12 @@ MonoBehaviour:
   directWallSpeedDivisor: 5
   wallTopMaxRise: 0.85
   wallTopMoveSpeed: 8
+  groundHurtStates:
+  - Base Layer.Idle
+  - Base Layer.Run
+  - Base Layer.Walk
+  diggingContactSpeedMultiplier: 0.8
+  diggingContactRecoverySeconds: 0.2
   ceilingJumpReleaseSpeed: 6
   ceilingJumpReleaseDuration: 0.12
   enemyDiggingJumpProbe: {fileID: 3392223487772518855}
@@ -1133,15 +1195,12 @@ MonoBehaviour:
   playerAnimator: {fileID: 536866179471375810}
   chainsawAttack: {fileID: 3797053096475727516}
   diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
-  enemyReboundThreshold: 20
-  enemyReboundHits: 3
-  enemyReboundStunSeconds: 0.3
-  enemyReboundKnockbackSpeed: 15
-  enemyReboundUpwardSpeed: 5
+  enemyReboundAttackData: {fileID: 11400000, guid: b016c94d89eb1e94e9f81eacdb57a5f8, type: 2}
   weakAttackDiggingData: {fileID: 11400000, guid: 805e87899d869204da3ec278acfd7d06, type: 2}
   airWeakAttackDiggingData: {fileID: 11400000, guid: 0ff38655cd9be3643a633c1a45c07f96, type: 2}
   wallJumpReleaseBufferSeconds: 0.15
   movementContactDamageMultiplier: 1
+  movementContactKnockbackData: {fileID: 11400000, guid: 7cd2788a510bc254cb560322cba2f3ce, type: 2}
 --- !u!114 &4829992285001150481
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1823,10 +1882,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 739e798f14de2b14394dcc97ab828605, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChainsawAcceleratorEmission
-  accelerator: {fileID: 0}
-  targetRenderer: {fileID: 0}
+  accelerator: {fileID: 7827059146430071563}
+  targetRenderer: {fileID: 5539558909587212142}
   materialIndex: 0
   maxEmissionBoost: {r: 168.65883, g: 5.7014475, b: 383.498, a: 1}
+--- !u!23 &5539558909587212142 stripped
+MeshRenderer:
+  m_CorrespondingSourceObject: {fileID: -4900419542553380344, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}
+  m_PrefabInstance: {fileID: 8583369518698659174}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &5719366523003041132 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4053526177978615818, guid: 65d23b52f824e4d41abe33fdb23dc873, type: 3}

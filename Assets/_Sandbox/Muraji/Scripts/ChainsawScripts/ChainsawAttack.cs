@@ -18,6 +18,7 @@ public class ChainsawAttack : MonoBehaviour
     private bool weakFinisherAcceleratorGranted;
     private SensorChainsawDigging weakAttackDigging;
     private Collider finishingTargetCollider;
+    private SensorPlayerController weakAttackController;
 
     [Header("食い込み中の敵の震え")]
     [Tooltip("振り抜きの攻撃ベクトルに沿って敵モデルを震わせる片側の幅です。ワールド座標の距離で指定し、0なら震えを無効にします。当たり判定とRigidbodyは動かしません。")]
@@ -39,6 +40,7 @@ public class ChainsawAttack : MonoBehaviour
     public void ConfigureWeakAttack(PlayerAnimator owner, bool isAirAttack = false)
     {
         weakAttackAnimator = owner;
+        weakAttackController = owner != null ? owner.GetComponent<SensorPlayerController>() : null;
         weakAttackStartedInAir = isAirAttack;
         weakAttackDigging = owner != null ? owner.GetComponent<SensorChainsawDigging>() : null;
     }
@@ -46,6 +48,11 @@ public class ChainsawAttack : MonoBehaviour
 
     [Header("通常攻撃の判定。食い込み検出とは別")]
     [SerializeField] private Collider hitBox;
+
+    [Header("弱攻撃の振り抜き用の追加判定")]
+    [Tooltip("プレイヤー本体の直下に置く追加のBoxColliderです。右向きのときの範囲を設定してください。コンポーネントを無効にしても位置とサイズを読み取ります。未設定なら刃の判定だけを使います。")]
+    [SerializeField] private BoxCollider weakFinisherHitBox;
+    private Collider[] weakFinisherOverlaps = new Collider[16];
 
     [Header("振り抜き後のプレイヤーとの接触無視")]
     [Tooltip("振り抜き後に敵がプレイヤーを押さないよう、両者の接触を一時的に無視する秒数です。敵の速度・位置・地面衝突は敵側で制御します。")]
@@ -294,6 +301,9 @@ public class ChainsawAttack : MonoBehaviour
             finishingTargetCollider = null;
             TryHitSlash(targetCollider);
         }
+
+        // 短い振り抜き区間でも、判定を開いた時点の重なりを拾う。
+        ScanWeakFinisher(syncTransforms: true);
     }
 
     // 振り抜きのイベントから、接続していた敵への4回目の攻撃判定を開始する。
@@ -303,6 +313,56 @@ public class ChainsawAttack : MonoBehaviour
             slashHitIndex >= SLASH_HIT_COUNT) return;
         DisableHitBox();
         EnableHitBox();
+    }
+
+    // 振り抜き中だけ追加の箱を照会し、刃と同じ命中処理へ渡す。
+    private void ScanWeakFinisher(bool syncTransforms = false)
+    {
+        if (!isActiveAndEnabled || !attackPrepared || !hitWindowOpen || weakDigHolding ||
+            slashHitIndex != SLASH_HIT_COUNT || Time.timeScale <= 0f ||
+            weakFinisherHitBox == null || weakFinisherHitBox == hitBox)
+        {
+            return;
+        }
+
+        if (syncTransforms) Physics.SyncTransforms();
+
+        Transform box = weakFinisherHitBox.transform;
+        Vector3 center = box.TransformPoint(weakFinisherHitBox.center);
+        Quaternion rotation = box.rotation;
+        Vector3 scale = box.lossyScale;
+        Vector3 halfSize = Vector3.Scale(weakFinisherHitBox.size * 0.5f,
+            new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z)));
+
+        if (weakAttackController != null && weakAttackController.FacingDirection < 0f)
+        {
+            Transform root = weakAttackController.transform;
+            Vector3 across = root.right;
+            center = root.position + Vector3.Reflect(center - root.position, across);
+            rotation = Quaternion.LookRotation(Vector3.Reflect(box.forward, across),
+                Vector3.Reflect(box.up, across));
+        }
+
+        int count;
+        do
+        {
+            count = Physics.OverlapBoxNonAlloc(center, halfSize, weakFinisherOverlaps,
+                rotation, Physics.AllLayers, QueryTriggerInteraction.Collide);
+            if (count < weakFinisherOverlaps.Length) break;
+
+            System.Array.Resize(ref weakFinisherOverlaps, weakFinisherOverlaps.Length * 2);
+        }
+        while (true);
+
+        for (int i = 0; i < count; i++)
+        {
+            Collider other = weakFinisherOverlaps[i];
+            weakFinisherOverlaps[i] = null;
+            if (other == null || (weakAttackAnimator != null &&
+                other.transform.IsChildOf(weakAttackAnimator.transform))) continue;
+
+            TryHitSlash(other, center);
+        }
     }
 
     public void DisableHitBox()
@@ -409,12 +469,13 @@ public class ChainsawAttack : MonoBehaviour
         return true;
     }
 
-    // 成立済みの移動接触を送信する。被弾で食い込みが解除されても今回の命中は取り消さない。
+    // 成立済みの移動接触ダメージを送り、通常食い込みの接触だけに専用ノックバックを適用する。
     public bool HitMovementContact(
         Component enemy,
         AttackData data,
         float multiplier,
-        Vector3 point)
+        Vector3 point,
+        AttackData contactKnockbackData = null)
     {
         if (!isActiveAndEnabled ||
             enemy == null ||
@@ -450,6 +511,10 @@ public class ChainsawAttack : MonoBehaviour
         {
             return false;
         }
+        else if (lastHitDealtDamage)
+        {
+            ApplyMovementContactKnockback(receiver, data, contactKnockbackData);
+        }
 
         // 食い込みも、呼び出し元が渡した攻撃SOの演出設定を使用する。
         PlayHitEffects(
@@ -459,6 +524,26 @@ public class ChainsawAttack : MonoBehaviour
             Mathf.Max(0f, data.cameraShack));
 
         return true;
+    }
+
+    // 接触ダメージ適用後、既存の被弾状態に専用アセットの初速だけを渡す。
+    private static void ApplyMovementContactKnockback(
+        EnemyAttackHitReceiver receiver,
+        AttackData damageData,
+        AttackData knockbackData)
+    {
+        if (receiver == null || knockbackData == null || knockbackData == damageData ||
+            knockbackData.attackVector == Vector2.zero ||
+            !receiver.TryGetComponent<EnemyStateMachine>(out var stateMachine))
+        {
+            return;
+        }
+
+        // 被弾処理が確定した左右方向を再利用する。敵が死亡済みならEnemyStateMachineが無視する。
+        stateMachine.RequestDamageState(
+            receiver.LastHitSourceDirectionSign,
+            knockbackData.attackVector,
+            knockbackData);
     }
 
     /// <summary>
@@ -506,9 +591,9 @@ public class ChainsawAttack : MonoBehaviour
     }
 
     /// <summary>
-    /// 通常攻撃の命中を確認し、同じ敵へ1段につき1回だけ命中情報を送る。
+    /// 刃と追加判定の命中を処理し、同じ敵へ1段につき1回だけ命中情報を送る。
     /// </summary>
-    private void TryHitSlash(Collider other)
+    private void TryHitSlash(Collider other, Vector3? hitCenter = null)
     {
         if (!isActiveAndEnabled ||
             !attackPrepared ||
@@ -535,7 +620,7 @@ public class ChainsawAttack : MonoBehaviour
         }
 
         Vector3 point =
-            other.ClosestPoint(hitBox.bounds.center);
+            other.ClosestPoint(hitCenter ?? hitBox.bounds.center);
 
         if (slashHitIndex < SLASH_HIT_COUNT)
         {
@@ -644,12 +729,13 @@ public class ChainsawAttack : MonoBehaviour
         return true;
     }
 
-    // 弱攻撃の進行・震え対象の有効性・一時的な接触無視を更新する。
+    // 弱攻撃の進行、震え、一時的な接触無視を更新し、振り抜き中の追加判定を確認する。
     private void FixedUpdate()
     {
         UpdateKnockbackCollisionPairs();
         TickWeakDigHold();
         UpdateHeldEnemies();
+        ScanWeakFinisher();
     }
 
     // 接続先の消失やアニメーション中断を監視する。ダメージ間隔は通常食い込み側で管理する。

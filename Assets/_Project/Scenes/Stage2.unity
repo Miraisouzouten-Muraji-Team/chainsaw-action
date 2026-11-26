@@ -115886,6 +115886,10 @@ PrefabInstance:
       propertyPath: 'cameraAreas.Array.data[5]'
       value: 
       objectReference: {fileID: 527502330}
+    - target: {fileID: 2901746852763121241, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+      propertyPath: weakFinisherHitBox
+      value: 
+      objectReference: {fileID: 1644885810}
     - target: {fileID: 4137190646497115990, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -169873,6 +169877,11 @@ PrefabInstance:
 Transform:
   m_CorrespondingSourceObject: {fileID: 3718512679117747509, guid: 9b3f0ea821c635345952df1abcd1eec3, type: 3}
   m_PrefabInstance: {fileID: 1643779367}
+  m_PrefabAsset: {fileID: 0}
+--- !u!65 &1644885810 stripped
+BoxCollider:
+  m_CorrespondingSourceObject: {fileID: 2050298239702037385, guid: d6cd194a1c58a2042a80cbb166639b2b, type: 3}
+  m_PrefabInstance: {fileID: 1106900088}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1646905298
 PrefabInstance:

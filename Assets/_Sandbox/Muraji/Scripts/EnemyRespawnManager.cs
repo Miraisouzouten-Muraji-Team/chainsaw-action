@@ -14,6 +14,7 @@ public sealed class EnemyRespawnManager : MonoBehaviour
     {
         public GameObject Template;
         public GameObject Current;
+        public EnemyDeathNotifier[] OriginalEnemyNotifiers;
         public Transform Parent;
         public Vector3 LocalPosition;
         public Quaternion LocalRotation;
@@ -27,7 +28,24 @@ public sealed class EnemyRespawnManager : MonoBehaviour
     }
 
     private readonly List<Snapshot> snapshots = new List<Snapshot>();
+    private readonly Dictionary<EnemyDeathNotifier, EnemyDeathNotifier> restoredEnemyNotifiers =
+        new Dictionary<EnemyDeathNotifier, EnemyDeathNotifier>();
     private GameObject snapshotStorage;
+
+    public static event System.Action<EnemyRespawnManager> LayerObjectsReset;
+
+    public EnemyDeathNotifier ResolveEnemyDeathNotifier(EnemyDeathNotifier original)
+    {
+        // Unityでは破棄済みの参照もキーとして保持できる。未設定の参照だけを除外する。
+        return !ReferenceEquals(original, null) && restoredEnemyNotifiers.TryGetValue(original, out var restored)
+            ? restored : original;
+    }
+
+    public bool IsRetiredByReset(Component target)
+    {
+        return target != null && snapshotStorage != null &&
+            target.transform.IsChildOf(snapshotStorage.transform);
+    }
     private int capturedLayers;
     private bool captured;
     private bool resetting;
@@ -79,6 +97,7 @@ public sealed class EnemyRespawnManager : MonoBehaviour
             {
                 Template = template,
                 Current = target,
+                OriginalEnemyNotifiers = target.GetComponentsInChildren<EnemyDeathNotifier>(true),
                 Parent = source.parent,
                 LocalPosition = source.localPosition,
                 LocalRotation = source.localRotation,
@@ -155,6 +174,7 @@ public sealed class EnemyRespawnManager : MonoBehaviour
                 Destroy(target);
             }
 
+            restoredEnemyNotifiers.Clear();
             // 全対象の位置・親・スケールを先に戻してから有効化し、初期化時の配置をそろえる。
             foreach (Snapshot snapshot in snapshots)
             {
@@ -183,12 +203,20 @@ public sealed class EnemyRespawnManager : MonoBehaviour
                     target.localScale = snapshot.WorldScale;
                 }
                 target.SetSiblingIndex(snapshot.SiblingIndex);
+                // 初期配置の通知元と同じ複製内の通知元を対応付ける。旧個体の削除状態や名前に依存しない。
+                EnemyDeathNotifier[] restoredNotifiers = restored.GetComponentsInChildren<EnemyDeathNotifier>(true);
+                for (int i = 0; i < snapshot.OriginalEnemyNotifiers.Length; i++)
+                    restoredEnemyNotifiers.Add(snapshot.OriginalEnemyNotifiers[i], restoredNotifiers[i]);
                 snapshot.Current = restored;
                 replacements.Add(restored);
             }
             Physics.SyncTransforms();
             for (int i = 0; i < replacements.Count; i++)
                 replacements[i].SetActive(snapshots[i].Active);
+
+            // 復元した敵を物理検索できるようにしてから、条件の再登録を通知する。
+            Physics.SyncTransforms();
+            LayerObjectsReset?.Invoke(this);
         }
         finally
         {

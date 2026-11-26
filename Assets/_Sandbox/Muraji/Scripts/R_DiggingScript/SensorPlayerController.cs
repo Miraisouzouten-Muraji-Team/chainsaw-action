@@ -79,20 +79,30 @@ public class SensorPlayerController : MonoBehaviour
 
     PlayerInputHandler input;
     PlayerAnimator playerAnimator;
+    private PlayerAttackHitReceiver attackHitReceiver;
 
     [Header("食い込み解除後の慣性")]
     [Tooltip("食い込みを解除した後に速度を残すカーブです。横軸は解除後の秒数、縦軸は残す割合（0～1）です。最後のキーの時刻まで慣性を適用します。例：0秒で1、0.6秒で0。キーを削除すると無効になります。")]
     [SerializeField]
     private AnimationCurve diggingReleaseMomentumCurve =
         AnimationCurve.Linear(0f, 1f, 0.6f, 0f);
+    [Tooltip("上り坂から食い込みを解除して飛び出すときの速度倍率です。坂に沿った角度のまま、飛ぶ距離を調整します。1で追加加速なし。")]
+    [SerializeField, Min(1f)] private float uphillDiggingReleaseSpeedMultiplier = 1.5f;
+    private const float UPHILL_DIGGING_SLOPE_MEMORY_SECONDS = 0.08f;
+    private float lastUphillDiggingSlopeGradient;
+    private double lastUphillDiggingSlopeTime;
     private bool diggingReleaseMomentumActive;
+    private bool diggingReleaseUphillBoostActive;
+    private bool diggingReleaseFromFlatFloor;
     private Vector3 diggingReleaseVelocity;
     private float diggingReleaseElapsed;
     private float diggingReleasePreviousY;
+    private float diggingReleaseSlopeGradient;
 
     // 食い込みの実際の移動速度から、地形への押し付け速度を除いて保存する。
     private void BeginDiggingReleaseMomentum(Vector3 surfaceNormal)
     {
+        diggingContactSlowStart = float.NegativeInfinity;
         ClearDiggingReleaseMomentum();
         if (!isActiveAndEnabled || playerRigidbody == null || playerRigidbody.isKinematic ||
             IsDamageStunned || IsImpactStunned || diggingReleaseMomentumCurve == null ||
@@ -100,9 +110,24 @@ public class SensorPlayerController : MonoBehaviour
             diggingReleaseMomentumCurve[diggingReleaseMomentumCurve.length - 1].time <= 0f) return;
         Vector3 releasedVelocity = playerRigidbody.linearVelocity;
         surfaceNormal.z = 0f;
-        diggingReleaseVelocity = surfaceNormal.sqrMagnitude > 0.0001f
-            ? Vector3.ProjectOnPlane(releasedVelocity, surfaceNormal.normalized) : releasedVelocity;
-        diggingReleaseVelocity.z = 0f;
+        bool hasSurfaceNormal = surfaceNormal.sqrMagnitude > 0.0001f;
+        if (hasSurfaceNormal) surfaceNormal.Normalize();
+        bool releasedFromFloor = lastDiggingPhysicsSurface == ChainsawSurface.Floor && hasSurfaceNormal;
+        diggingReleaseFromFlatFloor = releasedFromFloor && surfaceNormal.y >= FLAT_GROUND_NORMAL_Y;
+        if (releasedFromFloor && surfaceNormal.y >= GroundNormalThreshold &&
+            surfaceNormal.y < FLAT_GROUND_NORMAL_Y)
+        {
+            // 床追従の縦速度には高さ補正も含まれるため、実際の横速度と坂の法線から接線速度を作る。
+            diggingReleaseSlopeGradient = -surfaceNormal.x / surfaceNormal.y;
+            diggingReleaseVelocity = new Vector3(releasedVelocity.x,
+                releasedVelocity.x * diggingReleaseSlopeGradient, 0f);
+        }
+        else
+        {
+            diggingReleaseVelocity = hasSurfaceNormal
+                ? Vector3.ProjectOnPlane(releasedVelocity, surfaceNormal) : releasedVelocity;
+            diggingReleaseVelocity.z = 0f;
+        }
         if (diggingReleaseVelocity.sqrMagnitude <= 0.0001f) return;
         diggingReleasePreviousY = releasedVelocity.y;
         diggingReleaseElapsed = 0f;
@@ -111,51 +136,111 @@ public class SensorPlayerController : MonoBehaviour
         currentSpeed = 0f;
     }
 
-    // 解除後の速度をカーブで減衰させ、上下速度には減衰分だけを加えて重力の累積を維持する。
-    private void ApplyDiggingReleaseMomentum(ref Vector3 velocity, float deltaTime, bool isKnockbackActive)
+    // 床を追従できたときに上り坂の傾きを記録し、先端付近の平らな法線では上書きしない。
+    private void RememberUphillDiggingSlope(Vector3 surfaceNormal, float horizontalSpeed)
     {
-        if (!diggingReleaseMomentumActive) return;
+        surfaceNormal.z = 0f;
+        surfaceNormal.Normalize();
+        if (surfaceNormal.y >= FLAT_GROUND_NORMAL_Y) return;
+
+        float gradient = surfaceNormal.y >= GroundNormalThreshold
+            ? -surfaceNormal.x / surfaceNormal.y : 0f;
+        lastUphillDiggingSlopeGradient = horizontalSpeed * gradient > 0f ? gradient : 0f;
+        lastUphillDiggingSlopeTime = Time.fixedTimeAsDouble;
+    }
+
+    // 解除時の慣性を合成し、今回の物理更新で坂に沿う離脱初速を適用したかを返す。
+    private bool ApplyDiggingReleaseMomentum(ref Vector3 velocity, float deltaTime, bool isKnockbackActive,
+        bool lostFloorDiggingSupport)
+    {
+        if (!diggingReleaseMomentumActive) return false;
         if (chainsawDigging.IsDigging || isKnockbackActive || IsDamageStunned || IsImpactStunned ||
             wallJumpLaunchPending || wallJumpStunRemaining > 0f || wallJumpDirectionHoldRemaining > 0f)
         {
             ClearDiggingReleaseMomentum();
-            return;
+            return false;
         }
         if (diggingReleaseMomentumCurve == null || diggingReleaseMomentumCurve.length == 0)
         {
             ClearDiggingReleaseMomentum();
-            return;
+            return false;
         }
         float endTime = diggingReleaseMomentumCurve[diggingReleaseMomentumCurve.length - 1].time;
         float weight = endTime > 0f && diggingReleaseElapsed < endTime
             ? Mathf.Clamp01(diggingReleaseMomentumCurve.Evaluate(diggingReleaseElapsed)) : 0f;
-        // 衝突している壁へ慣性で押し込み続けない。
-        if (playerMidCollider != null && playerMidCollider.IsBlocked(diggingReleaseVelocity.x))
-            diggingReleaseVelocity.x = 0f;
-        velocity.x = Mathf.Lerp(velocity.x, diggingReleaseVelocity.x, weight);
-        // ジャンプの初速と着地を優先し、解除時の縦速度を持ち越さない。
-        if (jumpPending || (isGroundedByRay && Time.time >= ignoreGroundUntil))
+
+        // 先端で平地扱いになってから床を離れた場合だけ、直前に登った坂の角度を使う。
+        if (diggingReleaseFromFlatFloor && diggingReleaseElapsed == 0f && weight > 0f &&
+            !jumpPending && !IsAttacking &&
+            diggingReleaseVelocity.x * lastUphillDiggingSlopeGradient > 0f &&
+            Time.fixedTimeAsDouble - lastUphillDiggingSlopeTime <= UPHILL_DIGGING_SLOPE_MEMORY_SECONDS &&
+            (lostFloorDiggingSupport || !HasJumpGroundSupport()))
         {
+            diggingReleaseSlopeGradient = lastUphillDiggingSlopeGradient;
+            diggingReleaseVelocity.y = diggingReleaseVelocity.x * diggingReleaseSlopeGradient;
+        }
+
+        bool fromSlope = diggingReleaseSlopeGradient != 0f;
+        // 横が壁で止まった場合、坂の慣性だけで上下へ移動し続けない。
+        if (playerMidCollider != null && playerMidCollider.IsBlocked(diggingReleaseVelocity.x))
+        {
+            if (fromSlope)
+            {
+                ClearDiggingReleaseMomentum();
+                return false;
+            }
+
+            diggingReleaseVelocity.x = 0f;
+        }
+        bool startsAlongSlope = fromSlope && diggingReleaseElapsed == 0f && weight > 0f &&
+            !jumpPending && !ceilingCornerJumpPending && !ceilingJumpLaunchPending &&
+            ceilingJumpReleaseRemaining <= 0f;
+        bool hasGroundSupport = Time.time >= ignoreGroundUntil &&
+            (fromSlope ? HasJumpGroundSupport() : isGroundedByRay);
+
+        // 上り坂からの飛び出しだけを増速し、次のジャンプや着地には追加分を持ち越さない。
+        if (startsAlongSlope)
+            diggingReleaseUphillBoostActive = diggingReleaseVelocity.y > 0f && !IsAttacking;
+        else if (jumpPending || hasGroundSupport)
+            diggingReleaseUphillBoostActive = false;
+
+        float speedMultiplier = diggingReleaseUphillBoostActive
+            ? Mathf.Max(1f, uphillDiggingReleaseSpeedMultiplier) : 1f;
+        velocity.x = Mathf.Lerp(velocity.x, diggingReleaseVelocity.x * speedMultiplier, weight);
+        if (startsAlongSlope)
+        {
+            // 離れた直後は接地判定が残っていても、合成後の横速度に坂と同じ角度を付ける。
+            velocity.y = velocity.x * diggingReleaseSlopeGradient;
+            diggingReleasePreviousY = velocity.y;
+        }
+        else if (jumpPending || hasGroundSupport)
+        {
+            // ジャンプと実際の着地を優先し、解除時の縦速度を持ち越さない。
             diggingReleaseVelocity.y = 0f;
             diggingReleasePreviousY = 0f;
         }
         else
         {
-            float nextY = diggingReleaseVelocity.y * weight;
+            // 慣性が変化した分だけを足し、前回までの重力を残す。
+            float nextY = diggingReleaseVelocity.y * speedMultiplier * weight;
             velocity.y += nextY - diggingReleasePreviousY;
             diggingReleasePreviousY = nextY;
         }
         diggingReleaseElapsed += Mathf.Max(0f, deltaTime);
         if (weight <= 0f && diggingReleaseElapsed >= endTime) ClearDiggingReleaseMomentum();
+        return startsAlongSlope;
     }
 
     // 再食い込み・硬直・リスポーンへ以前の慣性を持ち越さない。
     private void ClearDiggingReleaseMomentum()
     {
         diggingReleaseMomentumActive = false;
+        diggingReleaseUphillBoostActive = false;
+        diggingReleaseFromFlatFloor = false;
         diggingReleaseVelocity = Vector3.zero;
         diggingReleaseElapsed = 0f;
         diggingReleasePreviousY = 0f;
+        diggingReleaseSlopeGradient = 0f;
     }
 
     [Header("食い込み")]
@@ -188,6 +273,40 @@ public class SensorPlayerController : MonoBehaviour
 
     public bool CanTakeDamage =>
         chainsawDigging == null || !chainsawDigging.IsEvading;
+
+    public bool IsNormalDigging =>
+        chainsawDigging != null && chainsawDigging.isActiveAndEnabled &&
+        chainsawDigging.IsDigging && !chainsawDigging.IsWeakEnemyAttack && !chainsawDigging.HasBonus;
+
+    public bool IsNormalMovementDigging =>
+        chainsawDigging != null && chainsawDigging.IsMovementDigging && !chainsawDigging.HasBonus;
+
+    [Header("被弾時のやられと食い込み減速")]
+    [Tooltip("接地中にやられを許可する基本レイヤーの待機・歩行ステートです。Animatorのフルパスで指定します。")]
+    [SerializeField] private string[] groundHurtStates = { "Base Layer.Idle", "Base Layer.Run", "Base Layer.Walk" };
+    [Tooltip("通常の移動食い込みで敵に接触して被弾した直後の移動速度倍率です。1で減速なし。")]
+    [SerializeField, Range(0f, 1f)] private float diggingContactSpeedMultiplier = 0.8f;
+    [Tooltip("接触被弾後、元の食い込み速度へ戻るまでの秒数です。0で減速なし。")]
+    [SerializeField, Min(0f)] private float diggingContactRecoverySeconds = 0.2f;
+    private float diggingContactSlowStart = float.NegativeInfinity;
+
+    public void SlowAfterDiggingContact()
+    {
+        if (IsNormalMovementDigging)
+            diggingContactSlowStart = Time.fixedTime;
+    }
+
+    private float DiggingContactSpeedScale
+    {
+        get
+        {
+            if (!IsNormalMovementDigging || diggingContactRecoverySeconds <= 0f)
+                return 1f;
+            float elapsed = Time.fixedTime - diggingContactSlowStart;
+            return Mathf.Lerp(Mathf.Clamp01(diggingContactSpeedMultiplier), 1f,
+                elapsed / diggingContactRecoverySeconds);
+        }
+    }
 
     private float damageStunRemaining;
     public bool IsDamageStunned => damageStunRemaining > 0f;
@@ -507,6 +626,7 @@ public class SensorPlayerController : MonoBehaviour
     {
         input = GetComponent<PlayerInputHandler>();
         playerAnimator = GetComponent<PlayerAnimator>();
+        attackHitReceiver = GetComponentInChildren<PlayerAttackHitReceiver>(true);
         movementEffectAnimator = GetComponent<Animator>();
         playerRigidbody = GetComponent<Rigidbody>();
 
@@ -710,7 +830,9 @@ public class SensorPlayerController : MonoBehaviour
 
         // 攻撃中は向きを固定し、左右入力による見た目と食い込み判定の反転を防ぐ。
         // 壁登りを含む食い込み中の向き固定も維持する。
+        // 壁ジャンプでは硬直から横初速の保持が終わるまで、壁から離れる向きを保つ。
         if (!IsAttacking && wallTopTimeRemaining <= 0f &&
+            wallJumpStunRemaining <= 0f && !wallJumpLaunchPending && wallJumpDirectionHoldRemaining <= 0f &&
             chainsawDigging.Surface != ChainsawSurface.Floor &&
             chainsawDigging.Surface != ChainsawSurface.Wall &&
             chainsawDigging.Surface != ChainsawSurface.Ceiling &&
@@ -780,6 +902,10 @@ public class SensorPlayerController : MonoBehaviour
 
         // 通常更新を早期終了する弱攻撃食い込みでも、再接続した時点で古い慣性を消す。
         if (chainsawDigging != null && chainsawDigging.IsDigging) ClearDiggingReleaseMomentum();
+
+        // 前回の衝突による被弾は、今回のアクセルと食い込み状態を更新する前に確定する。
+        if (attackHitReceiver != null) attackHitReceiver.ApplyPendingDiggingBodyContactDamage();
+        if (!isActiveAndEnabled) return;
 
         // 前回の本体衝突による接触攻撃は、敵とプレイヤー双方の衝突通知後に確定する。
         // 被弾硬直による早期returnより先に実行する。
@@ -885,9 +1011,11 @@ public class SensorPlayerController : MonoBehaviour
             CanUseDiggingImpact
                 ? Mathf.Max(0.01f, playerParameter.surfaceStickCollisionSpeed)
                 : float.PositiveInfinity,
-            currentSpeed,
+            currentSpeed * DiggingContactSpeedScale,
             ResolvedImpactTerrainLayers
         );
+        bool lostFloorDiggingSupport = previousSurface == ChainsawSurface.Floor &&
+            chainsawDigging.Surface == ChainsawSurface.None;
 
         keepBufferedDiggingFacingUntilTick = false;
 
@@ -1001,6 +1129,7 @@ public class SensorPlayerController : MonoBehaviour
             ascentStartSpeed = 0f;
             fallElapsedTime = 0f;
 
+            float travelScale = DiggingContactSpeedScale;
             switch (chainsawDigging.Surface)
             {
                 case ChainsawSurface.Wall:
@@ -1015,14 +1144,14 @@ public class SensorPlayerController : MonoBehaviour
                         Vector3 normal = chainsawDigging.SurfaceNormal;
                         Vector3 tangent = new Vector3(normal.y, -normal.x, 0f).normalized;
                         if (tangent.y < 0f) tangent = -tangent;
-                        velocity = tangent * wallTravelSpeed - normal * playerParameter.surfaceStickSpeed;
+                        velocity = tangent * (wallTravelSpeed * travelScale) - normal * playerParameter.surfaceStickSpeed;
                         break;
                     }
 
                 case ChainsawSurface.Ceiling:
                     {
                         // 天井は本体幅の支持判定と距離補正を使い、斜面や凸の継ぎ目で落下しないよう追従する。
-                        if (!chainsawDigging.TryGetCeilingFollowVelocity(currentSpeed,
+                        if (!chainsawDigging.TryGetCeilingFollowVelocity(currentSpeed * travelScale,
                             playerParameter.surfaceStickSpeed, deltaTime, out velocity))
                         {
                             // 実際に天井が終わった場合は、空中に固定せず通常の落下へ戻す。
@@ -1037,14 +1166,16 @@ public class SensorPlayerController : MonoBehaviour
                 case ChainsawSurface.Floor:
                     {
                         // 次の本体位置を支える床へ追従し、坂の頂点でも上向き速度を持ち越さない。
-                        if (chainsawDigging.TryGetFloorFollowVelocity(currentSpeed,
+                        if (chainsawDigging.TryGetFloorFollowVelocity(currentSpeed * travelScale,
                             deltaTime, out velocity))
                         {
                             jumpsUsed = 0;
+                            RememberUphillDiggingSlope(chainsawDigging.SurfaceNormal, velocity.x);
                         }
                         else
                         {
                             // 本当に床が途切れた場合は、空中で固定せず通常の落下へ戻す。
+                            lostFloorDiggingSupport = true;
                             chainsawDigging.Cancel(false);
                             suppressGravity = false;
                             velocity = playerRigidbody.linearVelocity;
@@ -1064,7 +1195,10 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         // 食い込み解除時の慣性はジャンプ・重力の前に合成する。
-        ApplyDiggingReleaseMomentum(ref velocity, deltaTime, isKnockbackActive);
+        bool startsAlongReleaseSlope = ApplyDiggingReleaseMomentum(ref velocity, deltaTime, isKnockbackActive,
+            lostFloorDiggingSupport);
+        if (chainsawDigging.Surface != ChainsawSurface.Floor)
+            lastUphillDiggingSlopeGradient = 0f;
 
         if (jumpPending)
         {
@@ -1109,7 +1243,8 @@ public class SensorPlayerController : MonoBehaviour
             velocity.y = Mathf.Min(velocity.y, 0f);
 
         // 落下時はプレイヤー共通の重力と速度上限を1回だけ適用する。
-        if (!suppressGravity && !isEnemyReleaseAscending)
+        // 坂から離れる最初のステップは初速の角度を保ち、重力は次のステップから適用する。
+        if (!suppressGravity && !isEnemyReleaseAscending && !startsAlongReleaseSlope)
         {
             ApplyJumpGravity(ref velocity, deltaTime);
         }
@@ -1173,10 +1308,13 @@ public class SensorPlayerController : MonoBehaviour
             // 飛び出しの終了後も、直前の横速度から通常移動を続ける。
             currentSpeed = velocity.x;
         }
-        else
+        else if (!startsAlongReleaseSlope)
         {
-            // ジャンプ・壁ジャンプ・角補正の決定後に、通常の斜面歩行を適用する。
-            ApplyGroundSlopeMovement(ref velocity, isKnockbackActive);
+            // 先読みの接地だけでは、空中に残っている坂の慣性を通常の斜面歩行で上書きしない。
+            bool carryingSlopeMomentumInAir = diggingReleaseSlopeGradient != 0f &&
+                diggingReleaseVelocity.y != 0f && !HasJumpGroundSupport();
+            if (!carryingSlopeMomentumInAir)
+                ApplyGroundSlopeMovement(ref velocity, isKnockbackActive);
         }
 
         // 敵への食い込み中だけ、開始時の位置差を維持する速度で追従する。
@@ -1302,27 +1440,56 @@ public class SensorPlayerController : MonoBehaviour
             $"固定={playerRigidbody.constraints}", this);
     }
 
-    // 通常時は被弾硬直を開始する。成立済みの食い込み中は姿勢・移動・接続を維持する。
+    // 攻撃の入力が受理されるフレームから、攻撃終了・中断までスーパーアーマーを有効にする。
+    private bool HasAttackSuperArmor =>
+        IsAttacking ||
+        (input != null && input.SlashInput && Time.timeScale > 0f &&
+         !IsDamageStunned && !IsImpactStunned && wallJumpStunRemaining <= 0f &&
+         (!enemyReboundActive || Time.time >= enemyReboundUnlockTime));
+
+    private bool CanStartGroundHurt()
+    {
+        if (HasAttackSuperArmor || chainsawDigging == null || chainsawDigging.IsRequested ||
+            chainsawDigging.IsDigging || !HasJumpGroundSupport() || Time.time < ignoreGroundUntil ||
+            jumpPending || wallJumpLaunchPending || wallJumpStunRemaining > 0f ||
+            wallJumpDirectionHoldRemaining > 0f || wallTopTimeRemaining > 0f ||
+            ceilingCornerJumpPending || ceilingJumpLaunchPending || ceilingJumpReleaseRemaining > 0f ||
+            enemyReleaseFlightActive || enemyReboundActive || knockbackHopPending ||
+            knockbackVelocity != 0f || IsImpactStunned || IsDamageStunned)
+            return false;
+
+        if (movementEffectAnimator == null || !movementEffectAnimator.isActiveAndEnabled ||
+            movementEffectAnimator.runtimeAnimatorController == null || movementEffectAnimator.layerCount == 0)
+            return false;
+
+        // 待機と歩行の間のブレンドは許可し、着地や他の行動への出入りは対象外にする。
+        return IsGroundHurtState(movementEffectAnimator.GetCurrentAnimatorStateInfo(0)) &&
+            (!movementEffectAnimator.IsInTransition(0) ||
+             IsGroundHurtState(movementEffectAnimator.GetNextAnimatorStateInfo(0)));
+    }
+
+    private bool IsGroundHurtState(AnimatorStateInfo state)
+    {
+        if (groundHurtStates == null) return false;
+        foreach (string path in groundHurtStates)
+            if (!string.IsNullOrEmpty(path) && state.fullPathHash == Animator.StringToHash(path))
+                return true;
+
+        return false;
+    }
+
+    // 待機・歩行からの被弾だけ、入力を止めてやられモーションへ移る。
     public void BeginDamageStun(float duration)
     {
+        // ダメージと被弾演出は受信側で処理済み。硬直だけを開始前に判定する。
+        if (!isActiveAndEnabled || playerRigidbody == null || playerAnimator == null || !CanStartGroundHurt())
+            return;
+
         ClearEnemyReleaseFlight();
         ClearCeilingJumpRelease();
         ResetCeilingTravelImpact();
         ClearDiggingReleaseMomentum();
         impactBufferedAction = ImpactBufferedAction.None;
-        if (!isActiveAndEnabled || playerRigidbody == null || playerAnimator == null)
-        {
-            return;
-        }
-
-        // HP減少・被弾後の無敵・点滅は受信側で処理するため、ここでは取り消さない。
-        // 床・壁・天井・敵への食い込み中は、やられ遷移と速度リセット、食い込み解除を行わない。
-        // 未接触の空中待機はIsDiggingがfalseなので、従来どおり被弾硬直に入る。
-        if (chainsawDigging != null &&
-            chainsawDigging.isActiveAndEnabled && chainsawDigging.IsDigging)
-        {
-            return;
-        }
 
         enemyReboundActive = false;
         enemyReboundInputPending = false;
@@ -2176,6 +2343,11 @@ public class SensorPlayerController : MonoBehaviour
                 0f);
 
             chainsawDigging.Cancel(true);
+            // 食い込み解除後、壁から飛び出す方向に見た目と次の食い込み判定をそろえる。
+            facingDirection = horizontalDirection;
+            ApplyFacingRotation();
+            chainsawDigging.SetFacingDirection(facingDirection);
+
             pendingJumpCount = 1;
             jumpsUsed = 1;
             jumpPending = false;
@@ -2640,6 +2812,10 @@ public class SensorPlayerController : MonoBehaviour
             return;
         }
 
+        // 敵側の接触ダメージ通知がない場合に備え、食い込み中の本体衝突を記録する。
+        if (attackHitReceiver != null && IsNormalDigging)
+            attackHitReceiver.QueueDiggingBodyContactDamage(collision.collider);
+
         // 被弾側の通知が先に食い込みを解除していても、移動を指示した時点の接触攻撃を記録する。
         if (chainsawDigging != null) chainsawDigging.QueueMovementEnemyCollision(collision);
         // 移動を止める処理より先に、実際に触れた地形の面を記録する。
@@ -2690,6 +2866,23 @@ public class SensorPlayerController : MonoBehaviour
         RecordCeilingFallGraceContact(collision);
 
         UpdateWallContact(collision);
+    }
+
+    void OnTriggerEnter(Collider other)
+    {
+        OnTriggerStay(other);
+    }
+
+    void OnTriggerStay(Collider other)
+    {
+        if (isActiveAndEnabled && attackHitReceiver != null)
+            attackHitReceiver.ObserveDiggingBodyTrigger(other);
+    }
+
+    void OnTriggerExit(Collider other)
+    {
+        if (attackHitReceiver != null)
+            attackHitReceiver.RemoveSeparatedBodyTrigger(other);
     }
 
     // 接触が終了した地形を、接地と壁停止の両方から解除する。
@@ -3801,6 +3994,7 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
+        diggingContactSlowStart = float.NegativeInfinity;
         keepBufferedDiggingFacingUntilTick = false;
         impactBufferedDiggingMove = 0f;
         enemyReboundBufferedMove = 0f;

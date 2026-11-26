@@ -14,40 +14,50 @@ public class DefeatAllEnemiesCondition : GimmickConditionBase
     [SerializeField]
     private Transform enemyRoot;
 
+    private readonly HashSet<EnemyDeathNotifier> subscribedEnemies = new();
+
     private void OnEnable()
     {
-        // 登録されている敵すべての死亡イベントを監視する。
-        foreach (EnemyDeathNotifier enemy in targetEnemies)
-        {
-            if (enemy == null)
-            {
-                continue;
-            }
-
-            enemy.Died += OnEnemyDied;
-        }
+        EnemyRespawnManager.LayerObjectsReset += HandleLayerObjectsReset;
+        BindTargets(EnemyRespawnManager.FindForScene(gameObject.scene));
     }
 
     private void Start()
     {
-        // 開始時点ですでに敵が死亡している可能性もあるので、
-        // 最初に一度チェックする。
         CheckCondition();
     }
 
     private void OnDisable()
     {
-        // イベントの登録解除。
-        // オブジェクト破棄時などに不要な参照が残るのを防ぎます。
-        foreach (EnemyDeathNotifier enemy in targetEnemies)
-        {
-            if (enemy == null)
-            {
-                continue;
-            }
+        EnemyRespawnManager.LayerObjectsReset -= HandleLayerObjectsReset;
+        UnbindTargets();
+    }
 
-            enemy.Died -= OnEnemyDied;
+    private void HandleLayerObjectsReset(EnemyRespawnManager manager)
+    {
+        if (manager.gameObject.scene != gameObject.scene || IsCompleted) return;
+
+        BindTargets(manager);
+        CheckCondition();
+    }
+
+    private void BindTargets(EnemyRespawnManager manager)
+    {
+        UnbindTargets();
+        foreach (EnemyDeathNotifier original in targetEnemies)
+        {
+            EnemyDeathNotifier enemy = manager != null ? manager.ResolveEnemyDeathNotifier(original) : original;
+            if (enemy != null && subscribedEnemies.Add(enemy))
+                enemy.Died += OnEnemyDied;
         }
+    }
+
+    private void UnbindTargets()
+    {
+        foreach (EnemyDeathNotifier enemy in subscribedEnemies)
+            enemy.Died -= OnEnemyDied;
+
+        subscribedEnemies.Clear();
     }
 
     /// 登録された敵が死亡したときに呼ばれる。
@@ -61,12 +71,12 @@ public class DefeatAllEnemiesCondition : GimmickConditionBase
     {
         // 敵が1体も登録されていない場合は、
         // 誤作動防止のため条件達成にはしない。
-        if (targetEnemies.Count == 0)
+        if (subscribedEnemies.Count == 0)
         {
             return;
         }
 
-        foreach (EnemyDeathNotifier enemy in targetEnemies)
+        foreach (EnemyDeathNotifier enemy in subscribedEnemies)
         {
             // nullになっている敵は無視する。
             if (enemy == null)

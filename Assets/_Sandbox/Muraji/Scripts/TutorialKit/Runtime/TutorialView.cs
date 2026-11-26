@@ -9,10 +9,12 @@ namespace Project.Tutorial
     // チュートリアルの画像と、任意の操作画像をOverlay Canvas上に配置する。
     internal sealed class TutorialView
     {
+        private const string ZONE_EXIT_TRIGGER = "Finish";
         internal readonly RectTransform root;
         internal readonly CanvasGroup group;
         private readonly Button previous, next, close;
         private readonly RectTransform imageRoot;
+        private readonly RectTransform artworkRoot;
         private readonly TutorialLegacyView legacyView;
         private bool imageOnly;
         private readonly Image artwork;
@@ -25,10 +27,13 @@ namespace Project.Tutorial
         private float cycleSeconds;
         private RuntimeAnimatorController pageController;
         private CanvasGroup controllerVisibility;
+        private Animator controllerAnimator;
         private Image controllerArtwork;
         private SpriteRenderer controllerSpriteSource;
         private Sprite lastControllerSprite;
         private float controllerClock;
+        private AnimatorControllerPlayable controllerPlayable;
+        private float zoneExitAnimationSeconds;
 
         // 開閉用の親と、クリップが動かす画像を別に作る。
         internal TutorialView(Transform parent, Font font, bool modal)
@@ -40,7 +45,10 @@ namespace Project.Tutorial
 
             imageRoot = Rect("Image and Clip", root, Vector2.zero);
             Place(imageRoot, Vector2.zero, Vector2.one);
-            RectTransform imageRect = Rect("Artwork", imageRoot, Vector2.zero);
+            // アニメーションの再生先とは別に倍率を掛け、画像の拡大縮小キーと合成する。
+            artworkRoot = Rect("Artwork Scale", imageRoot, Vector2.zero);
+            Place(artworkRoot, Vector2.zero, Vector2.one);
+            RectTransform imageRect = Rect("Artwork", artworkRoot, Vector2.zero);
             Place(imageRect, Vector2.zero, Vector2.one);
             artwork = imageRect.gameObject.AddComponent<Image>();
             artwork.preserveAspect = true;
@@ -76,6 +84,9 @@ namespace Project.Tutorial
                 return;
             }
 
+            float imageScale = page?.imageScale ?? 1f;
+            artworkRoot.localScale = Vector3.one * (imageScale > 0f ? imageScale : 1f);
+
             // クリップが変更した前のページの画像設定を初期化する。
             AnimationClip assignedClip = page?.animationClip;
             clip = assignedClip != null && !assignedClip.empty ? assignedClip : null;
@@ -107,18 +118,21 @@ namespace Project.Tutorial
             pageController = page?.animatorController;
             if (pageController != null)
             {
-                CreateControllerArtwork(artwork.sprite);
+                zoneExitAnimationSeconds = Mathf.Max(0.01f, page.zoneExitAnimationSeconds);
+                CreateControllerArtwork(artwork.sprite, page.animatorArtworkPrefab);
                 artwork.gameObject.SetActive(false);
             }
         }
 
         // Controller専用の再生先をページごとに作り、アニメーション値を次のページへ持ち越さない。
-        private void CreateControllerArtwork(Sprite initialSprite)
+        private void CreateControllerArtwork(Sprite initialSprite, GameObject prefab)
         {
-            RectTransform container = Rect("Controller Artwork", imageRoot, Vector2.zero);
+            RectTransform container = Rect("Controller Artwork", artworkRoot, Vector2.zero);
             Place(container, Vector2.zero, Vector2.one);
             container.SetSiblingIndex(artwork.transform.GetSiblingIndex());
             controllerVisibility = container.gameObject.AddComponent<CanvasGroup>();
+            if (prefab != null && TryCreateControllerPrefab(prefab, container, initialSprite)) return;
+
             controllerVisibility.alpha = initialSprite != null ? 1f : 0f;
 
             RectTransform imageRect = Rect("Artwork", container, Vector2.zero);
@@ -133,7 +147,58 @@ namespace Project.Tutorial
             // SpriteRendererに付けたスプライトキーも、既存のClipと同様にCanvasのImageに表示する。
             controllerSpriteSource = imageRect.gameObject.AddComponent<SpriteRenderer>();
             controllerSpriteSource.forceRenderingOff = true;
+            controllerAnimator = imageRect.gameObject.AddComponent<Animator>();
+
+#if UNITY_EDITOR
+            if (initialSprite == null) WarnIfControllerHasNoRootSpriteKeys();
+#endif
         }
+
+        // クリップ内の相対パスを保つため、作成時のAnimatorと子の画像をまとめて複製する。
+        private bool TryCreateControllerPrefab(GameObject prefab, RectTransform container, Sprite initialSprite)
+        {
+            if (!(prefab.transform is RectTransform) || prefab.GetComponentInChildren<Image>(true) == null)
+            {
+                Debug.LogWarning("チュートリアル: Animator Artwork Prefab のルートに RectTransform、ルートまたは子に Image を設定してください。", prefab);
+                return false;
+            }
+
+            GameObject instance = Object.Instantiate(prefab, container, false);
+            if (!instance.TryGetComponent(out controllerAnimator))
+                controllerAnimator = instance.AddComponent<Animator>();
+            // Animator自身のControllerと、ページの手動再生が同時に評価されないようにする。
+            controllerAnimator.runtimeAnimatorController = null;
+
+            // ページの操作ボタンを覆わず、既存の看板用遮蔽を引き継ぐ。
+            Material occlusionMaterial = artwork.material;
+            foreach (Graphic graphic in instance.GetComponentsInChildren<Graphic>(true))
+            {
+                graphic.raycastTarget = false;
+                if (occlusionMaterial != artwork.defaultMaterial) graphic.material = occlusionMaterial;
+            }
+            if (initialSprite != null && instance.TryGetComponent<Image>(out Image rootImage) && rootImage.sprite == null)
+                rootImage.sprite = initialSprite;
+
+            instance.SetActive(true);
+            return true;
+        }
+
+#if UNITY_EDITOR
+        // 初期画像がなく、組み立てたルートにスプライトキーが届かない設定を通知する。
+        private void WarnIfControllerHasNoRootSpriteKeys()
+        {
+            foreach (AnimationClip controllerClip in pageController.animationClips)
+            {
+                if (controllerClip == null || controllerClip.legacy) continue;
+                foreach (var binding in UnityEditor.AnimationUtility.GetObjectReferenceCurveBindings(controllerClip))
+                {
+                    if (string.IsNullOrEmpty(binding.path) && binding.propertyName == "m_Sprite" &&
+                        (binding.type == typeof(Image) || binding.type == typeof(SpriteRenderer))) return;
+                }
+            }
+            Debug.LogWarning("チュートリアル: Animator Controller にルートの画像を指定するスプライトキーがありません。子の Image を動かす場合は Animator Artwork Prefab、画像の表示位置や色だけを動かす場合は Illustration を設定してください。", pageController);
+        }
+#endif
 
         // ゲームが停止中でも進む時刻で、ページに設定されたアニメーションを再生する。
         internal void Tick(float clock)
@@ -188,21 +253,24 @@ namespace Project.Tutorial
         {
             if (!clipGraph.IsValid())
             {
-                Animator animator = controllerArtwork.gameObject.AddComponent<Animator>();
-                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-                animator.fireEvents = false;
+                controllerAnimator.enabled = true;
+                controllerAnimator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                controllerAnimator.fireEvents = false;
 
                 clipGraph = PlayableGraph.Create("Tutorial Artwork Controller");
                 clipGraph.SetTimeUpdateMode(DirectorUpdateMode.Manual);
-                AnimatorControllerPlayable controller = AnimatorControllerPlayable.Create(clipGraph, pageController);
-                AnimationPlayableOutput output = AnimationPlayableOutput.Create(clipGraph, "Tutorial Artwork", animator);
-                output.SetSourcePlayable(controller);
+                controllerPlayable = AnimatorControllerPlayable.Create(clipGraph, pageController);
+                AnimationPlayableOutput output = AnimationPlayableOutput.Create(clipGraph, "Tutorial Artwork", controllerAnimator);
+                output.SetSourcePlayable(controllerPlayable);
                 clipGraph.Play();
             }
 
             float deltaTime = Mathf.Max(0f, clock - controllerClock);
             controllerClock = clock;
             clipGraph.Evaluate(deltaTime);
+
+            // プレハブのImageは、再生した階層の中で直接描画する。
+            if (controllerArtwork == null) return;
 
             Sprite sampledSprite = controllerSpriteSource.sprite;
             if (sampledSprite != null)
@@ -218,6 +286,25 @@ namespace Project.Tutorial
             // 画像なしの空白フレームを透明にし、Controllerが設定したImageの有効状態や色を保つ。
             controllerVisibility.alpha = controllerArtwork.overrideSprite != null || controllerArtwork.sprite != null
                 ? 1f : 0f;
+        }
+
+        // 表示範囲を離れたとき、再生中のControllerにFinishを送り、終了アニメの表示秒数を返す。
+        internal float StartZoneExitAnimation()
+        {
+            if (!controllerPlayable.IsValid()) return 0f;
+
+            int triggerHash = Animator.StringToHash(ZONE_EXIT_TRIGGER);
+            int parameterCount = controllerPlayable.GetParameterCount();
+            for (int i = 0; i < parameterCount; i++)
+            {
+                AnimatorControllerParameter parameter = controllerPlayable.GetParameter(i);
+                if (parameter.nameHash != triggerHash || parameter.type != AnimatorControllerParameterType.Trigger)
+                    continue;
+
+                controllerPlayable.SetTrigger(triggerHash);
+                return zoneExitAnimationSeconds;
+            }
+            return 0f;
         }
 
         // Animatorへクリップを接続し、Presenterが供給する時刻だけで再生する。
@@ -248,9 +335,11 @@ namespace Project.Tutorial
             if (clipGraph.IsValid()) clipGraph.Destroy();
             clipGraph = default;
             clipPlayable = default;
+            controllerPlayable = default;
             clip = null;
             pageController = null;
             controllerClock = 0f;
+            zoneExitAnimationSeconds = 0f;
             lastControllerSprite = null;
 
             if (controllerVisibility != null)
@@ -261,6 +350,7 @@ namespace Project.Tutorial
             }
 
             controllerVisibility = null;
+            controllerAnimator = null;
             controllerArtwork = null;
             controllerSpriteSource = null;
         }

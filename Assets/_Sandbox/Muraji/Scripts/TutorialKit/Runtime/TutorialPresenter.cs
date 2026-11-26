@@ -29,6 +29,8 @@ namespace Project.Tutorial
         private TutorialDefinition modalDefinition;
         private int pageIndex, closingFrame;
         private float signClock, modalClock, savedTimeScale;
+        private bool signExitStarted;
+        private float signExitRemaining;
         private bool paused, closing, navigationHeld;
         private CursorLockMode savedLock;
         private bool savedCursor;
@@ -69,11 +71,20 @@ namespace Project.Tutorial
         }
         private void ClearSelection()
         {
-            selected = shownSign = null; selectedPlayer = null;
-            sign?.ReleaseClip();
-            if (sign != null) sign.root.gameObject.SetActive(false);
+            selected = null; selectedPlayer = null;
+            ClearShownSign();
             if (prompt != null) prompt.gameObject.SetActive(false);
             if (legacyPrompt != null) legacyPrompt.gameObject.SetActive(false);
+        }
+
+        // 看板を非表示にし、前の範囲のアニメーションと離脱状態を解放する。
+        private void ClearShownSign()
+        {
+            shownSign = null;
+            signExitStarted = false;
+            signExitRemaining = 0f;
+            sign?.ReleaseClip();
+            if (sign != null) sign.root.gameObject.SetActive(false);
         }
         // 両方のページ表示で同じCanvasと開閉処理を使う。
         private void BuildUI()
@@ -165,30 +176,7 @@ namespace Project.Tutorial
                 return;
             }
             SelectZone();
-            bool showSign = selected != null && !selected.definition.OpensWithButton;
-            if (showSign) signOcclusion.Configure(selectedPlayer, selected);
-            if (showSign && shownSign != selected)
-            {
-                shownSign = selected; signClock = 0f; sign.group.alpha = 0f;
-                sign.SetPage(selected.definition.pages[0],
-                    selected.definition.mode == TutorialMode.ImageAndClip);
-                sign.SetFooter("TUTORIAL");
-            }
-            float fade = shownSign != null ? Mathf.Max(.01f, shownSign.definition.fadeSeconds) : .5f;
-            sign.group.alpha = Mathf.MoveTowards(sign.group.alpha, showSign ? 1f : 0f, Time.unscaledDeltaTime / fade);
-            sign.root.gameObject.SetActive(sign.group.alpha > 0f && shownSign != null);
-            if (sign.root.gameObject.activeSelf)
-            {
-                signClock += Time.unscaledDeltaTime;
-                sign.Tick(signClock);
-                Position(sign.root, shownSign);
-            }
-            else if (!showSign && shownSign != null)
-            {
-                // フェードアウトが完了したら、次に近づいたとき先頭から再生できるようにする。
-                shownSign = null;
-                sign.ReleaseClip();
-            }
+            UpdateSign();
             bool interactive = selected != null && selected.definition.OpensWithButton;
             BindTutorialInput(interactive ? selectedPlayer : null);
             interactive = interactive && openAction != null && openAction.enabled && closeAction != null && navigateAction != null;
@@ -197,6 +185,62 @@ namespace Project.Tutorial
             {
                 if (openAction.WasPressedThisFrame() && Time.timeScale > 0f) Open();
             }
+        }
+
+        // 自動表示の看板は、最後の接触がなくなったときに終了アニメを再生してから隠す。
+        private void UpdateSign()
+        {
+            TutorialZone nextSign = selected != null && !selected.definition.OpensWithButton ? selected : null;
+            if (shownSign != null && nextSign != shownSign && !signExitStarted &&
+                shownSign.isActiveAndEnabled && shownSign.FindPlayer() == null)
+            {
+                signExitRemaining = sign.StartZoneExitAnimation();
+                signExitStarted = signExitRemaining > 0f;
+            }
+
+            bool returnedToSign = nextSign != null && nextSign == shownSign && signExitStarted;
+            bool playingExit = !returnedToSign && signExitRemaining > 0f &&
+                shownSign != null && shownSign.isActiveAndEnabled;
+            if (!playingExit && nextSign != null && (nextSign != shownSign || returnedToSign))
+            {
+                shownSign = nextSign;
+                signClock = 0f;
+                signExitStarted = false;
+                signExitRemaining = 0f;
+                if (!returnedToSign) sign.group.alpha = 0f;
+                sign.SetPage(shownSign.definition.pages[0], shownSign.definition.mode == TutorialMode.ImageAndClip);
+                sign.SetFooter("TUTORIAL");
+            }
+
+            if (shownSign == null)
+            {
+                if (!ReferenceEquals(shownSign, null)) ClearShownSign();
+                return;
+            }
+
+            float deltaTime = Time.unscaledDeltaTime;
+            if (playingExit)
+            {
+                signExitRemaining = Mathf.Max(0f, signExitRemaining - deltaTime);
+            }
+            else
+            {
+                bool showSign = nextSign == shownSign;
+                if (showSign) signOcclusion.Configure(selectedPlayer, shownSign);
+                float fade = Mathf.Max(.01f, shownSign.definition.fadeSeconds);
+                sign.group.alpha = Mathf.MoveTowards(sign.group.alpha, showSign ? 1f : 0f, deltaTime / fade);
+            }
+
+            if (sign.group.alpha <= 0f)
+            {
+                ClearShownSign();
+                return;
+            }
+
+            sign.root.gameObject.SetActive(true);
+            signClock += deltaTime;
+            sign.Tick(signClock);
+            Position(sign.root, shownSign);
         }
         // 開く操作の案内を、スライドでは文字、画像・Clipでは指定した画像で表示する。
         private void UpdatePrompt(bool interactive)
@@ -252,7 +296,7 @@ namespace Project.Tutorial
             paused = true; closing = false;
             modalPlayer.SuspendInput(); Time.timeScale = 0f;
             Cursor.lockState = CursorLockMode.None; Cursor.visible = true;
-            sign.root.gameObject.SetActive(false); prompt.gameObject.SetActive(false);
+            ClearShownSign(); prompt.gameObject.SetActive(false);
             legacyPrompt.gameObject.SetActive(false);
             shade.SetActive(true); modal.root.gameObject.SetActive(true);
             pageIndex = 0; navigationHeld = true; RefreshPage();

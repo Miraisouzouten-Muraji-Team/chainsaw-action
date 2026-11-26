@@ -88,8 +88,12 @@ public class SensorPlayerController : MonoBehaviour
         AnimationCurve.Linear(0f, 1f, 0.6f, 0f);
     [Tooltip("上り坂から食い込みを解除して飛び出すときの速度倍率です。坂に沿った角度のまま、飛ぶ距離を調整します。1で追加加速なし。")]
     [SerializeField, Min(1f)] private float uphillDiggingReleaseSpeedMultiplier = 1.5f;
+    private const float UPHILL_DIGGING_SLOPE_MEMORY_SECONDS = 0.08f;
+    private float lastUphillDiggingSlopeGradient;
+    private double lastUphillDiggingSlopeTime;
     private bool diggingReleaseMomentumActive;
     private bool diggingReleaseUphillBoostActive;
+    private bool diggingReleaseFromFlatFloor;
     private Vector3 diggingReleaseVelocity;
     private float diggingReleaseElapsed;
     private float diggingReleasePreviousY;
@@ -108,8 +112,9 @@ public class SensorPlayerController : MonoBehaviour
         surfaceNormal.z = 0f;
         bool hasSurfaceNormal = surfaceNormal.sqrMagnitude > 0.0001f;
         if (hasSurfaceNormal) surfaceNormal.Normalize();
-        if (lastDiggingPhysicsSurface == ChainsawSurface.Floor &&
-            hasSurfaceNormal && surfaceNormal.y >= GroundNormalThreshold &&
+        bool releasedFromFloor = lastDiggingPhysicsSurface == ChainsawSurface.Floor && hasSurfaceNormal;
+        diggingReleaseFromFlatFloor = releasedFromFloor && surfaceNormal.y >= FLAT_GROUND_NORMAL_Y;
+        if (releasedFromFloor && surfaceNormal.y >= GroundNormalThreshold &&
             surfaceNormal.y < FLAT_GROUND_NORMAL_Y)
         {
             // 床追従の縦速度には高さ補正も含まれるため、実際の横速度と坂の法線から接線速度を作る。
@@ -131,8 +136,22 @@ public class SensorPlayerController : MonoBehaviour
         currentSpeed = 0f;
     }
 
+    // 床を追従できたときに上り坂の傾きを記録し、先端付近の平らな法線では上書きしない。
+    private void RememberUphillDiggingSlope(Vector3 surfaceNormal, float horizontalSpeed)
+    {
+        surfaceNormal.z = 0f;
+        surfaceNormal.Normalize();
+        if (surfaceNormal.y >= FLAT_GROUND_NORMAL_Y) return;
+
+        float gradient = surfaceNormal.y >= GroundNormalThreshold
+            ? -surfaceNormal.x / surfaceNormal.y : 0f;
+        lastUphillDiggingSlopeGradient = horizontalSpeed * gradient > 0f ? gradient : 0f;
+        lastUphillDiggingSlopeTime = Time.fixedTimeAsDouble;
+    }
+
     // 解除時の慣性を合成し、今回の物理更新で坂に沿う離脱初速を適用したかを返す。
-    private bool ApplyDiggingReleaseMomentum(ref Vector3 velocity, float deltaTime, bool isKnockbackActive)
+    private bool ApplyDiggingReleaseMomentum(ref Vector3 velocity, float deltaTime, bool isKnockbackActive,
+        bool lostFloorDiggingSupport)
     {
         if (!diggingReleaseMomentumActive) return false;
         if (chainsawDigging.IsDigging || isKnockbackActive || IsDamageStunned || IsImpactStunned ||
@@ -149,6 +168,18 @@ public class SensorPlayerController : MonoBehaviour
         float endTime = diggingReleaseMomentumCurve[diggingReleaseMomentumCurve.length - 1].time;
         float weight = endTime > 0f && diggingReleaseElapsed < endTime
             ? Mathf.Clamp01(diggingReleaseMomentumCurve.Evaluate(diggingReleaseElapsed)) : 0f;
+
+        // 先端で平地扱いになってから床を離れた場合だけ、直前に登った坂の角度を使う。
+        if (diggingReleaseFromFlatFloor && diggingReleaseElapsed == 0f && weight > 0f &&
+            !jumpPending && !IsAttacking &&
+            diggingReleaseVelocity.x * lastUphillDiggingSlopeGradient > 0f &&
+            Time.fixedTimeAsDouble - lastUphillDiggingSlopeTime <= UPHILL_DIGGING_SLOPE_MEMORY_SECONDS &&
+            (lostFloorDiggingSupport || !HasJumpGroundSupport()))
+        {
+            diggingReleaseSlopeGradient = lastUphillDiggingSlopeGradient;
+            diggingReleaseVelocity.y = diggingReleaseVelocity.x * diggingReleaseSlopeGradient;
+        }
+
         bool fromSlope = diggingReleaseSlopeGradient != 0f;
         // 横が壁で止まった場合、坂の慣性だけで上下へ移動し続けない。
         if (playerMidCollider != null && playerMidCollider.IsBlocked(diggingReleaseVelocity.x))
@@ -205,6 +236,7 @@ public class SensorPlayerController : MonoBehaviour
     {
         diggingReleaseMomentumActive = false;
         diggingReleaseUphillBoostActive = false;
+        diggingReleaseFromFlatFloor = false;
         diggingReleaseVelocity = Vector3.zero;
         diggingReleaseElapsed = 0f;
         diggingReleasePreviousY = 0f;
@@ -982,6 +1014,8 @@ public class SensorPlayerController : MonoBehaviour
             currentSpeed * DiggingContactSpeedScale,
             ResolvedImpactTerrainLayers
         );
+        bool lostFloorDiggingSupport = previousSurface == ChainsawSurface.Floor &&
+            chainsawDigging.Surface == ChainsawSurface.None;
 
         keepBufferedDiggingFacingUntilTick = false;
 
@@ -1136,10 +1170,12 @@ public class SensorPlayerController : MonoBehaviour
                             deltaTime, out velocity))
                         {
                             jumpsUsed = 0;
+                            RememberUphillDiggingSlope(chainsawDigging.SurfaceNormal, velocity.x);
                         }
                         else
                         {
                             // 本当に床が途切れた場合は、空中で固定せず通常の落下へ戻す。
+                            lostFloorDiggingSupport = true;
                             chainsawDigging.Cancel(false);
                             suppressGravity = false;
                             velocity = playerRigidbody.linearVelocity;
@@ -1159,7 +1195,10 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         // 食い込み解除時の慣性はジャンプ・重力の前に合成する。
-        bool startsAlongReleaseSlope = ApplyDiggingReleaseMomentum(ref velocity, deltaTime, isKnockbackActive);
+        bool startsAlongReleaseSlope = ApplyDiggingReleaseMomentum(ref velocity, deltaTime, isKnockbackActive,
+            lostFloorDiggingSupport);
+        if (chainsawDigging.Surface != ChainsawSurface.Floor)
+            lastUphillDiggingSlopeGradient = 0f;
 
         if (jumpPending)
         {

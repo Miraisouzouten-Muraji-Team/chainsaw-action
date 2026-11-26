@@ -87,6 +87,7 @@ GameObject:
   - component: {fileID: 4435205662285071390}
   - component: {fileID: 2400979624633459438}
   - component: {fileID: 3509794673822183511}
+  - component: {fileID: 8409290979863011074}
   m_Layer: 6
   m_Name: ChargeEnemy
   m_TagString: Untagged
@@ -216,7 +217,7 @@ MonoBehaviour:
         - {fileID: 6110191824558765683}
         - {fileID: 4692534878990018981}
         diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
-        enableMeshCutDiagnosticLogs: 0
+        additionalDiggingAttackData: []
         enableTrajectoryCoordinateValidation: 0
         drawReconstructedTrajectory: 0
         reconstructedTrajectoryDrawDuration: 10
@@ -237,8 +238,11 @@ MonoBehaviour:
         preparationAnimationStateName: Base Layer.rush_enemy_yobi
         attackAnimationStateName: Base Layer.rush_enemy_attack
         chargeDistance: 5
+        chargeDecelerationDistance: 3
         hasChargeDistanceBeenInitialized: 1
         collisionEffectPrefab: {fileID: 0}
+        chargeEffectPrefab: {fileID: 0}
+        chargeEffectOrigin: {fileID: 0}
 --- !u!114 &4679851848841308727
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -269,6 +273,13 @@ MonoBehaviour:
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
+  playerPushReactionDistance: 0.08
+  playerPushSpeedMultiplier: 0.85
+  playerPushMaximumSpeed: 4
+  playerPushMaximumVelocityChangePerStep: 1.5
+  playerPushMinimumSideOverlapRatio: 0.25
+  playerPushRollingLeverArmRatio: 0.1
+  playerPushInitialDelay: 0.15
   minimumCapsuleAspectRatio: 1.2
   preGeneratedPieceCount: 2
   keepCutSidesAsSinglePieces: 0
@@ -387,6 +398,13 @@ MonoBehaviour:
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
+  playerPushReactionDistance: 0.08
+  playerPushSpeedMultiplier: 0.85
+  playerPushMaximumSpeed: 4
+  playerPushMaximumVelocityChangePerStep: 1.5
+  playerPushMinimumSideOverlapRatio: 0.25
+  playerPushRollingLeverArmRatio: 0.1
+  playerPushInitialDelay: 0.15
 --- !u!114 &4435205662285071390
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -445,6 +463,21 @@ MonoBehaviour:
   maximumPushDistance: 0.6
   pushSpeed: 2.5
   returnSpeed: 1.5
+--- !u!114 &8409290979863011074
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6838508827869361679}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 99cdbd694e2f0f24eb50b69fb8de7b59, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyDeathEffect
+  enemyHealth: {fileID: 7311387851396604318}
+  deathEffectPrefab: {fileID: 8477330435731155599, guid: 5c90876764cf7c14ab4a85682c95225b, type: 3}
+  effectLifetime: 5
 --- !u!1001 &302273918742294937
 PrefabInstance:
   m_ObjectHideFlags: 0

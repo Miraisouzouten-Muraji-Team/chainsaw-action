@@ -543,6 +543,7 @@ GameObject:
   - component: {fileID: 4926474177923353256}
   - component: {fileID: 7772943691846023869}
   - component: {fileID: 2208696386936269057}
+  - component: {fileID: 5049297071793203792}
   m_Layer: 6
   m_Name: TurretEnemy
   m_TagString: Untagged
@@ -773,6 +774,13 @@ MonoBehaviour:
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
+  playerPushReactionDistance: 0.08
+  playerPushSpeedMultiplier: 0.85
+  playerPushMaximumSpeed: 4
+  playerPushMaximumVelocityChangePerStep: 1.5
+  playerPushMinimumSideOverlapRatio: 0.25
+  playerPushRollingLeverArmRatio: 0.1
+  playerPushInitialDelay: 0.15
   minimumCapsuleAspectRatio: 1.5
   preGeneratedPieceCount: 0
   keepCutSidesAsSinglePieces: 0
@@ -864,6 +872,13 @@ MonoBehaviour:
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
+  playerPushReactionDistance: 0.08
+  playerPushSpeedMultiplier: 0.85
+  playerPushMaximumSpeed: 4
+  playerPushMaximumVelocityChangePerStep: 1.5
+  playerPushMinimumSideOverlapRatio: 0.25
+  playerPushRollingLeverArmRatio: 0.1
+  playerPushInitialDelay: 0.15
 --- !u!114 &7772943691846023869
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -891,6 +906,21 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::EnemyHealthBarTarget
   healthBarAnchor: {fileID: 0}
   defaultPositionOffset: {x: 0, y: 0.7, z: 0}
+--- !u!114 &5049297071793203792
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8971459978354202689}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 99cdbd694e2f0f24eb50b69fb8de7b59, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyDeathEffect
+  enemyHealth: {fileID: 3676953611713412985}
+  deathEffectPrefab: {fileID: 8477330435731155599, guid: 5c90876764cf7c14ab4a85682c95225b, type: 3}
+  effectLifetime: 5
 --- !u!1001 &6832137931109091967
 PrefabInstance:
   m_ObjectHideFlags: 0

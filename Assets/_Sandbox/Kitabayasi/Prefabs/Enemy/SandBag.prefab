@@ -56,6 +56,7 @@ GameObject:
   - component: {fileID: 2021506268007114684}
   - component: {fileID: 7198067811692796237}
   - component: {fileID: 3026615246193843720}
+  - component: {fileID: 1238787788085678964}
   m_Layer: 6
   m_Name: SandBag
   m_TagString: Enemy
@@ -180,7 +181,7 @@ MonoBehaviour:
         - {fileID: 11400000, guid: 51cf14bc037d2294990288d016e884dc, type: 2}
         additionalDeathPieces: []
         diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
-        enableMeshCutDiagnosticLogs: 0
+        additionalDiggingAttackData: []
         enableTrajectoryCoordinateValidation: 0
         drawReconstructedTrajectory: 0
         reconstructedTrajectoryDrawDuration: 10
@@ -229,6 +230,13 @@ MonoBehaviour:
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
+  playerPushReactionDistance: 0.08
+  playerPushSpeedMultiplier: 0.85
+  playerPushMaximumSpeed: 4
+  playerPushMaximumVelocityChangePerStep: 1.5
+  playerPushMinimumSideOverlapRatio: 0.25
+  playerPushRollingLeverArmRatio: 0.1
+  playerPushInitialDelay: 0.15
   minimumCapsuleAspectRatio: 1.2
   preGeneratedPieceCount: 2
   keepCutSidesAsSinglePieces: 0
@@ -374,6 +382,13 @@ MonoBehaviour:
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
+  playerPushReactionDistance: 0.08
+  playerPushSpeedMultiplier: 0.85
+  playerPushMaximumSpeed: 4
+  playerPushMaximumVelocityChangePerStep: 1.5
+  playerPushMinimumSideOverlapRatio: 0.25
+  playerPushRollingLeverArmRatio: 0.1
+  playerPushInitialDelay: 0.15
 --- !u!114 &3026615246193843720
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -386,12 +401,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ecfa225638ba7754481e634c345171a6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyDiggingDeathBurst
-  burstOrigin: {fileID: 0}
-  upperBurstForce: 8
-  upperTorqueStrength: 0.3
-  lowerBurstForce: 10
-  lowerDownwardBias: 1
-  directionSpread: 10
+  burstSpeed: 8
+--- !u!114 &1238787788085678964
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8856678778778255261}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 99cdbd694e2f0f24eb50b69fb8de7b59, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyDeathEffect
+  enemyHealth: {fileID: 110358812601047028}
+  deathEffectPrefab: {fileID: 8477330435731155599, guid: 5c90876764cf7c14ab4a85682c95225b, type: 3}
+  effectLifetime: 5
 --- !u!1001 &1723863578532521472
 PrefabInstance:
   m_ObjectHideFlags: 0

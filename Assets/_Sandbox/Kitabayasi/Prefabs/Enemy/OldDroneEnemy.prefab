@@ -116,6 +116,7 @@ GameObject:
   - component: {fileID: 5154018025018334176}
   - component: {fileID: 7012175472877919712}
   - component: {fileID: 7995974081439090800}
+  - component: {fileID: 7522714596821671216}
   m_Layer: 6
   m_Name: OldDroneEnemy
   m_TagString: Enemy
@@ -245,7 +246,7 @@ MonoBehaviour:
         - {fileID: 11400000, guid: 51cf14bc037d2294990288d016e884dc, type: 2}
         additionalDeathPieces: []
         diggingAttackData: {fileID: 11400000, guid: 574997fa9ed4d2d4ba664ad7f276802f, type: 2}
-        enableMeshCutDiagnosticLogs: 0
+        additionalDiggingAttackData: []
         enableTrajectoryCoordinateValidation: 0
         drawReconstructedTrajectory: 0
         reconstructedTrajectoryDrawDuration: 10
@@ -257,7 +258,9 @@ MonoBehaviour:
         patrolPointB: {fileID: 8280571241187262243}
     - rid: 2559746894314340429
       type: {class: OldDroneEnemyAttackStrategy, ns: , asm: Assembly-CSharp}
-      data: 
+      data:
+        chargeEffectPrefab: {fileID: 0}
+        chargeEffectOrigin: {fileID: 0}
     - rid: 2559746894314340430
       type: {class: StandardEnemyAlertStrategy, ns: , asm: Assembly-CSharp}
       data:
@@ -293,6 +296,13 @@ MonoBehaviour:
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
+  playerPushReactionDistance: 0.08
+  playerPushSpeedMultiplier: 0.85
+  playerPushMaximumSpeed: 4
+  playerPushMaximumVelocityChangePerStep: 1.5
+  playerPushMinimumSideOverlapRatio: 0.25
+  playerPushRollingLeverArmRatio: 0.1
+  playerPushInitialDelay: 0.15
   minimumCapsuleAspectRatio: 1.2
   preGeneratedPieceCount: 0
   keepCutSidesAsSinglePieces: 0
@@ -415,12 +425,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ecfa225638ba7754481e634c345171a6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyDiggingDeathBurst
-  burstOrigin: {fileID: 8714056321515148613}
-  upperBurstForce: 8
-  upperTorqueStrength: 0.3
-  lowerBurstForce: 10
-  lowerDownwardBias: 1
-  directionSpread: 10
+  burstSpeed: 8
 --- !u!114 &7995974081439090800
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -446,9 +451,32 @@ MonoBehaviour:
   - {fileID: 4300000, guid: 8ec37a23413de9443858a505210d4bb3, type: 2}
   - {fileID: 4300000, guid: c6b2914bcb93f164f92202c101738a98, type: 2}
   - {fileID: 4300000, guid: 27d435b6af49e71409d617aac315fcf0, type: 2}
+  bakedSkinnedSourceScale: {x: 0, y: 0, z: 0}
   densityScale: 1
   minimumPieceMass: 0.1
   maximumPieceMass: 10
+  playerPushReactionDistance: 0.08
+  playerPushSpeedMultiplier: 0.85
+  playerPushMaximumSpeed: 4
+  playerPushMaximumVelocityChangePerStep: 1.5
+  playerPushMinimumSideOverlapRatio: 0.25
+  playerPushRollingLeverArmRatio: 0.1
+  playerPushInitialDelay: 0.15
+--- !u!114 &7522714596821671216
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4656271209163700965}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 99cdbd694e2f0f24eb50b69fb8de7b59, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyDeathEffect
+  enemyHealth: {fileID: 4111352456279293313}
+  deathEffectPrefab: {fileID: 2518324709142629219, guid: ff9d5baa37b6cf9429c2739b164cd7fa, type: 3}
+  effectLifetime: 5
 --- !u!1 &6137697147329595320
 GameObject:
   m_ObjectHideFlags: 0

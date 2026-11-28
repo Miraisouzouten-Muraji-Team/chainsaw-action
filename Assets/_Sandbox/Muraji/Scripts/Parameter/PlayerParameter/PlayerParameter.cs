@@ -27,6 +27,8 @@ public class PlayerParameter : ScriptableObject
     public float moveDeadZone = 0.2f;
 
     [Header("ジャンプ・重力")]
+    [Tooltip("地上から数えたジャンプの最大回数です。2で通常ジャンプと空中ジャンプが各1回です。")]
+    [Min(2)] public int maxJumpCount = 2;
     [Tooltip("ジャンプ力")]
     [SerializeField]
     public float jumpForce = 10f;
@@ -185,4 +187,134 @@ public class PlayerParameter : ScriptableObject
     [Tooltip("アニメーション間隔変更")]
     [SerializeField, Range(0.1f, 1f)]
     public float comboAdvanceTime = 1;
+
+    [Header("プレイヤーの移動・食い込みの追加調整")]
+    [Tooltip("食い込みを解除した後に速度を残すカーブです。横軸は解除後の秒数、縦軸は残す割合（0～1）です。最後のキーの時刻まで慣性を適用します。例：0秒で1、0.6秒で0。キーを削除すると無効になります。")]
+    public AnimationCurve diggingReleaseMomentumCurve =
+        AnimationCurve.Linear(0f, 1f, 0.6f, 0f);
+
+    [Tooltip("上り坂から食い込みを解除して飛び出すときの速度倍率です。坂に沿った角度のまま、飛ぶ距離を調整します。1で追加加速なし。")]
+    [Min(1f)]
+    public float uphillDiggingReleaseSpeedMultiplier = 1.5f;
+
+    [Tooltip("足元から何メートル上まで壁上端の床を探すかを指定します。0にすると乗り越え補助を無効にします。")]
+    [Min(0f)]
+    public float wallTopMaxRise = 0.85f;
+
+    [Tooltip("壁の上端を越える横移動と、上昇が足りないときの補助に使う速度です。登ってきた上向きの勢いが強い場合はその速度を優先します。")]
+    [Min(0.1f)]
+    public float wallTopMoveSpeed = 8f;
+
+    [Tooltip("通常の移動食い込みで敵に接触して被弾した直後の移動速度倍率です。1で減速なし。")]
+    [Range(0f, 1f)]
+    public float diggingContactSpeedMultiplier = 0.8f;
+
+    [Tooltip("接触被弾後、元の食い込み速度へ戻るまでの秒数です。0で減速なし。")]
+    [Min(0f)]
+    public float diggingContactRecoverySeconds = 0.2f;
+
+    [Tooltip("天井に食い込んだ状態でジャンプしたとき、天井から下へ離れる初速です。斜め天井の継ぎ目へ上向きに押し込まないために使用します。")]
+    [Min(0.01f)]
+    public float ceilingJumpReleaseSpeed = 6f;
+
+    [Tooltip("天井ジャンプ後、下向きの離脱を保証する秒数です。この間は天井角の持ち上げ補正と再食い込みを停止します。")]
+    [Min(0.01f)]
+    public float ceilingJumpReleaseDuration = 0.12f;
+
+    [Tooltip("NothingならDetectorのTerrain Layersを使用。指定する場合は敵を含めない")]
+    public LayerMask impactTerrainLayers;
+
+    [Header("移動と攻撃のエフェクト")]
+    [Tooltip("歩行アニメーションを再生するAnimatorのレイヤー番号です。通常の基本レイヤーは0です。")]
+    [Min(0)]
+    public int walkEffectAnimatorLayer;
+
+    [Tooltip("歩行エフェクトを生成する間隔です。小さいほど密に出ます。")]
+    [Min(0.02f)]
+    public float walkEffectInterval = 0.15f;
+
+    [Tooltip("ブレンド中の歩行クリップを再生中とみなす最小の重みです。")]
+    [Range(0.01f, 1f)]
+    public float walkEffectMinimumWeight = 0.1f;
+
+    [Tooltip("着地エフェクトに必要な空中時間です。斜面の接地判定が短く途切れたときの連発を防ぎます。")]
+    [Min(0f)]
+    public float landingEffectMinimumAirSeconds = 0.08f;
+
+    [Tooltip("攻撃エフェクトの斬撃が最後まで進む秒数です。食い込みで止まっている時間は含みません。")]
+    [Min(0.01f)]
+    public float slashEffectDuration = 0.25f;
+
+    [Tooltip("歩行エフェクトを生成してから削除するまでの秒数です。")]
+    [Min(0.01f)] public float walkEffectLifetime = 2f;
+
+    [Tooltip("通常ジャンプエフェクトを生成してから削除するまでの秒数です。")]
+    [Min(0.01f)] public float jumpEffectLifetime = 2f;
+
+    [Tooltip("二段ジャンプエフェクトを生成してから削除するまでの秒数です。")]
+    [Min(0.01f)] public float doubleJumpEffectLifetime = 2f;
+
+    [Tooltip("着地エフェクトを生成してから削除するまでの秒数です。")]
+    [Min(0.01f)] public float landingEffectLifetime = 2f;
+
+    [Tooltip("地上弱攻撃開始エフェクトを生成してから削除するまでの秒数です。")]
+    [Min(0.01f)] public float groundAttackEffectLifetime = 2f;
+
+    [Tooltip("空中弱攻撃開始エフェクトを生成してから削除するまでの秒数です。")]
+    [Min(0.01f)] public float airAttackEffectLifetime = 2f;
+
+    [Tooltip("地上の振り抜きエフェクトを生成してから削除するまでの秒数です。")]
+    [Min(0.01f)] public float groundSwingEffectLifetime = 2f;
+
+    [Tooltip("空中の振り抜きエフェクトを生成してから削除するまでの秒数です。")]
+    [Min(0.01f)] public float airSwingEffectLifetime = 2f;
+
+    [Header("接触判定と移動の細かい調整")]
+    [Tooltip("天井接触後に落下猶予を開始するために必要な上昇速度です。")]
+    [Min(0f)] public float ceilingGraceMinimumUpwardSpeed = 0.05f;
+
+    [Tooltip("坂の端で直前の上り坂の傾きを使える時間です。")]
+    [Min(0f)] public float uphillDiggingSlopeMemorySeconds = 0.08f;
+
+    [Tooltip("壁上端で本体が地形に当たらないように確保する距離です。")]
+    [Min(0f)] public float wallTopClearance = 0.06f;
+
+    [Tooltip("壁の乗り越え完了とみなす残り距離です。")]
+    [Min(0f)] public float wallTopPositionTolerance = 0.012f;
+
+    [Tooltip("壁の乗り越え先に障害物がないか確認する追加距離です。")]
+    [Min(0f)] public float wallTopStepMargin = 0.005f;
+
+    [Tooltip("壁上端から奥に向かって床を探す照会回数です。")]
+    [Min(1)] public int wallTopProbeCount = 4;
+
+    [Tooltip("壁上端の床を探すときの照会間隔です。")]
+    [Min(0f)] public float wallTopProbeSpacing = 0.12f;
+
+    [Tooltip("敵から飛び出して逆方向へ入力したとき、横の勢いを抑える速さを決める秒数です。")]
+    [Min(0.001f)] public float enemyReleaseTurnBrakeTime = 0.08f;
+
+    [Tooltip("壁を登れない状態が何秒続けば診断ログを出すかを指定します。")]
+    [Min(0f)] public float wallStallSeconds = 0.3f;
+
+    [Tooltip("壁登りで正常とみなす実測速度と指示速度の比率です。")]
+    [Range(0f, 1f)] public float wallProgressRatio = 0.1f;
+
+    [Tooltip("平地とみなす床の法線Yの下限です。1に近いほど平地として扱う傾きが小さくなります。")]
+    [Range(0.9f, 1f)] public float flatGroundNormalY = 0.999f;
+
+    [Tooltip("床や天井の角補正を行うために必要な最小の重なりです。")]
+    [Min(0f)] public float minimumCornerOverlap = 0.02f;
+
+    [Tooltip("角補正で地形と離すために足す距離です。")]
+    [Min(0f)] public float cornerCorrectionExtraMargin = 0.005f;
+
+    [Tooltip("ジャンプや反動の直後に床の再接地を無視する時間です。")]
+    [Min(0f)] public float launchGroundIgnoreSeconds = 0.1f;
+
+    [Tooltip("天井の角補正直後に強衝突を抑える時間です。")]
+    [Min(0f)] public float ceilingCornerGraceSeconds = 0.12f;
+
+    [Tooltip("天井食い込み時の衝突前速度を保存する長さを、物理更新の回数で指定します。")]
+    [Min(0f)] public float ceilingImpactVelocityMemorySteps = 1.5f;
 }

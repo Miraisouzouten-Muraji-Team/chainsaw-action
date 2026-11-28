@@ -154,7 +154,7 @@ public class SensorChainsawDigging : MonoBehaviour
     // 移動中の接触攻撃は、アクセル値とボーナスに関係なく設定済みの固定倍率を返す。
     private float GetMovementContactDamageMultiplier()
     {
-        return Mathf.Clamp01(movementContactDamageMultiplier);
+        return Mathf.Clamp01(diggingParameter.movementContactDamageMultiplier);
     }
 
     // 継続中の弱攻撃は専用Receiver、通常食い込みは既存の敵HPで有効性を確認する。
@@ -189,9 +189,6 @@ public class SensorChainsawDigging : MonoBehaviour
     // Hold操作の予約押下を、最低1回の物理更新で処理するまで保持する。
     private bool bufferedRequestAwaitingTick;
 
-    [Header("ホールド解除後の壁ジャンプ")]
-    [Tooltip("ホールドで壁食い込みを離してから壁ジャンプを受け付ける秒数です。0にすると無効になります。")]
-    [SerializeField, Min(0f)] private float wallJumpReleaseBufferSeconds = 0.15f;
 
     private Vector3 releasedWallJumpNormal;
     private bool releasedWallJumpHadBonus;
@@ -211,11 +208,10 @@ public class SensorChainsawDigging : MonoBehaviour
 
     public ChainsawSurface Surface { get; private set; }
 
-    private const float BONUS_ACCELERATOR_RATIO = 0.8f;
-
     // 通常上限に対する現在のアクセルで判定する。最大50なら40以上で成立する。
     private bool MeetsBonusAcceleratorThreshold =>
-        accelerator != null && accelerator.SpeedRatio >= BONUS_ACCELERATOR_RATIO;
+        accelerator != null && diggingParameter != null &&
+        accelerator.SpeedRatio >= Mathf.Clamp01(diggingParameter.bonusThreshold);
 
     // 開始時の判定を保持せず、食い込み中の現在値でボーナスを返す。
     public bool HasBonus =>
@@ -303,8 +299,6 @@ public class SensorChainsawDigging : MonoBehaviour
                     : 0f;
 
     [Header("移動食い込み中の接触攻撃")]
-    [Tooltip("床・壁・天井への食い込み移動で敵に触れたときの固定ダメージ倍率です。0.3なら食い込み攻撃力の30%。アクセル値とボーナスでは変化しません。")]
-    [SerializeField, Range(0f, 1f)] private float movementContactDamageMultiplier = 0.3f;
 
     [Tooltip("ボーナス外の床・壁・天井食い込みで敵に触れたときのノックバック専用AttackDataです。攻撃ベクトルだけを使います。通常食い込みに使うAttackDataとは別のアセットを指定してください。未設定なら接触ダメージだけを適用します。")]
     [SerializeField] private AttackData movementContactKnockbackData;
@@ -362,7 +356,6 @@ public class SensorChainsawDigging : MonoBehaviour
     // 空中で食い込みを入力し、最初の接触を待っている状態。
     private bool isWaitingForContact;
     public bool IsWaitingForTerrainReattach { get; private set; }
-    private const float GROUND_CONTACT_WAIT_AFTER_ATTACK_SECONDS = 0.15f;
     private const float WALL_CONSUME_TOLERANCE = 0.0001f;
     private float attackResumeContactWaitUntil;
 
@@ -498,11 +491,11 @@ public class SensorChainsawDigging : MonoBehaviour
                     ? SurfaceNormal : Vector3.zero;
                 bool hadBonus = HasBonus;
                 Cancel(false);
-                if (wallJumpReleaseBufferSeconds > 0f && Mathf.Abs(releasedNormal.x) > 0.01f)
+                if (diggingParameter.wallJumpReleaseBufferSeconds > 0f && Mathf.Abs(releasedNormal.x) > 0.01f)
                 {
                     releasedWallJumpNormal = releasedNormal;
                     releasedWallJumpHadBonus = hadBonus;
-                    wallJumpReleaseBufferUntil = Time.time + wallJumpReleaseBufferSeconds;
+                    wallJumpReleaseBufferUntil = Time.time + diggingParameter.wallJumpReleaseBufferSeconds;
                 }
             }
 
@@ -586,7 +579,7 @@ public class SensorChainsawDigging : MonoBehaviour
         isWaitingForContact = !hasContact && waitForContact;
         IsWaitingForTerrainReattach = reattachAfterTerrainLoss && isWaitingForContact;
         attackResumeContactWaitUntil = isWaitingForContact && waitBrieflyOnGround
-            ? Time.time + GROUND_CONTACT_WAIT_AFTER_ATTACK_SECONDS
+            ? Time.time + diggingParameter.groundContactWaitAfterAttackSeconds
             : 0f;
 
         if (hasContact)
@@ -1582,4 +1575,11 @@ public class SensorChainsawDigging : MonoBehaviour
         pendingMovementCollisions.Clear();
         queuedMovementCollisionEnemies.Clear();
     }
+
+#if UNITY_EDITOR
+    // 既存のPrefab・シーンの値をSOへ移すために、元のシリアライズ名を保持する。
+    [SerializeField, HideInInspector] private string numericSettingsMigrationAssetGuid;
+    [SerializeField, HideInInspector] private float wallJumpReleaseBufferSeconds = 0.15f;
+    [SerializeField, HideInInspector] private float movementContactDamageMultiplier = 0.3f;
+#endif
 }

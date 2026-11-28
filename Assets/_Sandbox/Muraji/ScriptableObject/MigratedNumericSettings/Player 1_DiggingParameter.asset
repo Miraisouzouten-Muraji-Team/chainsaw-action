@@ -1,0 +1,46 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9eed7deb3d0276c4f9c77f87ba00ab9d, type: 3}
+  m_Name: Player 1_DiggingParameter
+  m_EditorClassIdentifier: Assembly-CSharp::DiggingParameter
+  inputMode: 1
+  bonusThreshold: 0.8
+  floorSpeedDivisor: 3
+  floorDashPower: 15
+  floorEvadeTime: 0.5
+  wallConsumeInterval: 0.1
+  wallConsumeAmount: 0.1
+  wallJumpPower: 50
+  bonusWallJumpPower: 15
+  wallEvadeTime: 0.25
+  wallContactGraceTime: 0.2
+  ceilingSpeedDivisor: 5
+  ceilingDashPower: 15
+  ceilingEvadeTime: 0.35
+  enemyAttackInterval: 0.15
+  enemyConsumeAmount: 0
+  bonusEnemyConsumeAmount: 0
+  minDamageMultiplier: 0.9
+  maxDamageMultiplier: 1.25
+  bonusDamageMultiplier: 3
+  enemyPushPower: 2
+  enemyReboundThreshold: 100
+  enemyReboundHits: 15
+  enemyReboundStunSeconds: 0.3
+  enemyReboundKnockbackSpeed: 0
+  enemyReboundUpwardSpeed: 0
+  airContactWaitDuration: 1
+  wallClimbInputWindow: 0.2
+  floorTransitionWallGraceTime: 0.05
+  wallJumpReleaseBufferSeconds: 0.15
+  movementContactDamageMultiplier: 1
+  groundContactWaitAfterAttackSeconds: 0.15

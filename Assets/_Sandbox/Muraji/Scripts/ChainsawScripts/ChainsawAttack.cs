@@ -5,7 +5,6 @@ using UnityEngine;
 [DefaultExecutionOrder(10000)]
 public class ChainsawAttack : MonoBehaviour
 {
-    private const int SLASH_HIT_COUNT = 4;
     private PlayerAnimator weakAttackAnimator;
     private bool weakAttackStartedInAir;
     private MonoBehaviour weakDigTarget;
@@ -20,11 +19,11 @@ public class ChainsawAttack : MonoBehaviour
     private Collider finishingTargetCollider;
     private SensorPlayerController weakAttackController;
 
-    [Header("食い込み中の敵の震え")]
-    [Tooltip("振り抜きの攻撃ベクトルに沿って敵モデルを震わせる片側の幅です。ワールド座標の距離で指定し、0なら震えを無効にします。当たり判定とRigidbodyは動かしません。")]
-    [SerializeField, Min(0f)] private float enemyDiggingShakeAmplitude = 0.025f;
-    [Tooltip("食い込み中に敵モデルが1秒間に往復する回数です。ヒットストップ中は震えの時間も止まります。")]
-    [SerializeField, Min(0f)] private float enemyDiggingShakeFrequency = 20f;
+    [Header("チェーンソー攻撃設定")]
+    [Tooltip("敵の震え、接触無視時間、ヒット時の揺れ、アクセル加算を設定したSOを指定してください。")]
+    [SerializeField] private ChainsawAttackParameter attackParameter;
+    private ChainsawAttackParameter defaultAttackParameter;
+    private ChainsawAttackParameter AttackSettings => attackParameter != null ? attackParameter : defaultAttackParameter;
     private bool enemyShakeWarningLogged;
 
     // モデル表示に加算した位置だけを保持し、アニメーションや物理位置と分離する。
@@ -54,10 +53,6 @@ public class ChainsawAttack : MonoBehaviour
     [SerializeField] private BoxCollider weakFinisherHitBox;
     private Collider[] weakFinisherOverlaps = new Collider[16];
 
-    [Header("振り抜き後のプレイヤーとの接触無視")]
-    [Tooltip("振り抜き後に敵がプレイヤーを押さないよう、両者の接触を一時的に無視する秒数です。敵の速度・位置・地面衝突は敵側で制御します。")]
-    [SerializeField, Min(0.01f)]
-    private float slashKnockbackPriorityDuration = 0.15f;
 
     // 振り抜いた敵との衝突だけを一時停止する。元から無視していた組は変更しない。
     private sealed class KnockbackCollisionPair
@@ -79,7 +74,7 @@ public class ChainsawAttack : MonoBehaviour
         if (playerBody == null || enemyBody == null || playerBody == enemyBody) return;
         Collider[] playerColliders = playerBody.GetComponentsInChildren<Collider>(true);
         Collider[] enemyColliders = enemyBody.GetComponentsInChildren<Collider>(true);
-        float remaining = Mathf.Max(Time.fixedDeltaTime, slashKnockbackPriorityDuration);
+        float remaining = Mathf.Max(Time.fixedDeltaTime, AttackSettings.slashKnockbackPriorityDuration);
         foreach (Collider playerCollider in playerColliders)
         {
             if (playerCollider == null || playerCollider.isTrigger ||
@@ -165,13 +160,9 @@ public class ChainsawAttack : MonoBehaviour
     [Tooltip("ゲーム画面のカメラを揺らすコンポーネントを指定してください。未設定なら自動取得します。")]
     [SerializeField] private CameraShake_System cameraShake;
 
-    [Tooltip("通常攻撃・食い込み共通の揺れ時間です。0なら0.15秒を使用します。揺れの強さは各攻撃SOで設定します。")]
-    [SerializeField, Min(0f)]
-    private float duration = 0.15f;
 
     [Tooltip("命中時に時間を停止するコンポーネントを指定してください。未設定なら自動取得します。")]
     [SerializeField] private HitStop_System hitStopSystem;
-    private const float DEFAULT_SHAKE_DURATION = 0.15f;
 
     // 設定不足の警告を、食い込みの連続命中で繰り返さないための記録。
     private bool shakeWarningLogged;
@@ -191,6 +182,7 @@ public class ChainsawAttack : MonoBehaviour
     private bool hitWindowOpen;
     private bool diggingActive;
     private int slashHitIndex;
+    private int weakFinisherHitIndex;
 
     // 通常攻撃の1段ごとに、送信済みの敵を記録する。
     private readonly HashSet<MonoBehaviour> hitEnemies =
@@ -200,12 +192,7 @@ public class ChainsawAttack : MonoBehaviour
     [Tooltip("ダメージボーナスと弱攻撃の命中加算に使うプレイヤーのアクセル管理です。未指定なら、この武器の最上位の親とその子から取得します。")]
     [SerializeField] private ChainsawAccelerator damageBonusAccelerator;
 
-    [Header("弱攻撃の命中で増えるアクセル")]
-    [Tooltip("食い込み3連撃でダメージが成立するたびに増えるアクセル値です。")]
-    [SerializeField, Min(0f)] private float weakDiggingAcceleratorGain = 1f;
 
-    [Tooltip("振り抜きでダメージが成立したときに増えるアクセル値です。複数の敵に当たっても弱攻撃1回につき一度だけ増えます。")]
-    [SerializeField, Min(0f)] private float weakFinisherAcceleratorGain = 5f;
 
     // AttackDataのチェック・発動基準・上乗せ割合から、今回のダメージ倍率を求める。
     private float GetAttackDamageMultiplier(AttackData data)
@@ -222,6 +209,9 @@ public class ChainsawAttack : MonoBehaviour
     // 武器の判定と演出の参照、およびダメージボーナス用アクセル参照を初期化する。
     private void Awake()
     {
+        if (attackParameter == null)
+            defaultAttackParameter = ScriptableObject.CreateInstance<ChainsawAttackParameter>();
+
         if (hitBox == null)
         {
             Debug.LogError(
@@ -272,6 +262,8 @@ public class ChainsawAttack : MonoBehaviour
         attackHitStopTime = Mathf.Max(0f, data.hitStopTime);
         attackShakeMagnitude = Mathf.Max(0f, data.cameraShack);
 
+        // 最初の接触はダメージに数えないため、振り抜きの番号を命中回数より1つ先にする。
+        weakFinisherHitIndex = Mathf.Clamp(AttackSettings.weakDiggingHitCount, 1, int.MaxValue - 1) + 1;
         attackPrepared = true;
     }
 
@@ -284,18 +276,18 @@ public class ChainsawAttack : MonoBehaviour
             return;
         }
 
-        if (weakDigHolding || hitWindowOpen || slashHitIndex >= SLASH_HIT_COUNT)
+        if (weakDigHolding || hitWindowOpen || slashHitIndex >= weakFinisherHitIndex)
         {
             return;
         }
 
         // アニメーションイベント1回につき1撃分の判定を開く。
-        slashHitIndex = slashHitIndex == 0 ? 1 : SLASH_HIT_COUNT;
+        slashHitIndex = slashHitIndex == 0 ? 1 : weakFinisherHitIndex;
         hitEnemies.Clear();
         hitWindowOpen = true;
         hitBox.enabled = true;
         // 振り抜きは食い込んだ敵へ送る。姿勢変化でColliderが離れても取りこぼさない。
-        if (slashHitIndex == SLASH_HIT_COUNT && finishingTargetCollider != null)
+        if (slashHitIndex == weakFinisherHitIndex && finishingTargetCollider != null)
         {
             Collider targetCollider = finishingTargetCollider;
             finishingTargetCollider = null;
@@ -306,11 +298,11 @@ public class ChainsawAttack : MonoBehaviour
         ScanWeakFinisher(syncTransforms: true);
     }
 
-    // 振り抜きのイベントから、接続していた敵への4回目の攻撃判定を開始する。
+    // 振り抜きのイベントから、接続していた敵への最後の攻撃判定を開始する。
     public void EnableWeakAttackFinisher()
     {
         if (!attackPrepared || weakDigHolding || slashHitIndex == 0 ||
-            slashHitIndex >= SLASH_HIT_COUNT) return;
+            slashHitIndex >= weakFinisherHitIndex) return;
         DisableHitBox();
         EnableHitBox();
     }
@@ -319,7 +311,7 @@ public class ChainsawAttack : MonoBehaviour
     private void ScanWeakFinisher(bool syncTransforms = false)
     {
         if (!isActiveAndEnabled || !attackPrepared || !hitWindowOpen || weakDigHolding ||
-            slashHitIndex != SLASH_HIT_COUNT || Time.timeScale <= 0f ||
+            slashHitIndex != weakFinisherHitIndex || Time.timeScale <= 0f ||
             weakFinisherHitBox == null || weakFinisherHitBox == hitBox)
         {
             return;
@@ -577,7 +569,7 @@ public class ChainsawAttack : MonoBehaviour
             if (data != null) Destroy(data);
         }
         scaledDiggingData.Clear();
-
+        if (defaultAttackParameter != null) Destroy(defaultAttackParameter);
     }
 
     private void OnTriggerEnter(Collider other)
@@ -622,7 +614,7 @@ public class ChainsawAttack : MonoBehaviour
         Vector3 point =
             other.ClosestPoint(hitCenter ?? hitBox.bounds.center);
 
-        if (slashHitIndex < SLASH_HIT_COUNT)
+        if (slashHitIndex < weakFinisherHitIndex)
         {
             if (weakAttackAnimator == null || weakAttackDigging == null ||
                 !weakAttackAnimator.HoldWeakAttackPose()) return;
@@ -646,7 +638,7 @@ public class ChainsawAttack : MonoBehaviour
         float shakeMagnitude = attackShakeMagnitude;
 
         // 受信側の処理で攻撃が終了しても、命中時のSOと左右判定を維持する。
-        bool isFinishingHit = slashHitIndex >= SLASH_HIT_COUNT;
+        bool isFinishingHit = slashHitIndex >= weakFinisherHitIndex;
         // OnWeakAttackSwingで開いたこの区間に、開始時の振り抜き専用SOのベクトルを適用する。
         AttackData sourceData = currentData;
         int attackDamage = Mathf.Max(0, Mathf.RoundToInt(
@@ -750,15 +742,15 @@ public class ChainsawAttack : MonoBehaviour
         }
     }
 
-    // 通常敵食い込みの共通処理から、HPを減らせた回数を数えて3回で再開する。
+    // 通常敵食い込みの共通処理から、HPを減らせた回数を数えて設定回数に達したら再開する。
     public bool RegisterWeakEnemyDamage()
     {
         if (!weakDigHolding || !lastHitDealtDamage) return false;
         slashHitIndex++;
         if (damageBonusAccelerator != null)
-            damageBonusAccelerator.AddSpeed(weakDiggingAcceleratorGain);
-        // 初段の接触自体はダメージに数えないため、接触時の値1に3回を足す。
-        if (slashHitIndex >= SLASH_HIT_COUNT) FinishWeakDigHold();
+            damageBonusAccelerator.AddSpeed(AttackSettings.weakDiggingAcceleratorGain);
+        // 初段の接触自体はダメージに数えないため、命中数を振り抜きの番号と比較する。
+        if (slashHitIndex >= weakFinisherHitIndex) FinishWeakDigHold();
         return true;
     }
 
@@ -768,7 +760,7 @@ public class ChainsawAttack : MonoBehaviour
         if (weakFinisherAcceleratorGranted || damageBonusAccelerator == null) return;
 
         weakFinisherAcceleratorGranted = true;
-        damageBonusAccelerator.AddSpeed(weakFinisherAcceleratorGain);
+        damageBonusAccelerator.AddSpeed(AttackSettings.weakFinisherAcceleratorGain);
     }
 
     // プレイヤーの食い込み停止姿勢を解除し、次の判定を振り抜きとして扱う。
@@ -782,7 +774,7 @@ public class ChainsawAttack : MonoBehaviour
         weakDigCollider = null;
         if (weakAttackAnimator != null) weakAttackAnimator.ResumeWeakAttackPose();
         // 次の判定開始イベントを振り抜きとして扱う。
-        if (attackPrepared && slashHitIndex > 0) slashHitIndex = SLASH_HIT_COUNT - 1;
+        if (attackPrepared && slashHitIndex > 0) slashHitIndex = weakFinisherHitIndex - 1;
     }
 
     // 敵死亡や通常食い込み側のキャンセルで、停止姿勢を解除する。
@@ -864,7 +856,7 @@ public class ChainsawAttack : MonoBehaviour
             }
             if (!covered) state.ShakeVisuals.Add(new EnemyShakeVisual { Root = candidate });
         }
-        if (state.ShakeVisuals.Count == 0 && !enemyShakeWarningLogged && enemyDiggingShakeAmplitude > 0f)
+        if (state.ShakeVisuals.Count == 0 && !enemyShakeWarningLogged && AttackSettings.enemyDiggingShakeAmplitude > 0f)
         {
             enemyShakeWarningLogged = true;
             Debug.LogWarning("食い込みの震えに使用できる表示用の子Transformがありません。敵モデルの表示部分をCollider・Rigidbodyと別の子階層に分けてください。", state.Target);
@@ -893,8 +885,8 @@ public class ChainsawAttack : MonoBehaviour
             }
             if (Time.timeScale <= 0f) continue;
             state.ShakeTime += Time.deltaTime;
-            float distance = Mathf.Sin(state.ShakeTime * Mathf.Max(0f, enemyDiggingShakeFrequency) * Mathf.PI * 2f) *
-                Mathf.Max(0f, enemyDiggingShakeAmplitude);
+            float distance = Mathf.Sin(state.ShakeTime * Mathf.Max(0f, AttackSettings.enemyDiggingShakeFrequency) * Mathf.PI * 2f) *
+                Mathf.Max(0f, AttackSettings.enemyDiggingShakeAmplitude);
             Vector3 worldOffset = state.ShakeDirection * distance;
             foreach (EnemyShakeVisual visual in state.ShakeVisuals)
             {
@@ -995,9 +987,9 @@ public class ChainsawAttack : MonoBehaviour
         {
             if (cameraShake != null && cameraShake.isActiveAndEnabled)
             {
-                float shakeDuration = duration > 0f
-                    ? duration
-                    : DEFAULT_SHAKE_DURATION;
+                float shakeDuration = AttackSettings.hitShakeDuration > 0f
+                    ? AttackSettings.hitShakeDuration
+                    : AttackSettings.defaultHitShakeDuration;
 
                 cameraShake.Shake(shakeDuration, shakeMagnitude);
             }
@@ -1112,4 +1104,15 @@ public class ChainsawAttack : MonoBehaviour
         EndAttack();
 
     }
+
+#if UNITY_EDITOR
+    // 既存のPrefab・シーンの値をSOへ移すために、元のシリアライズ名を保持する。
+    [SerializeField, HideInInspector] private string numericSettingsMigrationAssetGuid;
+    [SerializeField, HideInInspector] private float enemyDiggingShakeAmplitude = 0.025f;
+    [SerializeField, HideInInspector] private float enemyDiggingShakeFrequency = 20f;
+    [SerializeField, HideInInspector] private float slashKnockbackPriorityDuration = 0.15f;
+    [SerializeField, HideInInspector] private float duration = 0.15f;
+    [SerializeField, HideInInspector] private float weakDiggingAcceleratorGain = 1f;
+    [SerializeField, HideInInspector] private float weakFinisherAcceleratorGain = 5f;
+#endif
 }

@@ -1,0 +1,135 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4bbb7c6225850224daa707f94737f45a, type: 3}
+  m_Name: Player 1_PlayerParameter
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerParameter
+  moveSpeed: 11
+  acceleration: 20
+  deceleration: 30
+  attackMoveSpeedMultiplier: 0.4
+  moveDeadZone: 0.4
+  maxJumpCount: 2
+  jumpForce: 41
+  airJumpForce: 40
+  coyoteTime: 0.15
+  gravityScale: 8
+  jumpStartGravityMultiplier: 0.5
+  maxFallGravityMultiplier: 2.1
+  fallGravityIncreaseTime: 0.9
+  maxFallSpeed: 40
+  jumpLaunchImpulse: 7
+  airJumpLaunchImpulse: 5
+  jumpHoldMaxSeconds: 0
+  jumpHoldGravityScale: 0.05
+  jumpReleaseSpeedRatio: 0.9
+  jumpFallGravityScale: 1
+  jumpApexGravityMultiplier: 0.4
+  jumpApexGravityMultiplierFall: 0.8
+  enableCeilingFallGrace: 1
+  ceilingFallGraceMaxSeconds: 0.15
+  groundRayLayers:
+    serializedVersion: 2
+    m_Bits: 128
+  groundRaySideOffset: 0.4
+  groundRayStartHeight: 0.1
+  groundRayDistance: 1
+  groundRayNormalThreshold: 0.7
+  groundRayContactTolerance: 0.5
+  slopeGroundSnapDistance: 0.1
+  slopeGroundStickSpeed: 1
+  slopeGroundProbeDistance: 0.2
+  wallKnockbackSpeed: 0
+  wallKnockbackDeceleration: 20
+  wallKnockbackUpwardForce: 7
+  diggingImpactStunDuration: 0.15
+  impactShakeDuration: 0.15
+  impactShakeMagnitude: 0.1
+  surfaceStickSpeed: 1
+  wallClimbSpeed: 5
+  directWallSpeedDivisor: 5
+  surfaceStickJumpForce: 30
+  surfaceStickJumpAngle: 60
+  surfaceStickJumpStunTime: 0.1
+  surfaceStickJumpCameraShake: 0.1
+  surfaceStickJumpNoOverrideTime: 0.1
+  surfaceStickCollisionSpeed: 5
+  enemyDiggingJumpSpeed: 45
+  enemyReleaseEaseDuration: 0.75
+  enemyDiggingJumpProbeDistance: 1
+  cornerTolerance: 10
+  cornerPushSpeed: 20
+  cornerJumpForce: 7
+  impactSurfaceNormalThreshold: 0.7
+  comboAdvanceTime: 1
+  diggingReleaseMomentumCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.9999329
+      value: 0
+      inSlope: -0.03581918
+      outSlope: -0.03581918
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.12068503
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  uphillDiggingReleaseSpeedMultiplier: 1.5
+  wallTopMaxRise: 0.85
+  wallTopMoveSpeed: 8
+  diggingContactSpeedMultiplier: 0.8
+  diggingContactRecoverySeconds: 0.2
+  ceilingJumpReleaseSpeed: 6
+  ceilingJumpReleaseDuration: 0.12
+  impactTerrainLayers:
+    serializedVersion: 2
+    m_Bits: 128
+  walkEffectAnimatorLayer: 0
+  walkEffectInterval: 0.15
+  walkEffectMinimumWeight: 0.1
+  landingEffectMinimumAirSeconds: 0.08
+  slashEffectDuration: 0.25
+  walkEffectLifetime: 0.5
+  jumpEffectLifetime: 2
+  doubleJumpEffectLifetime: 0.2
+  landingEffectLifetime: 0.3
+  groundAttackEffectLifetime: 0.75
+  airAttackEffectLifetime: 0.75
+  groundSwingEffectLifetime: 2
+  airSwingEffectLifetime: 2
+  ceilingGraceMinimumUpwardSpeed: 0.05
+  uphillDiggingSlopeMemorySeconds: 0.08
+  wallTopClearance: 0.06
+  wallTopPositionTolerance: 0.012
+  wallTopStepMargin: 0.005
+  wallTopProbeCount: 4
+  wallTopProbeSpacing: 0.12
+  enemyReleaseTurnBrakeTime: 0.08
+  wallStallSeconds: 0.3
+  wallProgressRatio: 0.1
+  flatGroundNormalY: 0.999
+  minimumCornerOverlap: 0.02
+  cornerCorrectionExtraMargin: 0.005
+  launchGroundIgnoreSeconds: 0.1
+  ceilingCornerGraceSeconds: 0.12
+  ceilingImpactVelocityMemorySteps: 1.5

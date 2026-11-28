@@ -559,6 +559,22 @@ public class SensorPlayerController : MonoBehaviour
     // 衝突イベントから次のFixedUpdateにジャンプを予約する。
     private bool ceilingCornerJumpPending;
 
+    // 接地の微小な誤差と区別し、壁から出した位置にはわずかな余白を残す。
+    private const float MIN_WALL_PENETRATION = 0.02f;
+    private const float WALL_RECOVERY_CLEARANCE = 0.005f;
+
+    private readonly Collider[] wallRecoveryOverlaps = new Collider[32];
+    private Collider wallRecoveryBody;
+    private Collider wallRecoveryTerrain;
+    private float wallRecoveryDepth;
+    private float wallRecoveryNormalX;
+    private bool wallRecoveryHasLeftWall;
+    private bool wallRecoveryHasRightWall;
+    private double wallRecoveryContactStep = double.NegativeInfinity;
+    private double wallRecoveryMotionStep = double.NegativeInfinity;
+    private Vector3 wallRecoveryStepStart;
+    private float wallRecoveryStepDistance;
+
     // これより小さい重なりは、床の継ぎ目などの誤差として補正しない。
 
     // 角から完全に外れるための、わずかな余白。
@@ -640,6 +656,7 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         wallTopBodyColliders = GetComponentsInChildren<Collider>(true);
+        EnableContinuousStageCollision();
         groundProbe = new PlayerGroundProbe(
             playerRigidbody, groundCheckTransform, playerParameter);
 
@@ -852,6 +869,8 @@ public class SensorPlayerController : MonoBehaviour
 
         if (playerRigidbody == null || playerRigidbody.isKinematic)
         {
+            ClearWallRecoveryContacts();
+            wallRecoveryMotionStep = double.NegativeInfinity;
             ClearEnemyReleaseFlight();
             ClearWallTopClimb();
             ResetCeilingFallGrace(true);
@@ -943,6 +962,7 @@ public class SensorPlayerController : MonoBehaviour
         playerMidCollider.RefreshContacts(ResolvedImpactTerrainLayers);
 
         // 前の物理ステップで検出した頭部の角接触を先に補正する。
+        bool hasCornerCorrection = pendingCornerCorrection != Vector3.zero || ceilingCornerJumpPending;
         ApplyPendingCornerCorrection(deltaTime);
 
         if (TickWallTopClimb(deltaTime))
@@ -957,6 +977,11 @@ public class SensorPlayerController : MonoBehaviour
             ClearEnemyReleaseFlight();
             return;
         }
+
+        // 角補正を適用したステップや、敵に固定されている間は専用処理を優先する。
+        if (!hasCornerCorrection && chainsawDigging.Surface != ChainsawSurface.Enemy &&
+            TryRecoverFromWallPenetration(deltaTime))
+            return;
 
         // センサー更新が天井接続を解除する前に、直前の進行速度を保存する。
         RecordCeilingTravelImpact(lastDiggingPhysicsSurface == ChainsawSurface.Ceiling
@@ -1337,6 +1362,10 @@ public class SensorPlayerController : MonoBehaviour
                 $"回数={jumpsUsed} 設定初速={pendingJumpPower:F3} 最終速度={velocity}", this);
         }
         playerRigidbody.linearVelocity = velocity;
+        // この速度で移動する直前の位置を、次の衝突からの復帰候補として控える。
+        wallRecoveryMotionStep = Time.fixedTimeAsDouble;
+        wallRecoveryStepStart = playerRigidbody.position;
+        wallRecoveryStepDistance = velocity.magnitude * deltaTime;
         RecordWallClimbMotion(velocity);
 
         float animationSpeed = isEnemyReleaseFlying ? velocity.x : currentSpeed;
@@ -2985,8 +3014,10 @@ public class SensorPlayerController : MonoBehaviour
             pendingCornerCorrection = Vector3.zero;
     }
 
+    // 壁との重なりを記録し、既存の横方向の停止を適用する。
     private void UpdateWallContact(Collision collision)
     {
+        RecordWallPenetration(collision);
         if (playerMidCollider == null)
         {
             return;
@@ -3059,6 +3090,231 @@ public class SensorPlayerController : MonoBehaviour
         }
 
         return blocked;
+    }
+
+    // 離散判定で動いている本体だけ、静的な壁への連続衝突判定を有効にする。
+    private void EnableContinuousStageCollision()
+    {
+        if (playerRigidbody.isKinematic ||
+            playerRigidbody.collisionDetectionMode != CollisionDetectionMode.Discrete)
+            return;
+
+        foreach (Collider body in wallTopBodyColliders)
+        {
+            if (body.attachedRigidbody == playerRigidbody && !body.isTrigger &&
+                (body is BoxCollider || body is SphereCollider || body is CapsuleCollider))
+            {
+                playerRigidbody.collisionDetectionMode = CollisionDetectionMode.Continuous;
+                return;
+            }
+        }
+    }
+
+    // その物理ステップで左右どちらの壁に触れたかと、最も深い本体の重なりを記録する。
+    private void RecordWallPenetration(Collision collision)
+    {
+        Collider terrain = collision.collider;
+        int stageLayers = playerParameter.groundRayLayers.value | ResolvedImpactTerrainLayers |
+            chainsawDigging.TerrainLayerMask;
+        if (terrain == null || terrain.isTrigger || (stageLayers & (1 << terrain.gameObject.layer)) == 0)
+            return;
+
+        double step = Time.fixedTimeAsDouble;
+        if (wallRecoveryContactStep != step)
+        {
+            ClearWallRecoveryContacts();
+            wallRecoveryContactStep = step;
+        }
+
+        for (int i = 0; i < collision.contactCount; i++)
+        {
+            ContactPoint contact = collision.GetContact(i);
+            Vector3 normal = contact.normal;
+            float depth = -contact.separation;
+            if (depth < 0f || !IsWallRecoveryBody(contact.thisCollider) ||
+                Mathf.Abs(normal.x) < 0.5f || Mathf.Abs(normal.y) >= GroundNormalThreshold ||
+                Mathf.Abs(normal.z) > 0.5f)
+                continue;
+
+            if (normal.x > 0f) wallRecoveryHasLeftWall = true;
+            else wallRecoveryHasRightWall = true;
+
+            if (depth <= Mathf.Max(WALL_RECOVERY_CLEARANCE, wallRecoveryDepth))
+                continue;
+
+            wallRecoveryBody = contact.thisCollider;
+            wallRecoveryTerrain = terrain;
+            wallRecoveryDepth = depth;
+            wallRecoveryNormalX = normal.x;
+        }
+    }
+
+    // 横面への深い重なりが残っているとき、壁の外か直前の移動開始位置に復帰する。
+    private bool TryRecoverFromWallPenetration(float deltaTime)
+    {
+        if (wallRecoveryDepth <= 0f)
+            return false;
+
+        Collider body = wallRecoveryBody;
+        Collider terrain = wallRecoveryTerrain;
+        float normalX = wallRecoveryNormalX;
+        double contactStep = wallRecoveryContactStep;
+        bool wedged = wallRecoveryHasLeftWall && wallRecoveryHasRightWall;
+        float minDepth = wedged ? WALL_RECOVERY_CLEARANCE : MIN_WALL_PENETRATION;
+        // 専用移動や硬直で見送った古い衝突は補正に使わない。
+        bool shouldRecover = wallRecoveryDepth > minDepth &&
+            Time.fixedTimeAsDouble - contactStep <= deltaTime * 1.5f;
+        ClearWallRecoveryContacts();
+
+        RigidbodyConstraints constraints = playerRigidbody.constraints;
+        if (!shouldRecover || (constraints & RigidbodyConstraints.FreezePositionX) != 0 ||
+            !IsWallRecoveryBody(body) || terrain == null || !terrain.enabled ||
+            !terrain.gameObject.activeInHierarchy || terrain.isTrigger || Physics.GetIgnoreCollision(body, terrain))
+            return false;
+
+        Vector3 position = playerRigidbody.position;
+        Vector3 bodyOffset = position - playerRigidbody.transform.position;
+        if (!Physics.ComputePenetration(
+                body, body.transform.position + bodyOffset, body.transform.rotation,
+                terrain, terrain.transform.position, terrain.transform.rotation,
+                out Vector3 direction, out float depth) || depth <= WALL_RECOVERY_CLEARANCE)
+            return false;
+
+        if (Mathf.Abs(direction.x) >= 0.5f && direction.x * normalX > 0f)
+        {
+            float pushX = (depth + WALL_RECOVERY_CLEARANCE) / direction.x;
+            if (Mathf.Abs(pushX) <= body.bounds.size.x &&
+                TryApplyWallRecovery(position, position + Vector3.right * pushX, normalX, wedged))
+                return true;
+        }
+
+        // 補正先が別の壁で塞がれていたら、同じ物理ステップの移動前位置を使う。
+        float maxDistance = wallRecoveryStepDistance + body.bounds.size.magnitude;
+        if (wallRecoveryMotionStep != contactStep ||
+            (wallRecoveryStepStart - position).sqrMagnitude > maxDistance * maxDistance)
+            return false;
+
+        Vector3 previousX = new Vector3(wallRecoveryStepStart.x, position.y, position.z);
+        if (TryApplyWallRecovery(position, previousX, normalX, wedged))
+            return true;
+
+        if ((constraints & RigidbodyConstraints.FreezePositionY) != 0)
+            return false;
+
+        Vector3 previousXY = new Vector3(previousX.x, wallRecoveryStepStart.y, position.z);
+        return TryApplyWallRecovery(position, previousXY, normalX, wedged);
+    }
+
+    // 候補位置に本体が入ることを確認し、壁へ戻る成分だけを止めて復帰する。
+    private bool TryApplyWallRecovery(Vector3 position, Vector3 destination, float normalX, bool wedged)
+    {
+        Vector3 offset = destination - position;
+        if (offset.sqrMagnitude < WALL_RECOVERY_CLEARANCE * WALL_RECOVERY_CLEARANCE ||
+            !IsWallRecoveryDestinationClear(destination))
+            return false;
+
+        playerRigidbody.position = destination;
+        Vector3 velocity = playerRigidbody.linearVelocity;
+        debugVelocityBeforeWall = velocity;
+        if (wedged || normalX * velocity.x < 0f) velocity.x = 0f;
+        if (wedged || normalX * currentSpeed < 0f) currentSpeed = 0f;
+        if (wedged || normalX * knockbackVelocity < 0f) knockbackVelocity = 0f;
+        if (wedged || normalX * attackMoveDirection < 0f) ClearAttackMovement();
+        if (wedged || normalX * wallJumpHorizontalVelocity < 0f) wallJumpDirectionHoldRemaining = 0f;
+        if (wedged || normalX * diggingReleaseVelocity.x < 0f) ClearDiggingReleaseMomentum();
+
+        if (offset.y * velocity.y < 0f)
+        {
+            velocity.y = 0f;
+            ascentStartSpeed = 0f;
+            fallElapsedTime = 0f;
+        }
+
+        playerRigidbody.linearVelocity = velocity;
+        lastDiggingPhysicsVelocity = velocity;
+        debugVelocityAfterWall = velocity;
+        debugCurrentSpeed = velocity.x;
+        debugWallBlocked = true;
+        return true;
+    }
+
+    // 候補位置で頭や胴体が、地形や別の物理Colliderに重ならないことを確認する。
+    private bool IsWallRecoveryDestinationClear(Vector3 destination)
+    {
+        Vector3 rootPosition = playerRigidbody.transform.position;
+        Vector3 offset = destination - rootPosition;
+        Vector3 interpolationOffset = playerRigidbody.position - rootPosition;
+        Vector3 padding = new Vector3(Mathf.Abs(interpolationOffset.x),
+            Mathf.Abs(interpolationOffset.y), Mathf.Abs(interpolationOffset.z));
+
+        foreach (Collider body in wallTopBodyColliders)
+        {
+            if (!IsWallRecoveryBody(body))
+                continue;
+
+            Bounds bounds = body.bounds;
+            Vector3 center = bounds.center + offset;
+            Vector3 extents = bounds.extents + padding;
+            Collider[] candidates = wallRecoveryOverlaps;
+            int count = Physics.OverlapBoxNonAlloc(center, extents, candidates,
+                Quaternion.identity, Physics.AllLayers, QueryTriggerInteraction.Ignore);
+            if (count == candidates.Length)
+            {
+                // 密集した場所では固定バッファから漏れたColliderも確認する。
+                candidates = Physics.OverlapBox(center, extents, Quaternion.identity,
+                    Physics.AllLayers, QueryTriggerInteraction.Ignore);
+                count = candidates.Length;
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                Collider other = candidates[i];
+                if (other == null || other.attachedRigidbody == playerRigidbody ||
+                    Physics.GetIgnoreCollision(body, other) || !CanCollideForWallRecovery(body, other))
+                    continue;
+
+                if (Physics.ComputePenetration(body, body.transform.position + offset, body.transform.rotation,
+                        other, other.transform.position, other.transform.rotation,
+                        out _, out float depth) && depth > WALL_RECOVERY_CLEARANCE)
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    // レイヤーの組み合わせと、個別に追加した衝突レイヤーを確認する。
+    private bool CanCollideForWallRecovery(Collider body, Collider other)
+    {
+        int bodyLayer = body.gameObject.layer;
+        int otherLayer = other.gameObject.layer;
+        if (!Physics.GetIgnoreLayerCollision(bodyLayer, otherLayer))
+            return true;
+
+        Rigidbody otherRigidbody = other.attachedRigidbody;
+        int bodyIncludes = body.includeLayers.value | playerRigidbody.includeLayers.value;
+        return (bodyIncludes & (1 << otherLayer)) != 0 ||
+               (other.includeLayers.value & (1 << bodyLayer)) != 0 ||
+               (otherRigidbody != null && (otherRigidbody.includeLayers.value & (1 << bodyLayer)) != 0);
+    }
+
+    // プレイヤーのRigidbodyに属する、有効な物理Colliderを判定する。
+    private bool IsWallRecoveryBody(Collider body)
+    {
+        return body != null && body.enabled && body.gameObject.activeInHierarchy &&
+            !body.isTrigger && body.attachedRigidbody == playerRigidbody;
+    }
+
+    // 以前の物理ステップの壁や法線を、次の補正へ持ち越さない。
+    private void ClearWallRecoveryContacts()
+    {
+        wallRecoveryBody = null;
+        wallRecoveryTerrain = null;
+        wallRecoveryDepth = 0f;
+        wallRecoveryNormalX = 0f;
+        wallRecoveryHasLeftWall = false;
+        wallRecoveryHasRightWall = false;
+        wallRecoveryContactStep = double.NegativeInfinity;
     }
 
     // アニメーション更新後に床食い込みの傾きを反映し、解除時には通常の向きへ戻す。
@@ -3965,6 +4221,8 @@ public class SensorPlayerController : MonoBehaviour
     // 接地・食い込み・攻撃などの実行状態を解除し、物理設定を復元する。
     void OnDisable()
     {
+        ClearWallRecoveryContacts();
+        wallRecoveryMotionStep = double.NegativeInfinity;
         diggingContactSlowStart = float.NegativeInfinity;
         keepBufferedDiggingFacingUntilTick = false;
         impactBufferedDiggingMove = 0f;

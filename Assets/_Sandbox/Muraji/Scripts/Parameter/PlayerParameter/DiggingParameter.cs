@@ -123,4 +123,15 @@ public class DiggingParameter : ScriptableObject
     [Min(0f)]
     public float floorTransitionWallGraceTime = 0.05f;
 
+    [Header("食い込み解除と接触攻撃")]
+    [Tooltip("ホールドで壁食い込みを離してから壁ジャンプを受け付ける秒数です。0にすると無効になります。")]
+    [Min(0f)]
+    public float wallJumpReleaseBufferSeconds = 0.15f;
+
+    [Tooltip("床・壁・天井への食い込み移動で敵に触れたときの固定ダメージ倍率です。0.3なら食い込み攻撃力の30%。アクセル値とボーナスでは変化しません。")]
+    [Range(0f, 1f)]
+    public float movementContactDamageMultiplier = 0.3f;
+
+    [Tooltip("地上で弱攻撃後に予約した食い込み入力の接触待ち時間です。長押し中は接触待ちを維持します。")]
+    [Min(0f)] public float groundContactWaitAfterAttackSeconds = 0.15f;
 }

@@ -736,6 +736,12 @@ public class SensorPlayerController : MonoBehaviour
     private float impactBufferedDiggingMove;
     private bool keepBufferedDiggingFacingUntilTick;
 
+    // ジャンプの初速と押し戻しの処理が済んだら、継続中の長押しから構えられる。
+    private bool CanStartHeldDigging => !IsAttacking && !jumpPending &&
+        !wallJumpLaunchPending && wallJumpDirectionHoldRemaining <= 0f &&
+        !ceilingCornerJumpPending && !ceilingJumpLaunchPending && ceilingJumpReleaseRemaining <= 0f &&
+        !knockbackHopPending && knockbackVelocity == 0f;
+
     // 衝突硬直中に押された行動を記録する。押下がないフレームでは前の予約を維持する。
     private void CaptureImpactBufferedInput()
     {
@@ -857,7 +863,8 @@ public class SensorPlayerController : MonoBehaviour
                 IsAttacking || ceilingJumpLaunchPending || ceilingJumpReleaseRemaining > 0f,
                 facingDirection,
                 IsGrounded(),
-                diggingBuffered
+                diggingBuffered,
+                allowHeldPreparation: !jumpPressed && CanStartHeldDigging
             );
         }
         // 予約した食い込みを開始できた場合は、硬直明けの反発予約による即離脱を防ぐ。
@@ -1004,6 +1011,10 @@ public class SensorPlayerController : MonoBehaviour
         ChainsawSurface previousSurface = chainsawDigging.Surface;
         Vector3 climbedWallNormal = chainsawDigging.SurfaceNormal;
         bool wasClimbingWall = previousSurface == ChainsawSurface.Wall && wallAscentImpactArmed;
+        // 接触待ちの継続には、予約された押下ではなく現在の長押しを使う。
+        bool heldDiggingReady = input.WedgieHeld && CanStartHeldDigging;
+        float contactMoveSpeed = chainsawDigging.IsWaitingForTerrainReattach
+            ? playerRigidbody.linearVelocity.x : currentSpeed * DiggingContactSpeedScale;
 
         chainsawDigging.Tick(
             deltaTime,
@@ -1011,8 +1022,9 @@ public class SensorPlayerController : MonoBehaviour
             CanUseDiggingImpact
                 ? Mathf.Max(0.01f, playerParameter.surfaceStickCollisionSpeed)
                 : float.PositiveInfinity,
-            currentSpeed * DiggingContactSpeedScale,
-            ResolvedImpactTerrainLayers
+            contactMoveSpeed,
+            ResolvedImpactTerrainLayers,
+            heldDiggingReady
         );
         bool lostFloorDiggingSupport = previousSurface == ChainsawSurface.Floor &&
             chainsawDigging.Surface == ChainsawSurface.None;
@@ -1155,7 +1167,7 @@ public class SensorPlayerController : MonoBehaviour
                             playerParameter.surfaceStickSpeed, deltaTime, out velocity))
                         {
                             // 実際に天井が終わった場合は、空中に固定せず通常の落下へ戻す。
-                            chainsawDigging.Cancel(false);
+                            chainsawDigging.HandleTerrainContactLost(facingDirection, heldDiggingReady);
                             suppressGravity = false;
                             velocity = playerRigidbody.linearVelocity;
                             velocity.x = currentSpeed;
@@ -1176,7 +1188,7 @@ public class SensorPlayerController : MonoBehaviour
                         {
                             // 本当に床が途切れた場合は、空中で固定せず通常の落下へ戻す。
                             lostFloorDiggingSupport = true;
-                            chainsawDigging.Cancel(false);
+                            chainsawDigging.HandleTerrainContactLost(facingDirection, heldDiggingReady);
                             suppressGravity = false;
                             velocity = playerRigidbody.linearVelocity;
                             velocity.x = currentSpeed;
@@ -1676,7 +1688,9 @@ public class SensorPlayerController : MonoBehaviour
         // 物理更新とDamping分の余裕を確保し、妨げられた場合でも状態を残さない。
         wallTopTimeRemaining = travelDistance / Mathf.Max(0.1f, wallTopMoveSpeed) + 0.5f;
 
-        if (chainsawDigging.IsDigging) chainsawDigging.Cancel(false);
+        // 自然に壁から離れた場合と同じく、長押しなら上端を越えた後の接触を待つ。
+        if (chainsawDigging.IsDigging)
+            chainsawDigging.HandleTerrainContactLost(facingDirection, input.WedgieHeld);
         // 通常の食い込み離脱慣性が、乗り越え後に再適用されないようにする。
         ClearDiggingReleaseMomentum();
         ResetCeilingFallGrace(false);
@@ -1770,6 +1784,10 @@ public class SensorPlayerController : MonoBehaviour
     private bool TickWallTopClimb(float deltaTime)
     {
         if (wallTopTimeRemaining <= 0f) return false;
+
+        // 乗り越え中は通常の食い込み入力を止めているため、ボタンを離したときだけ待機を解除する。
+        if (chainsawDigging.IsWaitingForTerrainReattach && !input.WedgieHeld)
+            chainsawDigging.Cancel(false);
 
         wallTopTimeRemaining -= deltaTime;
         bool interrupted = IsAttacking || jumpPending || wallJumpLaunchPending ||

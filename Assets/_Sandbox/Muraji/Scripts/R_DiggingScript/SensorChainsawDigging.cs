@@ -353,7 +353,6 @@ public class SensorChainsawDigging : MonoBehaviour
     }
     private float timer;
     private float evadeUntil;
-    private bool holdBlocked;
     private float pendingDash;
 
     private float lastPressTime = float.NegativeInfinity;
@@ -362,7 +361,9 @@ public class SensorChainsawDigging : MonoBehaviour
     private float pendingBounceDirection;
     // 空中で食い込みを入力し、最初の接触を待っている状態。
     private bool isWaitingForContact;
+    public bool IsWaitingForTerrainReattach { get; private set; }
     private const float GROUND_CONTACT_WAIT_AFTER_ATTACK_SECONDS = 0.15f;
+    private const float WALL_CONSUME_TOLERANCE = 0.0001f;
     private float attackResumeContactWaitUntil;
 
     // Floor → Wallの切り替え直後に一時的に保持するWall候補。
@@ -429,7 +430,6 @@ public class SensorChainsawDigging : MonoBehaviour
         }
     }
 
-    // PlayerControllerから呼び、操作モードに応じて食い込み要求を更新する。
     // 操作モードと接地状態に応じて、食い込み要求を更新する。
     public void HandleInput(
         bool pressed,
@@ -437,7 +437,8 @@ public class SensorChainsawDigging : MonoBehaviour
         bool attacking,
         float facingDirection = 1f,
         bool isGrounded = true,
-        bool fromImpactBuffer = false)
+        bool fromImpactBuffer = false,
+        bool allowHeldPreparation = true)
     {
         if (!isActiveAndEnabled)
         {
@@ -449,7 +450,6 @@ public class SensorChainsawDigging : MonoBehaviour
         // 予約中にボタンを離していても、押下を1回実行してから通常のHold解除へ戻す。
         if (fromImpactBuffer)
         {
-            holdBlocked = false;
             bufferedRequestAwaitingTick = true;
         }
         else if (bufferedRequestAwaitingTick && !pressed && !attacking)
@@ -462,22 +462,12 @@ public class SensorChainsawDigging : MonoBehaviour
             lastPressTime = Time.time;
         }
 
-        if (!held)
-        {
-            holdBlocked = false;
-        }
-
         // 攻撃中は食い込みを開始しない。
         if (attacking)
         {
             if (IsRequested || IsDigging)
             {
                 Cancel(true);
-            }
-
-            if (held)
-            {
-                holdBlocked = true;
             }
 
             return;
@@ -501,14 +491,10 @@ public class SensorChainsawDigging : MonoBehaviour
         }
         else
         {
-            bool requested =
-                held &&
-                !holdBlocked;
-
-            if (!requested && IsRequested)
+            if (!held && IsRequested)
             {
                 // ホールドを離した時だけ、解除で消える壁の法線とボーナスを保存する。
-                Vector3 releasedNormal = !held && Surface == ChainsawSurface.Wall
+                Vector3 releasedNormal = Surface == ChainsawSurface.Wall
                     ? SurfaceNormal : Vector3.zero;
                 bool hadBonus = HasBonus;
                 Cancel(false);
@@ -520,9 +506,10 @@ public class SensorChainsawDigging : MonoBehaviour
                 }
             }
 
-            if (pressed && requested && !IsRequested)
+            // 硬直や離脱で開始できなかった場合も、長押し中なら操作可能になった時点で構える。
+            if (held && !IsRequested && (allowHeldPreparation || fromImpactBuffer))
             {
-                BeginRequest(facingDirection, !isGrounded);
+                BeginRequest(facingDirection, waitForContact: true);
             }
         }
     }
@@ -545,7 +532,6 @@ public class SensorChainsawDigging : MonoBehaviour
         if (!CanResumeHeldDigging) return false;
 
         // 攻撃姿勢から切り替わる瞬間に接触がなければ、ホールド中だけ次の接触を待つ。
-        holdBlocked = false;
         lastPressTime = Time.time;
         BeginRequest(facingDirection, true, waitBrieflyOnGround: isGrounded, blendFromAttack: true,
             adoptAnimatorTransition: adoptAnimatorTransition);
@@ -562,17 +548,35 @@ public class SensorChainsawDigging : MonoBehaviour
         if (detector != null) detector.SetFacingDirection(direction);
     }
 
-    // 入力時に接触を確認し、接触中ならその場で成立、空中なら接触待機を開始する。
+    // 地形から自然に外れたときだけ、押し続けているボタンで空中の接触待ちへ移る。
+    public void HandleTerrainContactLost(float facingDirection, bool held)
+    {
+        bool keepWaiting = held && IsMovementDigging && diggingParameter != null &&
+            diggingParameter.inputMode == InputMode.Hold;
+        Cancel(false);
+        if (!keepWaiting || !CanResumeHeldDigging) return;
+
+        // 元の面を離れた物理ステップでは再接続せず、離脱慣性を適用してから判定する。
+        BeginRequest(facingDirection, waitForContact: true, reattachAfterTerrainLoss: true);
+    }
+
+    // その場で接触を確認し、未接触からの開始や地形離脱では接触待機を開始する。
     private void BeginRequest(float facingDirection, bool waitForContact, bool waitBrieflyOnGround = false,
-        bool blendFromAttack = false, bool adoptAnimatorTransition = false)
+        bool blendFromAttack = false, bool adoptAnimatorTransition = false, bool reattachAfterTerrainLoss = false)
     {
         particleFrameSurface = ChainsawSurface.None;
         DiggingParticleFrameChanged?.Invoke();
         detector.SetFacingDirection(facingDirection);
         ClearWallJumpReleaseBuffer();
-        // 全候補を同じ照会で比較し、敵・天井・壁・床の優先順位で開始対象を決める。
-        bool hasContact = detector.TryGetContact(null, out SensorChainsawContact initialContact,
+        // 再接続待ちは次の物理更新に任せ、通常の開始では全候補を同じ照会で比較する。
+        SensorChainsawContact initialContact = default;
+        bool hasContact = !reattachAfterTerrainLoss && detector.TryGetContact(null, out initialContact,
             ChainsawSurface.None, facingDirection);
+        if (hasContact && diggingParameter.inputMode == InputMode.Hold && !CanStartHeldContact(initialContact))
+        {
+            initialContact = default;
+            hasContact = false;
+        }
 
         contact = initialContact;
         Surface = ChainsawSurface.None;
@@ -580,6 +584,7 @@ public class SensorChainsawDigging : MonoBehaviour
         wallContactLostTime = 0f;
         IsRequested = hasContact || waitForContact;
         isWaitingForContact = !hasContact && waitForContact;
+        IsWaitingForTerrainReattach = reattachAfterTerrainLoss && isWaitingForContact;
         attackResumeContactWaitUntil = isWaitingForContact && waitBrieflyOnGround
             ? Time.time + GROUND_CONTACT_WAIT_AFTER_ATTACK_SECONDS
             : 0f;
@@ -604,7 +609,6 @@ public class SensorChainsawDigging : MonoBehaviour
         else
         {
             // 地上で対象がなければ空振りモーションを最後まで再生する。
-            holdBlocked = true;
             playerAnimator.ReleaseDiggingAnimation();
         }
     }
@@ -657,9 +661,11 @@ public class SensorChainsawDigging : MonoBehaviour
     float facingDirection = 0f,
     float wallImpactMinimumSpeed = float.PositiveInfinity,
     float floorMoveSpeed = 0f,
-    int wallImpactLayers = 0)
+    int wallImpactLayers = 0,
+    bool heldDiggingReady = false)
     {
         // 予約押下はここから通常の食い込み更新へ引き渡す。
+        bool bufferedRequest = bufferedRequestAwaitingTick;
         bufferedRequestAwaitingTick = false;
         if (IsWeakEnemyAttack)
         {
@@ -677,6 +683,14 @@ public class SensorChainsawDigging : MonoBehaviour
 
         if (!isActiveAndEnabled || !IsRequested)
         {
+            return;
+        }
+
+        // 実際の長押しが途切れていたら、接触成立より先に構えを終える。予約した押下は一度だけ判定する。
+        if (isWaitingForContact && diggingParameter.inputMode == InputMode.Hold &&
+            !heldDiggingReady && !bufferedRequest)
+        {
+            Cancel(false);
             return;
         }
 
@@ -740,7 +754,7 @@ public class SensorChainsawDigging : MonoBehaviour
                         "[壁登り終了] 壁を見失って猶予時間が経過",
                         this);
 
-                    Cancel(false);
+                    HandleTerrainContactLost(facingDirection, heldDiggingReady);
                     return;
                 }
 
@@ -754,16 +768,24 @@ public class SensorChainsawDigging : MonoBehaviour
 
             if (!foundContact)
             {
-                // 空中入力と攻撃明けの接触待ちを維持し、地上の攻撃明けだけは猶予を設ける。
+                // 長押し中は接触を待ち続け、地上の攻撃明けに予約した押下だけは猶予で区切る。
                 if (!isWaitingForContact ||
-                    (attackResumeContactWaitUntil > 0f && Time.time >= attackResumeContactWaitUntil))
+                    (!heldDiggingReady && attackResumeContactWaitUntil > 0f && Time.time >= attackResumeContactWaitUntil))
                 {
-                    Cancel(false);
+                    if (IsMovementDigging)
+                        HandleTerrainContactLost(facingDirection, heldDiggingReady);
+                    else
+                        Cancel(false);
                 }
 
                 return;
             }
         }
+
+        if (!IsDigging && diggingParameter.inputMode == InputMode.Hold && !CanStartHeldContact(next)) return;
+
+        // 床・天井は刃先だけが端に残っていても、本体を支えられる位置まで再接続しない。
+        if (IsWaitingForTerrainReattach && !HasTerrainReattachSupport(next, floorMoveSpeed, deltaTime)) return;
 
         if (IsDigging &&
             (
@@ -1084,6 +1106,27 @@ public class SensorChainsawDigging : MonoBehaviour
                 : this);
     }
 
+    // 壁の消費量を下回っている間は構えを続け、接続と即解除の繰り返しを防ぐ。
+    private bool CanStartHeldContact(SensorChainsawContact candidate)
+    {
+        return candidate.Surface != ChainsawSurface.Wall ||
+            accelerator.CurrentSpeed + WALL_CONSUME_TOLERANCE >= Mathf.Max(0f, diggingParameter.wallConsumeAmount);
+    }
+
+    // 再接続候補の床・天井に、本体の次の移動を支える面があるか確認する。
+    private bool HasTerrainReattachSupport(SensorChainsawContact candidate, float horizontalSpeed, float deltaTime)
+    {
+        switch (candidate.Surface)
+        {
+            case ChainsawSurface.Floor:
+                return detector.TryGetFloorBodySupport(horizontalSpeed, deltaTime, candidate.Normal, out _);
+            case ChainsawSurface.Ceiling:
+                return detector.TryGetCeilingBodySupport(horizontalSpeed, deltaTime, candidate.Normal, out _);
+            default:
+                return true;
+        }
+    }
+
     // 接触面に応じて食い込み状態とボーナスを初期化する。
     private bool BeginDigging(bool blendFromAttack = false, bool adoptAnimatorTransition = false)
     {
@@ -1185,6 +1228,7 @@ public class SensorChainsawDigging : MonoBehaviour
 
         // 接触後は面別イベントで姿勢を止める。固定後に毎フレーム再開しない。
         isWaitingForContact = false;
+        IsWaitingForTerrainReattach = false;
         attackResumeContactWaitUntil = 0f;
 
         LogDiggingContact();
@@ -1464,6 +1508,7 @@ public class SensorChainsawDigging : MonoBehaviour
         ClearWallJumpReleaseBuffer();
         bufferedRequestAwaitingTick = false;
         attackResumeContactWaitUntil = 0f;
+        IsWaitingForTerrainReattach = false;
         if (IsWeakEnemyAttack)
         {
             EndWeakEnemyAttack();
@@ -1495,7 +1540,6 @@ public class SensorChainsawDigging : MonoBehaviour
         timer = 0f;
         ceilingBonusRamp = 0f;
         pendingDash = 0f;
-        holdBlocked = true;
         if (releasedMovementDigging) MovementDiggingReleased?.Invoke(releasedNormal);
 
         // 保留中のFloor → Wall判定をリセット。
